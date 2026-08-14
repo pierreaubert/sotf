@@ -1,4 +1,4 @@
-use super::channel_mute_solo_plugin::ChannelMuteSoloPlugin;
+use super::channel_mute_solo_plugin::{ChannelMuteSoloPlugin, RealtimeChannelUpdateError};
 use super::types::{ChannelMuteSoloParams, ChannelState, default_dim_gain_db, default_fade_ms};
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
@@ -762,7 +762,7 @@ fn settled_and_transitioning_callbacks_do_not_allocate() {
 }
 
 #[test]
-fn apply_values_defers_schema_serialization_until_schema_is_requested() {
+fn borrowed_realtime_values_separate_plugin_work_from_owned_trait_teardown() {
     let mut plugin = ChannelMuteSoloPlugin::new(32, true);
     let initial_serializations = plugin.schema_state_serializations.get();
     let initial_states_json = plugin.cached_parameters.borrow()[1]
@@ -775,9 +775,20 @@ fn apply_values_defers_schema_serialization_until_schema_is_requested() {
     values.insert(ParameterId::from("solo_4"), ParameterValue::Bool(true));
     values.insert(ParameterId::from("dim_5"), ParameterValue::Bool(true));
 
-    assert_no_allocs("Channel Mute/Solo bulk apply_values", || {
-        plugin.apply_values(values).unwrap();
+    assert_no_allocs("Channel Mute/Solo borrowed realtime channel values", || {
+        plugin.apply_realtime_channel_values(&values).unwrap();
     });
+
+    // The host-facing trait owns its ParameterSet and is deliberately a
+    // control-thread API. Exercise it outside the allocator guard and prove
+    // that it destroys the caller-owned ID after applying it.
+    let owned_id = std::sync::Arc::<str>::from("mute_6");
+    let owned_id_weak = std::sync::Arc::downgrade(&owned_id);
+    let mut owned_values = ParameterSet::new();
+    owned_values.insert(ParameterId(owned_id), ParameterValue::Bool(true));
+    <ChannelMuteSoloPlugin as ParametricInPlacePlugin>::apply_values(&mut plugin, owned_values)
+        .unwrap();
+    assert!(owned_id_weak.upgrade().is_none());
 
     assert!(plugin.params_dirty.get());
     assert_eq!(
@@ -805,6 +816,10 @@ fn apply_values_defers_schema_serialization_until_schema_is_requested() {
         current.get(&ParameterId::from("dim_5")),
         Some(&ParameterValue::Bool(true))
     );
+    assert_eq!(
+        current.get(&ParameterId::from("mute_6")),
+        Some(&ParameterValue::Bool(true))
+    );
 
     let schema = plugin.parameter_schema();
     assert_eq!(
@@ -816,6 +831,21 @@ fn apply_values_defers_schema_serialization_until_schema_is_requested() {
     assert!(states[3].muted);
     assert!(states[4].soloed);
     assert!(states[5].dimmed);
+}
+
+#[test]
+fn borrowed_realtime_batch_is_atomic_on_validation_failure() {
+    let mut plugin = ChannelMuteSoloPlugin::new(8, true);
+    let mut values = ParameterSet::new();
+    values.insert(ParameterId::from("mute_0"), ParameterValue::Bool(true));
+    values.insert(ParameterId::from("mute_99"), ParameterValue::Bool(true));
+
+    assert_eq!(
+        plugin.apply_realtime_channel_values(&values),
+        Err(RealtimeChannelUpdateError::InvalidChannel)
+    );
+    assert!(!plugin.channel_states[0].muted);
+    assert!(!plugin.params_dirty.get());
 }
 
 #[test]

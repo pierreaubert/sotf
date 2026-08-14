@@ -222,7 +222,7 @@ fn test_empty_path_fast_gain_is_reused_after_mix_changes() {
     plugin
         .set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
         .unwrap();
-    plugin.mix_smoother.reset(1.0);
+    plugin.transition_smoothers.mix.reset(1.0);
     plugin.process(&input, &mut output, &context).unwrap();
     for &sample in &output {
         assert!(
@@ -239,7 +239,7 @@ fn test_empty_path_fast_gain_is_reused_after_mix_changes() {
     plugin
         .set_parameter(ParameterId::from("mix"), ParameterValue::Float(-1.0))
         .unwrap();
-    plugin.mix_smoother.reset(-1.0);
+    plugin.transition_smoothers.mix.reset(-1.0);
     plugin.process(&input, &mut output, &context).unwrap();
     for &sample in &output {
         assert!(
@@ -854,7 +854,7 @@ fn test_recompute_empty_path_fast_gain() {
     plugin
         .set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
         .unwrap();
-    plugin.mix_smoother.reset(1.0);
+    plugin.transition_smoothers.mix.reset(1.0);
     plugin.recompute_empty_path_fast_gain();
     assert_eq!(plugin.empty_path_fast_gain, 1.0);
 }

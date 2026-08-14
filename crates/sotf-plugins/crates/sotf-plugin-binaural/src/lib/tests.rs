@@ -1,5 +1,5 @@
 #![allow(clippy::needless_range_loop)]
-use super::binaural_decoder_plugin::BinauralDecoderPlugin;
+use super::binaural_decoder_plugin::{BinauralDecoderPlugin, BinauralInput};
 use super::filter;
 use super::hrtf;
 use super::room;
@@ -9,6 +9,30 @@ use rustfft::num_complex::Complex;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, ProcessContext};
 use std::sync::Arc;
+
+#[test]
+fn circular_input_hop_preserves_wrapped_sample_order() {
+    let mut input = BinauralInput {
+        input_buffer: vec![0.0; 16],
+        input_fill: 4,
+        read_pos: 6,
+        write_pos: 2,
+    };
+    // Two channel-major rings of length eight. The logical hop starts at
+    // physical index six and wraps through zero.
+    for (index, value) in [(6, 1.0), (7, 2.0), (0, 3.0), (1, 4.0)] {
+        input.input_buffer[index] = value;
+    }
+    for (index, value) in [(6, 5.0), (7, 6.0), (0, 7.0), (1, 8.0)] {
+        input.input_buffer[8 + index] = value;
+    }
+
+    let mut hop = [0.0; 8];
+    input.copy_hop(0, 8, 4, &mut hop);
+    assert_eq!(&hop[..4], &[1.0, 2.0, 3.0, 4.0]);
+    input.copy_hop(1, 8, 4, &mut hop);
+    assert_eq!(&hop[..4], &[5.0, 6.0, 7.0, 8.0]);
+}
 
 #[test]
 fn unsupported_channel_layouts_are_rejected() {
@@ -200,6 +224,7 @@ fn reflections_preserve_source_ownership_and_silent_channels_add_nothing() {
         hrtf_filter: None,
     };
     plugin.room.cached_reflections[0].push(reflection.clone());
+    plugin.rebuild_reflection_groups();
     plugin.room.reflection_delay_line[0] = 1.0;
     plugin.room.reflection_read_pos = 1;
     let mut output = [0.0, 0.0];
@@ -210,10 +235,266 @@ fn reflections_preserve_source_ownership_and_silent_channels_add_nothing() {
     // A configured reflection owned by a silent second channel cannot change
     // the first source's response.
     plugin.room.cached_reflections[1].push(reflection);
+    plugin.rebuild_reflection_groups();
     plugin.room.reflection_read_pos = 1;
     let mut with_silent_channel = [0.0, 0.0];
     plugin.apply_reflections(&mut with_silent_channel, 1);
     assert_eq!(with_silent_channel, output);
+}
+
+fn naive_reflection_render(plugin: &BinauralDecoderPlugin, frames: usize) -> Vec<f32> {
+    let mut output = vec![0.0; frames * 2];
+    let mut read_pos = plugin.room.reflection_read_pos;
+    let mask = plugin.room.reflection_delay_mask;
+    let channels = plugin.config.input_channels;
+    let externalization = plugin.smoothing.externalization.current();
+
+    for frame in 0..frames {
+        for (channel, reflections) in plugin.room.cached_reflections.iter().enumerate() {
+            for reflection in reflections {
+                let delayed_pos = (read_pos + mask + 1 - reflection.delay_samples) & mask;
+                let source = plugin.room.reflection_delay_line[delayed_pos * channels + channel];
+                let (left, right) = reflection
+                    .hrtf_filter
+                    .as_ref()
+                    .map_or((reflection.left_gain, reflection.right_gain), |hrtf| {
+                        (hrtf.left_gain_broadband, hrtf.right_gain_broadband)
+                    });
+                output[frame * 2] += source * externalization * reflection.gain * left;
+                output[frame * 2 + 1] += source * externalization * reflection.gain * right;
+            }
+        }
+        read_pos = (read_pos + 1) & mask;
+    }
+    output
+}
+
+fn test_reflection(
+    delay_samples: usize,
+    gain: f32,
+    left_gain: f32,
+    right_gain: f32,
+) -> room::Reflection {
+    room::Reflection {
+        delay_samples,
+        gain,
+        left_gain,
+        right_gain,
+        azimuth_deg: 0.0,
+        elevation_deg: 0.0,
+        hrtf_filter: None,
+    }
+}
+
+#[test]
+fn grouped_reflections_match_naive_oracle_with_merges_wrap_and_multichannel() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        6,
+        64,
+        None,
+        1.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin.room.cached_reflections = vec![Vec::new(); 6];
+
+    // Fixed paths deliberately include both a duplicate delay/channel pair
+    // and a shared delay across channels. One path uses HRTF broadband gains,
+    // which must override the fallback panning gains in both renderers.
+    plugin.room.cached_reflections[0] = vec![
+        test_reflection(1, 0.25, 0.8, 0.2),
+        test_reflection(1, -0.1, 0.4, 0.9),
+        test_reflection(7, 0.3, 0.5, 0.6),
+    ];
+    let mut hrtf_path = test_reflection(1, 0.4, 99.0, 99.0);
+    hrtf_path.hrtf_filter = Some(room::ReflectionHrtf {
+        left_gain_broadband: 0.15,
+        right_gain_broadband: 0.95,
+    });
+    plugin.room.cached_reflections[3].push(hrtf_path);
+
+    // Add a deterministic pseudo-random matrix, including an explicit
+    // duplicate for every channel. This broadens the oracle beyond the fixed
+    // hand-computed case without making the regression nondeterministic.
+    let mut seed = 0x91e1_0da5_u32;
+    let mut next = || {
+        seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        seed
+    };
+    for channel in 0..6 {
+        for _ in 0..12 {
+            let delay = 1 + (next() as usize & 31);
+            let gain = (next() as f32 / u32::MAX as f32 - 0.5) * 0.8;
+            let left = next() as f32 / u32::MAX as f32;
+            let right = next() as f32 / u32::MAX as f32;
+            plugin.room.cached_reflections[channel].push(test_reflection(delay, gain, left, right));
+        }
+        plugin.room.cached_reflections[channel].push(test_reflection(5, 0.2, 0.3, 0.7));
+        plugin.room.cached_reflections[channel].push(test_reflection(5, -0.08, 0.6, 0.1));
+    }
+
+    let mut value_seed = 0x7f4a_7c15_u32;
+    for sample in &mut plugin.room.reflection_delay_line {
+        value_seed = value_seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        *sample = (value_seed as f32 / u32::MAX as f32 - 0.5) * 2.0;
+    }
+    plugin.room.reflection_read_pos = plugin.room.reflection_delay_mask - 2;
+    plugin.rebuild_reflection_groups();
+
+    let naive_path_count: usize = plugin.room.cached_reflections.iter().map(Vec::len).sum();
+    let grouped_tap_count: usize = plugin
+        .room
+        .reflection_groups
+        .iter()
+        .map(|group| group.taps.len())
+        .sum();
+    assert!(
+        grouped_tap_count < naive_path_count,
+        "duplicate paths were not merged"
+    );
+    assert!(
+        plugin.room.reflection_groups.len() < grouped_tap_count,
+        "same-delay channels were not grouped"
+    );
+
+    let expected = naive_reflection_render(&plugin, 11);
+    let mut actual = vec![0.0; expected.len()];
+    plugin.apply_reflections(&mut actual, 11);
+    for (index, (actual, expected)) in actual.iter().zip(&expected).enumerate() {
+        assert!(
+            (actual - expected).abs() < 2.0e-5,
+            "sample {index}: grouped={actual}, naive={expected}"
+        );
+    }
+}
+
+#[test]
+fn ism_reflection_groups_reduce_first_and_second_order_delay_lookups() {
+    let mut counts = Vec::new();
+    for max_order in [1, 2] {
+        let mut plugin = BinauralDecoderPlugin::new(
+            6,
+            64,
+            None,
+            1.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel {
+                max_order,
+                ..RoomModel::default()
+            },
+        );
+        plugin.initialize(48_000).unwrap();
+        let naive_delay_lookups: usize = plugin.room.cached_reflections.iter().map(Vec::len).sum();
+        let grouped_delay_lookups = plugin.room.reflection_groups.len();
+        assert!(naive_delay_lookups > 0);
+        assert!(
+            grouped_delay_lookups < naive_delay_lookups,
+            "order {max_order}: grouping did not reduce {naive_delay_lookups} per-sample delay lookups"
+        );
+        counts.push((naive_delay_lookups, grouped_delay_lookups));
+    }
+    assert!(
+        counts[1].0 > counts[0].0,
+        "second-order paths were not exercised"
+    );
+}
+
+fn render_binaural_partitioned(input: &[f32], blocks: &[usize]) -> Vec<f32> {
+    const CHANNELS: usize = 6;
+    let mut plugin = BinauralDecoderPlugin::new(
+        CHANNELS,
+        64,
+        None,
+        1.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel {
+            max_order: 2,
+            ..RoomModel::default()
+        },
+    );
+    plugin.initialize(48_000).unwrap();
+    // Pin deterministic one-tap direct filters so this test isolates the
+    // streaming/ring contracts from SOFA interpolation and background state.
+    let filters = (0..CHANNELS)
+        .map(|channel| {
+            let left = filter::ir_to_freq(&[0.15 + channel as f32 * 0.03], 64, &plugin.fft.fft_r2c);
+            let right =
+                filter::ir_to_freq(&[0.31 - channel as f32 * 0.02], 64, &plugin.fft.fft_r2c);
+            let mut combined = left;
+            combined.extend(right);
+            combined
+        })
+        .collect();
+    let state = Arc::new(BinauralState {
+        hrtf_filters_freq: filters,
+        diffuse_field_eq_filter: None,
+        _hrtf_data: None,
+    });
+    plugin.state.store(state.clone());
+    plugin.crossfade.current_state_snapshot = state;
+    let frames = input.len() / CHANNELS;
+    let mut output = vec![0.0; frames * 2];
+    let mut position = 0;
+    let mut block_index = 0;
+    while position < frames {
+        let count = blocks[block_index % blocks.len()].min(frames - position);
+        plugin
+            .process(
+                &input[position * CHANNELS..(position + count) * CHANNELS],
+                &mut output[position * 2..(position + count) * 2],
+                &ProcessContext::new(48_000, count),
+            )
+            .unwrap();
+        position += count;
+        block_index += 1;
+    }
+    output
+}
+
+#[test]
+fn second_order_binaural_render_is_partition_invariant_across_delay_ring_wrap() {
+    const CHANNELS: usize = 6;
+    const FRAMES: usize = 16_384 + 257;
+    let mut input = vec![0.0; FRAMES * CHANNELS];
+    for frame in 0..FRAMES {
+        for channel in 0..CHANNELS {
+            let phase = frame as f32 * (0.007 + channel as f32 * 0.0013);
+            input[frame * CHANNELS + channel] = phase.sin() * (0.08 + channel as f32 * 0.01);
+        }
+    }
+
+    let contiguous = render_binaural_partitioned(&input, &[64]);
+    let varied = render_binaural_partitioned(&input, &[1, 7, 31, 64, 3]);
+    let (max_error_index, max_error) = contiguous
+        .iter()
+        .zip(&varied)
+        .enumerate()
+        .map(|(index, (a, b))| (index, (a - b).abs()))
+        .max_by(|(_, a), (_, b)| a.total_cmp(b))
+        .unwrap();
+    assert!(
+        max_error < 1.0e-5,
+        "partition-dependent output at sample {max_error_index}: {max_error}"
+    );
+    assert!(
+        contiguous
+            .iter()
+            .skip(128)
+            .any(|sample| sample.abs() > 1.0e-4),
+        "test signal did not exercise the renderer"
+    );
 }
 
 #[path = "tests/misc.rs"]

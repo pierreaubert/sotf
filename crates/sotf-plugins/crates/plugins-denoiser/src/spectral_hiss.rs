@@ -11,15 +11,19 @@ const BYPASS_SECONDS: f32 = 0.005;
 
 /// Higher-latency stationary-hiss reducer using WOLA and a bounded
 /// minimum-statistics noise estimate.
+struct BypassFade {
+    mix: f32,
+    target: f32,
+    step: f32,
+}
+
 pub struct SpectralHissReducer {
     channels: usize,
     sample_rate: u32,
     cutoff_hz: f32,
     threshold_linear: f32,
     strength: f32,
-    bypass_mix: f32,
-    bypass_target: f32,
-    bypass_step: f32,
+    bypass: BypassFade,
     hops_per_slot: usize,
     gain_attack: f32,
     gain_release: f32,
@@ -55,9 +59,11 @@ impl SpectralHissReducer {
             cutoff_hz: 4_000.0,
             threshold_linear: 10.0_f32.powf(-30.0 / 20.0),
             strength: 0.5,
-            bypass_mix: 1.0,
-            bypass_target: 1.0,
-            bypass_step: 1.0,
+            bypass: BypassFade {
+                mix: 1.0,
+                target: 1.0,
+                step: 1.0,
+            },
             hops_per_slot: 12,
             gain_attack: 0.35,
             gain_release: 0.9,
@@ -101,7 +107,7 @@ impl SpectralHissReducer {
         let hop_seconds = HOP_SIZE as f32 / sample_rate as f32;
         self.gain_attack = (-hop_seconds / GAIN_ATTACK_SECONDS).exp();
         self.gain_release = (-hop_seconds / GAIN_RELEASE_SECONDS).exp();
-        self.bypass_step = 1.0 / (BYPASS_SECONDS * sample_rate as f32).max(1.0);
+        self.bypass.step = 1.0 / (BYPASS_SECONDS * sample_rate as f32).max(1.0);
         self.reset();
         Ok(())
     }
@@ -113,7 +119,7 @@ impl SpectralHissReducer {
     }
 
     pub fn set_enabled(&mut self, enabled: bool) {
-        self.bypass_target = if enabled { 1.0 } else { 0.0 };
+        self.bypass.target = if enabled { 1.0 } else { 0.0 };
     }
 
     pub const fn latency_samples(&self) -> usize {
@@ -150,7 +156,7 @@ impl SpectralHissReducer {
         }
         self.history_slot = 0;
         self.hops_in_slot = 0;
-        self.bypass_mix = self.bypass_target;
+        self.bypass.mix = self.bypass.target;
         self.high_band_noise.fill(0.0);
     }
 
@@ -309,7 +315,7 @@ impl SpectralHissReducer {
                 } else {
                     self.output[self.output_read * self.channels + ch]
                 };
-                buffer[base + ch] = dry + (wet - dry) * self.bypass_mix;
+                buffer[base + ch] = dry + (wet - dry) * self.bypass.mix;
                 if !startup {
                     self.output[self.output_read * self.channels + ch] = 0.0;
                 }
@@ -324,10 +330,10 @@ impl SpectralHissReducer {
                 self.output_read = (self.output_read + 1) & self.output_mask;
                 self.output_fill -= 1;
             }
-            if self.bypass_mix < self.bypass_target {
-                self.bypass_mix = (self.bypass_mix + self.bypass_step).min(self.bypass_target);
-            } else if self.bypass_mix > self.bypass_target {
-                self.bypass_mix = (self.bypass_mix - self.bypass_step).max(self.bypass_target);
+            if self.bypass.mix < self.bypass.target {
+                self.bypass.mix = (self.bypass.mix + self.bypass.step).min(self.bypass.target);
+            } else if self.bypass.mix > self.bypass.target {
+                self.bypass.mix = (self.bypass.mix - self.bypass.step).max(self.bypass.target);
             }
         }
     }

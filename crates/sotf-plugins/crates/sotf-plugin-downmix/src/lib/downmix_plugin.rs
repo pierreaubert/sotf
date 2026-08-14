@@ -587,10 +587,9 @@ impl DownmixPlugin {
     /// Lt = L + 0.707*C - 0.707*j*Ls + 0.707*j*Rs
     /// Rt = R + 0.707*C + 0.707*j*Ls - 0.707*j*Rs
     ///
-    /// where j = broadband 90° phase shift approximated by the LtRtAllpass Hilbert pair.
-    /// The Hilbert pair uses two complementary 2-stage allpass chains (A and B) whose
-    /// phase difference ∠A - ∠B ≈ 90° from ~150 Hz to ~12 kHz. The 90°-shifted signal
-    /// is `chain_a_out - chain_b_out`.
+    /// where j is the exact unity-magnitude positive-frequency quadrature
+    /// rotation implemented below in the fixed-latency WOLA path. DC and
+    /// Nyquist have no real-signal quadrature component.
     ///
     /// This matches the standard Dolby Surround matrix (Scheiber 1971) where
     /// S = Ls - Rs: Lt contains -j*Ls and +j*Rs; Rt contains +j*Ls and -j*Rs.

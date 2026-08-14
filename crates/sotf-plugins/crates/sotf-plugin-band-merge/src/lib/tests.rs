@@ -1,5 +1,5 @@
 use super::band_merge_plugin::{BandMergePlugin, BandSumPath, sum_bands};
-use super::misc::{MAX_BANDS, db_to_linear};
+use super::misc::{GAIN_SMOOTH_MS, MAX_BANDS, db_to_linear};
 use super::types::BandMergePluginParams;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, ProcessContext};
@@ -130,6 +130,91 @@ fn test_band_merge_with_mute() {
     // Only band 0 contributes: [1.0, 2.0]
     assert!((o[(frames - 1) * 2] - 1.0).abs() < 0.001);
     assert!((o[(frames - 1) * 2 + 1] - 2.0).abs() < 0.001);
+}
+
+fn render_mute_cycle(signal: &[f32], partition_pattern: &[usize]) -> Vec<f32> {
+    let mut plugin = BandMergePlugin::new(1, 2).unwrap();
+    plugin.initialize(48_000).unwrap();
+    let mut rendered = Vec::with_capacity(signal.len() * 2);
+
+    for muted in [true, false] {
+        plugin
+            .set_parameter(
+                ParameterId::from("band_0_mute"),
+                ParameterValue::Bool(muted),
+            )
+            .unwrap();
+        let mut offset = 0;
+        let mut partition = 0;
+        while offset < signal.len() {
+            let frames =
+                partition_pattern[partition % partition_pattern.len()].min(signal.len() - offset);
+            let mut input = Vec::with_capacity(frames * 2);
+            for &sample in &signal[offset..offset + frames] {
+                input.extend_from_slice(&[sample, 0.0]);
+            }
+            let mut output = vec![0.0; frames];
+            plugin
+                .process(&input, &mut output, &ProcessContext::new(48_000, frames))
+                .unwrap();
+            rendered.extend_from_slice(&output);
+            offset += frames;
+            partition += 1;
+        }
+    }
+    rendered
+}
+
+fn mute_cycle_oracle(signal: &[f32]) -> Vec<f32> {
+    let coeff = (-1.0f32 / (GAIN_SMOOTH_MS * 0.001 * 48_000.0)).exp();
+    let mut current = 1.0f32;
+    let mut expected = Vec::with_capacity(signal.len() * 2);
+    for target in [0.0f32, 1.0] {
+        for &sample in signal {
+            if (current - target).abs() < 1.0e-5 {
+                current = target;
+            } else {
+                current = target + coeff * (current - target);
+            }
+            expected.push(sample * current);
+        }
+    }
+    expected
+}
+
+#[test]
+fn mute_unmute_matches_one_pole_oracle_for_dc_and_sine_across_partitions() {
+    let frames = 1_537;
+    let dc = vec![0.625; frames];
+    let sine: Vec<f32> = (0..frames)
+        .map(|frame| 0.8 * (std::f32::consts::TAU * 997.0 * frame as f32 / 48_000.0).sin())
+        .collect();
+
+    for (name, signal) in [("dc", dc), ("sine", sine)] {
+        let whole = render_mute_cycle(&signal, &[frames]);
+        let irregular = render_mute_cycle(&signal, &[1, 17, 3, 251, 2, 64, 509, 7]);
+        let oracle = mute_cycle_oracle(&signal);
+        assert_eq!(
+            whole, irregular,
+            "{name} changed with callback partitioning"
+        );
+        for (sample, (&actual, &expected)) in whole.iter().zip(&oracle).enumerate() {
+            assert!(
+                (actual - expected).abs() < 2.0e-6,
+                "{name} sample {sample}: actual={actual}, expected={expected}"
+            );
+        }
+
+        let mute_peak = whole[..frames]
+            .iter()
+            .map(|sample| sample.abs())
+            .fold(0.0f32, f32::max);
+        let expected_peak = oracle[..frames]
+            .iter()
+            .map(|sample| sample.abs())
+            .fold(0.0f32, f32::max);
+        assert!((mute_peak - expected_peak).abs() < 2.0e-6, "{name} peak");
+    }
 }
 
 #[test]

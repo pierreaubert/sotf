@@ -15,6 +15,11 @@ use sotf_host::smoothing::Smoother;
 use std::any::Any;
 use std::sync::Arc;
 
+pub(super) struct TransitionSmoothers {
+    pub(super) mix: Smoother,
+    pub(super) bypass: Smoother,
+}
+
 /// A/B Comparison Plugin
 ///
 /// Allows fair comparison between two audio processing chains with automatic
@@ -45,7 +50,9 @@ pub struct ABComparePlugin {
     // State
     pub(super) mix_mode: MixMode,
     pub(super) mix: f32,
-    pub(super) mix_smoother: Smoother,
+    /// Crossfades path selection and latency-aligned bypass without expanding
+    /// the already-large outer plugin state.
+    pub(super) transition_smoothers: TransitionSmoothers,
     pub(super) selected_path: i32,
     pub(super) bypass: bool,
     pub(super) mix_transition_ms: f32,
@@ -204,6 +211,8 @@ impl ABComparePlugin {
         let auto_gain = AutoGain::new(num_channels, sample_rate, auto_gain_params)?;
 
         let mix_smoother = Smoother::new(params.mix, params.mix_transition_ms, sample_rate);
+        let bypass_value = if params.bypass { 1.0 } else { 0.0 };
+        let bypass_smoother = Smoother::new(bypass_value, params.mix_transition_ms, sample_rate);
 
         let band_mask_low_hz = params.band_mask_low_hz.clamp(20.0, 20000.0);
         let band_mask_high_hz = params.band_mask_high_hz.clamp(20.0, 20000.0);
@@ -242,7 +251,10 @@ impl ABComparePlugin {
             auto_gain,
             mix_mode: params.mix_mode,
             mix: params.mix,
-            mix_smoother,
+            transition_smoothers: TransitionSmoothers {
+                mix: mix_smoother,
+                bypass: bypass_smoother,
+            },
             selected_path: params.selected_path,
             bypass: params.bypass,
             mix_transition_ms: params.mix_transition_ms,
@@ -469,7 +481,9 @@ impl ABComparePlugin {
             && !self.difference_mode
             && !self.band_mask_active()
             && self.auto_gain.is_unity_gain_stable()
-            && (self.mix_smoother.current() - self.mix_smoother.target()).abs() < 1e-5
+            && (self.transition_smoothers.mix.current() - self.transition_smoothers.mix.target())
+                .abs()
+                < 1e-5
     }
 
     #[allow(dead_code)]
@@ -511,7 +525,7 @@ impl ABComparePlugin {
                 auto_gain_db: self.auto_gain.current_gain_db(),
                 peak_a: self.last_peaks[0],
                 peak_b: self.last_peaks[1],
-                current_mix: self.mix_smoother.current(),
+                current_mix: self.transition_smoothers.mix.current(),
                 bypass_active: self.bypass,
             };
             self.cache.update(|d| {
@@ -680,7 +694,7 @@ impl Plugin for ABComparePlugin {
                     .ok_or_else(|| "mix must be a float".to_string())?;
                 if v.is_finite() {
                     self.mix = v.clamp(-1.0, 1.0);
-                    self.mix_smoother.set_target(self.mix);
+                    self.transition_smoothers.mix.set_target(self.mix);
                     self.recompute_empty_path_fast_gain();
                 }
             }
@@ -702,7 +716,7 @@ impl Plugin for ABComparePlugin {
                 // Update mix target for binary mode
                 if self.mix_mode == MixMode::Binary {
                     let target = if self.selected_path == 0 { -1.0 } else { 1.0 };
-                    self.mix_smoother.set_target(target);
+                    self.transition_smoothers.mix.set_target(target);
                     self.recompute_empty_path_fast_gain();
                 }
             }
@@ -710,6 +724,9 @@ impl Plugin for ABComparePlugin {
                 self.bypass = value
                     .as_bool()
                     .ok_or_else(|| "bypass must be a boolean".to_string())?;
+                self.transition_smoothers
+                    .bypass
+                    .set_target(if self.bypass { 1.0 } else { 0.0 });
             }
             "auto_gain_enabled" => {
                 self.auto_gain.set_enabled(
@@ -751,7 +768,11 @@ impl Plugin for ABComparePlugin {
                     .ok_or_else(|| "mix_transition_ms must be a float".to_string())?;
                 if v.is_finite() {
                     self.mix_transition_ms = v.clamp(1.0, 500.0);
-                    self.mix_smoother
+                    self.transition_smoothers
+                        .mix
+                        .set_time(self.mix_transition_ms, self.sample_rate);
+                    self.transition_smoothers
+                        .bypass
                         .set_time(self.mix_transition_ms, self.sample_rate);
                 }
             }
@@ -932,7 +953,13 @@ impl Plugin for ABComparePlugin {
         self.delay_dry = delay_dry;
 
         // Reset mix smoother with new sample rate
-        self.mix_smoother = Smoother::new(self.mix, self.mix_transition_ms, sample_rate);
+        self.transition_smoothers.mix =
+            Smoother::new(self.mix, self.mix_transition_ms, sample_rate);
+        self.transition_smoothers.bypass = Smoother::new(
+            if self.bypass { 1.0 } else { 0.0 },
+            self.mix_transition_ms,
+            sample_rate,
+        );
         self.recompute_empty_path_fast_gain();
 
         // Rebuild band mask filters for new sample rate
@@ -963,7 +990,10 @@ impl Plugin for ABComparePlugin {
         self.delay_b.reset();
 
         // Reset mix smoother
-        self.mix_smoother.reset(self.mix);
+        self.transition_smoothers.mix.reset(self.mix);
+        self.transition_smoothers
+            .bypass
+            .reset(if self.bypass { 1.0 } else { 0.0 });
 
         // Reset peak values
         self.last_peaks = [0.0; 2];
@@ -986,7 +1016,7 @@ impl Plugin for ABComparePlugin {
             auto_gain_db: 0.0,
             peak_a: 0.0,
             peak_b: 0.0,
-            current_mix: self.mix_smoother.current(),
+            current_mix: self.transition_smoothers.mix.current(),
             bypass_active: self.bypass,
         };
         self.cache.update(|d| {
@@ -1021,17 +1051,12 @@ impl Plugin for ABComparePlugin {
             ));
         }
 
-        // Handle bypass
-        if self.bypass {
-            output.copy_from_slice(input);
-            self.delay_dry.process(output);
-            self.cache.update(|data| {
-                data.bypass_active = true;
-            });
-            return Ok(context.num_frames);
-        }
-
         if self.can_use_empty_path_fast_path() {
+            // Empty paths make wet and dry audio identical, but bypass state
+            // must still advance by the exact number of rendered samples.
+            // Resetting here made a transition restart on every callback and
+            // therefore made its duration depend on host block partitioning.
+            self.transition_smoothers.bypass.next_n(context.num_frames);
             self.process_empty_path_fast(input, output, context.num_frames)?;
             return Ok(context.num_frames);
         }
@@ -1043,6 +1068,12 @@ impl Plugin for ABComparePlugin {
                 Self::MAX_REALTIME_FRAMES
             ));
         }
+
+        // Always advance the latency-aligned dry path and both nested paths,
+        // even while bypass is fully engaged. This makes toggles continuous
+        // and prevents stateful nested processors from freezing in bypass.
+        output.copy_from_slice(input);
+        self.delay_dry.process(output);
 
         // Process path A
         self.host_a
@@ -1091,50 +1122,46 @@ impl Plugin for ABComparePlugin {
                 }
             }
         };
-        if (self.mix_smoother.target() - target_mix).abs() > f32::EPSILON {
-            self.mix_smoother.set_target(target_mix);
+        if (self.transition_smoothers.mix.target() - target_mix).abs() > f32::EPSILON {
+            self.transition_smoothers.mix.set_target(target_mix);
             self.recompute_empty_path_fast_gain();
         }
 
         // Phase inversion signs
         let sign_a: f32 = if self.phase_invert[0] { -1.0 } else { 1.0 };
         let sign_b: f32 = if self.phase_invert[1] { -1.0 } else { 1.0 };
+        let band_mask_active = self.band_mask_active();
 
         // Process sample-by-sample
         for frame in 0..context.num_frames {
             // Tick smoothers into loop
             let gain_linear = self.auto_gain.next_gain_linear();
-            let current_mix = self.mix_smoother.advance();
+            let current_mix = self.transition_smoothers.mix.advance();
+            let bypass_mix = self.transition_smoothers.bypass.advance();
 
             for ch in 0..self.num_channels {
                 let idx = frame * self.num_channels + ch;
+                let dry_sample = output[idx];
                 let sample_a = self.buffers[0][idx] * sign_a;
                 let sample_b = self.buffers[1][idx] * gain_linear * sign_b;
 
-                if self.difference_mode {
+                let mut wet_sample = if self.difference_mode {
                     // Difference mode: output A - B
-                    output[idx] = sample_a - sample_b;
+                    sample_a - sample_b
                 } else {
                     // Unity-preserving same-source crossfade.
                     // mix: -1 = pure A, +1 = pure B
                     let mix_01 = (current_mix + 1.0) / 2.0; // 0 = A, 1 = B
                     let gain_a = 1.0 - mix_01;
                     let gain_b = mix_01;
-                    output[idx] = sample_a * gain_a + sample_b * gain_b;
-                }
-            }
-        }
+                    sample_a * gain_a + sample_b * gain_b
+                };
 
-        // Apply band mask filter if the range is narrower than full spectrum
-        if self.band_mask_active() {
-            for frame in 0..context.num_frames {
-                for ch in 0..self.num_channels {
-                    let idx = frame * self.num_channels + ch;
-                    let mut s = output[idx] as f64;
-                    s = self.band_mask_hp[ch].process(s);
-                    s = self.band_mask_lp[ch].process(s);
-                    output[idx] = s as f32;
+                if band_mask_active {
+                    wet_sample = self.band_mask_hp[ch].process(wet_sample as f64) as f32;
+                    wet_sample = self.band_mask_lp[ch].process(wet_sample as f64) as f32;
                 }
+                output[idx] = wet_sample * (1.0 - bypass_mix) + dry_sample * bypass_mix;
             }
         }
 
@@ -1146,7 +1173,7 @@ impl Plugin for ABComparePlugin {
                 auto_gain_db: self.auto_gain.current_gain_db(),
                 peak_a: self.last_peaks[0],
                 peak_b: self.last_peaks[1],
-                current_mix: self.mix_smoother.current(),
+                current_mix: self.transition_smoothers.mix.current(),
                 bypass_active: self.bypass,
             };
             self.cache.update(|d| {

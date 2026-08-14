@@ -2,6 +2,8 @@ use super::super::*;
 use sotf_host::host::DawHost;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, ProcessContext};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Pass-through plugin that reports a fixed latency for testing.
 struct LatencyPassthrough {
@@ -47,6 +49,132 @@ impl Plugin for LatencyPassthrough {
     fn latency_samples(&self) -> usize {
         self.latency
     }
+}
+
+struct StatefulPassthrough {
+    channels: usize,
+    processed_frames: Arc<AtomicUsize>,
+    silent: bool,
+}
+
+impl Plugin for StatefulPassthrough {
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new("StatefulPassthrough", "0.1", "test")
+    }
+
+    fn input_channels(&self) -> usize {
+        self.channels
+    }
+
+    fn output_channels(&self) -> usize {
+        self.channels
+    }
+
+    fn parameters(&self) -> Vec<sotf_host::parameters::Parameter> {
+        vec![]
+    }
+
+    fn set_parameter(&mut self, _: ParameterId, _: ParameterValue) -> Result<(), String> {
+        Err("none".into())
+    }
+
+    fn get_parameter(&self, _: &ParameterId) -> Option<ParameterValue> {
+        None
+    }
+
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
+        self.processed_frames
+            .fetch_add(context.num_frames, Ordering::Relaxed);
+        if self.silent {
+            output.fill(0.0);
+        } else {
+            output.copy_from_slice(input);
+        }
+        Ok(context.num_frames)
+    }
+}
+
+fn render_mono_chunks(plugin: &mut ABComparePlugin, input: &[f32], chunks: &[usize]) -> Vec<f32> {
+    assert_eq!(chunks.iter().sum::<usize>(), input.len());
+    let mut output = Vec::with_capacity(input.len());
+    let mut offset = 0;
+    for &frames in chunks {
+        let mut block = vec![0.0; frames];
+        plugin
+            .process(
+                &input[offset..offset + frames],
+                &mut block,
+                &ProcessContext::new(1_000, frames),
+            )
+            .unwrap();
+        output.extend_from_slice(&block);
+        offset += frames;
+    }
+    output
+}
+
+fn silent_wet_latency_plugin(latency: usize) -> ABComparePlugin {
+    let channels = 1;
+    let mut plugin = ABComparePlugin::new(channels).unwrap();
+    plugin.initialize(1_000).unwrap();
+
+    let mut host_a = DawHost::new(channels, 1_000);
+    host_a
+        .add_plugin(Box::new(StatefulPassthrough {
+            channels,
+            processed_frames: Arc::new(AtomicUsize::new(0)),
+            silent: true,
+        }))
+        .unwrap();
+    host_a.build().unwrap();
+    plugin.host_a = host_a;
+    plugin.path_a_config = PathConfig::Plugin {
+        plugin_type: "silent-test".to_string(),
+        parameters: serde_json::json!({}),
+    };
+
+    let mut host_b = DawHost::new(channels, 1_000);
+    host_b
+        .add_plugin(Box::new(LatencyPassthrough { channels, latency }))
+        .unwrap();
+    host_b.build().unwrap();
+    plugin.host_b = host_b;
+    plugin.path_b_config = PathConfig::Plugin {
+        plugin_type: "latency-test".to_string(),
+        parameters: serde_json::json!({}),
+    };
+    plugin.update_latency_compensation().unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("mix_transition_ms"),
+            ParameterValue::Float(8.0),
+        )
+        .unwrap();
+    plugin
+        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(-1.0))
+        .unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("auto_gain_enabled"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+    plugin.reset();
+    plugin
+}
+
+fn one_pole_step(current: &mut f32, target: f32, coeff: f32) -> f32 {
+    if (*current - target).abs() < 1.0e-5 {
+        *current = target;
+    } else {
+        *current = target + coeff * (*current - target);
+    }
+    *current
 }
 
 #[test]
@@ -160,9 +288,42 @@ fn bypass_preserves_reported_latency() {
     host_b.build().unwrap();
     plugin.host_b = host_b;
     plugin.update_latency_compensation().unwrap();
+
+    // The test plugin only reports latency; it does not delay its own output.
+    // Select the genuinely delay-compensated A path before exercising bypass
+    // so both sides of the bypass crossfade share the advertised latency.
+    plugin
+        .set_parameter(
+            ParameterId::from("mix_transition_ms"),
+            ParameterValue::Float(1.0),
+        )
+        .unwrap();
+    plugin
+        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(-1.0))
+        .unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("auto_gain_enabled"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+    // The host is injected directly, so the serialized path config still
+    // looks empty. Disable the empty-path shortcut without changing pure-A
+    // output; otherwise that test-only mismatch would bypass both hosts.
+    plugin
+        .set_parameter(
+            ParameterId::from("phase_invert_b"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    plugin.reset();
     plugin
         .set_parameter(ParameterId::from("bypass"), ParameterValue::Bool(true))
         .unwrap();
+    assert_eq!(plugin.delay_a.len, latency_frames);
+    assert_eq!(plugin.delay_dry.len, latency_frames);
+    assert_eq!(plugin.transition_smoothers.mix.current(), -1.0);
+    assert_eq!(plugin.transition_smoothers.bypass.current(), 0.0);
 
     let mut input = vec![0.0; 32];
     input[0] = 1.0;
@@ -172,8 +333,229 @@ fn bypass_preserves_reported_latency() {
         .unwrap();
 
     assert_eq!(plugin.latency_samples(), latency_frames);
-    assert!(output[..latency_frames].iter().all(|sample| *sample == 0.0));
+    assert!(
+        output[..latency_frames].iter().all(|sample| *sample == 0.0),
+        "bypass emitted samples before reported latency: {:?}",
+        &output[..latency_frames]
+    );
     assert_eq!(output[latency_frames], 1.0);
+}
+
+#[test]
+fn bypass_crossfades_without_freezing_nested_path_state() {
+    let channels = 1;
+    let frames = 64;
+    let processed_frames = Arc::new(AtomicUsize::new(0));
+    let mut plugin = ABComparePlugin::new(channels).unwrap();
+    plugin.initialize(48_000).unwrap();
+
+    let mut host_a = DawHost::new(channels, 48_000);
+    host_a
+        .add_plugin(Box::new(StatefulPassthrough {
+            channels,
+            processed_frames: Arc::clone(&processed_frames),
+            silent: true,
+        }))
+        .unwrap();
+    host_a.build().unwrap();
+    plugin.host_a = host_a;
+    plugin.path_a_config = PathConfig::Plugin {
+        plugin_type: "stateful-test".to_string(),
+        parameters: serde_json::json!({}),
+    };
+    plugin.update_latency_compensation().unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("mix_transition_ms"),
+            ParameterValue::Float(5.0),
+        )
+        .unwrap();
+    plugin
+        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(-1.0))
+        .unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("auto_gain_enabled"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+
+    let input = vec![1.0; frames];
+    let mut output = vec![0.0; frames];
+    let context = ProcessContext::new(48_000, frames);
+    for _ in 0..64 {
+        plugin.process(&input, &mut output, &context).unwrap();
+    }
+    assert!(output.iter().all(|sample| sample.abs() < 1e-4));
+    let before_bypass = processed_frames.load(Ordering::Relaxed);
+
+    plugin
+        .set_parameter(ParameterId::from("bypass"), ParameterValue::Bool(true))
+        .unwrap();
+    plugin.process(&input, &mut output, &context).unwrap();
+
+    assert!(output[0] > 0.0 && output[0] < 1.0);
+    assert!(output.windows(2).all(|window| window[1] >= window[0]));
+    assert!(output[frames - 1] > output[0]);
+    assert_eq!(
+        processed_frames.load(Ordering::Relaxed),
+        before_bypass + frames,
+        "nested path must keep advancing throughout bypass"
+    );
+}
+
+#[test]
+fn empty_paths_advance_bypass_in_both_directions_across_callbacks() {
+    let mut plugin = ABComparePlugin::new(1).unwrap();
+    let mut whole_plugin = ABComparePlugin::new(1).unwrap();
+    plugin.initialize(48_000).unwrap();
+    whole_plugin.initialize(48_000).unwrap();
+    for candidate in [&mut plugin, &mut whole_plugin] {
+        candidate
+            .set_parameter(
+                ParameterId::from("mix_transition_ms"),
+                ParameterValue::Float(10.0),
+            )
+            .unwrap();
+        candidate
+            .set_parameter(ParameterId::from("bypass"), ParameterValue::Bool(true))
+            .unwrap();
+    }
+
+    let input = vec![0.375; 300];
+    let mut rendered = 0usize;
+    for frames in [1usize, 7, 31, 3, 89, 169] {
+        let mut output = vec![0.0; frames];
+        plugin
+            .process(
+                &input[rendered..rendered + frames],
+                &mut output,
+                &ProcessContext::new(48_000, frames),
+            )
+            .unwrap();
+        assert_eq!(output, input[rendered..rendered + frames]);
+        rendered += frames;
+    }
+    let after_bypass = plugin.transition_smoothers.bypass.current();
+    let coeff = (-1.0f32 / (10.0e-3 * 48_000.0)).exp();
+    let expected_up = 1.0 - coeff.powi(300);
+    assert!((after_bypass - expected_up).abs() < 2.0e-6);
+    assert!(after_bypass > 0.0 && after_bypass < 1.0);
+    let mut whole_output = vec![0.0; input.len()];
+    whole_plugin
+        .process(
+            &input,
+            &mut whole_output,
+            &ProcessContext::new(48_000, input.len()),
+        )
+        .unwrap();
+    assert_eq!(whole_output, input);
+    assert!(
+        (whole_plugin.transition_smoothers.bypass.current() - after_bypass).abs() < 2.0e-6,
+        "empty-path bypass-up state changed with callback partitioning"
+    );
+
+    for candidate in [&mut plugin, &mut whole_plugin] {
+        candidate
+            .set_parameter(ParameterId::from("bypass"), ParameterValue::Bool(false))
+            .unwrap();
+    }
+    rendered = 0;
+    for frames in [113usize, 2, 64, 121] {
+        let mut output = vec![0.0; frames];
+        plugin
+            .process(
+                &input[rendered..rendered + frames],
+                &mut output,
+                &ProcessContext::new(48_000, frames),
+            )
+            .unwrap();
+        assert_eq!(output, input[rendered..rendered + frames]);
+        rendered += frames;
+    }
+    let expected_down = coeff.powi(300) * after_bypass;
+    let after_unbypass = plugin.transition_smoothers.bypass.current();
+    assert!((after_unbypass - expected_down).abs() < 2.0e-6);
+    assert!(after_unbypass > 0.0 && after_unbypass < after_bypass);
+    whole_plugin
+        .process(
+            &input,
+            &mut whole_output,
+            &ProcessContext::new(48_000, input.len()),
+        )
+        .unwrap();
+    assert_eq!(whole_output, input);
+    assert!(
+        (whole_plugin.transition_smoothers.bypass.current() - after_unbypass).abs() < 2.0e-6,
+        "empty-path bypass-down state changed with callback partitioning"
+    );
+}
+
+#[test]
+fn latency_aligned_bypass_ramp_is_partition_invariant_in_both_directions() {
+    let latency = 5;
+    let mut whole = silent_wet_latency_plugin(latency);
+    let mut split = silent_wet_latency_plugin(latency);
+    whole
+        .set_parameter(ParameterId::from("bypass"), ParameterValue::Bool(true))
+        .unwrap();
+    split
+        .set_parameter(ParameterId::from("bypass"), ParameterValue::Bool(true))
+        .unwrap();
+
+    let up_input = vec![1.0; 137];
+    let up_whole = render_mono_chunks(&mut whole, &up_input, &[137]);
+    let up_split = render_mono_chunks(&mut split, &up_input, &[1, 3, 17, 2, 64, 50]);
+    assert_eq!(up_whole, up_split);
+
+    let coeff = (-1.0f32 / (8.0e-3 * 1_000.0)).exp();
+    let mut expected_mix = 0.0;
+    for (frame, &actual) in up_whole.iter().enumerate() {
+        let mix = one_pole_step(&mut expected_mix, 1.0, coeff);
+        let expected = if frame < latency { 0.0 } else { mix };
+        assert!(
+            (actual - expected).abs() < 2.0e-6,
+            "bypass-up frame {frame}: actual={actual}, expected={expected}"
+        );
+    }
+    assert_eq!(expected_mix, 1.0);
+
+    whole
+        .set_parameter(ParameterId::from("bypass"), ParameterValue::Bool(false))
+        .unwrap();
+    split
+        .set_parameter(ParameterId::from("bypass"), ParameterValue::Bool(false))
+        .unwrap();
+    let down_input = vec![1.0; 111];
+    let down_whole = render_mono_chunks(&mut whole, &down_input, &[111]);
+    let down_split = render_mono_chunks(&mut split, &down_input, &[5, 1, 29, 7, 69]);
+    assert_eq!(down_whole, down_split);
+    for (frame, &actual) in down_whole.iter().enumerate() {
+        let expected = one_pole_step(&mut expected_mix, 0.0, coeff);
+        assert!(
+            (actual - expected).abs() < 2.0e-6,
+            "bypass-down frame {frame}: actual={actual}, expected={expected}"
+        );
+    }
+    assert_eq!(expected_mix, 0.0);
+}
+
+#[test]
+fn settled_bypass_impulse_obeys_reported_latency_under_irregular_partitioning() {
+    let latency = 11;
+    let mut plugin = silent_wet_latency_plugin(latency);
+    plugin
+        .set_parameter(ParameterId::from("bypass"), ParameterValue::Bool(true))
+        .unwrap();
+    plugin.reset();
+
+    let mut impulse = vec![0.0; 47];
+    impulse[0] = 1.0;
+    let output = render_mono_chunks(&mut plugin, &impulse, &[2, 1, 7, 3, 19, 15]);
+    assert_eq!(plugin.latency_samples(), latency);
+    assert!(output[..latency].iter().all(|&sample| sample == 0.0));
+    assert_eq!(output[latency], 1.0);
+    assert!(output[latency + 1..].iter().all(|&sample| sample == 0.0));
 }
 
 #[test]

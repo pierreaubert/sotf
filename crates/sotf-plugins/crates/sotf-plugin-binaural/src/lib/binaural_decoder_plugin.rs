@@ -74,6 +74,25 @@ pub(super) struct BinauralCoefficients {
 pub(super) struct BinauralInput {
     pub(super) input_buffer: Vec<f32>,
     pub(super) input_fill: usize,
+    pub(super) read_pos: usize,
+    pub(super) write_pos: usize,
+}
+
+impl BinauralInput {
+    #[inline]
+    pub(super) fn copy_hop(
+        &self,
+        channel: usize,
+        fft_size: usize,
+        hop_size: usize,
+        output: &mut [f32],
+    ) {
+        let channel_offset = channel * fft_size;
+        let mask = fft_size - 1;
+        for (i, sample) in output.iter_mut().take(hop_size).enumerate() {
+            *sample = self.input_buffer[channel_offset + ((self.read_pos + i) & mask)];
+        }
+    }
 }
 
 pub(super) struct BinauralOutput {
@@ -98,7 +117,22 @@ pub(super) struct BinauralRoom {
     pub(super) reflection_read_pos: usize,
     pub(super) reflection_delay_mask: usize,
     pub(super) cached_reflections: Vec<Vec<Reflection>>,
+    /// Delay-sorted, same-delay/channel-merged rendering taps. Built off the
+    /// audio thread so each output sample computes one delay position per
+    /// group instead of one pseudo-random position per reflection.
+    pub(super) reflection_groups: Vec<ReflectionDelayGroup>,
     pub(super) fdn: math_audio_dsp::fdn::Fdn,
+}
+
+pub(super) struct ReflectionDelayGroup {
+    pub(super) delay_samples: usize,
+    pub(super) taps: Vec<ReflectionChannelTap>,
+}
+
+pub(super) struct ReflectionChannelTap {
+    pub(super) channel: usize,
+    pub(super) left_gain: f32,
+    pub(super) right_gain: f32,
 }
 
 pub(super) struct BinauralCrossfade {
@@ -291,6 +325,8 @@ impl BinauralDecoderPlugin {
             input: BinauralInput {
                 input_buffer: vec![0.0; fft_size * input_channels],
                 input_fill: 0,
+                read_pos: 0,
+                write_pos: 0,
             },
             output: BinauralOutput {
                 output_accumulator: vec![0.0; fft_size * 4 * 2],
@@ -307,6 +343,7 @@ impl BinauralDecoderPlugin {
                 reflection_read_pos: 0,
                 reflection_delay_mask: delay_size - 1,
                 cached_reflections: vec![Vec::new(); input_channels],
+                reflection_groups: Vec::new(),
                 fdn: math_audio_dsp::fdn::Fdn::new(8, sr),
             },
             crossfade: BinauralCrossfade {
@@ -565,10 +602,12 @@ impl BinauralDecoderPlugin {
                 .fill(Complex::new(0.0, 0.0));
 
             for &ch in &self.coefficients.main_channels {
-                let ch_offset = ch * n;
                 self.analysis.ifft_output_buf.fill(0.0);
-                self.analysis.ifft_output_buf[..self.config.hop_size].copy_from_slice(
-                    &self.input.input_buffer[ch_offset..ch_offset + self.config.hop_size],
+                self.input.copy_hop(
+                    ch,
+                    n,
+                    self.config.hop_size,
+                    &mut self.analysis.ifft_output_buf,
                 );
 
                 self.fft
@@ -731,10 +770,12 @@ impl BinauralDecoderPlugin {
             self.analysis.lfe_freq.fill(Complex::new(0.0, 0.0));
 
             for &ch in &self.coefficients.main_channels {
-                let ch_offset = ch * n;
                 self.analysis.ifft_output_buf.fill(0.0);
-                self.analysis.ifft_output_buf[..self.config.hop_size].copy_from_slice(
-                    &self.input.input_buffer[ch_offset..ch_offset + self.config.hop_size],
+                self.input.copy_hop(
+                    ch,
+                    n,
+                    self.config.hop_size,
+                    &mut self.analysis.ifft_output_buf,
                 );
 
                 self.fft
@@ -780,10 +821,12 @@ impl BinauralDecoderPlugin {
             self.analysis.lfe_freq.fill(Complex::new(0.0, 0.0));
         }
         for &ch in &self.coefficients.lfe_channels {
-            let ch_offset = ch * n;
             self.analysis.ifft_output_buf.fill(0.0);
-            self.analysis.ifft_output_buf[..self.config.hop_size].copy_from_slice(
-                &self.input.input_buffer[ch_offset..ch_offset + self.config.hop_size],
+            self.input.copy_hop(
+                ch,
+                n,
+                self.config.hop_size,
+                &mut self.analysis.ifft_output_buf,
             );
 
             self.fft
@@ -867,33 +910,69 @@ impl BinauralDecoderPlugin {
             if ext > 0.01 {
                 let mut rl = 0.0;
                 let mut rr = 0.0;
-                for (channel, reflections) in self.room.cached_reflections.iter().enumerate() {
-                    for ref_ in reflections {
-                        let r_pos = (self.room.reflection_read_pos + delay_mask + 1
-                            - ref_.delay_samples)
-                            & delay_mask;
-                        let source = self.room.reflection_delay_line
-                            [r_pos * self.config.input_channels + channel];
-                        let g = ref_.gain * ext;
-
-                        // Use HRTF-derived L/R gains when available (SSIR reflections),
-                        // otherwise fall back to simple azimuth-based panning (ISM reflections).
-                        let (lg, rg) = if let Some(hrtf) = &ref_.hrtf_filter {
-                            // Broadband energy from pre-computed HRTF gives perceptually
-                            // accurate ILD (interaural level difference) for each reflection DOA.
-                            (hrtf.left_gain_broadband, hrtf.right_gain_broadband)
-                        } else {
-                            (ref_.left_gain, ref_.right_gain)
-                        };
-
-                        rl += source * g * lg;
-                        rr += source * g * rg;
+                for group in &self.room.reflection_groups {
+                    let r_pos = (self.room.reflection_read_pos + delay_mask + 1
+                        - group.delay_samples)
+                        & delay_mask;
+                    let delayed_frame = &self.room.reflection_delay_line[r_pos
+                        * self.config.input_channels
+                        ..(r_pos + 1) * self.config.input_channels];
+                    for tap in &group.taps {
+                        let source = delayed_frame[tap.channel] * ext;
+                        rl += source * tap.left_gain;
+                        rr += source * tap.right_gain;
                     }
                 }
                 output[i * 2] += rl;
                 output[i * 2 + 1] += rr;
             }
             self.room.reflection_read_pos = (self.room.reflection_read_pos + 1) & delay_mask;
+        }
+    }
+
+    pub(super) fn rebuild_reflection_groups(&mut self) {
+        use std::collections::BTreeMap;
+
+        let mut merged = BTreeMap::<(usize, usize), (f32, f32)>::new();
+        for (channel, reflections) in self.room.cached_reflections.iter().enumerate() {
+            for reflection in reflections {
+                let (left, right) = reflection
+                    .hrtf_filter
+                    .as_ref()
+                    .map_or((reflection.left_gain, reflection.right_gain), |hrtf| {
+                        (hrtf.left_gain_broadband, hrtf.right_gain_broadband)
+                    });
+                let gains = merged
+                    .entry((reflection.delay_samples, channel))
+                    .or_insert((0.0, 0.0));
+                gains.0 += reflection.gain * left;
+                gains.1 += reflection.gain * right;
+            }
+        }
+
+        self.room.reflection_groups.clear();
+        for ((delay_samples, channel), (left_gain, right_gain)) in merged {
+            let needs_group = self
+                .room
+                .reflection_groups
+                .last()
+                .is_none_or(|group| group.delay_samples != delay_samples);
+            if needs_group {
+                self.room.reflection_groups.push(ReflectionDelayGroup {
+                    delay_samples,
+                    taps: Vec::new(),
+                });
+            }
+            self.room
+                .reflection_groups
+                .last_mut()
+                .expect("reflection group was just created")
+                .taps
+                .push(ReflectionChannelTap {
+                    channel,
+                    left_gain,
+                    right_gain,
+                });
         }
     }
 
@@ -1105,6 +1184,9 @@ impl BinauralDecoderPlugin {
 
     pub(super) fn reset_state(&mut self) {
         self.input.input_fill = 0;
+        self.input.read_pos = 0;
+        self.input.write_pos = 0;
+        self.input.input_buffer.fill(0.0);
         self.output.output_accumulator.fill(0.0);
         self.output.output_accumulator_fill = 0;
         self.output.next_add_position = 0;
@@ -1701,6 +1783,8 @@ impl Plugin for BinauralDecoderPlugin {
             self.crossfade.crossfade_remaining = 0;
         }
 
+        self.rebuild_reflection_groups();
+
         // Start the background HRTF rotation worker now that the SOFA (if any)
         // is loaded and the shared state is initialized.
         self.spawn_hrtf_update_thread();
@@ -1759,10 +1843,12 @@ impl Plugin for BinauralDecoderPlugin {
         while op < nf {
             if ip < nf {
                 let to_copy = (n - self.input.input_fill).min(nf - ip);
+                let input_mask = n - 1;
                 for ch in 0..self.config.input_channels {
                     let off = ch * n;
                     for i in 0..to_copy {
-                        self.input.input_buffer[off + self.input.input_fill + i] =
+                        let ring_pos = (self.input.write_pos + i) & input_mask;
+                        self.input.input_buffer[off + ring_pos] =
                             input[(ip + i) * self.config.input_channels + ch];
                     }
                 }
@@ -1779,17 +1865,12 @@ impl Plugin for BinauralDecoderPlugin {
                 self.room.reflection_write_pos =
                     (self.room.reflection_write_pos + to_copy) & self.room.reflection_delay_mask;
                 self.input.input_fill += to_copy;
+                self.input.write_pos = (self.input.write_pos + to_copy) & input_mask;
                 ip += to_copy;
             }
             while self.input.input_fill >= self.config.hop_size {
                 self.process_audio_block();
-                for ch in 0..self.config.input_channels {
-                    let off = ch * n;
-                    let remaining = self.input.input_fill - self.config.hop_size;
-                    self.input.input_buffer[off..off + self.input.input_fill]
-                        .copy_within(self.config.hop_size..self.input.input_fill, 0);
-                    self.input.input_buffer[off + remaining..off + self.input.input_fill].fill(0.0);
-                }
+                self.input.read_pos = (self.input.read_pos + self.config.hop_size) & (n - 1);
                 self.input.input_fill -= self.config.hop_size;
             }
 

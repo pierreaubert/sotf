@@ -11,6 +11,19 @@ use sotf_host::plugin::{
 use sotf_host::simd::apply_per_channel_gain_simd;
 use sotf_host::smoothing::Smoother;
 
+/// Failure from a borrowed realtime channel-state update.
+///
+/// This error is intentionally data-free so returning it never allocates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RealtimeChannelUpdateError {
+    /// The parameter is not a `mute_N`, `solo_N`, or `dim_N` channel control.
+    UnsupportedParameter,
+    /// The channel suffix is malformed or outside the configured layout.
+    InvalidChannel,
+    /// A channel control was not supplied as [`ParameterValue::Bool`].
+    TypeMismatch,
+}
+
 /// Channel mute/solo plugin
 ///
 /// Allows muting or soloing individual channels in a multi-channel stream.
@@ -59,6 +72,67 @@ pub struct ChannelMuteSoloPlugin {
 }
 
 impl ChannelMuteSoloPlugin {
+    fn decode_realtime_channel_value(
+        channels: usize,
+        id: &ParameterId,
+        value: &ParameterValue,
+    ) -> Result<(usize, u8, bool), RealtimeChannelUpdateError> {
+        let (suffix, state_kind) = if let Some(suffix) = id.0.strip_prefix("mute_") {
+            (suffix, 0_u8)
+        } else if let Some(suffix) = id.0.strip_prefix("solo_") {
+            (suffix, 1_u8)
+        } else if let Some(suffix) = id.0.strip_prefix("dim_") {
+            (suffix, 2_u8)
+        } else {
+            return Err(RealtimeChannelUpdateError::UnsupportedParameter);
+        };
+        let channel = suffix
+            .parse::<usize>()
+            .ok()
+            .filter(|&channel| channel < channels)
+            .ok_or(RealtimeChannelUpdateError::InvalidChannel)?;
+        let enabled = match value {
+            ParameterValue::Bool(enabled) => *enabled,
+            _ => return Err(RealtimeChannelUpdateError::TypeMismatch),
+        };
+        Ok((channel, state_kind, enabled))
+    }
+
+    /// Apply caller-owned channel controls without allocating or destroying
+    /// caller storage.
+    ///
+    /// This is the realtime parameter surface. It accepts only `mute_N`,
+    /// `solo_N`, and `dim_N` boolean values. The owning
+    /// [`ParametricInPlacePlugin::apply_values`] method remains a control-thread
+    /// API because consuming a [`ParameterSet`] necessarily destroys its tree
+    /// nodes and may handle serialized structural state.
+    pub fn apply_realtime_channel_values(
+        &mut self,
+        values: &ParameterSet,
+    ) -> Result<(), RealtimeChannelUpdateError> {
+        // Validate the complete batch before changing state so a malformed
+        // automation packet cannot leave only its earlier entries applied.
+        for (id, value) in values {
+            Self::decode_realtime_channel_value(self.channels, id, value)?;
+        }
+        for (id, value) in values {
+            let (channel, state_kind, enabled) =
+                Self::decode_realtime_channel_value(self.channels, id, value)?;
+            match state_kind {
+                0 => self.channel_states[channel].muted = enabled,
+                1 => self.channel_states[channel].soloed = enabled,
+                _ => self.channel_states[channel].dimmed = enabled,
+            }
+        }
+        if !values.is_empty() {
+            // Recomputing all channel targets once per batch keeps this path
+            // O(channels + updates), rather than O(channels * updates).
+            self.update_smoother_targets();
+            self.mark_params_dirty();
+        }
+        Ok(())
+    }
+
     /// Create a new channel mute/solo plugin
     pub fn new(channels: usize, enabled: bool) -> Self {
         let channel_states = vec![ChannelState::default(); channels];
@@ -349,6 +423,78 @@ impl ChannelMuteSoloPlugin {
             1.0
         }
     }
+
+    fn apply_value_refs(&mut self, values: &ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            // Per-channel dynamic parameters (mute_N / solo_N / dim_N).
+            if let Some(rest) = id.0.strip_prefix("mute_")
+                && rest.starts_with(|c: char| c.is_ascii_digit())
+            {
+                if let Ok(ch) = rest.parse::<usize>()
+                    && ch < self.channels
+                {
+                    self.channel_states[ch].muted = value.as_bool().unwrap_or(false);
+                    self.update_smoother_targets();
+                    self.mark_params_dirty();
+                } else {
+                    return Err(format!("Invalid channel index in {id}"));
+                }
+            } else if let Some(rest) = id.0.strip_prefix("solo_")
+                && rest.starts_with(|c: char| c.is_ascii_digit())
+            {
+                if let Ok(ch) = rest.parse::<usize>()
+                    && ch < self.channels
+                {
+                    self.channel_states[ch].soloed = value.as_bool().unwrap_or(false);
+                    self.update_smoother_targets();
+                    self.mark_params_dirty();
+                } else {
+                    return Err(format!("Invalid channel index in {id}"));
+                }
+            } else if let Some(rest) = id.0.strip_prefix("dim_")
+                && rest.starts_with(|c: char| c.is_ascii_digit())
+            {
+                if let Ok(ch) = rest.parse::<usize>()
+                    && ch < self.channels
+                {
+                    self.channel_states[ch].dimmed = value.as_bool().unwrap_or(false);
+                    self.update_smoother_targets();
+                    self.mark_params_dirty();
+                } else {
+                    return Err(format!("Invalid channel index in {id}"));
+                }
+            } else if id == &self.param_enabled {
+                self.set_enabled(value.as_bool().unwrap_or(true));
+                self.mark_params_dirty();
+            } else if id == &self.param_channel_states {
+                if let Some(json_str) = value.as_string() {
+                    let states: Vec<ChannelState> =
+                        serde_json::from_str(json_str).map_err(|e| e.to_string())?;
+                    self.set_channel_states(&states)?;
+                    self.mark_params_dirty();
+                } else {
+                    return Err("channel_states must be string".to_string());
+                }
+            } else if id == &self.param_dim_gain_db {
+                if let Some(v) = value.as_float() {
+                    self.set_dim_gain_db(v);
+                    self.mark_params_dirty();
+                } else {
+                    return Err("dim_gain_db must be float".to_string());
+                }
+            } else if id == &self.param_fade_ms {
+                if let Some(v) = value.as_float() {
+                    self.set_fade_ms(v);
+                    self.mark_params_dirty();
+                } else {
+                    return Err("fade_ms must be float".to_string());
+                }
+            } else {
+                return Err(format!("Unknown parameter: {id}"));
+            }
+        }
+        Ok(())
+    }
 }
 
 impl ParametricInPlacePlugin for ChannelMuteSoloPlugin {
@@ -445,77 +591,7 @@ impl ParametricInPlacePlugin for ChannelMuteSoloPlugin {
     }
 
     fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
-        for (id, value) in values {
-            // Per-channel dynamic parameters (mute_N / solo_N / dim_N).
-            // Only treat as per-channel if the suffix is a valid decimal index (starts with digit),
-            // to avoid false matches like "dim_gain_db" -> "dim_" prefix with "gain_db" suffix.
-            if let Some(rest) = id.0.strip_prefix("mute_")
-                && rest.starts_with(|c: char| c.is_ascii_digit())
-            {
-                if let Ok(ch) = rest.parse::<usize>()
-                    && ch < self.channels
-                {
-                    self.channel_states[ch].muted = value.as_bool().unwrap_or(false);
-                    self.update_smoother_targets();
-                    self.mark_params_dirty();
-                } else {
-                    return Err(format!("Invalid channel index in {}", id));
-                }
-            } else if let Some(rest) = id.0.strip_prefix("solo_")
-                && rest.starts_with(|c: char| c.is_ascii_digit())
-            {
-                if let Ok(ch) = rest.parse::<usize>()
-                    && ch < self.channels
-                {
-                    self.channel_states[ch].soloed = value.as_bool().unwrap_or(false);
-                    self.update_smoother_targets();
-                    self.mark_params_dirty();
-                } else {
-                    return Err(format!("Invalid channel index in {}", id));
-                }
-            } else if let Some(rest) = id.0.strip_prefix("dim_")
-                && rest.starts_with(|c: char| c.is_ascii_digit())
-            {
-                if let Ok(ch) = rest.parse::<usize>()
-                    && ch < self.channels
-                {
-                    self.channel_states[ch].dimmed = value.as_bool().unwrap_or(false);
-                    self.update_smoother_targets();
-                    self.mark_params_dirty();
-                } else {
-                    return Err(format!("Invalid channel index in {}", id));
-                }
-            } else if id == self.param_enabled {
-                self.set_enabled(value.as_bool().unwrap_or(true));
-                self.mark_params_dirty();
-            } else if id == self.param_channel_states {
-                if let Some(json_str) = value.as_string() {
-                    let states: Vec<ChannelState> =
-                        serde_json::from_str(json_str).map_err(|e| e.to_string())?;
-                    self.set_channel_states(&states)?;
-                    self.mark_params_dirty();
-                } else {
-                    return Err("channel_states must be string".to_string());
-                }
-            } else if id == self.param_dim_gain_db {
-                if let Some(v) = value.as_float() {
-                    self.set_dim_gain_db(v);
-                    self.mark_params_dirty();
-                } else {
-                    return Err("dim_gain_db must be float".to_string());
-                }
-            } else if id == self.param_fade_ms {
-                if let Some(v) = value.as_float() {
-                    self.set_fade_ms(v);
-                    self.mark_params_dirty();
-                } else {
-                    return Err("fade_ms must be float".to_string());
-                }
-            } else {
-                return Err(format!("Unknown parameter: {}", id));
-            }
-        }
-        Ok(())
+        self.apply_value_refs(&values)
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {

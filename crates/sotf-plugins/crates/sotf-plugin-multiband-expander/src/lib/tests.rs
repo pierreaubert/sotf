@@ -6,6 +6,7 @@ use super::multiband_expander_plugin::MultibandExpanderPlugin;
 use super::spectral_state::SpectralState;
 use super::types::GateState;
 use super::types::MultibandExpanderPluginParams;
+use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use sotf_host::detector::DetectionMode;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
@@ -184,6 +185,194 @@ fn test_mb_expander_unity_passthrough() {
     assert!(
         (0.7..1.3).contains(&ratio),
         "Unity ratio (1:1) should pass through, but RMS ratio is {ratio:.3}"
+    );
+}
+
+fn non_unity_peak_params(num_bands: usize) -> MultibandExpanderPluginParams {
+    let band = BandExpanderParams {
+        threshold_db: Some(-20.0),
+        ratio: Some(4.0),
+        attack_ms: Some(1.0),
+        release_ms: Some(50.0),
+        knee_db: Some(0.0),
+        range_db: Some(60.0),
+        hysteresis_db: Some(0.0),
+        hold_ms: Some(0.0),
+        ..Default::default()
+    };
+    MultibandExpanderPluginParams {
+        num_bands,
+        threshold_db: -20.0,
+        ratio: 4.0,
+        attack_ms: 1.0,
+        release_ms: 50.0,
+        knee_db: 0.0,
+        range_db: 60.0,
+        hysteresis_db: 0.0,
+        hold_ms: 0.0,
+        link_channels: true,
+        mix: 1.0,
+        detection_mode: "peak".to_string(),
+        processing_mode: "time_domain".to_string(),
+        lookahead_ms: 0.0,
+        sidechain_hpf_hz: Some(0.0),
+        bands: vec![band; num_bands],
+        ..Default::default()
+    }
+}
+
+fn render_expander_chunks(
+    plugin: &mut MultibandExpanderPlugin,
+    input: &[f32],
+    partition_pattern: &[usize],
+) -> Vec<f32> {
+    let mut output = Vec::with_capacity(input.len());
+    let mut offset = 0;
+    let mut partition = 0;
+    while offset < input.len() {
+        let frames =
+            partition_pattern[partition % partition_pattern.len()].min(input.len() - offset);
+        let mut block = input[offset..offset + frames].to_vec();
+        plugin
+            .process_in_place(&mut block, &ProcessContext::new(48_000, frames))
+            .unwrap();
+        output.extend_from_slice(&block);
+        offset += frames;
+        partition += 1;
+    }
+    output
+}
+
+fn independent_single_band_peak_oracle(input: &[f32]) -> Vec<f32> {
+    let detector_release = (-1.0f32 / (5.0e-3 * 48_000.0)).exp();
+    let attenuation_attack = (-1.0f32 / (1.0e-3 * 48_000.0)).exp();
+    let attenuation_release = (-1.0f32 / (50.0e-3 * 48_000.0)).exp();
+    let mut peak_envelope = 0.0f32;
+    let mut attenuation = 0.0f32;
+    let mut state = GateState::Open;
+    let mut output = Vec::with_capacity(input.len());
+
+    for &sample in input {
+        peak_envelope = sample.abs().max(detector_release * peak_envelope);
+        let detector_db = 20.0 * fast_log10(peak_envelope.max(1.0e-10));
+        let target = match state {
+            GateState::Open => {
+                if detector_db < -20.0 {
+                    state = GateState::Hold;
+                }
+                0.0
+            }
+            GateState::Hold => {
+                if detector_db >= -20.0 {
+                    state = GateState::Open;
+                    0.0
+                } else {
+                    state = GateState::Closing;
+                    ((-20.0 - detector_db) * (1.0 - 1.0 / 4.0)).min(60.0)
+                }
+            }
+            GateState::Closing => {
+                if detector_db >= -20.0 {
+                    state = GateState::Open;
+                    0.0
+                } else {
+                    ((-20.0 - detector_db) * (1.0 - 1.0 / 4.0)).min(60.0)
+                }
+            }
+        };
+        let coeff = if target > attenuation {
+            attenuation_attack
+        } else {
+            attenuation_release
+        };
+        attenuation = target + coeff * (attenuation - target);
+        output.push(sample * fast_pow10(-attenuation / 20.0));
+    }
+    output
+}
+
+#[test]
+fn single_band_two_tone_matches_independent_non_unity_broadband_detector_oracle() {
+    let frames = 2_047;
+    let input: Vec<f32> = (0..frames)
+        .map(|frame| {
+            let t = frame as f32 / 48_000.0;
+            0.006 * (std::f32::consts::TAU * 233.0 * t).sin()
+                + 0.004 * (std::f32::consts::TAU * 4_217.0 * t).sin()
+        })
+        .collect();
+    let oracle = independent_single_band_peak_oracle(&input);
+
+    let mut whole = MultibandExpanderPlugin::with_params(1, non_unity_peak_params(1));
+    whole.initialize(48_000).unwrap();
+    let whole_output = render_expander_chunks(&mut whole, &input, &[frames]);
+
+    let mut irregular = MultibandExpanderPlugin::with_params(1, non_unity_peak_params(1));
+    irregular.initialize(48_000).unwrap();
+    let irregular_output =
+        render_expander_chunks(&mut irregular, &input, &[1, 19, 3, 251, 2, 64, 509, 7]);
+
+    assert_eq!(whole_output, irregular_output);
+    for (frame, (&actual, &expected)) in whole_output.iter().zip(&oracle).enumerate() {
+        assert!(
+            (actual - expected).abs() < 3.0e-6,
+            "frame {frame}: actual={actual}, expected={expected}"
+        );
+    }
+    assert!(whole.band_expanders[0].envelope[0] > 1.0);
+    assert_eq!(whole.band_expanders[0].gate_state[0], GateState::Closing);
+}
+
+#[test]
+fn broadband_and_multiband_detectors_make_distinct_two_tone_decisions() {
+    let frames = 48_000;
+    let input: Vec<f32> = (0..frames)
+        .map(|frame| {
+            let t = frame as f32 / 48_000.0;
+            0.4 * (std::f32::consts::TAU * 100.0 * t).sin()
+                + 0.005 * (std::f32::consts::TAU * 5_000.0 * t).sin()
+        })
+        .collect();
+
+    let mut broadband = MultibandExpanderPlugin::with_params(1, non_unity_peak_params(1));
+    broadband.initialize(48_000).unwrap();
+    let broadband_output = render_expander_chunks(&mut broadband, &input, &[257, 31, 1, 509]);
+
+    let mut multiband_params = non_unity_peak_params(2);
+    multiband_params.crossover_frequencies = vec![1_000.0];
+    let mut multiband = MultibandExpanderPlugin::with_params(1, multiband_params);
+    multiband.initialize(48_000).unwrap();
+    let multiband_output = render_expander_chunks(&mut multiband, &input, &[257, 31, 1, 509]);
+
+    assert_eq!(broadband.band_expanders[0].gate_state[0], GateState::Open);
+    assert!(broadband.band_expanders[0].envelope[0] < 1.0e-3);
+    assert_eq!(multiband.band_expanders[0].gate_state[0], GateState::Open);
+    assert_eq!(
+        multiband.band_expanders[1].gate_state[0],
+        GateState::Closing
+    );
+    assert!(multiband.band_expanders[1].envelope[0] > 6.0);
+
+    let start = frames / 2;
+    let project_5khz = |signal: &[f32]| {
+        let (sin_sum, cos_sum) = signal[start..].iter().enumerate().fold(
+            (0.0f64, 0.0f64),
+            |(sin_sum, cos_sum), (offset, &sample)| {
+                let frame = start + offset;
+                let phase = std::f64::consts::TAU * 5_000.0 * frame as f64 / 48_000.0;
+                (
+                    sin_sum + sample as f64 * phase.sin(),
+                    cos_sum + sample as f64 * phase.cos(),
+                )
+            },
+        );
+        2.0 * sin_sum.hypot(cos_sum) / (frames - start) as f64
+    };
+    let broadband_5khz = project_5khz(&broadband_output);
+    let multiband_5khz = project_5khz(&multiband_output);
+    assert!(
+        multiband_5khz < broadband_5khz * 0.45,
+        "independent high-band detector should attenuate the quiet tone: broadband={broadband_5khz}, multiband={multiband_5khz}"
     );
 }
 
