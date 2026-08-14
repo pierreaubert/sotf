@@ -1,4 +1,7 @@
-use super::{PlaybackCommand, ProcessingMessage, ThreadEvent};
+use super::{
+    HostUpdateTicket, PlaybackCommand, PlaybackConfiguration, PlaybackReconfigureRequest,
+    ProcessingMessage, ThreadEvent,
+};
 use crate::OutputAccessMode;
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 
@@ -16,11 +19,21 @@ mod runtime;
 mod tests;
 mod types;
 
+#[cfg(feature = "playback-runtime-harness")]
+pub(in crate::engine) use apply::apply_volume_clamp;
+#[allow(unused_imports)]
+#[cfg(any(test, feature = "playback-runtime-harness"))]
 pub(in crate::engine) use frame_writer::{
     FrameWriteOutcome, required_conversion_capacity, write_frame_to_ring,
 };
 use misc::send_playback_event;
+#[cfg(feature = "playback-runtime-harness")]
+pub(in crate::engine) use misc::write_chunk_bulk;
+#[cfg(feature = "playback-runtime-harness")]
+pub(in crate::engine) use playback_state::{PlaybackState, read_ring_buffer};
 use runtime::run_playback_thread;
+
+const PLAYBACK_RECONFIGURE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Playback thread handle
 pub struct PlaybackThread {
@@ -48,7 +61,7 @@ impl PlaybackThread {
     )]
     pub fn new(
         message_rx: Receiver<ProcessingMessage>,
-        event_tx: Sender<ThreadEvent>,
+        event_tx: crossbeam::channel::Sender<ThreadEvent>,
         sample_rate: u32,
         buffer_ms: u32,
         channels: usize,
@@ -65,26 +78,40 @@ impl PlaybackThread {
             .name("playback".to_string())
             .spawn(move || {
                 let error_tx = event_tx.clone();
-                if let Err(e) = run_playback_thread(
-                    message_rx,
-                    command_rx,
-                    event_tx,
-                    sample_rate,
-                    buffer_ms,
-                    channels,
-                    frame_size,
-                    output_device,
-                    recycle_tx,
-                    allow_virtual_output,
-                    output_access,
-                    startup_tx,
-                ) {
-                    log::debug!("[Playback Thread] Error: {}", e);
-                    send_playback_event(
-                        &error_tx,
-                        ThreadEvent::ProcessingError(format!("Playback thread error: {}", e)),
-                        "thread error",
-                    );
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    run_playback_thread(
+                        message_rx,
+                        command_rx,
+                        event_tx,
+                        sample_rate,
+                        buffer_ms,
+                        channels,
+                        frame_size,
+                        output_device,
+                        recycle_tx,
+                        allow_virtual_output,
+                        output_access,
+                        startup_tx,
+                    )
+                }));
+                match result {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => {
+                        log::error!("[Playback Thread] Error: {}", e);
+                        send_playback_event(
+                            &error_tx,
+                            ThreadEvent::ProcessingError(format!("Playback thread error: {e}")),
+                            "thread error",
+                        );
+                    }
+                    Err(_) => {
+                        log::error!("[Playback Thread] Panicked");
+                        send_playback_event(
+                            &error_tx,
+                            ThreadEvent::ThreadPanic("playback".to_string()),
+                            "thread panic",
+                        );
+                    }
                 }
             })
             .map_err(|e| format!("Failed to spawn playback thread: {}", e))?;
@@ -104,6 +131,11 @@ impl PlaybackThread {
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 drop(command_tx);
+                if super::join_timeout(thread_handle, std::time::Duration::from_secs(1)).is_err() {
+                    log::warn!(
+                        "[Playback Thread] Startup timed out and worker did not exit within 1s; leaving it detached"
+                    );
+                }
                 Err("Playback thread startup timed out after 10s".to_string())
             }
         }
@@ -114,6 +146,57 @@ impl PlaybackThread {
         self.command_tx
             .send(command)
             .map_err(|e| format!("Failed to send command: {}", e))
+    }
+
+    pub(in crate::engine) fn reconfigure(
+        &self,
+        sample_rate: u32,
+        channels: usize,
+    ) -> Result<PlaybackConfiguration, String> {
+        let (reply_tx, reply_rx) = std::sync::mpsc::sync_channel(1);
+        let ticket = HostUpdateTicket::new();
+        self.send_command(PlaybackCommand::Reconfigure(PlaybackReconfigureRequest {
+            requested: PlaybackConfiguration {
+                sample_rate,
+                channels,
+            },
+            ticket: ticket.clone(),
+            reply_tx,
+        }))?;
+
+        match reply_rx.recv_timeout(PLAYBACK_RECONFIGURE_TIMEOUT) {
+            Ok(result) => result,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                Err("Playback reconfiguration reply channel disconnected".to_string())
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) if ticket.cancel() => Err(format!(
+                "Playback reconfiguration timed out and was cancelled before installation after {}ms",
+                PLAYBACK_RECONFIGURE_TIMEOUT.as_millis()
+            )),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                loop {
+                    match reply_rx.recv_timeout(std::time::Duration::from_millis(50)) {
+                        Ok(result) => break result,
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                            break Err("Playback reconfiguration worker exited before replying"
+                                .to_string());
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) if self.is_finished() => {
+                            break Err("Playback reconfiguration worker stopped before replying"
+                                .to_string());
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    }
+                }
+            }
+        }
+    }
+
+    /// Whether the worker has stopped before the manager requested shutdown.
+    pub fn is_finished(&self) -> bool {
+        self.thread_handle
+            .as_ref()
+            .is_some_and(std::thread::JoinHandle::is_finished)
     }
 
     /// Shutdown the playback thread

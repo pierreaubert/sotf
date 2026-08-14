@@ -21,6 +21,13 @@ use std::time::{Duration, Instant};
 const SPIN_MS_DELAY_WATCHER: u64 = 300;
 const DEBOUNCE_MS: u64 = 300; // Wait 300ms after last file change before triggering reload
 
+#[derive(Clone, Copy)]
+struct DebounceState {
+    last_event_time: Instant,
+    event_pending: bool,
+    last_sent_time: Instant,
+}
+
 /// Config watcher events
 #[derive(Debug, Clone)]
 pub enum ConfigEvent {
@@ -44,7 +51,9 @@ impl ConfigWatcher {
     ///
     /// # Arguments
     /// - `config_path`: Optional path to config file to watch
-    /// - `watch_signals`: Whether to watch Unix signals (SIGHUP, SIGTERM, SIGINT)
+    /// - `watch_signals`: Whether to install process-global Unix signal handlers
+    ///   (SIGHUP, SIGTERM, SIGINT). Embedders should pass `false` so the engine
+    ///   does not claim signal handling from the host application.
     pub fn new(config_path: Option<PathBuf>, watch_signals: bool) -> Result<Self, String> {
         let (event_tx, event_rx) = channel();
         let (shutdown_tx, shutdown_rx) = channel();
@@ -132,11 +141,15 @@ fn run_config_watcher(
             .and_then(|metadata| metadata.modified())
             .ok()
     });
-    let mut last_poll_sent = Instant::now() - Duration::from_millis(DEBOUNCE_MS);
+    let debounce_state = Arc::new(Mutex::new(DebounceState {
+        last_event_time: Instant::now(),
+        event_pending: false,
+        last_sent_time: Instant::now(),
+    }));
 
     // Setup file watcher if config path provided
     let _file_watcher = if let Some(ref path) = config_path {
-        match setup_file_watcher(path.clone(), event_tx.clone()) {
+        match setup_file_watcher(path.clone(), Arc::clone(&debounce_state)) {
             Ok(watcher) => Some(watcher),
             Err(e) => {
                 startup_tx.send(Err(e.clone())).ok();
@@ -189,7 +202,7 @@ fn run_config_watcher(
         }
 
         // Check for shutdown request from parent (with short timeout for responsiveness)
-        match shutdown_rx.recv_timeout(Duration::from_millis(SPIN_MS_DELAY_WATCHER)) {
+        match shutdown_rx.recv_timeout(Duration::from_millis(SPIN_MS_DELAY_WATCHER / 2)) {
             Ok(_) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                 log::debug!("[Config Watcher] Shutting down");
                 break;
@@ -201,12 +214,34 @@ fn run_config_watcher(
                     && Some(modified) != last_config_modified
                 {
                     last_config_modified = Some(modified);
-                    if last_poll_sent.elapsed() >= Duration::from_millis(DEBOUNCE_MS) {
-                        event_tx.send(ConfigEvent::ConfigChanged(path.clone())).ok();
-                        last_poll_sent = Instant::now();
-                    }
+                    let mut state = debounce_state
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    state.last_event_time = Instant::now();
+                    state.event_pending = true;
                 }
             }
+        }
+
+        let reload_path = {
+            let mut state = debounce_state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let ready = state.event_pending
+                && state.last_event_time.elapsed().as_millis() as u64 >= DEBOUNCE_MS
+                && state.last_sent_time.elapsed().as_millis() as u64 >= DEBOUNCE_MS;
+            if ready {
+                state.event_pending = false;
+                state.last_sent_time = Instant::now();
+                config_path.clone()
+            } else {
+                None
+            }
+        };
+        if let Some(path) = reload_path
+            && event_tx.send(ConfigEvent::ConfigChanged(path)).is_err()
+        {
+            break;
         }
     }
 
@@ -216,70 +251,14 @@ fn run_config_watcher(
 /// Setup file watcher using notify crate with debouncing
 fn setup_file_watcher(
     config_path: PathBuf,
-    event_tx: Sender<ConfigEvent>,
+    debounce_state: Arc<Mutex<DebounceState>>,
 ) -> Result<notify::RecommendedWatcher, String> {
     use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 
     log::debug!("[Config Watcher] Watching file: {:?}", config_path);
 
-    let event_config_path = config_path.clone();
     let match_config_path = normalized_config_path(&config_path);
     let config_path_clone = match_config_path.clone();
-
-    // Debouncing state: tracks the last event time and if event is pending
-    #[derive(Clone, Copy)]
-    struct DebounceState {
-        last_event_time: Instant,
-        event_pending: bool,
-        last_sent_time: Instant,
-    }
-
-    let debounce_state = Arc::new(Mutex::new(DebounceState {
-        last_event_time: Instant::now(),
-        event_pending: false,
-        last_sent_time: Instant::now(),
-    }));
-
-    let debounce_event_tx = event_tx.clone();
-    let debounce_config_path = event_config_path;
-
-    // Spawn a debouncing thread that checks periodically
-    let debounce_state_clone = Arc::clone(&debounce_state);
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(Duration::from_millis(DEBOUNCE_MS / 2));
-
-            let should_send = {
-                let state = debounce_state_clone.lock().unwrap();
-                let elapsed_since_event = state.last_event_time.elapsed().as_millis() as u64;
-                let elapsed_since_sent = state.last_sent_time.elapsed().as_millis() as u64;
-
-                // Send if:
-                // 1. There's a pending event
-                // 2. Enough time has passed since the last file change
-                // 3. We haven't sent an event recently (avoid duplicates)
-                state.event_pending
-                    && elapsed_since_event >= DEBOUNCE_MS
-                    && elapsed_since_sent >= DEBOUNCE_MS
-            };
-
-            if should_send {
-                log::debug!("[Config Watcher] Debounce period elapsed, triggering reload");
-                if debounce_event_tx
-                    .send(ConfigEvent::ConfigChanged(debounce_config_path.clone()))
-                    .is_err()
-                {
-                    // Channel closed, exit thread
-                    break;
-                }
-
-                // Mark event as sent
-                let mut state = debounce_state_clone.lock().unwrap();
-                state.event_pending = false;
-                state.last_sent_time = Instant::now();
-            }
-        }
-    });
 
     let mut watcher = RecommendedWatcher::new(
         move |res: Result<Event, notify::Error>| {
@@ -295,7 +274,9 @@ fn setup_file_watcher(
                             config_path_clone
                         );
                         // Update the debounce state
-                        let mut state = debounce_state.lock().unwrap();
+                        let mut state = debounce_state
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
                         state.last_event_time = Instant::now();
                         state.event_pending = true;
                     }

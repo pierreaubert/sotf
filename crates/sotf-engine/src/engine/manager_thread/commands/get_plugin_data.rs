@@ -7,12 +7,13 @@ pub struct GetPluginDataCommand(pub usize);
 impl ManagerCommandHandler for GetPluginDataCommand {
     fn execute(&self, ctx: &mut ManagerContext) -> ManagerResponse {
         let index = self.0;
-        if let Err(e) = ctx
+        let request_id = match ctx
             .processing
             .send_command(ProcessingCommand::GetPluginData(index))
         {
-            return ManagerResponse::Error(e);
-        }
+            Ok(request_id) => request_id,
+            Err(e) => return ManagerResponse::Error(e),
+        };
 
         // Wait for response from processing thread with timeout.
         // GetPluginData is time-sensitive for UI, so we wait briefly.
@@ -20,7 +21,7 @@ impl ManagerCommandHandler for GetPluginDataCommand {
         let timeout = std::time::Duration::from_millis(100);
 
         loop {
-            if let Some(response) = ctx.processing.try_recv_response() {
+            if let Some(response) = ctx.processing.try_recv_response_for(request_id) {
                 match response {
                     super::super::super::ProcessingResponse::PluginData(data) => {
                         return ManagerResponse::PluginData(data);
@@ -36,10 +37,12 @@ impl ManagerCommandHandler for GetPluginDataCommand {
             }
 
             if start.elapsed() > timeout {
+                ctx.processing.cancel_request(request_id);
+                ctx.processing.abandon_request(request_id);
                 return ManagerResponse::Error("Timeout waiting for plugin data".to_string());
             }
 
-            std::thread::yield_now();
+            std::thread::sleep(std::time::Duration::from_millis(1));
         }
     }
 }

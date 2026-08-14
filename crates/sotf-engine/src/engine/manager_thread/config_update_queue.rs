@@ -1,7 +1,7 @@
 use super::super::{
-    AudioEngineState, ConfigWatcher, DecoderThread, EngineConfig, GcThread, ManagerCommand,
-    ManagerResponse, PlaybackCommand, PlaybackThread, PluginDataCache, ProcessingCommand,
-    ProcessingThread, ThreadEvent, plan_engine_features,
+    AudioEngineState, ConfigWatcher, DecoderThread, EngineConfig, GcThread, ManagerResponse,
+    PlaybackCommand, PlaybackThread, PluginDataCache, ProcessingCommand, ProcessingThread,
+    ThreadEvent, plan_engine_features,
 };
 use super::apply::{apply_plugin_update, store_plugin_build_diagnostics};
 use super::config_error::ensure_output_channel_capacity;
@@ -12,7 +12,6 @@ use super::consts::MAX_CONFIG_QUEUE_SIZE;
 use super::consts::MAX_THREAD_EVENTS_PER_TICK;
 use super::consts::PLUGIN_INIT_TIMEOUT_MS;
 use super::consts::SPIN_MS_CHECK_MANAGER;
-use super::consts::SPIN_MS_SLEEP_MANAGER;
 use super::handle::handle_command;
 use super::handle::handle_config_event;
 use super::handle::handle_thread_event;
@@ -21,15 +20,16 @@ use super::misc::initial_engine_state_from_config;
 use super::misc::start_network_stream_server;
 use super::types::ConfigUpdatePriority;
 use super::types::PendingConfigUpdate;
+use super::{ManagerReply, ManagerRequest};
 use crate::engine::processing_thread::build_plugin_host_with_policy;
 use crate::{DsdOutputStatus, OutputAccessStatus};
 use arc_swap::ArcSwap;
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
+use std::sync::mpsc::{Receiver, Sender, sync_channel};
 
 fn drain_thread_events(
-    event_rx: &Receiver<ThreadEvent>,
+    event_rx: &crossbeam::channel::Receiver<ThreadEvent>,
     state: &Arc<ArcSwap<AudioEngineState>>,
 ) -> usize {
     let mut handled = 0;
@@ -47,8 +47,6 @@ fn drain_thread_events(
 pub(in crate::engine::manager_thread) struct ConfigUpdateQueue {
     pub(in crate::engine::manager_thread) queue: VecDeque<PendingConfigUpdate>,
     pub(in crate::engine::manager_thread) update_in_progress: bool,
-    pub(in crate::engine::manager_thread) last_working_config:
-        Option<Vec<super::super::PluginConfig>>,
     pub(in crate::engine::manager_thread) metrics: ConfigUpdateMetrics,
 }
 
@@ -57,14 +55,8 @@ impl ConfigUpdateQueue {
         Self {
             queue: VecDeque::new(),
             update_in_progress: false,
-            last_working_config: None,
             metrics: ConfigUpdateMetrics::new(),
         }
-    }
-
-    /// Save a working config for rollback
-    pub(super) fn save_working_config(&mut self, plugins: Vec<super::super::PluginConfig>) {
-        self.last_working_config = Some(plugins);
     }
 
     /// Add a config update to the queue with priority-based management
@@ -155,11 +147,6 @@ impl ConfigUpdateQueue {
         }
     }
 
-    /// Check if currently processing an update
-    pub(in crate::engine::manager_thread) fn is_processing(&self) -> bool {
-        self.update_in_progress
-    }
-
     /// Get current metrics
     #[allow(dead_code)]
     pub(super) fn get_metrics(&self) -> &ConfigUpdateMetrics {
@@ -169,14 +156,12 @@ impl ConfigUpdateQueue {
     /// Log metrics summary
     pub(super) fn log_metrics_summary(&self) {
         log::info!(
-            "[Manager Thread] Config Update Metrics: {} total, {} success ({:.1}%), {} failed, {} rejected, {} rollbacks ({} successful), avg {:.0}ms, max queue depth: {}",
+            "[Manager Thread] Config Update Metrics: {} total, {} success ({:.1}%), {} failed, {} rejected, avg {:.0}ms, max queue depth: {}",
             self.metrics.total_updates,
             self.metrics.successful_updates,
             self.metrics.success_rate() * 100.0,
             self.metrics.failed_updates,
             self.metrics.rejected_updates,
-            self.metrics.rollback_attempts,
-            self.metrics.successful_rollbacks,
             self.metrics.avg_update_time_ms(),
             self.metrics.max_queue_depth
         );
@@ -186,8 +171,8 @@ impl ConfigUpdateQueue {
 /// Main manager thread function
 pub(super) fn run_manager_thread(
     config: EngineConfig,
-    command_rx: Receiver<ManagerCommand>,
-    response_tx: Sender<ManagerResponse>,
+    command_rx: Receiver<ManagerRequest>,
+    response_tx: Sender<ManagerReply>,
     state: Arc<ArcSwap<AudioEngineState>>,
     plugin_data_cache: PluginDataCache,
 ) -> Result<(), String> {
@@ -226,7 +211,9 @@ pub(super) fn run_manager_thread(
 
     let (decoder_tx, decoder_rx) = sync_channel(queue_capacity);
     let (processing_tx, processing_rx) = sync_channel(queue_capacity);
-    let (event_tx, event_rx) = channel(); // Events can be unbounded
+    // Event delivery is bounded so a stalled manager cannot force allocations
+    // on decoder/processing/playback threads. Producers use nonblocking sends.
+    let (event_tx, event_rx) = crossbeam::channel::bounded(256);
 
     // Use bounded channels for recycling to avoid growth allocations.
     // Double capacity to ensure plenty of buffers are available for the entire pipeline.
@@ -279,13 +266,13 @@ pub(super) fn run_manager_thread(
     }
 
     // Determine actual output channel count by loading plugin chain first
+    let mut actual_output_sample_rate = config.output_sample_rate;
     let mut actual_output_channels = if !config.plugins.is_empty() {
         log::info!(
             "[Manager Thread] Loading initial plugin chain ({} plugins)...",
             config.plugins.len()
         );
 
-        let start = std::time::Instant::now();
         // Build host locally to avoid blocking audio thread later
         let host_result = build_plugin_host_with_policy(
             &config.plugins,
@@ -313,66 +300,41 @@ pub(super) fn run_manager_thread(
                     config.input_channels,
                     0,
                 )?;
-                if let Err(e) =
-                    processing_thread.send_command(ProcessingCommand::CommitHostUpdate(prepared))
-                {
-                    return Err(format!("Failed to send initial plugin host: {}", e));
-                }
-
-                // Wait for confirmation (should be fast as host is already built)
-                // We still need to wait for ProcessingThread to acknowledge and update its state
-                let mut output_channels_confirmed: Option<usize> = None;
-                let mut plugin_error: Option<String> = None;
-
-                while start.elapsed() < std::time::Duration::from_millis(PLUGIN_INIT_TIMEOUT_MS) {
-                    if let Some(response) = processing_thread.try_recv_response() {
-                        match response {
-                            super::super::ProcessingResponse::PluginChainUpdated {
-                                output_channels: ch,
-                                latency_samples,
-                                ..
-                            } => {
-                                log::info!(
-                                    "[Manager Thread] Initial plugin chain loaded in {:?}, output channels: {}, latency: {} samples",
-                                    start.elapsed(),
-                                    ch,
-                                    latency_samples
-                                );
-                                output_channels_confirmed = Some(ch);
-                                // Update latency in engine state for position compensation
-                                let mut new_state = (**state.load()).clone();
-                                new_state.plugin_latency_samples = latency_samples;
-                                state.store(Arc::new(new_state));
-                                break;
-                            }
-                            super::super::ProcessingResponse::Error(e) => {
-                                plugin_error = Some(e);
-                                break;
-                            }
-                            _ => {
-                                // Ignore other messages
-                            }
+                let (generation, request_id, ticket) =
+                    match processing_thread.send_host_update(prepared) {
+                        Ok(ticket) => ticket,
+                        Err(e) => {
+                            return Err(format!("Failed to send initial plugin host: {}", e));
                         }
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_SLEEP_MANAGER));
-                }
+                    };
 
-                if let Some(e) = plugin_error {
-                    return Err(format!("Plugin chain initialization failed: {}", e));
-                }
-
-                match output_channels_confirmed {
-                    Some(ch) => {
+                // Start the commit deadline only after the potentially slow build.
+                match super::wait::wait_for_plugin_chain_update(
+                    &processing_thread,
+                    request_id,
+                    generation,
+                    &ticket,
+                    std::time::Duration::from_millis(PLUGIN_INIT_TIMEOUT_MS),
+                ) {
+                    Ok((ch, output_sample_rate, latency_samples)) => {
+                        actual_output_sample_rate = output_sample_rate;
+                        log::info!(
+                            "[Manager Thread] Initial plugin chain loaded, output channels: {}, latency: {} samples",
+                            ch,
+                            latency_samples
+                        );
                         // Update state with actual channel count
                         {
                             let mut new_state = (**state.load()).clone();
                             new_state.num_channels = ch;
+                            new_state.sample_rate = output_sample_rate;
+                            new_state.plugin_latency_samples = latency_samples;
                             state.store(Arc::new(new_state));
                         }
                         ch
                     }
-                    None => {
-                        return Err("Plugin chain initialization timed out".to_string());
+                    Err(error) => {
+                        return Err(format!("Plugin chain initialization failed: {error}"));
                     }
                 }
             }
@@ -400,6 +362,12 @@ pub(super) fn run_manager_thread(
         actual_output_channels = config.output_channels;
     }
 
+    {
+        let mut new_state = (**state.load()).clone();
+        new_state.playback_channels = actual_output_channels;
+        state.store(Arc::new(new_state));
+    }
+
     log::info!(
         "[Manager Thread] CREATING playback thread with {} channels",
         actual_output_channels
@@ -409,7 +377,7 @@ pub(super) fn run_manager_thread(
     let mut playback_thread = PlaybackThread::new(
         processing_rx,
         event_tx.clone(),
-        config.output_sample_rate,
+        actual_output_sample_rate,
         config.buffer_ms,
         actual_output_channels,
         config.frame_size,
@@ -432,8 +400,8 @@ pub(super) fn run_manager_thread(
     }
 
     // Setup config watcher if enabled
-    let config_watcher = if config.watch_config {
-        match ConfigWatcher::new(config.config_path.clone(), true) {
+    let config_watcher = if config_watcher_enabled(&config) {
+        match ConfigWatcher::new(config.config_path.clone(), config.watch_signals) {
             Ok(watcher) => {
                 log::debug!("[Manager Thread] Config watcher enabled");
                 Some(watcher)
@@ -453,8 +421,40 @@ pub(super) fn run_manager_thread(
 
     log::debug!("[Manager Thread] All threads started");
 
+    let mut decoder_exit_reported = false;
+    let mut processing_exit_reported = false;
+    let mut playback_exit_reported = false;
+
+    let mut shutdown_reply_id = None;
+
     // Main loop
     loop {
+        for (finished, reported, name) in [
+            (
+                decoder_thread.is_finished(),
+                &mut decoder_exit_reported,
+                "decoder",
+            ),
+            (
+                processing_thread.is_finished(),
+                &mut processing_exit_reported,
+                "processing",
+            ),
+            (
+                playback_thread.is_finished(),
+                &mut playback_exit_reported,
+                "playback",
+            ),
+        ] {
+            if finished && !*reported {
+                *reported = true;
+                log::error!("[Manager Thread] {name} worker exited unexpectedly");
+                handle_thread_event(
+                    ThreadEvent::ProcessingError(format!("{name} worker exited unexpectedly")),
+                    &state,
+                );
+            }
+        }
         #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         {
             let now = std::time::Instant::now();
@@ -507,6 +507,7 @@ pub(super) fn run_manager_thread(
                 plugins,
                 config.output_sample_rate,
                 config.input_channels,
+                config.output_channels,
                 config.oversampling_policy,
             ) {
                 log::error!("[Manager Thread] Failed to apply config update: {}", e);
@@ -529,9 +530,9 @@ pub(super) fn run_manager_thread(
 
         // Check for commands (blocking with timeout)
         match command_rx.recv_timeout(std::time::Duration::from_millis(SPIN_MS_CHECK_MANAGER)) {
-            Ok(command) => {
+            Ok(request) => {
                 let response = handle_command(
-                    command,
+                    request.command,
                     &mut decoder_thread,
                     &mut processing_thread,
                     &mut playback_thread,
@@ -541,13 +542,16 @@ pub(super) fn run_manager_thread(
                 );
 
                 let should_exit = matches!(response, ManagerResponse::Shutdown);
-                if let Err(e) = response_tx.send(response) {
-                    log::trace!("[Manager Thread] Response receiver dropped: {}", e);
-                }
-
                 if should_exit {
-                    log::debug!("[Manager Thread] Shutdown response sent, exiting loop");
+                    shutdown_reply_id = Some(request.id);
+                    log::debug!("[Manager Thread] Shutdown requested; cleaning up workers");
                     break;
+                }
+                if let Err(e) = response_tx.send(ManagerReply {
+                    id: request.id,
+                    response,
+                }) {
+                    log::trace!("[Manager Thread] Response receiver dropped: {}", e);
                 }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
@@ -575,8 +579,19 @@ pub(super) fn run_manager_thread(
     }
     gc_thread.shutdown(); // Last — other threads may still send garbage during shutdown
 
+    if let Some(id) = shutdown_reply_id {
+        let _ = response_tx.send(ManagerReply {
+            id,
+            response: ManagerResponse::Shutdown,
+        });
+    }
+
     log::debug!("[Manager Thread] Stopped");
     Ok(())
+}
+
+fn config_watcher_enabled(config: &super::super::EngineConfig) -> bool {
+    config.watch_config || config.watch_signals
 }
 
 #[cfg(test)]
@@ -589,14 +604,14 @@ mod event_drain_tests {
             seeking: true,
             ..AudioEngineState::default()
         }));
-        let (event_tx, event_rx) = channel();
+        let (event_tx, event_rx) = crossbeam::channel::bounded(MAX_THREAD_EVENTS_PER_TICK + 16);
 
         for position in 0..(MAX_THREAD_EVENTS_PER_TICK + 10) {
             event_tx
-                .send(ThreadEvent::PositionUpdate(position as f64))
+                .try_send(ThreadEvent::PositionUpdate(position as f64))
                 .unwrap();
         }
-        event_tx.send(ThreadEvent::SeekComplete).unwrap();
+        event_tx.try_send(ThreadEvent::SeekComplete).unwrap();
 
         assert_eq!(
             drain_thread_events(&event_rx, &state),
@@ -606,5 +621,25 @@ mod event_drain_tests {
         assert_eq!(drain_thread_events(&event_rx, &state), 11);
         assert!(!state.load().seeking);
         assert_eq!(drain_thread_events(&event_rx, &state), 0);
+    }
+
+    #[test]
+    fn signal_only_configuration_starts_the_watcher() {
+        let signal_only = super::super::super::EngineConfig {
+            watch_signals: true,
+            watch_config: false,
+            ..super::super::super::EngineConfig::default()
+        };
+        let file_only = super::super::super::EngineConfig {
+            watch_signals: false,
+            watch_config: true,
+            ..super::super::super::EngineConfig::default()
+        };
+
+        assert!(config_watcher_enabled(&signal_only));
+        assert!(config_watcher_enabled(&file_only));
+        assert!(!config_watcher_enabled(
+            &super::super::super::EngineConfig::default()
+        ));
     }
 }

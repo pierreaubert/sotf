@@ -2,10 +2,9 @@
 // AudioSink trait - Abstraction for audio output destinations
 // ============================================================================
 //
-// Allows the playback thread to output to cpal (hardware), PipeWire,
-// AirPlay, Chromecast, or any other audio sink without knowing the details.
-
-use std::sync::mpsc::Sender;
+// The current standalone implementation is cpal hardware output. The trait is
+// the extension point for future backends; PipeWire, AirPlay, and Chromecast
+// are not implemented sink variants.
 
 use super::ThreadEvent;
 pub use crate::{SinkConfig, SinkOpenResult, SinkType};
@@ -25,7 +24,7 @@ pub trait AudioSink: Send + 'static {
     fn open(
         &mut self,
         config: SinkConfig,
-        event_tx: Sender<ThreadEvent>,
+        event_tx: crossbeam::channel::Sender<ThreadEvent>,
     ) -> Result<SinkOpenResult, String>;
 
     /// Write interleaved f32 samples to the sink's buffer.

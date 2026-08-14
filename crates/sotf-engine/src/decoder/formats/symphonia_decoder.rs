@@ -527,7 +527,9 @@ impl SymphoniaDecoder {
         const MAX_CONSECUTIVE_ERRORS: u32 = 50;
 
         *consecutive_errors += 1;
-        log::warn!(
+        crate::rate_limited_log!(
+            warn,
+            1,
             "[SymphoniaDecoder] {} in {} at position {}: {} ({}/{})",
             context,
             self.format.as_str(),

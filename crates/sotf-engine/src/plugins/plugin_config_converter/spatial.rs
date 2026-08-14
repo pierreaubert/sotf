@@ -369,7 +369,7 @@ pub fn convert_downmix(settings: &PluginSettings, _sample_rate: f64) -> Option<P
 
 pub fn convert_band_split(settings: &PluginSettings, _sample_rate: f64) -> Option<PluginConfig> {
     let PluginSettings::BandSplit {
-        channels,
+        channels: _,
         frequency,
         crossover_type,
     } = settings
@@ -379,7 +379,6 @@ pub fn convert_band_split(settings: &PluginSettings, _sample_rate: f64) -> Optio
     Some(PluginConfig::new(
         "band_split",
         json!({
-            "channels": channels,
             "frequency": frequency,
             "type": crossover_type,
         }),
@@ -410,13 +409,12 @@ pub fn convert_crossover(settings: &PluginSettings, _sample_rate: f64) -> Option
 }
 
 pub fn convert_band_merge(settings: &PluginSettings, _sample_rate: f64) -> Option<PluginConfig> {
-    let PluginSettings::BandMerge { channels, bands } = settings else {
+    let PluginSettings::BandMerge { channels: _, bands } = settings else {
         return None;
     };
     Some(PluginConfig::new(
         "band_merge",
         json!({
-            "channels": channels,
             "bands": bands,
         }),
     ))

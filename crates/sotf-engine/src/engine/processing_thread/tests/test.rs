@@ -1,6 +1,7 @@
-use super::super::super::{ProcessingCommand, ProcessingResponse, ThreadEvent};
+use super::super::super::{ProcessingCommand, ThreadEvent};
 use super::super::processing_state::ProcessingState;
 use super::super::processing_state::handle_processing_command;
+use super::super::{ProcessingReply, ProcessingRequest};
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use crate::IsolatedExternalPluginWorkerEvent;
 use sotf_plugins::PluginHost;
@@ -68,11 +69,15 @@ fn test_processing_state_with_invalid_isolated_plugin() -> (ProcessingState, tem
 fn test_handle_processing_command_polls_isolated_external_plugin_statuses_without_launching() {
     let (mut state, _tempdir) = test_processing_state_with_invalid_isolated_plugin();
 
-    let (response_tx, _response_rx) = std::sync::mpsc::channel::<ProcessingResponse>();
-    let (event_tx, event_rx) = std::sync::mpsc::channel::<ThreadEvent>();
+    let (response_tx, _response_rx) = std::sync::mpsc::channel::<ProcessingReply>();
+    let (event_tx, event_rx) = crossbeam::channel::bounded::<ThreadEvent>(32);
 
     let shutdown = handle_processing_command(
-        ProcessingCommand::PollIsolatedExternalPluginWorkers,
+        ProcessingRequest {
+            id: 1,
+            command: ProcessingCommand::PollIsolatedExternalPluginWorkers,
+            ticket: super::super::ProcessingCommandTicket::new(),
+        },
         &mut state,
         &response_tx,
         &event_tx,

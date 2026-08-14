@@ -110,7 +110,10 @@ pub const PARAMS: &[ParamSpec] = &[
 // ============================================================================
 
 pub const LAYOUT: PluginLayout = PluginLayout {
-    config: &[ControlSpec::label(1)], // input_channels (read-only)
+    config: &[
+        ControlSpec::label(1),        // input_channels (read-only)
+        ControlSpec::file_picker(13), // hrtf_database_dir
+    ],
     main: &[ControlGroup::new(
         "CONTROLS",
         "CONTROLS",
@@ -119,18 +122,31 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             ControlSpec::knob(2),        // externalization
             ControlSpec::knob(3),        // near_field_strength
             ControlSpec::selector(4),    // crossfade_mode
+            ControlSpec::knob(9),        // crossfade_ms
         ],
     )],
     output: &[],
-    tabs: &[TabSpec {
-        name: "Reverb",
-        controls: &[
-            ControlSpec::toggle(5), // late_reverb_enabled
-            ControlSpec::knob(6).enabled_when(ParamCondition::bool(5, true)), // mix
-            ControlSpec::knob(7).enabled_when(ParamCondition::bool(5, true)), // rt60
-            ControlSpec::knob(8).enabled_when(ParamCondition::bool(5, true)), // damping
-        ],
-    }],
+    tabs: &[
+        TabSpec {
+            name: "Reverb",
+            controls: &[
+                ControlSpec::toggle(5), // late_reverb_enabled
+                ControlSpec::knob(6).enabled_when(ParamCondition::bool(5, true)), // mix
+                ControlSpec::knob(7).enabled_when(ParamCondition::bool(5, true)), // rt60
+                ControlSpec::knob(8).enabled_when(ParamCondition::bool(5, true)), // damping
+            ],
+        },
+        TabSpec {
+            name: "Tracking",
+            controls: &[
+                ControlSpec::knob(10), // head_yaw_deg
+                ControlSpec::knob(11), // head_pitch_deg
+                ControlSpec::knob(12), // head_roll_deg
+                ControlSpec::knob(14), // head_width_cm
+                ControlSpec::knob(15), // ear_height_cm
+            ],
+        },
+    ],
     visualizations: &[],
     column_constraints: &[
         ColumnConstraint::config(180.0, 0.5),

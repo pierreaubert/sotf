@@ -287,6 +287,10 @@ fn default_latency_compensation_enabled() -> bool {
     true
 }
 
+fn default_playback_channels() -> usize {
+    2
+}
+
 /// Legacy prefix retained for compatibility with older serialized/UI clients.
 pub const PLUGIN_BUILD_DIAGNOSTIC_PREFIX: &str = "[plugin-build] ";
 
@@ -307,6 +311,10 @@ pub struct AudioEngineState {
     pub sample_rate: u32,
     /// Number of channels
     pub num_channels: usize,
+    /// Channels opened by the playback backend. This can be lower than
+    /// `num_channels` when the processing graph is downmixed for hardware.
+    #[serde(default = "default_playback_channels")]
+    pub playback_channels: usize,
     /// Output volume (linear)
     pub volume: f32,
     /// Muted flag
@@ -396,6 +404,7 @@ impl Default for AudioEngineState {
             duration: None,
             sample_rate: 48000,
             num_channels: 2,
+            playback_channels: 2,
             volume: 1.0,
             muted: false,
             processing_bypassed: false,

@@ -9,7 +9,10 @@ use cpal::{Device, SampleFormat, Stream, StreamConfig};
 use rtrb::Consumer;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::Sender;
+
+// Engine-owned counterpart to `cpal_sink::build`: this path adds playback
+// recovery state and output metering. Keep the callback's ring accounting,
+// gain ramp, clamp, and dither contracts aligned with the public CpalSink.
 
 /// Build the cpal output stream with the specified sample format.
 /// Internal pipeline stays f32; conversion to the hardware format happens
@@ -18,7 +21,7 @@ pub(super) fn build_output_stream(
     device: &Device,
     config: &StreamConfig,
     state: Arc<PlaybackState>,
-    event_tx: Sender<ThreadEvent>,
+    event_tx: crossbeam::channel::Sender<ThreadEvent>,
     consumer: Consumer<f32>,
     sample_format: SampleFormat,
 ) -> Result<Stream, String> {
@@ -45,12 +48,14 @@ pub(super) fn build_output_stream_f32(
     device: &Device,
     config: &StreamConfig,
     state: Arc<PlaybackState>,
-    event_tx: Sender<ThreadEvent>,
+    event_tx: crossbeam::channel::Sender<ThreadEvent>,
     mut consumer: Consumer<f32>,
 ) -> Result<Stream, String> {
     let state_clone = Arc::clone(&state);
     let error_state = Arc::clone(&state);
     let capacity = state.capacity;
+    let channels = config.channels as usize;
+    let sample_rate = config.sample_rate;
 
     let stream = device
         .build_output_stream(
@@ -61,7 +66,7 @@ pub(super) fn build_output_stream_f32(
                     .store(true, Ordering::Release);
                 state_clone.callback_count.fetch_add(1, Ordering::Relaxed);
                 read_ring_buffer(&mut consumer, data, data.len(), &state_clone, capacity);
-                apply_volume_clamp(data, &state_clone);
+                apply_volume_clamp(data, &state_clone, channels, sample_rate);
                 state_clone
                     .output_callback_active
                     .store(false, Ordering::Release);
@@ -94,7 +99,7 @@ pub(super) fn build_output_stream_int<T>(
     device: &Device,
     config: &StreamConfig,
     state: Arc<PlaybackState>,
-    event_tx: Sender<ThreadEvent>,
+    event_tx: crossbeam::channel::Sender<ThreadEvent>,
     mut consumer: Consumer<f32>,
 ) -> Result<Stream, String>
 where
@@ -103,10 +108,13 @@ where
     let state_clone = Arc::clone(&state);
     let error_state = Arc::clone(&state);
     let capacity = state.capacity;
+    let channels = config.channels as usize;
+    let sample_rate = config.sample_rate;
 
     // Pre-allocate scratch buffer (captured by closure, no alloc in callback).
     // 16384 samples covers typical callbacks (256–4096). Process in chunks if larger.
-    let mut scratch = vec![0.0f32; 16384];
+    let scratch_frames = 16_384usize.div_ceil(channels.max(1));
+    let mut scratch = vec![0.0f32; scratch_frames * channels.max(1)];
     let mut dither = TpdfDither::new(0x706c_6179_6261_636b);
 
     let stream = device
@@ -130,7 +138,12 @@ where
                         &state_clone,
                         capacity,
                     );
-                    apply_volume_clamp(&mut scratch[..chunk_len], &state_clone);
+                    apply_volume_clamp(
+                        &mut scratch[..chunk_len],
+                        &state_clone,
+                        channels,
+                        sample_rate,
+                    );
                     let dither_enabled = !state_clone.muted.load(Ordering::Relaxed);
 
                     // Convert f32 -> target integer type

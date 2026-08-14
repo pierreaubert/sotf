@@ -26,6 +26,8 @@ use sotf_plugins::{Plugin, ProcessContext, ResamplerPlugin};
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::time::{Duration, Instant};
 
+const POSITION_UPDATE_INTERVAL: Duration = Duration::from_millis(100);
+
 /// Decoder state
 pub(super) struct DecoderState {
     pub(super) decoder: Option<Box<dyn AudioDecoder>>,
@@ -55,6 +57,8 @@ pub(super) struct DecoderState {
     /// Queued next source for gapless playback. When set and the current source ends,
     /// the decoder seamlessly transitions to this source without sending EndOfStream/Flush.
     pub(super) queued_next: Option<AudioSource>,
+    /// Throttles unbounded manager events and their per-send node allocations.
+    pub(super) last_position_update: Instant,
     pub(super) dsd_output: DsdOutputMode,
     #[cfg(feature = "streaming")]
     pub(super) stream_metadata_rx: Option<crate::decoder::SourceMetadataReceiver>,
@@ -105,6 +109,9 @@ impl DecoderState {
             frame_buffer_pool,
             recycle_rx,
             queued_next: None,
+            last_position_update: Instant::now()
+                .checked_sub(POSITION_UPDATE_INTERVAL)
+                .unwrap_or_else(Instant::now),
             dsd_output,
             #[cfg(feature = "streaming")]
             stream_metadata_rx: None,
@@ -143,6 +150,41 @@ impl DecoderState {
         Ok(())
     }
 
+    /// Move a freshly decoded allocation into the sample queue when no
+    /// residual samples are buffered; append only when block boundaries span
+    /// decoder packets. Returns true when ownership was transferred.
+    pub(super) fn queue_decoded_samples(&mut self) -> Result<bool, String> {
+        let decoded_samples = &mut self
+            .decode_buffer
+            .as_mut()
+            .ok_or("Decoder invariant violated: decode buffer missing after decode")?
+            .samples;
+        if self.resampler_buffer.is_empty() {
+            self.resampler_buffer.clear();
+            std::mem::swap(&mut self.resampler_buffer.data, decoded_samples);
+            Ok(true)
+        } else {
+            self.resampler_buffer.extend_from_slice(decoded_samples);
+            Ok(false)
+        }
+    }
+
+    /// Transfer an exact, unconsumed decoder block directly to the next
+    /// pipeline stage instead of copying it through `frame_send_buffer`.
+    pub(super) fn take_exact_decoded_block(&mut self, len: usize) -> Option<Vec<f32>> {
+        if self.resampler_buffer.start != 0 || self.resampler_buffer.data.len() != len {
+            return None;
+        }
+        let data = take_frame_buffer(
+            &mut self.resampler_buffer.data,
+            &self.recycle_rx,
+            &mut self.frame_buffer_pool,
+            len,
+        );
+        self.resampler_buffer.start = 0;
+        Some(data)
+    }
+
     /// Start playing a new audio source
     pub(super) fn play(
         &mut self,
@@ -150,6 +192,9 @@ impl DecoderState {
         target_sample_rate: u32,
         frame_size: usize,
     ) -> Result<(), String> {
+        self.last_position_update = Instant::now()
+            .checked_sub(POSITION_UPDATE_INTERVAL)
+            .unwrap_or_else(Instant::now);
         let (decoder, metadata_rx) =
             create_decoder_from_source_with_dsd_mode_and_metadata(&source, self.dsd_output)
                 .map_err(|e| format!("Failed to create decoder: {:?}", e))?;
@@ -248,15 +293,23 @@ impl DecoderState {
     }
 
     #[cfg(feature = "streaming")]
-    pub(super) fn clear_stream_metadata(&mut self, event_tx: &Sender<ThreadEvent>) {
+    pub(super) fn clear_stream_metadata(
+        &mut self,
+        event_tx: &crossbeam::channel::Sender<ThreadEvent>,
+    ) {
         self.stream_metadata_rx = None;
         if self.stream_metadata.take().is_some() {
-            event_tx.send(ThreadEvent::StreamMetadataChanged(None)).ok();
+            event_tx
+                .try_send(ThreadEvent::StreamMetadataChanged(None))
+                .ok();
         }
     }
 
     #[cfg(feature = "streaming")]
-    pub(super) fn poll_stream_metadata(&mut self, event_tx: &Sender<ThreadEvent>) {
+    pub(super) fn poll_stream_metadata(
+        &mut self,
+        event_tx: &crossbeam::channel::Sender<ThreadEvent>,
+    ) {
         use std::sync::mpsc::TryRecvError;
 
         let mut changed = false;
@@ -292,7 +345,7 @@ impl DecoderState {
 
         if changed {
             event_tx
-                .send(ThreadEvent::StreamMetadataChanged(
+                .try_send(ThreadEvent::StreamMetadataChanged(
                     self.stream_metadata.clone(),
                 ))
                 .ok();
@@ -359,7 +412,8 @@ impl DecoderState {
             &mut self.frame_buffer_pool,
             sample_len,
         );
-        let frame = AudioFrame::new(frame_data, num_frames, channels, sample_rate);
+        let frame = AudioFrame::try_new(frame_data, num_frames, channels, sample_rate)
+            .map_err(|error| format!("decoder produced an invalid output frame: {error}"))?;
         self.send_decoder_message(
             message_tx,
             command_rx,
@@ -442,7 +496,7 @@ impl DecoderState {
         message_tx: &SyncSender<DecoderMessage>,
         command_rx: &Receiver<DecoderCommand>,
         response_tx: &Sender<DecoderResponse>,
-        event_tx: &Sender<ThreadEvent>,
+        event_tx: &crossbeam::channel::Sender<ThreadEvent>,
         frame_size: usize,
         target_sample_rate: u32,
     ) -> Result<DecoderLoopAction, String> {
@@ -472,12 +526,7 @@ impl DecoderState {
                 let mut total_send_time = Duration::ZERO;
 
                 // Add to buffer (reusing resampler_buffer as general sample buffer)
-                let decoded_samples = &self
-                    .decode_buffer
-                    .as_ref()
-                    .ok_or("Decoder invariant violated: decode buffer missing after decode")?
-                    .samples;
-                self.resampler_buffer.extend_from_slice(decoded_samples);
+                self.queue_decoded_samples()?;
 
                 // Process buffer in frame_size chunks
                 while self.resampler_buffer.len() >= frame_size * channels {
@@ -563,22 +612,43 @@ impl DecoderState {
                         // All sending handled in the inner loop above; continue outer loop.
                         continue;
                     } else {
-                        // No resampling - copy chunk to frame_send_buffer and take ownership
-                        Self::ensure_buffer_len(&mut self.frame_send_buffer, chunk_len)?;
-                        self.frame_send_buffer[..chunk_len]
-                            .copy_from_slice(self.resampler_buffer.prefix(chunk_len));
-                        self.resampler_buffer.consume(chunk_len);
+                        // Exact one-block decoder packets can transfer their
+                        // allocation directly to the pipeline. Partial or
+                        // multi-block packets retain the queue/copy path.
+                        let interrupted =
+                            if let Some(frame_data) = self.take_exact_decoded_block(chunk_len) {
+                                let frame = AudioFrame::try_new(
+                                    frame_data,
+                                    frame_size,
+                                    channels,
+                                    source_sample_rate,
+                                )
+                                .map_err(|error| {
+                                    format!("decoder produced an invalid direct frame: {error}")
+                                })?;
+                                self.send_decoder_message(
+                                    message_tx,
+                                    command_rx,
+                                    response_tx,
+                                    DecoderMessage::Frame(frame),
+                                )?
+                            } else {
+                                Self::ensure_buffer_len(&mut self.frame_send_buffer, chunk_len)?;
+                                self.frame_send_buffer[..chunk_len]
+                                    .copy_from_slice(self.resampler_buffer.prefix(chunk_len));
+                                self.resampler_buffer.consume(chunk_len);
+                                self.send_prepared_frame(
+                                    message_tx,
+                                    command_rx,
+                                    response_tx,
+                                    chunk_len,
+                                    frame_size,
+                                    channels,
+                                    source_sample_rate,
+                                )?
+                            };
 
-                        // Send with interruption support
-                        if let Some(cmd) = self.send_prepared_frame(
-                            message_tx,
-                            command_rx,
-                            response_tx,
-                            chunk_len,
-                            frame_size,
-                            channels,
-                            source_sample_rate,
-                        )? {
+                        if let Some(cmd) = interrupted {
                             return Ok(DecoderLoopAction::Interrupted(cmd));
                         }
                         total_send_time += s_start.elapsed();
@@ -591,9 +661,12 @@ impl DecoderState {
                     .as_ref()
                     .map(|decoder| decoder.position() as f64 / source_sample_rate as f64)
                     .unwrap_or(0.0);
-                event_tx
-                    .send(ThreadEvent::PositionUpdate(position_sec))
-                    .ok();
+                if position_update_due(self.last_position_update.elapsed()) {
+                    event_tx
+                        .try_send(ThreadEvent::PositionUpdate(position_sec))
+                        .ok();
+                    self.last_position_update = Instant::now();
+                }
 
                 Ok(DecoderLoopAction::Continue)
             }
@@ -608,7 +681,7 @@ impl DecoderState {
                 match self.try_gapless_transition_preserving_buffers(target_sample_rate) {
                     Ok(Some(next_source)) => {
                         event_tx
-                            .send(ThreadEvent::DecoderGaplessTransition(next_source))
+                            .try_send(ThreadEvent::DecoderGaplessTransition(next_source))
                             .ok();
                         return Ok(DecoderLoopAction::Continue);
                     }
@@ -616,7 +689,7 @@ impl DecoderState {
                     Err(e) => {
                         let msg = format!("Gapless transition failed: {}", e);
                         log::warn!("[Decoder Thread] {}", msg);
-                        event_tx.send(ThreadEvent::DecoderError(msg)).ok();
+                        event_tx.try_send(ThreadEvent::DecoderError(msg)).ok();
                     }
                 }
 
@@ -733,7 +806,7 @@ impl DecoderState {
                     match self.play(next_source.clone(), target_sample_rate, frame_size) {
                         Ok(()) => {
                             event_tx
-                                .send(ThreadEvent::DecoderGaplessTransition(next_source))
+                                .try_send(ThreadEvent::DecoderGaplessTransition(next_source))
                                 .ok();
                             return Ok(DecoderLoopAction::Continue);
                         }
@@ -744,7 +817,7 @@ impl DecoderState {
                                 e
                             );
                             log::warn!("[Decoder Thread] {}, falling through to EndOfStream", msg);
-                            event_tx.send(ThreadEvent::DecoderError(msg)).ok();
+                            event_tx.try_send(ThreadEvent::DecoderError(msg)).ok();
                             // Fall through to normal end-of-stream below
                         }
                     }
@@ -759,13 +832,13 @@ impl DecoderState {
                     return Ok(DecoderLoopAction::Interrupted(cmd));
                 }
 
-                event_tx.send(ThreadEvent::DecoderEndOfStream).ok();
+                event_tx.try_send(ThreadEvent::DecoderEndOfStream).ok();
                 Ok(DecoderLoopAction::Stop)
             }
             Err(e) => {
                 let err_msg = format!("Decode error: {:?}", e);
                 event_tx
-                    .send(ThreadEvent::DecoderError(err_msg.clone()))
+                    .try_send(ThreadEvent::DecoderError(err_msg.clone()))
                     .ok();
                 Err(err_msg)
             }
@@ -1027,12 +1100,13 @@ impl DecoderState {
                 );
 
                 // Send frame with TARGET sample rate
-                let frame = AudioFrame::new(
+                let frame = AudioFrame::try_new(
                     frame_data,
                     actual_output_frames,
                     hal_channels,
                     target_sample_rate,
-                );
+                )
+                .map_err(|error| format!("HAL resampler produced an invalid frame: {error}"))?;
 
                 // Use send_or_interrupt so we can still receive commands
                 // (Stop/Shutdown/Seek) while the downstream pipeline is full,
@@ -1069,7 +1143,9 @@ impl DecoderState {
                 );
 
                 // Send frame with HAL sample rate (which matches target)
-                let frame = AudioFrame::new(frame_data, frame_size, hal_channels, hal_sample_rate);
+                let frame =
+                    AudioFrame::try_new(frame_data, frame_size, hal_channels, hal_sample_rate)
+                        .map_err(|error| format!("HAL input produced an invalid frame: {error}"))?;
 
                 match self.send_decoder_message(
                     message_tx,
@@ -1108,7 +1184,9 @@ impl DecoderState {
             silent_len,
         );
 
-        let frame = AudioFrame::new(frame_data, frame_size, silent_channels, target_sample_rate);
+        let frame =
+            AudioFrame::try_new(frame_data, frame_size, silent_channels, target_sample_rate)
+                .map_err(|error| format!("silent source produced an invalid frame: {error}"))?;
         if let Some(cmd) = self.send_decoder_message(
             message_tx,
             command_rx,
@@ -1119,5 +1197,22 @@ impl DecoderState {
         }
 
         Ok((true, None))
+    }
+}
+
+fn position_update_due(elapsed: Duration) -> bool {
+    elapsed >= POSITION_UPDATE_INTERVAL
+}
+
+#[cfg(test)]
+mod position_update_tests {
+    use super::{POSITION_UPDATE_INTERVAL, position_update_due};
+    use std::time::Duration;
+
+    #[test]
+    fn position_updates_are_limited_to_ten_hz() {
+        assert!(!position_update_due(Duration::from_millis(99)));
+        assert!(position_update_due(POSITION_UPDATE_INTERVAL));
+        assert!(position_update_due(Duration::from_millis(150)));
     }
 }

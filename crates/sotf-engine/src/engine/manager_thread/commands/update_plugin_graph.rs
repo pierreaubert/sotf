@@ -20,6 +20,7 @@ impl ManagerCommandHandler for UpdatePluginGraphCommand {
             graph_config.clone(),
             ctx.config.output_sample_rate,
             ctx.config.input_channels,
+            ctx.config.output_channels,
             ctx.config.oversampling_policy,
         ) {
             Ok(()) => ManagerResponse::Ok,

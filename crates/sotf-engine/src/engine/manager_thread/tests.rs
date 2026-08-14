@@ -3,7 +3,7 @@ use super::super::{
 };
 use super::config_error::ensure_output_channel_capacity;
 use super::error::ConfigError;
-use super::estimate::estimate_graph_update_timeout;
+use super::estimate::{estimate_graph_update_timeout, estimate_update_timeout};
 use super::handle::handle_thread_event;
 use super::misc::initial_engine_state_from_config;
 #[cfg(feature = "streaming")]
@@ -42,10 +42,6 @@ fn test_config_error_display() {
         reason: "plugin init failed".to_string(),
     };
     assert!(err.to_string().contains("plugin init failed"));
-
-    // Test UnexpectedResponse display
-    let err = ConfigError::UnexpectedResponse;
-    assert!(err.to_string().contains("Unexpected response"));
 
     // Test ChannelDisconnected display
     let err = ConfigError::ChannelDisconnected;
@@ -97,22 +93,15 @@ fn audio_engine_cached_reads_do_not_use_command_lock() {
 }
 
 #[test]
-fn macos_playback_realtime_priority_uses_time_constraint_policy() {
-    let rt_priority = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/engine/rt_priority.rs"),
+fn playback_feeder_does_not_claim_hardware_callback_realtime_policy() {
+    let runtime = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/engine/playback_thread/runtime.rs"),
     )
     .unwrap();
 
-    assert!(rt_priority.contains("fn set_time_constraint_priority_macos()"));
-    assert!(rt_priority.contains("thread_policy_set"));
-    assert!(rt_priority.contains("THREAD_TIME_CONSTRAINT_POLICY"));
-    assert!(
-        rt_priority.contains("RtPriority::Playback => match set_time_constraint_priority_macos()")
-    );
-    assert!(rt_priority.contains("RtPriority::Processing => set_qos_priority_macos(level)"));
-    assert!(rt_priority.contains("falling back to QoS"));
-    assert!(rt_priority.contains("QOS_CLASS_USER_INTERACTIVE"));
-    assert!(!rt_priority.contains("requires approval before adding new unsafe FFI"));
+    assert!(runtime.contains("cpal owns hardware-callback scheduling"));
+    assert!(!runtime.contains("RtPriority::Playback"));
 }
 
 #[test]
@@ -264,6 +253,19 @@ fn graph_update_timeout_uses_node_complexity() {
 }
 
 #[test]
+fn lowercase_eq_timeout_counts_filters() {
+    let plugins = [crate::engine::PluginConfig {
+        plugin_type: "eq".to_string(),
+        parameters: serde_json::json!({"filters": [{}, {}, {}]}),
+    }];
+
+    assert_eq!(
+        estimate_update_timeout(&plugins),
+        std::time::Duration::from_millis(230)
+    );
+}
+
+#[test]
 fn test_ensure_output_channel_capacity_accepts_supported_chain() {
     let result = ensure_output_channel_capacity(2, 2, Some("Built-in Output"));
 
@@ -288,10 +290,11 @@ fn test_handle_thread_event_updates_playback_channels() {
     let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
 
     handle_thread_event(ThreadEvent::PlaybackChannelsChanged(6), &state);
-    assert_eq!(state.load().num_channels, 6);
+    assert_eq!(state.load().playback_channels, 6);
+    assert_eq!(state.load().num_channels, 2);
 
     handle_thread_event(ThreadEvent::PlaybackChannelsChanged(2), &state);
-    assert_eq!(state.load().num_channels, 2);
+    assert_eq!(state.load().playback_channels, 2);
 }
 
 #[test]
@@ -961,11 +964,92 @@ fn test_manager_thread_init_failure_records_error_without_full_state_clone() {
     assert_eq!(state.playback_state, PlaybackState::Stopped);
     let error = state.last_error.expect("last_error should be set");
     assert!(
-        error.contains("Engine initialization failed"),
+        error.contains("Engine manager exited with an error"),
         "unexpected error: {error}"
     );
     assert!(
         error.contains("DSD") || error.contains("bitstream") || error.contains("DoP"),
         "unexpected error: {error}"
     );
+}
+
+#[test]
+fn correlated_manager_wait_buffers_unmatched_response() {
+    let (command_tx, _command_rx) = std::sync::mpsc::channel();
+    let (response_tx, response_rx) = std::sync::mpsc::channel();
+    let manager = super::ManagerThread {
+        command_tx,
+        response_inbox: std::sync::Mutex::new(super::ManagerResponseInbox {
+            rx: response_rx,
+            buffered: std::collections::HashMap::new(),
+            abandoned: std::collections::HashSet::new(),
+        }),
+        next_request_id: std::sync::atomic::AtomicU64::new(3),
+        state: Arc::new(ArcSwap::from_pointee(AudioEngineState::default())),
+        plugin_data_cache: Arc::new(ArcSwap::from_pointee(Vec::new())),
+        thread_handle: None,
+    };
+    response_tx
+        .send(super::ManagerReply {
+            id: 1,
+            response: super::ManagerResponse::Error("late".to_string()),
+        })
+        .unwrap();
+    response_tx
+        .send(super::ManagerReply {
+            id: 2,
+            response: super::ManagerResponse::Ok,
+        })
+        .unwrap();
+
+    assert!(matches!(
+        manager.recv_response_for(2, std::time::Duration::from_millis(20)),
+        Ok(super::ManagerResponse::Ok)
+    ));
+    assert!(matches!(
+        manager.recv_response_for(1, std::time::Duration::from_millis(20)),
+        Ok(super::ManagerResponse::Error(message)) if message == "late"
+    ));
+}
+
+#[test]
+fn correlated_manager_wait_discards_an_abandoned_late_response() {
+    let (command_tx, _command_rx) = std::sync::mpsc::channel();
+    let (response_tx, response_rx) = std::sync::mpsc::channel();
+    let manager = super::ManagerThread {
+        command_tx,
+        response_inbox: std::sync::Mutex::new(super::ManagerResponseInbox {
+            rx: response_rx,
+            buffered: std::collections::HashMap::new(),
+            abandoned: std::collections::HashSet::new(),
+        }),
+        next_request_id: std::sync::atomic::AtomicU64::new(3),
+        state: Arc::new(ArcSwap::from_pointee(AudioEngineState::default())),
+        plugin_data_cache: Arc::new(ArcSwap::from_pointee(Vec::new())),
+        thread_handle: None,
+    };
+
+    assert!(
+        manager
+            .recv_response_for(1, std::time::Duration::from_millis(1))
+            .is_err()
+    );
+    response_tx
+        .send(super::ManagerReply {
+            id: 1,
+            response: super::ManagerResponse::Error("late".to_string()),
+        })
+        .unwrap();
+    response_tx
+        .send(super::ManagerReply {
+            id: 2,
+            response: super::ManagerResponse::Ok,
+        })
+        .unwrap();
+
+    assert!(matches!(
+        manager.recv_response_for(2, std::time::Duration::from_millis(20)),
+        Ok(super::ManagerResponse::Ok)
+    ));
+    assert!(manager.response_inbox.lock().unwrap().buffered.is_empty());
 }

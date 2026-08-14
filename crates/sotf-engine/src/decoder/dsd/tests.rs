@@ -7,6 +7,7 @@ use super::dsf_pcm_decoder::{DsfPcmDecoder, dsf_sample};
 use crate::decoder::core::{AudioDecoder, DecodedAudio};
 use crate::decoder::error::AudioDecoderError;
 use crate::decoder::formats::AudioFormat;
+use std::io::Write;
 
 fn chunk(id: &[u8; 4], payload: &[u8]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(DSF_HEADER_LEN + payload.len());
@@ -339,4 +340,87 @@ fn dff_seek_rebuilds_filter_history() {
 
     assert_eq!(seek_audio.frame_position, 60);
     assert!((seek_audio.samples[0] - all_audio.samples[60]).abs() < 1e-6);
+}
+
+#[test]
+fn dsf_file_decoder_streams_sparse_multi_gigabyte_data_chunk() {
+    const DATA_LEN: u64 = 2 * 1024 * 1024 * 1024;
+    const CHANNELS: u32 = 2;
+    const BLOCK_SIZE: u32 = 4096;
+    let sample_count = (DATA_LEN / u64::from(CHANNELS)) * 8;
+    let mut prefix = minimal_dsf(CHANNELS, sample_count, BLOCK_SIZE, &[]);
+    let data_header = prefix
+        .windows(4)
+        .rposition(|window| window == b"data")
+        .expect("DSF data header");
+    let declared_chunk_size = DATA_LEN + DSF_HEADER_LEN as u64;
+    prefix[data_header + 4..data_header + 12].copy_from_slice(&declared_chunk_size.to_le_bytes());
+    let data_offset = (data_header + DSF_HEADER_LEN) as u64;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("large-sparse.dsf");
+    let mut file = std::fs::File::create(&path).unwrap();
+    file.write_all(&prefix[..data_header + DSF_HEADER_LEN])
+        .unwrap();
+    file.set_len(data_offset + DATA_LEN).unwrap();
+
+    let decoder = DsfPcmDecoder::new(&path).expect("sparse DSF should open without slurping data");
+    assert!(decoder.data.is_file_backed());
+    assert_eq!(decoder.spec.total_frames, Some(sample_count / 64));
+}
+
+#[test]
+fn dff_file_decoder_streams_sparse_multi_gigabyte_data_chunk() {
+    const DATA_LEN: u64 = 2 * 1024 * 1024 * 1024;
+    let mut prefix = minimal_dff(2, &[]);
+    let data_header = prefix
+        .windows(4)
+        .rposition(|window| window == b"DSD ")
+        .expect("DFF data header");
+    prefix[data_header + 4..data_header + 12].copy_from_slice(&DATA_LEN.to_be_bytes());
+    let data_offset = (data_header + DFF_HEADER_LEN) as u64;
+    let file_len = data_offset + DATA_LEN;
+    prefix[4..12].copy_from_slice(&(file_len - 12).to_be_bytes());
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("large-sparse.dff");
+    let mut file = std::fs::File::create(&path).unwrap();
+    file.write_all(&prefix[..data_header + DFF_HEADER_LEN])
+        .unwrap();
+    file.set_len(file_len).unwrap();
+
+    let decoder = DffPcmDecoder::new(&path).expect("sparse DFF should open without slurping data");
+    assert!(decoder.data.is_file_backed());
+    assert_eq!(decoder.spec.total_frames, Some(DATA_LEN / 2 / 8));
+}
+
+#[test]
+fn file_backed_dsd_decoders_match_in_memory_reference() {
+    let dsf_bytes = minimal_dsf(2, 512, 64, &[0xa5; 128]);
+    let dff_bytes = minimal_dff(2, &[0x5a; 128]);
+    let dir = tempfile::tempdir().unwrap();
+    let dsf_path = dir.path().join("reference.dsf");
+    let dff_path = dir.path().join("reference.dff");
+    std::fs::write(&dsf_path, &dsf_bytes).unwrap();
+    std::fs::write(&dff_path, &dff_bytes).unwrap();
+
+    let mut dsf_file = DsfPcmDecoder::new(&dsf_path).unwrap();
+    let mut dsf_memory = DsfPcmDecoder::from_bytes(dsf_bytes).unwrap();
+    let mut dsf_file_audio = DecodedAudio::new(dsf_file.spec().clone());
+    let mut dsf_memory_audio = DecodedAudio::new(dsf_memory.spec().clone());
+    assert_eq!(
+        dsf_file.decode_into(&mut dsf_file_audio).unwrap(),
+        dsf_memory.decode_into(&mut dsf_memory_audio).unwrap()
+    );
+    assert_eq!(dsf_file_audio.samples, dsf_memory_audio.samples);
+
+    let mut dff_file = DffPcmDecoder::new(&dff_path).unwrap();
+    let mut dff_memory = DffPcmDecoder::from_bytes(dff_bytes).unwrap();
+    let mut dff_file_audio = DecodedAudio::new(dff_file.spec().clone());
+    let mut dff_memory_audio = DecodedAudio::new(dff_memory.spec().clone());
+    assert_eq!(
+        dff_file.decode_into(&mut dff_file_audio).unwrap(),
+        dff_memory.decode_into(&mut dff_memory_audio).unwrap()
+    );
+    assert_eq!(dff_file_audio.samples, dff_memory_audio.samples);
 }

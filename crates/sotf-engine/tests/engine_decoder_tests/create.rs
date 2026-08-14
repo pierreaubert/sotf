@@ -10,7 +10,7 @@ use tempfile::NamedTempFile;
 /// Helper to create a DecoderThread with a recycle channel
 pub(super) fn create_decoder(
     message_tx: std::sync::mpsc::SyncSender<DecoderMessage>,
-    event_tx: std::sync::mpsc::Sender<ThreadEvent>,
+    event_tx: crossbeam::channel::Sender<ThreadEvent>,
     sample_rate: u32,
     frame_size: usize,
 ) -> (DecoderThread, std::sync::mpsc::Sender<Vec<f32>>) {
@@ -25,6 +25,13 @@ pub(super) fn create_decoder(
     )
     .expect("Failed to create decoder thread");
     (decoder, recycle_tx)
+}
+
+fn event_channel() -> (
+    crossbeam::channel::Sender<ThreadEvent>,
+    crossbeam::channel::Receiver<ThreadEvent>,
+) {
+    crossbeam::channel::bounded(256)
 }
 
 /// Helper to create a test WAV file
@@ -83,7 +90,7 @@ pub(super) fn create_test_wav_frames(
 #[test]
 fn test_decoder_thread_creation() {
     let (message_tx, _message_rx) = sync_channel(100);
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
     let _ = decoder;
@@ -94,7 +101,7 @@ fn test_decoder_thread_creation() {
 #[test]
 fn test_decoder_load_and_decode() {
     let (message_tx, message_rx) = sync_channel(100);
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
 
@@ -121,7 +128,7 @@ fn test_decoder_load_and_decode() {
 #[test]
 fn test_decoder_pause_resume() {
     let (message_tx, message_rx) = sync_channel(100);
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
 
@@ -170,7 +177,7 @@ fn test_decoder_pause_resume() {
 #[test]
 fn test_decoder_seek() {
     let (message_tx, message_rx) = sync_channel(100);
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
 
@@ -214,7 +221,7 @@ fn test_decoder_seek() {
 #[test]
 fn test_decoder_resampling() {
     let (message_tx, message_rx) = sync_channel(100);
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     // Create decoder with 48kHz target
     let target_sr = 48000;
@@ -258,7 +265,7 @@ fn test_decoder_resampling() {
 #[test]
 fn test_decoder_stop() {
     let (message_tx, message_rx) = sync_channel(100);
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
 
@@ -287,7 +294,7 @@ fn test_decoder_stop() {
 #[test]
 fn test_decoder_invalid_file() {
     let (message_tx, _message_rx) = sync_channel(100);
-    let (event_tx, event_rx) = channel();
+    let (event_tx, event_rx) = event_channel();
 
     let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
 
@@ -317,7 +324,7 @@ fn test_decoder_invalid_file() {
 #[test]
 fn test_decoder_shutdown() {
     let (message_tx, message_rx) = sync_channel(100);
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let (mut decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
 
@@ -367,7 +374,7 @@ fn test_decoder_shutdown() {
 #[test]
 fn test_decoder_multiple_files() {
     let (message_tx, message_rx) = sync_channel(100);
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
 
@@ -406,7 +413,7 @@ fn test_decoder_multiple_files() {
 #[test]
 fn test_decoder_play_flushes_previous_source() {
     let (message_tx, message_rx) = sync_channel(100);
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
 
@@ -445,7 +452,7 @@ fn test_decoder_play_flushes_previous_source() {
 #[test]
 fn test_decoder_play_at_flushes_previous_source() {
     let (message_tx, message_rx) = sync_channel(100);
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
 
@@ -487,7 +494,7 @@ fn test_decoder_play_at_flushes_previous_source() {
 #[test]
 fn test_decoder_frame_size_consistency() {
     let (message_tx, message_rx) = sync_channel(100);
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let frame_size = 512;
     let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, frame_size);

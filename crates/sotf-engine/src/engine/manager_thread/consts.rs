@@ -11,7 +11,10 @@ pub(super) const PLUGIN_INIT_TIMEOUT_MS: u64 = 10000; // 10 seconds for plugin i
 
 pub(super) const MAX_CONFIG_QUEUE_SIZE: usize = 5; // Maximum pending config updates
 
-pub(super) const PROCESSING_COMMAND_TIMEOUT_MS: u64 = 100;
+// The processing worker can legitimately spend one full expensive plugin
+// block before observing a control command. Keep this aligned with the decoder
+// command budget and rely on typed responses rather than accepting late ACKs.
+pub(super) const PROCESSING_COMMAND_TIMEOUT_MS: u64 = 1000;
 
 pub(super) const DECODER_COMMAND_TIMEOUT_MS: u64 = 1000;
 

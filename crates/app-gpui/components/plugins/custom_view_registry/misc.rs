@@ -5,6 +5,7 @@ pub fn plugin_type_key(settings: &PluginSettings) -> &'static str {
     match settings {
         PluginSettings::EQ { .. } => "eq",
         PluginSettings::Gain { .. } => "gain",
+        PluginSettings::Dither { .. } => "dither",
         PluginSettings::AAE { .. } => "aae",
         PluginSettings::Upmixer { .. } => "upmixer",
         PluginSettings::Compressor { .. } => "compressor",

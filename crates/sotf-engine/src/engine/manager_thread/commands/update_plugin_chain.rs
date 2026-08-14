@@ -28,33 +28,7 @@ impl ManagerCommandHandler for UpdatePluginChainCommand {
 
         log::trace!("[Manager Thread] UpdatePluginChain: Configuration validated successfully");
 
-        // If a config update is already in progress, enqueue this one
-        if ctx.config_queue.is_processing() {
-            log::debug!(
-                "[Manager Thread] Config update ALREADY IN PROGRESS - queuing (this may cause channel mismatch!)"
-            );
-            log::trace!(
-                "[Manager Thread] UpdatePluginChain: Queueing update (queue size before: {})",
-                ctx.config_queue.queue.len()
-            );
-            let queued = ctx.config_queue.enqueue(
-                plugins.clone(),
-                super::super::types::ConfigUpdatePriority::UserDirect,
-            );
-            if queued {
-                log::debug!(
-                    "[Manager Thread] UpdatePluginChain: Update QUEUED (not applied immediately)"
-                );
-                return ManagerResponse::Ok;
-            } else {
-                log::warn!(
-                    "[Manager Thread] UpdatePluginChain: Failed to queue update (queue full)"
-                );
-                return ManagerResponse::Error("Plugin update queue is full".to_string());
-            }
-        }
-
-        log::debug!("[Manager Thread] UpdatePluginChain: Applying update immediately (not queued)");
+        log::debug!("[Manager Thread] UpdatePluginChain: Applying update immediately");
 
         // Otherwise, apply immediately using the synchronized apply function
         match super::super::apply::apply_plugin_update(
@@ -65,6 +39,7 @@ impl ManagerCommandHandler for UpdatePluginChainCommand {
             plugins.clone(),
             ctx.config.output_sample_rate,
             ctx.config.input_channels,
+            ctx.config.output_channels,
             ctx.config.oversampling_policy,
         ) {
             Ok(()) => {

@@ -52,9 +52,10 @@ pub mod engine;
 #[cfg(not(target_os = "ios"))]
 pub use engine::CpalSink;
 pub use engine::{
-    AudioEngine, AudioSink, DsdOutputBackend, DsdOutputPlan, EngineFeaturePlan,
-    NetworkEndpointBackend, NetworkEndpointPlan, OutputAccessBackend, OutputAccessPlan,
-    plan_dsd_output, plan_engine_features, plan_network_endpoint, plan_output_access,
+    AudioEngine, AudioSink, DsdOutputBackend, DsdOutputPlan, EmbeddedAudioEngine,
+    EngineFeaturePlan, NetworkEndpointBackend, NetworkEndpointPlan, OutputAccessBackend,
+    OutputAccessPlan, plan_dsd_output, plan_engine_features, plan_network_endpoint,
+    plan_output_access,
 };
 mod types;
 pub use types::{

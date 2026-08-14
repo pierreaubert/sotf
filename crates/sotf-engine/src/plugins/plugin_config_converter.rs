@@ -51,6 +51,7 @@ impl PluginConfigConverterRegistry {
     fn build() -> Self {
         let mut registry = Self::default();
         registry.register("gain", convert_gain);
+        registry.register("dither", effects::convert_dither);
         registry.register("eq", convert_eq);
         registry.register("delay", convert_delay);
         registry.register("crossfeed", convert_crossfeed);

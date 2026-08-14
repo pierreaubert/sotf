@@ -1,5 +1,5 @@
 use sotf_audio::AudioSpec;
-use sotf_audio::decoder::{AudioDecoder, DecodedAudio, create_decoder, probe_file};
+use sotf_audio::decoder::{DecodedAudio, create_decoder, probe_file};
 use sotf_testkit::assertions::{assert_audio_range, assert_finite_audio, assert_frame_aligned};
 use sotf_testkit::audio::temp_sine_wav;
 use std::path::Path;

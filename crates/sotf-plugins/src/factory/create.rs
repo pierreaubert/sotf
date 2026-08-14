@@ -210,6 +210,13 @@ pub fn create_plugin(
                     channels
                 );
                 params.input_channels = channels;
+                params.input_layout = match channels {
+                    6 => Some("5.1".to_string()),
+                    8 => Some("7.1".to_string()),
+                    10 => Some("5.1.4".to_string()),
+                    12 => Some("7.1.4".to_string()),
+                    _ => None,
+                };
             }
             let plugin = DownmixPlugin::try_from_params(params)?;
             Ok(Box::new(plugin))

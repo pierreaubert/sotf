@@ -9,10 +9,6 @@ pub(in crate::engine::manager_thread) struct ConfigUpdateMetrics {
     pub(super) failed_updates: u64,
     /// Number of updates rejected (validation or queue full)
     pub(super) rejected_updates: u64,
-    /// Number of rollbacks attempted
-    pub(super) rollback_attempts: u64,
-    /// Number of successful rollbacks
-    pub(super) successful_rollbacks: u64,
     /// Total time spent on updates (milliseconds)
     pub(super) total_update_time_ms: u64,
     /// Maximum queue depth observed

@@ -26,27 +26,42 @@ pub fn convert_compressor(settings: &PluginSettings, _sample_rate: f64) -> Optio
     else {
         return None;
     };
-    Some(PluginConfig::new(
-        "compressor",
-        json!({
-            "threshold_db": threshold_db,
-            "ratio": ratio,
-            "attack_ms": attack_ms,
-            "release_ms": release_ms,
-            "knee_db": knee_db,
-            "makeup_gain_db": makeup_gain_db,
-            "mix": mix,
-            "auto_makeup": auto_makeup,
-            "link_channels": link_channels,
-            "sidechain_hpf_hz": sidechain_hpf_hz,
-            "sidechain_hpf_order": sidechain_hpf_order,
-            "detection_mode": detection_mode,
-            "lookahead_ms": lookahead_ms,
-            "program_dependent_release": program_dependent_release,
-            "measured_auto_makeup": measured_auto_makeup,
-            "sidechain_external": sidechain_external,
-        }),
-    ))
+    let mut value = json!({
+        "threshold_db": threshold_db,
+        "ratio": ratio,
+        "attack_ms": attack_ms,
+        "release_ms": release_ms,
+        "knee_db": knee_db,
+        "makeup_gain_db": makeup_gain_db,
+        "mix": mix,
+        "auto_makeup": auto_makeup,
+        "link_channels": link_channels,
+        "lookahead_ms": lookahead_ms,
+        "measured_auto_makeup": measured_auto_makeup,
+    });
+    let parameters = value.as_object_mut()?;
+    // These legacy controls are not implemented by the current DSP. Preserve
+    // non-default requests so construction returns the plugin's explicit
+    // unsupported-setting error instead of silently dropping user intent.
+    if (*sidechain_hpf_hz - 80.0).abs() > f64::EPSILON {
+        parameters.insert("sidechain_hpf_hz".into(), json!(sidechain_hpf_hz));
+    }
+    if !sidechain_hpf_order.eq_ignore_ascii_case("2nd") {
+        parameters.insert("sidechain_hpf_order".into(), json!(sidechain_hpf_order));
+    }
+    if !detection_mode.eq_ignore_ascii_case("Peak") {
+        parameters.insert("detection_mode".into(), json!(detection_mode));
+    }
+    if *program_dependent_release {
+        parameters.insert(
+            "program_dependent_release".into(),
+            json!(program_dependent_release),
+        );
+    }
+    if *sidechain_external {
+        parameters.insert("sidechain_external".into(), json!(sidechain_external));
+    }
+    Some(PluginConfig::new("compressor", value))
 }
 
 pub fn convert_limiter(settings: &PluginSettings, _sample_rate: f64) -> Option<PluginConfig> {

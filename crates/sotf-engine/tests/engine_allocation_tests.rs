@@ -87,13 +87,11 @@ fn test_engine_hotpath_allocations() {
 
     // Give time for startup and ramp-up (recycle queues filling up).
     // Under heavy CPU load (e.g., full test suite), threads may be
-    // starved, so we use an adaptive approach: take multiple measurement
-    // windows and require at least one to show zero allocations.
+    // starved, so use several consecutive measurement windows after warmup.
     std::thread::sleep(Duration::from_millis(500));
 
-    let mut best = usize::MAX;
-    let mut best_processing = usize::MAX;
-    let mut best_playback = usize::MAX;
+    const REQUIRED_WINDOWS: usize = 3;
+    let mut windows = Vec::with_capacity(REQUIRED_WINDOWS);
     for _ in 0..5 {
         reset_alloc_count();
         set_counting(true);
@@ -102,10 +100,12 @@ fn test_engine_hotpath_allocations() {
         let count = get_alloc_count();
         let processing_count = get_processing_alloc_count();
         let playback_count = get_playback_alloc_count();
-        best = best.min(count);
-        best_processing = best_processing.min(processing_count);
-        best_playback = best_playback.min(playback_count);
-        if best == 0 {
+        windows.push((count, processing_count, playback_count));
+        if windows.len() >= REQUIRED_WINDOWS
+            && windows[windows.len() - REQUIRED_WINDOWS..]
+                .iter()
+                .all(|window| window.0 == 0)
+        {
             break;
         }
         // Extra settle time before next attempt
@@ -113,15 +113,16 @@ fn test_engine_hotpath_allocations() {
     }
 
     let state = engine.get_state();
-    if state.playback_callback_count == 0 && state.playback_frames_written == 0 {
-        return;
-    }
+    assert!(
+        state.playback_callback_count > 0,
+        "allocation test observed no playback callbacks"
+    );
 
     assert!(
-        best == 0,
-        "Engine hot path performed {} allocations in every measurement window (processing: {}, playback: {})",
-        best,
-        best_processing,
-        best_playback
+        windows.len() >= REQUIRED_WINDOWS
+            && windows[windows.len() - REQUIRED_WINDOWS..]
+                .iter()
+                .all(|window| window.0 == 0),
+        "Engine hot path did not produce {REQUIRED_WINDOWS} consecutive zero-allocation windows: {windows:?}"
     );
 }

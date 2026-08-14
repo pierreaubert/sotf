@@ -49,7 +49,8 @@ mod tests {
 
         // PlaybackChannelsChanged
         handle_thread_event(ThreadEvent::PlaybackChannelsChanged(6), &state);
-        assert_eq!(state.load().num_channels, 6);
+        assert_eq!(state.load().playback_channels, 6);
+        assert_eq!(state.load().num_channels, 2);
 
         // PlaybackOutputDeviceChanged
         handle_thread_event(
@@ -256,7 +257,19 @@ pub(super) fn handle_config_event(
                 log::debug!("[Manager Thread] Reloading config from: {:?}", config_path);
 
                 // Load and parse config file
-                match load_config_file(config_path) {
+                // Editors commonly truncate then rewrite a watched file. The
+                // notify debounce removes duplicate reloads; a few short reads
+                // here keep a transient torn write from being lost forever.
+                let retry_torn_write = matches!(&event, ConfigEvent::ConfigChanged(_));
+                let mut load_result = load_config_file(config_path);
+                for _ in 1..3 {
+                    if load_result.is_ok() || !retry_torn_write {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    load_result = load_config_file(config_path);
+                }
+                match load_result {
                     Ok(new_config) => {
                         // Validate config before queuing
                         match validate_plugin_configs(&new_config.plugins) {

@@ -19,6 +19,8 @@ asio = ["cpal/asio"]
 iamf = ["dep:sotf-iamf", "dep:sotf-plugin-ambisonics"]
 streaming = ["dep:sotf-streaming"]
 hls = ["streaming", "sotf-streaming/hls"]
+# Internal fuzz/allocation harness; excluded from the production public API.
+playback-runtime-harness = []
 
 [dependencies]
 driver-common = { workspace = true }
@@ -99,7 +101,17 @@ sotf-test = { workspace = true }
 [[bench]]
 name = "playback_runtime_benchmark"
 harness = false
+required-features = ["playback-runtime-harness"]
 
 [[bench]]
 name = "timeline_processor_benchmark"
 harness = false
+
+[[test]]
+name = "playback_runtime_allocation_tests"
+required-features = ["playback-runtime-harness"]
+
+[[bin]]
+name = "playback-runtime-fuzzer"
+path = "src/bin/playback-runtime-fuzzer.rs"
+required-features = ["playback-runtime-harness"]

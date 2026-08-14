@@ -29,6 +29,7 @@ mod output_access;
 pub use output_access::{OutputAccessBackend, OutputAccessPlan, plan_output_access};
 
 pub(crate) mod output_dither;
+mod volume_ramp;
 
 #[cfg(not(target_os = "ios"))]
 mod cpal_sink;
@@ -39,7 +40,7 @@ pub use cpal_sink::CpalSink;
 mod playback_thread;
 #[cfg(not(target_os = "ios"))]
 pub use playback_thread::PlaybackThread;
-#[cfg(not(target_os = "ios"))]
+#[cfg(all(not(target_os = "ios"), feature = "playback-runtime-harness"))]
 #[doc(hidden)]
 pub mod playback_runtime_harness;
 
@@ -59,6 +60,9 @@ pub use manager_thread::ManagerThread;
 
 mod audio_engine;
 pub use audio_engine::AudioEngine;
+
+mod embedded_engine;
+pub use embedded_engine::EmbeddedAudioEngine;
 
 mod config;
 pub use config::EngineConfig;

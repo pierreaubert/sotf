@@ -1,17 +1,20 @@
 use super::consts::DSD_DECODE_CHUNK_FRAMES;
 use super::consts::DSD_TO_PCM_DECIMATION;
 use super::decimator::{ALIGNMENT_OUTPUTS, DsdPcmDecimator, SEEK_PREROLL_FRAMES};
+#[cfg(test)]
 use super::parse::parse_dff;
+use super::source::DsdDataSource;
+use super::stream_parse::parse_dff_file;
 use crate::decoder::core::{AudioDecoder, AudioSpec, DecodedAudio};
 use crate::decoder::error::{AudioDecoderError, AudioDecoderResult};
 use crate::decoder::formats::AudioFormat;
-use std::fs;
+use std::fs::File;
 use std::path::Path;
 
 /// Uncompressed DFF/DSDIFF-to-PCM decoder used by the same PCM fallback path as DSF.
 pub struct DffPcmDecoder {
     pub(super) spec: AudioSpec,
-    pub(super) data: Vec<u8>,
+    pub(super) data: DsdDataSource,
     pub(super) channels: usize,
     pub(super) dsd_sample_count: u64,
     pub(super) source_bit_position: u64,
@@ -19,35 +22,60 @@ pub struct DffPcmDecoder {
     pub(super) decimator: DsdPcmDecimator,
     pub(super) input_scratch: Vec<f64>,
     pub(super) pcm_scratch: Vec<f32>,
+    source_byte_position: Option<u64>,
+    source_byte_scratch: Vec<u8>,
 }
 
 impl DffPcmDecoder {
     pub fn new<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Self> {
-        let bytes = fs::read(path)?;
-        Self::from_bytes(bytes)
+        let mut file = File::open(path)?;
+        let fmt = parse_dff_file(&mut file)?;
+        Self::from_parts(
+            fmt.sample_rate,
+            fmt.channels,
+            fmt.sample_count,
+            DsdDataSource::file(file, fmt.data_offset, fmt.data_len),
+        )
     }
 
+    #[cfg(test)]
     pub(super) fn from_bytes(bytes: Vec<u8>) -> AudioDecoderResult<Self> {
         let fmt = parse_dff(&bytes)?;
-        let pcm_sample_rate = fmt.sample_rate / DSD_TO_PCM_DECIMATION as u32;
-        let total_frames = Some(fmt.sample_count / DSD_TO_PCM_DECIMATION);
+        Self::from_parts(
+            fmt.sample_rate,
+            fmt.channels,
+            fmt.sample_count,
+            DsdDataSource::memory(fmt.data),
+        )
+    }
 
-        let channels = fmt.channels as usize;
+    fn from_parts(
+        sample_rate: u32,
+        channel_count: u16,
+        sample_count: u64,
+        data: DsdDataSource,
+    ) -> AudioDecoderResult<Self> {
+        let pcm_sample_rate = sample_rate / DSD_TO_PCM_DECIMATION as u32;
+        let total_frames = Some(sample_count / DSD_TO_PCM_DECIMATION);
+
+        let channels = channel_count as usize;
         let mut decoder = Self {
             spec: AudioSpec {
                 sample_rate: pcm_sample_rate,
-                channels: fmt.channels,
+                channels: channel_count,
                 bits_per_sample: 32,
                 total_frames,
             },
-            data: fmt.data,
+            data,
             channels,
-            dsd_sample_count: fmt.sample_count,
+            dsd_sample_count: sample_count,
             source_bit_position: 0,
             pcm_position: 0,
             decimator: DsdPcmDecimator::new(channels),
             input_scratch: vec![0.0; channels],
             pcm_scratch: vec![0.0; channels],
+            source_byte_position: None,
+            source_byte_scratch: vec![0; channels],
         };
         decoder.prepare_position(0)?;
         Ok(decoder)
@@ -57,26 +85,46 @@ impl DffPcmDecoder {
         self.dsd_sample_count / DSD_TO_PCM_DECIMATION
     }
 
-    fn channel_sample(&self, channel: usize, bit_position: u64) -> f64 {
-        dff_sample(
-            &self.data,
-            self.channels,
-            channel,
-            bit_position,
-            self.dsd_sample_count,
-        )
+    fn load_source_bytes(&mut self, byte_position: u64) -> AudioDecoderResult<()> {
+        if self.source_byte_position == Some(byte_position) {
+            return Ok(());
+        }
+        let offset = byte_position
+            .checked_mul(self.channels as u64)
+            .ok_or_else(|| {
+                AudioDecoderError::DecodingFailed("DFF data offset overflow".to_string())
+            })?;
+        self.data
+            .read_exact_at(offset, &mut self.source_byte_scratch)?;
+        self.source_byte_position = Some(byte_position);
+        Ok(())
     }
 
-    fn produce_frame(&mut self) {
+    fn produce_frame(&mut self) -> AudioDecoderResult<()> {
         loop {
-            for channel in 0..self.channels {
-                self.input_scratch[channel] =
-                    self.channel_sample(channel, self.source_bit_position);
+            if self.source_bit_position < self.dsd_sample_count {
+                self.load_source_bytes(self.source_bit_position / 8)?;
+                let shift = 7 - (self.source_bit_position % 8) as u32;
+                for channel in 0..self.channels {
+                    self.input_scratch[channel] =
+                        if self.source_byte_scratch[channel] & (1 << shift) != 0 {
+                            1.0
+                        } else {
+                            -1.0
+                        };
+                }
+            } else {
+                let padding = if self.source_bit_position.is_multiple_of(2) {
+                    1.0
+                } else {
+                    -1.0
+                };
+                self.input_scratch.fill(padding);
             }
             self.source_bit_position = self.source_bit_position.saturating_add(1);
             if let Some(frame) = self.decimator.push(&self.input_scratch) {
                 self.pcm_scratch.copy_from_slice(frame);
-                return;
+                return Ok(());
             }
         }
     }
@@ -87,45 +135,18 @@ impl DffPcmDecoder {
             .checked_mul(DSD_TO_PCM_DECIMATION)
             .ok_or_else(|| AudioDecoderError::SeekFailed("DFF seek offset overflow".into()))?;
         self.decimator.reset();
+        self.source_byte_position = None;
 
         let discard = frame_position
             .checked_add(ALIGNMENT_OUTPUTS)
             .and_then(|position| position.checked_sub(start_frame))
             .ok_or_else(|| AudioDecoderError::SeekFailed("DFF seek pre-roll overflow".into()))?;
         for _ in 0..discard {
-            self.produce_frame();
+            self.produce_frame()?;
         }
         self.pcm_position = frame_position;
         Ok(())
     }
-}
-
-fn dff_sample(
-    data: &[u8],
-    channels: usize,
-    channel: usize,
-    bit_position: u64,
-    sample_count: u64,
-) -> f64 {
-    if bit_position >= sample_count {
-        return if bit_position.is_multiple_of(2) {
-            1.0
-        } else {
-            -1.0
-        };
-    }
-    let Ok(byte_position) = usize::try_from(bit_position / 8) else {
-        return 0.0;
-    };
-    let Some(offset) = byte_position
-        .checked_mul(channels)
-        .and_then(|offset| offset.checked_add(channel))
-    else {
-        return 0.0;
-    };
-    let byte = data.get(offset).copied().unwrap_or(0);
-    let shift = 7 - (bit_position % 8) as u32;
-    if byte & (1 << shift) != 0 { 1.0 } else { -1.0 }
 }
 
 impl AudioDecoder for DffPcmDecoder {
@@ -160,7 +181,7 @@ impl AudioDecoder for DffPcmDecoder {
         dest.samples.resize(sample_len, 0.0);
         for frame_offset in 0..frames {
             let dst = frame_offset as usize * self.channels;
-            self.produce_frame();
+            self.produce_frame()?;
             dest.samples[dst..dst + self.channels].copy_from_slice(&self.pcm_scratch);
         }
 

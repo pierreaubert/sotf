@@ -6,6 +6,7 @@ use crate::decoder::AudioSource;
 use sotf_plugins::PluginHost;
 use std::any::Any;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 // Re-export shared types from the engine types module.
 pub use crate::{
@@ -37,6 +38,7 @@ pub type PluginDataCache = Arc<arc_swap::ArcSwap<PluginDataVec>>;
 /// lines. The processing thread only validates the base snapshot and moves
 /// these allocations into its active state.
 pub struct PreparedHostUpdate {
+    pub(super) generation: u64,
     pub(super) host: Box<PluginHost>,
     pub(super) expected_output_channels: usize,
     pub(super) expected_latency_samples: usize,
@@ -46,6 +48,99 @@ pub struct PreparedHostUpdate {
     pub(super) analyzer_cache: Arc<PluginDataVec>,
     pub(super) old_path_delay: PreparedTransitionDelay,
     pub(super) new_path_delay: PreparedTransitionDelay,
+    pub(super) ticket: HostUpdateTicket,
+}
+
+const HOST_UPDATE_PENDING: u8 = 0;
+const HOST_UPDATE_COMMITTED: u8 = 1;
+const HOST_UPDATE_CANCELLED: u8 = 2;
+const HOST_UPDATE_EXECUTING: u8 = 3;
+const HOST_UPDATE_COMPLETED: u8 = 4;
+
+#[derive(Clone, Debug)]
+pub(super) struct HostUpdateTicket(std::sync::Arc<AtomicU8>);
+
+impl HostUpdateTicket {
+    pub(super) fn new() -> Self {
+        Self(std::sync::Arc::new(AtomicU8::new(HOST_UPDATE_PENDING)))
+    }
+
+    pub(super) fn try_commit(&self) -> bool {
+        self.0
+            .compare_exchange(
+                HOST_UPDATE_PENDING,
+                HOST_UPDATE_COMMITTED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+    }
+
+    /// Claim a potentially blocking operation without publishing its result.
+    /// Playback stream creation remains cancellable until the new stream is
+    /// ready to be installed atomically.
+    pub(super) fn try_begin_execution(&self) -> bool {
+        self.0
+            .compare_exchange(
+                HOST_UPDATE_PENDING,
+                HOST_UPDATE_EXECUTING,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+    }
+
+    pub(super) fn try_complete_execution(&self) -> bool {
+        self.0
+            .compare_exchange(
+                HOST_UPDATE_EXECUTING,
+                HOST_UPDATE_COMPLETED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+    }
+
+    /// Cancel work that has not made its result externally visible. Host swaps
+    /// commit in one step; playback builds may also be cancelled while the new
+    /// stream is being prepared, before installation.
+    pub(super) fn cancel(&self) -> bool {
+        loop {
+            let state = self.0.load(Ordering::Acquire);
+            match state {
+                HOST_UPDATE_PENDING | HOST_UPDATE_EXECUTING => {
+                    if self
+                        .0
+                        .compare_exchange(
+                            state,
+                            HOST_UPDATE_CANCELLED,
+                            Ordering::AcqRel,
+                            Ordering::Acquire,
+                        )
+                        .is_ok()
+                    {
+                        return true;
+                    }
+                }
+                HOST_UPDATE_CANCELLED => return true,
+                HOST_UPDATE_COMMITTED | HOST_UPDATE_COMPLETED => return false,
+                _ => return false,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlaybackConfiguration {
+    pub(super) sample_rate: u32,
+    pub(super) channels: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct PlaybackReconfigureRequest {
+    pub(super) requested: PlaybackConfiguration,
+    pub(super) ticket: HostUpdateTicket,
+    pub(super) reply_tx: std::sync::mpsc::SyncSender<Result<PlaybackConfiguration, String>>,
 }
 
 impl PreparedHostUpdate {
@@ -86,6 +181,7 @@ impl PreparedHostUpdate {
         let analyzer_cache = Arc::new(vec![None; host.plugin_count()]);
 
         Ok(Self {
+            generation: 0,
             host: Box::new(host),
             expected_output_channels,
             expected_latency_samples,
@@ -95,6 +191,7 @@ impl PreparedHostUpdate {
             analyzer_cache,
             old_path_delay,
             new_path_delay,
+            ticket: HostUpdateTicket::new(),
         })
     }
 
@@ -102,11 +199,21 @@ impl PreparedHostUpdate {
     pub(crate) fn prepared_analyzer_slots(&self) -> usize {
         self.analyzer_cache.len()
     }
+
+    pub(super) fn with_generation(mut self, generation: u64) -> Self {
+        self.generation = generation;
+        self
+    }
+
+    pub(super) fn ticket(&self) -> HostUpdateTicket {
+        self.ticket.clone()
+    }
 }
 
 impl std::fmt::Debug for PreparedHostUpdate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PreparedHostUpdate")
+            .field("generation", &self.generation)
             .field("expected_output_channels", &self.expected_output_channels)
             .field("expected_latency_samples", &self.expected_latency_samples)
             .field("output_channels", &self.output_channels)
@@ -291,10 +398,18 @@ pub enum ProcessingResponse {
     Ok,
     /// Plugin chain updated with new output channel count and latency
     PluginChainUpdated {
+        generation: u64,
         output_channels: usize,
+        output_sample_rate: u32,
         previous_latency_samples: usize,
         latency_samples: usize,
         latency_changed: bool,
+    },
+    /// A parameter was applied and the host metadata was re-queried.
+    ParameterUpdated {
+        output_channels: usize,
+        output_sample_rate: u32,
+        latency_samples: usize,
     },
     /// Plugin data
     PluginData(Arc<dyn Any + Send + Sync>),
@@ -309,10 +424,17 @@ pub enum PlaybackCommand {
     SetVolume(f32),
     /// Mute/unmute
     Mute(bool),
+    /// Discard buffered audio and hold incoming frames until resumed.
+    Pause,
+    /// Resume accepting frames after a pause once the callback-side flush completes.
+    Resume,
     /// Update output channel count (requires rebuilding stream)
     UpdateChannels(usize),
     /// Update output sample rate (requires rebuilding stream)
     UpdateSampleRate(u32),
+    /// Atomically rebuild the output for a processing-host topology change and
+    /// report the actual hardware configuration before the manager publishes it.
+    Reconfigure(PlaybackReconfigureRequest),
     /// Stop playback
     Stop,
     /// Shutdown the thread

@@ -12,51 +12,7 @@ pub(super) fn plugin_parameter_descriptors(settings: &sotf_audio::PluginSettings
 
 /// Map PluginType enum to the string the engine's create_plugin() expects
 pub(super) fn plugin_type_to_engine_str(pt: &PluginType) -> &'static str {
-    match pt {
-        PluginType::EQ => "eq",
-        PluginType::Gain => "gain",
-        PluginType::Upmixer => "upmixer",
-        PluginType::AAE => "aae",
-        PluginType::Compressor => "compressor",
-        PluginType::Limiter => "limiter",
-        PluginType::Gate => "gate",
-        PluginType::Expander => "expander",
-        PluginType::MultibandCompressor => "multiband_compressor",
-        PluginType::MultibandExpander => "multiband_expander",
-        PluginType::LoudnessCompensation => "loudness_compensation",
-        PluginType::FletcherMunson => "fletcher_munson",
-        PluginType::BinauralDecoder => "binaural_decoder",
-        PluginType::Convolution => "convolution",
-        PluginType::LoudnessMonitor => "loudness_monitor",
-        PluginType::SpectrumAnalyzer => "spectrum_analyzer",
-        PluginType::ChannelMuteSolo => "channel_mute_solo",
-        PluginType::Matrix => "matrix",
-        PluginType::XTC => "xtc",
-        PluginType::Denoiser => "denoiser",
-        PluginType::Declick => "declick",
-        PluginType::HissReducer => "hiss_reducer",
-        PluginType::SpeechDenoiser => "speech_denoiser",
-        PluginType::Pnd => "pnd",
-        PluginType::ABCompare => "ab_compare",
-        PluginType::Crossover => "crossover",
-        PluginType::BandSplit => "band_split",
-        PluginType::BandMerge => "band_merge",
-        PluginType::Downmix => "downmix",
-        PluginType::MonoToStereo => "mono_to_stereo",
-        PluginType::Crossfeed => "crossfeed",
-        PluginType::Delay => "delay",
-        PluginType::Aec => "aec",
-        PluginType::Beamformer => "beamformer",
-        PluginType::AmbisonicsDecoder => "ambisonics_decoder",
-        PluginType::StereoImager => "stereo_imager",
-        PluginType::DeEsser => "de_esser",
-        PluginType::TransientShaper => "transient_shaper",
-        PluginType::Saturation => "saturation",
-        PluginType::DynamicEq => "dynamic_eq",
-        PluginType::LinearPhaseEq => "linear_phase_eq",
-        PluginType::SpectralCompressor => "spectral_compressor",
-        PluginType::External => "external",
-    }
+    pt.wire_name()
 }
 
 /// Categorize plugins for the UI picker
@@ -65,7 +21,7 @@ pub(super) fn plugin_type_category(pt: &PluginType) -> &'static str {
         PluginType::EQ | PluginType::FletcherMunson | PluginType::LoudnessCompensation => {
             "EQ & Tone"
         }
-        PluginType::Gain => "Utility",
+        PluginType::Gain | PluginType::Dither => "Utility",
         PluginType::Compressor | PluginType::Limiter | PluginType::Gate | PluginType::Expander => {
             "Dynamics"
         }
@@ -113,5 +69,16 @@ mod tests {
         assert_eq!(plugin_type_to_engine_str(&PluginType::External), "external");
         assert_eq!(plugin_type_category(&PluginType::External), "External");
         assert!(!PluginType::all().contains(&PluginType::External));
+    }
+
+    #[test]
+    fn every_picker_plugin_uses_the_engine_wire_name() {
+        for plugin_type in PluginType::all() {
+            assert_eq!(
+                plugin_type_to_engine_str(&plugin_type),
+                plugin_type.wire_name()
+            );
+        }
+        assert_eq!(plugin_type_category(&PluginType::Dither), "Utility");
     }
 }

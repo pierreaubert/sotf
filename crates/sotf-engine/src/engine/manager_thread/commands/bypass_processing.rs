@@ -10,15 +10,17 @@ impl ManagerCommandHandler for BypassProcessingCommand {
         let bypass = self.0;
         log::debug!("[Manager Thread] Bypass processing: {}", bypass);
 
-        if let Err(e) = ctx
+        let request_id = match ctx
             .processing
             .send_command(ProcessingCommand::Bypass(bypass))
         {
-            return ManagerResponse::Error(e);
-        }
+            Ok(request_id) => request_id,
+            Err(e) => return ManagerResponse::Error(e),
+        };
 
         match super::super::wait::wait_for_processing_ack(
             ctx.processing,
+            request_id,
             std::time::Duration::from_millis(super::super::consts::PROCESSING_COMMAND_TIMEOUT_MS),
         ) {
             Ok(()) => {

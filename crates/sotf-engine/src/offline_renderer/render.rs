@@ -28,6 +28,11 @@ impl HostOutputState {
 }
 
 /// Render audio offline at maximum CPU speed.
+///
+/// The progress callback runs synchronously on the rendering thread. If it
+/// panics, the panic propagates to the caller and the output file may contain a
+/// valid but incomplete render. Callers that cannot tolerate callback panics
+/// should isolate them before passing the callback here.
 pub fn render_offline(
     config: &OfflineRenderConfig,
     mut on_progress: Option<&mut dyn FnMut(&RenderProgress)>,
