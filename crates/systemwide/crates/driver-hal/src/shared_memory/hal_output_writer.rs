@@ -133,6 +133,22 @@ impl HalOutputWriter {
         }
     }
 
+    /// Number of complete plaintext frames currently queued for HAL playback.
+    pub fn available_read_frames(&self) -> usize {
+        self.buffer
+            .as_ref()
+            .map(SharedAudioBuffer::available_read_frames)
+            .unwrap_or(0)
+    }
+
+    /// Drop queued audio while the transport is quiesced. This must not be
+    /// called from an audio callback.
+    pub fn flush_audio(&self) {
+        if let Some(buffer) = self.buffer.as_ref() {
+            buffer.flush_audio();
+        }
+    }
+
     /// Get the current HAL format as `(sample_rate, channel_count, buffer_frames)`.
     /// Returns `Err` when disconnected.
     pub fn current_format(&self) -> std::io::Result<(u32, u32, u32)> {

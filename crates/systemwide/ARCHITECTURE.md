@@ -499,6 +499,15 @@ Key observations:
   idle-start deadlock where HAL accepts a later playback client but refuses to
   write frames because the daemon heartbeat expired before the first audio
   arrived.
+- The HAL output plugin treats readiness as the commit point of a transport
+  transaction. Initialization and re-service quiesce once, discard stale
+  pending output, flush the ring, and prime exactly the negotiated buffer-frame
+  count before setting `engine_ready=true`. A short or otherwise invalid prime
+  is rolled back by flushing the ring and retaining `engine_ready=false`.
+- Compensable HAL output boundary latency is the fixed target ring fill plus
+  the Swift virtual device's reported latency and safety offset. Typed v2
+  telemetry exposes those components and the observed ring fill separately;
+  ring capacity itself is not latency.
 - Output device safety is enforced by rejecting virtual/loopback device names
   for the physical output side. When no hardware sink is selected, the engine
   scans for a physical output without opening the macOS default device first,

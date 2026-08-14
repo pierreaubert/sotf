@@ -41,6 +41,12 @@ Validate exact sample rate and channel layout during initialization and on every
 **Fixed conservatively in 0.5.10.** Ring capacity is no longer reported as
 graph latency; the plugin reports zero until a measured target-fill/device
 latency contract exists.
+**Completed in 0.5.12.** Initialization and every control-thread re-service
+flush and prime the shared ring to exactly one negotiated HAL buffer before
+readiness is published. Fixed boundary latency is now the target fill plus the
+Swift virtual-device latency and safety offset. Typed v2 telemetry reports each
+component and observed fill separately. Priming failure is transactional: the
+ring is flushed and readiness remains false.
 
 The plugin caches `buffer_frames` and reports it as latency (`lib.rs:99-105,229,267-277`). Ring capacity is a maximum, while actual playout delay depends on fill level, HAL safety/device latency, callback phase, reader scheduling, and encryption records. Returning capacity overcompensates the graph; updating it inside processing can also change latency without graph recompilation.
 

@@ -10737,7 +10737,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-hal-output"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "driver-hal",
  "log",

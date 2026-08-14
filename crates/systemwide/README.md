@@ -110,6 +110,10 @@ is still planned and does not yet have a `just systemwide-lab` recipe.
   atomics and a tested C layout.
 - CoreAudio callback staging is preallocated to the maximum supported HAL
   geometry; encrypted IO refuses to allocate on the real-time path.
+- The HAL output boundary publishes readiness only after flushing and priming
+  one negotiated buffer of silence. Its fixed latency contract is that target
+  fill plus the Swift device latency and safety offset; failed priming leaves
+  the ring empty and quiesced.
 - Compile Swift with `SOTF_AUDIO_TRACE` only for explicit audio-path tracing.
 
 ## IPC protocol
