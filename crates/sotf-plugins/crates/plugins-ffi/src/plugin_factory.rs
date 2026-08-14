@@ -2,10 +2,46 @@
 // Plugin Factory - Delegates to plugins-bridge for all plugin creation
 // ============================================================================
 
+use sotf_host::AsyncTimelinePlugin;
 use sotf_host::plugin::Plugin;
 
 const LINEAR_PHASE_EQ_DEFAULT_FILTERS: usize = 5;
 const LINEAR_PHASE_EQ_MAX_FILTERS: usize = 10;
+pub(crate) const MAX_CALLBACK_FRAMES_CONFIG_KEY: &str = "_sotf_max_callback_frames";
+
+pub(crate) fn max_callback_frames_from_config(config_json: &str) -> Result<usize, String> {
+    let config: serde_json::Value = serde_json::from_str(config_json)
+        .map_err(|error| format!("Invalid plugin configuration JSON: {error}"))?;
+    let Some(value) = config.get(MAX_CALLBACK_FRAMES_CONFIG_KEY) else {
+        return Ok(super::consts::DEFAULT_MAX_CALLBACK_FRAMES);
+    };
+    let value = value
+        .as_u64()
+        .and_then(|value| usize::try_from(value).ok())
+        .ok_or_else(|| {
+            format!(
+                "'{MAX_CALLBACK_FRAMES_CONFIG_KEY}' must be a positive integer no greater than {}",
+                super::consts::MAX_CALLBACK_FRAMES
+            )
+        })?;
+    if value == 0 || value > super::consts::MAX_CALLBACK_FRAMES {
+        return Err(format!(
+            "'{MAX_CALLBACK_FRAMES_CONFIG_KEY}' must be between 1 and {}",
+            super::consts::MAX_CALLBACK_FRAMES
+        ));
+    }
+    Ok(value)
+}
+
+fn plugin_config_without_ffi_metadata(config_json: &str) -> Result<String, String> {
+    let mut config: serde_json::Value = serde_json::from_str(config_json)
+        .map_err(|error| format!("Invalid plugin configuration JSON: {error}"))?;
+    if let Some(config) = config.as_object_mut() {
+        config.remove(MAX_CALLBACK_FRAMES_CONFIG_KEY);
+    }
+    serde_json::to_string(&config)
+        .map_err(|error| format!("Failed to serialize plugin configuration JSON: {error}"))
+}
 
 fn state_integer(
     state: &serde_json::Map<String, serde_json::Value>,
@@ -217,12 +253,31 @@ pub(crate) fn canonical_direct_plugin_type(plugin_type: &str) -> &str {
 /// Create a plugin instance from plugin type and JSON config string.
 ///
 /// Delegates to `plugins_bridge::create_plugin()` which supports all plugin types.
+#[cfg(test)]
 pub fn create_plugin(
     plugin_type: &str,
     config_json: &str,
     input_channels: usize,
     output_channels: usize,
     sample_rate: u32,
+) -> Result<Box<dyn Plugin>, String> {
+    create_plugin_with_max_callback(
+        plugin_type,
+        config_json,
+        input_channels,
+        output_channels,
+        sample_rate,
+        super::consts::DEFAULT_MAX_CALLBACK_FRAMES,
+    )
+}
+
+pub(crate) fn create_plugin_with_max_callback(
+    plugin_type: &str,
+    config_json: &str,
+    input_channels: usize,
+    output_channels: usize,
+    sample_rate: u32,
+    max_callback_frames: usize,
 ) -> Result<Box<dyn Plugin>, String> {
     let plugin_type = canonical_direct_plugin_type(plugin_type);
     if plugin_type == "Resampler" {
@@ -232,8 +287,20 @@ pub fn create_plugin(
         );
     }
 
+    // FFI construction metadata belongs to the facade, not the plugin schema.
+    // Consume it before deserializing strict `deny_unknown_fields` configs.
+    let plugin_config = plugin_config_without_ffi_metadata(config_json)?;
     let plugin =
-        plugins_bridge::create_plugin(plugin_type, input_channels, sample_rate, config_json)?;
+        plugins_bridge::create_plugin(plugin_type, input_channels, sample_rate, &plugin_config)?;
+    let plugin: Box<dyn Plugin> = if plugin_type == "LinearPhaseEQ" {
+        Box::new(AsyncTimelinePlugin::new(
+            plugin,
+            sample_rate,
+            max_callback_frames,
+        )?)
+    } else {
+        plugin
+    };
     if plugin.input_channels() != input_channels {
         return Err(format!(
             "Plugin {plugin_type} created with {} input channels, requested {input_channels}",
@@ -338,5 +405,20 @@ mod tests {
         short.initialize(48_000).unwrap();
         long.initialize(48_000).unwrap();
         assert!(long.latency_samples() > short.latency_samples());
+    }
+
+    #[test]
+    fn linear_phase_eq_adapter_latency_uses_negotiated_callback_quantum() {
+        let config = r#"{"num_filters":1,"fir_length_index":0,"filters":[]}"#;
+        let mut inner = plugins_bridge::create_plugin("LinearPhaseEQ", 2, 48_000, config).unwrap();
+        inner.initialize(48_000).unwrap();
+        let inner_latency = inner.latency_samples();
+
+        let mut direct =
+            create_plugin_with_max_callback("LinearPhaseEQ", config, 2, 2, 48_000, 257).unwrap();
+        // The facade's normal post-factory initialize call is adapter-idempotent.
+        direct.initialize(48_000).unwrap();
+        assert_eq!(direct.realtime_quantum_frames(), 1);
+        assert_eq!(direct.latency_samples(), inner_latency + 2 * 257);
     }
 }

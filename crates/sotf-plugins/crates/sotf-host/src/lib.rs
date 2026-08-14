@@ -6,6 +6,7 @@ pub mod analyzer;
 pub mod analyzer_channel_correlation;
 pub mod analyzer_loudness_monitor;
 pub mod analyzer_spectrum;
+pub mod async_timeline_plugin;
 pub mod auto_gain;
 pub mod automation;
 pub mod custom_views;
@@ -84,6 +85,7 @@ pub use analyzer_spectrum::{
     SpectralTiltCorrection, SpectrumAnalyzer, SpectrumAnalyzerPlugin, SpectrumConfig, SpectrumInfo,
     TiltReferenceFreq,
 };
+pub use async_timeline_plugin::AsyncTimelinePlugin;
 pub use auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
 pub use external_plugin::{
     EXTERNAL_PLUGIN_INSTANCE_ID_PARAMETER, EXTERNAL_PLUGIN_PRESET_ID, ExternalHostingBackend,

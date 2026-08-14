@@ -63,6 +63,70 @@ fn test_plugin_lifecycle() {
 }
 
 #[test]
+fn linear_phase_eq_direct_adapter_enforces_callback_bound_and_silences_error() {
+    let plugin_type = CString::new("LinearPhaseEQ").unwrap();
+    let config = CString::new(
+        r#"{"num_filters":1,"fir_length_index":0,"filters":[],"_sotf_max_callback_frames":17}"#,
+    )
+    .unwrap();
+    let handle = plugin_create(plugin_type.as_ptr(), config.as_ptr(), 48_000, 2, 2);
+    assert!(!handle.is_null());
+
+    let input = [0.25_f32; 36];
+    let mut output = [1.0_f32; 36];
+    #[cfg(debug_assertions)]
+    let status = {
+        let status = std::cell::Cell::new(PluginError::Success as c_int);
+        sotf_host::test_utils::assert_no_allocs("oversized FFI callback", || {
+            status.set(plugin_process(
+                handle,
+                input.as_ptr(),
+                output.as_mut_ptr(),
+                18,
+            ));
+        });
+        status.get()
+    };
+    #[cfg(not(debug_assertions))]
+    let status = plugin_process(handle, input.as_ptr(), output.as_mut_ptr(), 18);
+    assert_eq!(status, PluginError::BufferTooSmall as c_int);
+    assert!(output.iter().all(|sample| *sample == 0.0));
+    assert!(last_error_string().contains("negotiated maximum"));
+
+    plugin_destroy(handle);
+}
+
+#[test]
+fn explicit_callback_bound_rejects_zero_and_unbounded_values() {
+    let plugin_type = CString::new("LinearPhaseEQ").unwrap();
+    for invalid in [0, super::consts::MAX_CALLBACK_FRAMES + 1] {
+        let config = CString::new(format!(r#"{{"_sotf_max_callback_frames":{invalid}}}"#)).unwrap();
+        let handle = plugin_create(plugin_type.as_ptr(), config.as_ptr(), 48_000, 2, 2);
+        assert!(handle.is_null());
+    }
+
+    for invalid_json in [
+        r#"{"_sotf_max_callback_frames":-1}"#,
+        r#"{"_sotf_max_callback_frames":1.5}"#,
+        r#"{"_sotf_max_callback_frames":"17"}"#,
+        r#"{"_sotf_max_callback_frames":null}"#,
+    ] {
+        let config = CString::new(invalid_json).unwrap();
+        let handle = plugin_create(plugin_type.as_ptr(), config.as_ptr(), 48_000, 2, 2);
+        assert!(handle.is_null());
+    }
+}
+
+#[test]
+fn callback_bound_metadata_is_not_forwarded_to_strict_plugin_configs() {
+    let plugin_type = CString::new("Gate").unwrap();
+    let config = CString::new(r#"{"_sotf_max_callback_frames":257}"#).unwrap();
+    let handle = plugin_create(plugin_type.as_ptr(), config.as_ptr(), 48_000, 2, 2);
+    assert!(!handle.is_null(), "{}", last_error_string());
+    plugin_destroy(handle);
+}
+
+#[test]
 fn test_null_safety() {
     let handle = plugin_create(ptr::null(), ptr::null(), 48000, 2, 2);
     assert!(handle.is_null());

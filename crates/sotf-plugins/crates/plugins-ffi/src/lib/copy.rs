@@ -2,7 +2,7 @@ use super::PluginError;
 use super::PluginMidiEvent;
 use super::PluginNoteExpressionEvent;
 use super::libc::libc_malloc;
-use super::misc::set_last_error;
+use super::misc::set_last_error_static;
 use std::ptr;
 
 pub(super) fn copy_midi_output_events(
@@ -20,11 +20,11 @@ pub(super) fn copy_midi_output_events(
         return PluginError::Success;
     }
     if out.is_null() {
-        set_last_error("NULL MIDI output buffer with queued events");
+        set_last_error_static(c"NULL MIDI output buffer with queued events");
         return PluginError::NullPointer;
     }
     if capacity < queued.len() {
-        set_last_error("MIDI output buffer is too small");
+        set_last_error_static(c"MIDI output buffer is too small");
         return PluginError::BufferTooSmall;
     }
 
@@ -50,11 +50,11 @@ pub(super) fn copy_note_expression_output_events(
         return PluginError::Success;
     }
     if out.is_null() {
-        set_last_error("NULL Note Expression output buffer with queued events");
+        set_last_error_static(c"NULL Note Expression output buffer with queued events");
         return PluginError::NullPointer;
     }
     if capacity < queued.len() {
-        set_last_error("Note Expression output buffer is too small");
+        set_last_error_static(c"Note Expression output buffer is too small");
         return PluginError::BufferTooSmall;
     }
 

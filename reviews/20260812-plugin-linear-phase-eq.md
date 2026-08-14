@@ -1,12 +1,45 @@
 # Linear Phase EQ audio plugin code review — 2026-08-12
 
-## Final remediation status — 2026-08-12
+## Final remediation status — 2026-08-14
 
-The engine queued-work path remediates the retained P1–P3 findings in `0.5.6`
-(no P0 was reported), with one integration limitation still open: direct AU/NIH
-physical callbacks do not have the engine's queued slack. An async/fixed-rate
-adapter was proposed but is not implemented pending explicit architectural
-approval, so this review does not claim direct-callback compliance.
+All retained P1–P3 findings in `0.5.6` are remediated (no P0 was reported).
+The engine continues to use its summed queued-work horizon. Direct AU, CLAP,
+VST3, and fixed-rate FFI instances now wrap Linear Phase EQ in a bounded,
+preallocated asynchronous timeline adapter, so they no longer execute the FIR
+worker inside the physical callback.
+
+- The direct-format quantum is
+  `max(plugin.realtime_quantum_frames(), negotiated_max_callback_frames)`.
+  AU uses `maximumFramesToRender`, NIH uses `BufferConfig.max_buffer_size`, and
+  FFI consumes a checked reserved construction-JSON maximum without changing
+  its v3 ABI. Facade metadata is stripped before strict plugin schemas are
+  deserialized. The adapter reports the inner DSP latency plus exactly two
+  adapter quanta. Oversized FFI callbacks are rejected and fully silenced
+  without advancing adapter state.
+- The callback moves fixed-capacity blocks through safe-Rust SPSC queues. It
+  does not wait, lock, allocate, deallocate, log, join, or destroy plugin-owned
+  resources. Overload advances absolute input/output time with bounded silence;
+  late results and old reset epochs are discarded rather than replayed shifted.
+- Parameter commands carry absolute frame timestamps. NIH enables its
+  sample-accurate buffer splitting only for Linear Phase EQ, and AU retains its
+  existing point/ramp event timeline. Reset preserves accepted realtime state
+  and rejects stale work. Worker failures latch full-silence behavior until a
+  reset or reconstruction.
+- Structural NIH state is hidden and non-automatable, serialized into the
+  constructor (including the full ten-band schema), and fingerprinted. A host
+  that changes construction state while active receives silence plus an
+  explicit reactivation error; reconstruction/destruction never occurs on the
+  render thread.
+- Deterministic adapter tests cover callback partitions 1/17/32 and the
+  negotiated maximum, exact `+2Q` causality, Q−1/Q/Q+1 and tied automation,
+  reset epochs, input/output/event saturation, recovery without shifted replay,
+  million-frame overload recovery without proportional DSP catch-up, full
+  overwrite, inner error/panic latching without post-fault reentry, future-epoch
+  event preservation, zero callback allocations and deallocations, and
+  control-thread destruction. FFI passes 41 tests, NIH passes its focused
+  Linear Phase EQ tests, and the native arm64 AU smoke suite covers same-format
+  maximum-frame recreation, latency KVO, event/ramp handling, concurrency, and
+  realtime allocation evidence.
 
 - Every FIR-response parameter is structural. Runtime changes return an error,
   so FIR design/planning/allocation, old-tail/new-filter splices, and latency
@@ -32,8 +65,8 @@ approval, so this review does not claim direct-callback compliance.
 - Removing recursive callback chunking eliminated its transport/event metadata
   corruption. Stable Auto Gain FIRs retain linear compile metadata.
 - README, AGENTS, changelog, QA, crate version, and lockfile describe the queued
-  engine contract. QA reports direct physical-deadline misses separately and
-  leaves AU/NIH direct-callback compliance unresolved.
+  engine contract; the direct-format adapter above separately satisfies the
+  physical callback contract without changing engine scheduling.
 
 ## Findings
 

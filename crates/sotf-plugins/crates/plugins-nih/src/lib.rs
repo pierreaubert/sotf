@@ -298,6 +298,14 @@ mod plugin {
     sotf_nih_plugin!(SotfLinearPhaseEQ, plugin_type: "LinearPhaseEQ", name: "SOTF: Linear-Phase EQ", clap_id: "org.spinorama.sotf.linear-phase-eq", vst3_class_id: *b"SotfLinPhsEq0001", channels: 2);
     nih_plug::nih_export_clap!(SotfLinearPhaseEQ);
     nih_plug::nih_export_vst3!(SotfLinearPhaseEQ);
+
+    #[cfg(test)]
+    mod tests {
+        use super::SotfLinearPhaseEQ;
+        use nih_plug::prelude::Plugin;
+
+        const _: () = assert!(SotfLinearPhaseEQ::SAMPLE_ACCURATE_AUTOMATION);
+    }
 }
 
 #[cfg(feature = "spectral-compressor")]

@@ -1,4 +1,4 @@
-use super::LAST_ERROR;
+use super::{LAST_ERROR, LAST_STATIC_ERROR};
 #[cfg(target_os = "macos")]
 use gpui::AppContext as _;
 use std::ffi::{CStr, CString};
@@ -7,9 +7,16 @@ use std::os::raw::c_char;
 use std::rc::Rc;
 
 pub(super) fn set_last_error(msg: &str) {
+    LAST_STATIC_ERROR.with(|error| error.set(std::ptr::null()));
     LAST_ERROR.with(|e| {
         *e.borrow_mut() = CString::new(msg).ok();
     });
+}
+
+/// Publish a process-path diagnostic without allocating, deallocating, or
+/// replacing the owned control-thread error string.
+pub(super) fn set_last_error_static(msg: &'static CStr) {
+    LAST_STATIC_ERROR.with(|error| error.set(msg.as_ptr()));
 }
 
 pub(super) fn sanitize_filename_component(input: &str) -> String {

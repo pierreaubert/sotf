@@ -1,8 +1,18 @@
+// Callback-bound negotiation uses a reserved construction JSON field, so the
+// v3 symbol surface, layouts, and ownership rules remain unchanged.
 pub(super) const SOTF_PLUGIN_FFI_ABI_VERSION: u32 = 3;
 
 pub(super) const MAX_FFI_MIDI_EVENTS_PER_BLOCK: usize = 256;
 
 pub(super) const MAX_FFI_OUTPUT_EVENTS_PER_BLOCK: usize = 256;
+
+/// Default callback bound when construction JSON does not contain the reserved
+/// `_sotf_max_callback_frames` field.
+pub(super) const DEFAULT_MAX_CALLBACK_FRAMES: usize = 4096;
+
+/// Hard ceiling for direct-format callback negotiation. This matches the AU
+/// wrapper's maximum and bounds adapter allocation in generic FFI hosts.
+pub(super) const MAX_CALLBACK_FRAMES: usize = 65_536;
 
 pub(super) const MAX_PRESET_JSON_IMPORT_BYTES: usize = 16 * 1024 * 1024;
 

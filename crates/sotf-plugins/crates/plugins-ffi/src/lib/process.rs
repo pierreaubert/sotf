@@ -13,7 +13,7 @@ use super::consts::MAX_FFI_MIDI_EVENTS_PER_BLOCK;
 use super::copy::copy_midi_output_events;
 use super::copy::copy_note_expression_output_events;
 use super::host::host_note_expression_kind;
-use super::misc::set_last_error;
+use super::misc::set_last_error_static;
 use sotf_host::plugin::{
     MidiEvent, MidiMessage, NoteExpressionEvent as HostNoteExpressionEvent,
     NoteExpressionKind as HostNoteExpressionKind, ProcessContext,
@@ -34,15 +34,30 @@ pub(super) unsafe fn process_impl(
     // is concurrently mutating it through the FFI surface.
     let handle_ref = unsafe { &mut *handle };
 
-    let input_samples = num_frames * handle_ref.input_channels;
-    let output_samples = num_frames * handle_ref.output_channels;
+    let Some(output_samples) = num_frames.checked_mul(handle_ref.output_channels) else {
+        set_last_error_static(c"Output sample count overflows usize");
+        return PluginError::BufferTooSmall;
+    };
+    // SAFETY: The caller must provide the requested output shape even when
+    // the callback exceeds the negotiated bound; error returns overwrite it
+    // with silence so stale audio is never exposed.
+    let output_slice = unsafe { slice::from_raw_parts_mut(output, output_samples) };
+    if num_frames > handle_ref.max_callback_frames {
+        output_slice.fill(0.0);
+        set_last_error_static(c"Audio callback exceeds the negotiated maximum frame count");
+        return PluginError::BufferTooSmall;
+    }
+    let Some(input_samples) = num_frames.checked_mul(handle_ref.input_channels) else {
+        output_slice.fill(0.0);
+        set_last_error_static(c"Input sample count overflows usize");
+        return PluginError::BufferTooSmall;
+    };
 
     // SAFETY: The public FFI wrapper verified `input` and `output` are
     // non-null. The caller must ensure they point to at least
     // `input_samples`/`output_samples` valid `f32` values and remain valid
     // and non-overlapping for the duration of this call.
     let input_slice = unsafe { slice::from_raw_parts(input, input_samples) };
-    let output_slice = unsafe { slice::from_raw_parts_mut(output, output_samples) };
 
     match handle_ref
         .plugin
@@ -92,11 +107,11 @@ pub(super) unsafe fn process_with_ffi_and_note_expression_events_impl(
     note_expression_event_count: usize,
 ) -> PluginError {
     if midi_event_count > MAX_FFI_MIDI_EVENTS_PER_BLOCK {
-        set_last_error("Too many MIDI events for one FFI processing block");
+        set_last_error_static(c"Too many MIDI events for one processing block");
         return PluginError::BufferTooSmall;
     }
     if note_expression_event_count > MAX_FFI_MIDI_EVENTS_PER_BLOCK {
-        set_last_error("Too many Note Expression events for one FFI processing block");
+        set_last_error_static(c"Too many Note Expression events for one processing block");
         return PluginError::BufferTooSmall;
     }
     if midi_events.is_null() && midi_event_count > 0 {
@@ -117,7 +132,7 @@ pub(super) unsafe fn process_with_ffi_and_note_expression_events_impl(
         let ffi_events = unsafe { slice::from_raw_parts(midi_events, midi_event_count) };
         for (dst, src) in midi_storage.iter_mut().zip(ffi_events.iter()) {
             if src.len > 3 {
-                set_last_error("Invalid MIDI event length");
+                set_last_error_static(c"Invalid MIDI event length");
                 return PluginError::InvalidConfig;
             }
             *dst = MidiEvent::new(src.sample_offset, MidiMessage::new(src.data, src.len));

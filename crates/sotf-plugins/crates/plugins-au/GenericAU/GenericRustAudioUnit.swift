@@ -534,6 +534,7 @@ open class GenericRustAudioUnit: AUAudioUnit {
     /// Current Rust plugin configuration — used to detect when re-creation is needed
     private var rustSampleRate: UInt32 = 0
     private var rustConfiguration: String?
+    private var rustMaximumFramesToRender: UInt32 = 0
     #if SOTF_NATIVE_SMOKE
     private var migrationStateOverrideForTesting: Data?
     private var allocationFailureStageForTesting = 0
@@ -776,6 +777,21 @@ open class GenericRustAudioUnit: AUAudioUnit {
         return latencySamples.doubleValue / Double(sampleRate)
     }
 
+    /// Add facade-only construction metadata without mutating the plugin's
+    /// persisted/base configuration. Rust ignores the reserved field after
+    /// using it to size direct-format realtime adapters.
+    private func ffiConfiguration(_ configuration: String) -> String? {
+        guard let data = configuration.data(using: .utf8),
+              var object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        object["_sotf_max_callback_frames"] = NSNumber(value: maximumFramesToRender)
+        guard let encoded = try? JSONSerialization.data(withJSONObject: object) else {
+            return nil
+        }
+        return String(data: encoded, encoding: .utf8)
+    }
+
     @inline(__always)
     private func publishLatency(_ seconds: TimeInterval) {
         latencySecondsBits.store(seconds.bitPattern, ordering: .releasing)
@@ -834,9 +850,23 @@ open class GenericRustAudioUnit: AUAudioUnit {
         }
         #endif
 
+        guard let ffiConfiguration = ffiConfiguration(configuration) else {
+            throw NSError(
+                domain: NSOSStatusErrorDomain,
+                code: Int(kAudioUnitErr_InvalidPropertyValue),
+                userInfo: [NSLocalizedDescriptionKey: "Invalid Rust plugin construction JSON"]
+            )
+        }
+
         let candidate = pluginType.withCString { typePtr in
-            configuration.withCString { configPtr in
-                plugin_create(typePtr, configPtr, sampleRate, inputChannels, outputChannels)
+            ffiConfiguration.withCString { configPtr in
+                plugin_create(
+                    typePtr,
+                    configPtr,
+                    sampleRate,
+                    inputChannels,
+                    outputChannels
+                )
             }
         }
 
@@ -932,6 +962,7 @@ open class GenericRustAudioUnit: AUAudioUnit {
         renderStatePtr.pointee.outputChannels = outputChannels
         rustSampleRate = sampleRate
         rustConfiguration = configuration
+        rustMaximumFramesToRender = maximumFramesToRender
         publishLatency(candidateLatency)
         candidateCommitted = true
     }
@@ -947,8 +978,9 @@ open class GenericRustAudioUnit: AUAudioUnit {
               let oldHandle = renderStatePtr.pointee.handle else {
             return false
         }
+        guard let ffiConfiguration = ffiConfiguration(configuration) else { return false }
         let candidate = type(of: self).pluginType.withCString { typePtr in
-            configuration.withCString { configPtr in
+            ffiConfiguration.withCString { configPtr in
                 plugin_create(
                     typePtr,
                     configPtr,
@@ -989,6 +1021,7 @@ open class GenericRustAudioUnit: AUAudioUnit {
         ) else { return false }
         renderStatePtr.pointee.handle = candidate
         plugin_destroy(oldHandle)
+        rustMaximumFramesToRender = maximumFramesToRender
         publishLatency(candidateLatency)
         advanceParameterEpochLocked()
         committed = true
@@ -1000,8 +1033,9 @@ open class GenericRustAudioUnit: AUAudioUnit {
     private func replacePluginPresetDocumentLocked(_ data: Data) -> Bool {
         guard let configuration = rustConfiguration,
               let oldHandle = renderStatePtr.pointee.handle else { return false }
+        guard let ffiConfiguration = ffiConfiguration(configuration) else { return false }
         let candidate = type(of: self).pluginType.withCString { typePtr in
-            configuration.withCString { configPtr in
+            ffiConfiguration.withCString { configPtr in
                 plugin_create(
                     typePtr,
                     configPtr,
@@ -1028,6 +1062,7 @@ open class GenericRustAudioUnit: AUAudioUnit {
         ) else { return false }
         renderStatePtr.pointee.handle = candidate
         plugin_destroy(oldHandle)
+        rustMaximumFramesToRender = maximumFramesToRender
         publishLatency(candidateLatency)
         if parameterSchemaMatchesLocked() {
             advanceParameterEpochLocked()
@@ -1455,7 +1490,8 @@ open class GenericRustAudioUnit: AUAudioUnit {
                 || inputChannels != renderStatePtr.pointee.inputChannels
                 || outputChannels != renderStatePtr.pointee.outputChannels
                 || sampleRate != rustSampleRate
-                || configuration != rustConfiguration {
+                || configuration != rustConfiguration
+                || maximumFramesToRender != rustMaximumFramesToRender {
                 try createRustPluginLocked(
                     inputFormat: inputBus.format,
                     outputFormat: outputBus.format,

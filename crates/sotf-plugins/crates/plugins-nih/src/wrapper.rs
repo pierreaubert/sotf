@@ -1,5 +1,16 @@
 //! Macro-based wrapper that generates nih-plug Plugin implementations for SOTF plugins.
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! sotf_nih_sample_accurate {
+    ("LinearPhaseEQ") => {
+        true
+    };
+    ($other:literal) => {
+        false
+    };
+}
+
 /// Generate a complete nih-plug plugin struct from SOTF plugin metadata.
 ///
 /// This macro creates a struct that:
@@ -11,7 +22,7 @@
 macro_rules! sotf_nih_plugin {
     (
         $struct_name:ident,
-        plugin_type: $plugin_type:literal,
+        plugin_type: $plugin_type:tt,
         name: $name:literal,
         clap_id: $clap_id:literal,
         vst3_class_id: $vst3_id:expr,
@@ -24,6 +35,8 @@ macro_rules! sotf_nih_plugin {
             interleaved_in: Vec<f32>,
             interleaved_out: Vec<f32>,
             sample_rate: u32,
+            #[cfg(feature = "linear-phase-eq")]
+            structural_fingerprint: u64,
         }
 
         impl Default for $struct_name {
@@ -39,33 +52,30 @@ macro_rules! sotf_nih_plugin {
                     }
                 }
 
-                // If no ParamSpec params, try creating a temp plugin for its parameters()
-                if infos.is_empty() {
-                    if let Ok(plugin) =
-                        plugins_bridge::create_plugin($plugin_type, $channels, 48000, "{}")
-                    {
-                        for param in plugin.parameters() {
-                            let (min, max, default) =
-                                match (&param.min_value, &param.max_value, &param.default_value) {
-                                    (
-                                        Some(sotf_host::parameters::ParameterValue::Float(min)),
-                                        Some(sotf_host::parameters::ParameterValue::Float(max)),
-                                        sotf_host::parameters::ParameterValue::Float(def),
-                                    ) => (*min as f64, *max as f64, *def as f64),
-                                    _ => (0.0, 1.0, 0.0),
-                                };
-
-                            infos.push(plugins_bridge::param_bridge::BridgedParamInfo {
-                                id: param.id.to_string(),
-                                name: param.name.clone(),
-                                unit: param.unit.clone(),
-                                min_value: min,
-                                max_value: max,
-                                default_value: default,
-                                steps: 0,
-                                logarithmic: param.logarithmic,
-                                group: String::new(),
-                            });
+                // If no ParamSpec params, or when LinearPhaseEQ needs its
+                // dynamic band schema in addition to global specs, inspect a
+                // temporary uninitialized instance on the control thread.
+                if (infos.is_empty() || matches!($plugin_type, "LinearPhaseEQ"))
+                    && let Ok(plugin) = plugins_bridge::create_plugin(
+                        $plugin_type,
+                        $channels,
+                        48000,
+                        if matches!($plugin_type, "LinearPhaseEQ") {
+                            // Discover the complete preset-compatible band
+                            // schema while the ParamSpec-owned num_filters
+                            // entry retains its normal default.
+                            r#"{"num_filters":10}"#
+                        } else {
+                            "{}"
+                        },
+                    )
+                {
+                    for param in plugin.parameters() {
+                        if infos.iter().any(|info| info.id == param.id.as_str()) {
+                            continue;
+                        }
+                        if let Some(info) = $crate::wrapper::bridged_info_from_parameter(&param) {
+                            infos.push(info);
                         }
                     }
                 }
@@ -77,6 +87,8 @@ macro_rules! sotf_nih_plugin {
                     interleaved_in: Vec::new(),
                     interleaved_out: Vec::new(),
                     sample_rate: 48000,
+                    #[cfg(feature = "linear-phase-eq")]
+                    structural_fingerprint: 0,
                 }
             }
         }
@@ -87,6 +99,12 @@ macro_rules! sotf_nih_plugin {
             const URL: &'static str = "https://spinorama.org";
             const EMAIL: &'static str = "";
             const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+            // nih-plug splits process buffers at host automation boundaries
+            // when this is enabled. The per-slice sync below therefore stamps
+            // AsyncTimelinePlugin events at the exact absolute frame instead
+            // of collapsing automation to the original callback start.
+            const SAMPLE_ACCURATE_AUTOMATION: bool =
+                $crate::sotf_nih_sample_accurate!($plugin_type);
             const AUDIO_IO_LAYOUTS: &'static [nih_plug::prelude::AudioIOLayout] =
                 &[nih_plug::prelude::AudioIOLayout {
                     main_input_channels: std::num::NonZeroU32::new($channels),
@@ -109,11 +127,55 @@ macro_rules! sotf_nih_plugin {
             ) -> bool {
                 self.sample_rate = buffer_config.sample_rate as u32;
                 let channels: usize = $channels;
+                let max_frames = buffer_config.max_buffer_size as usize;
 
-                match plugins_bridge::create_plugin($plugin_type, channels, self.sample_rate, "{}")
-                {
+                let config = {
+                    #[cfg(feature = "linear-phase-eq")]
+                    {
+                        if matches!($plugin_type, "LinearPhaseEQ") {
+                            match self.params.linear_phase_eq_config_json() {
+                                Ok(config) => config,
+                                Err(error) => {
+                                    log::error!(
+                                        "Failed to build {} configuration: {error}",
+                                        $plugin_type
+                                    );
+                                    return false;
+                                }
+                            }
+                        } else {
+                            "{}".to_string()
+                        }
+                    }
+                    #[cfg(not(feature = "linear-phase-eq"))]
+                    {
+                        "{}".to_string()
+                    }
+                };
+
+                match plugins_bridge::create_plugin(
+                    $plugin_type,
+                    channels,
+                    self.sample_rate,
+                    &config,
+                ) {
                     Ok(mut plugin) => {
-                        if let Err(e) = plugin.initialize(self.sample_rate) {
+                        if matches!($plugin_type, "LinearPhaseEQ") {
+                            plugin = match sotf_host::AsyncTimelinePlugin::new(
+                                plugin,
+                                self.sample_rate,
+                                max_frames,
+                            ) {
+                                Ok(adapter) => Box::new(adapter),
+                                Err(e) => {
+                                    log::error!(
+                                        "Failed to initialize {} adapter: {e}",
+                                        $plugin_type
+                                    );
+                                    return false;
+                                }
+                            };
+                        } else if let Err(e) = plugin.initialize(self.sample_rate) {
                             log::error!("Failed to initialize {}: {e}", $plugin_type);
                             return false;
                         }
@@ -127,9 +189,12 @@ macro_rules! sotf_nih_plugin {
                         };
                         context.set_latency_samples(latency);
 
-                        let max_frames = buffer_config.max_buffer_size as usize;
                         self.interleaved_in = vec![0.0; max_frames * channels];
                         self.interleaved_out = vec![0.0; max_frames * channels];
+                        #[cfg(feature = "linear-phase-eq")]
+                        if matches!($plugin_type, "LinearPhaseEQ") {
+                            self.structural_fingerprint = self.params.structural_fingerprint();
+                        }
                         self.inner = Some(plugin);
                         true
                     }
@@ -153,6 +218,23 @@ macro_rules! sotf_nih_plugin {
 
                 let num_frames = buffer.samples();
                 let num_channels = buffer.channels();
+
+                #[cfg(feature = "linear-phase-eq")]
+                if matches!($plugin_type, "LinearPhaseEQ") {
+                    if self.params.structural_fingerprint() != self.structural_fingerprint {
+                        // Structural state is hidden/non-automatable and is
+                        // reconstructed by initialize(). If a host restores it
+                        // while active, fail silent and request lifecycle
+                        // reactivation instead of silently diverging or rebuilding
+                        // and destroying plugin resources on the render thread.
+                        for channel in buffer.as_slice() {
+                            channel.fill(0.0);
+                        }
+                        return nih_plug::prelude::ProcessStatus::Error(
+                            "Structural parameter state changed; reactivate plugin",
+                        );
+                    }
+                }
 
                 // Sync nih-plug params → SOTF plugin
                 self.bridge
@@ -212,6 +294,53 @@ macro_rules! sotf_nih_plugin {
             const CLAP_SUPPORT_URL: Option<&'static str> = None;
         }
     };
+}
+
+/// Convert runtime plugin metadata to NIH's format without erasing integer,
+/// boolean, or structural/realtime semantics.
+pub fn bridged_info_from_parameter(
+    parameter: &sotf_host::parameters::Parameter,
+) -> Option<plugins_bridge::param_bridge::BridgedParamInfo> {
+    use sotf_host::param_specs::UpdateMode;
+    use sotf_host::parameters::ParameterValue;
+
+    let (min_value, max_value, default_value, steps) = match (
+        &parameter.min_value,
+        &parameter.max_value,
+        &parameter.default_value,
+    ) {
+        (
+            Some(ParameterValue::Float(min)),
+            Some(ParameterValue::Float(max)),
+            ParameterValue::Float(default),
+        ) => (*min as f64, *max as f64, *default as f64, 0),
+        (
+            Some(ParameterValue::Int(min)),
+            Some(ParameterValue::Int(max)),
+            ParameterValue::Int(default),
+        ) => (
+            *min as f64,
+            *max as f64,
+            *default as f64,
+            u32::try_from(i64::from(*max) - i64::from(*min) + 1).ok()?,
+        ),
+        (None, None, ParameterValue::Bool(default)) => {
+            (0.0, 1.0, if *default { 1.0 } else { 0.0 }, 1)
+        }
+        _ => return None,
+    };
+    Some(plugins_bridge::param_bridge::BridgedParamInfo {
+        id: parameter.id.to_string(),
+        name: parameter.name.clone(),
+        unit: parameter.unit.clone(),
+        min_value,
+        max_value,
+        default_value,
+        steps,
+        logarithmic: parameter.logarithmic,
+        realtime: parameter.update_mode == UpdateMode::Realtime,
+        group: parameter.group.clone(),
+    })
 }
 
 /// Get ParamSpec array for a plugin type.

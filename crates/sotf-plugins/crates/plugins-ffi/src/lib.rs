@@ -23,7 +23,11 @@ use std::os::raw::c_char;
 
 thread_local! {
     static LAST_ERROR: std::cell::RefCell<Option<CString>> = const { std::cell::RefCell::new(None) };
+    static LAST_STATIC_ERROR: std::cell::Cell<*const c_char> = const { std::cell::Cell::new(std::ptr::null()) };
 }
+#[cfg(all(test, debug_assertions))]
+#[global_allocator]
+static TEST_ALLOCATOR: sotf_host::test_utils::CountingAlloc = sotf_host::test_utils::CountingAlloc;
 #[cfg(target_os = "macos")]
 mod au_host;
 pub mod param_cache;
@@ -82,6 +86,7 @@ pub struct PluginHandle {
     config_json: String,
     parameter_map: ParameterMap,
     sample_rate: u32,
+    max_callback_frames: usize,
     input_channels: usize,
     output_channels: usize,
     midi_output_events: Vec<PluginMidiEvent>,

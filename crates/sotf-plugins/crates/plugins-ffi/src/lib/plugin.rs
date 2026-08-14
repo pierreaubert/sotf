@@ -6,7 +6,6 @@
 //! function exactly once, and any pointer derived from a [`PluginHandle`] is
 //! only valid while that handle remains alive and undestroyed.
 
-use super::LAST_ERROR;
 use super::PluginError;
 use super::PluginFfiCapabilities;
 use super::PluginHandle;
@@ -45,6 +44,7 @@ use super::process::process_impl;
 use super::process::process_with_ffi_events_impl;
 use super::process::process_with_full_events_impl;
 use super::types::current_host_kind;
+use super::{LAST_ERROR, LAST_STATIC_ERROR};
 use sotf_host::plugin::ProcessContext;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_double, c_int};
@@ -85,12 +85,13 @@ fn replace_linear_phase_eq_from_state(
         &handle.config_json,
         &merged_state,
     )?;
-    let mut replacement = super::plugin_factory::create_plugin(
+    let mut replacement = super::plugin_factory::create_plugin_with_max_callback(
         &handle.plugin_type,
         &rebuilt_config,
         handle.input_channels,
         handle.output_channels,
         handle.sample_rate,
+        handle.max_callback_frames,
     )?;
     replacement.initialize(handle.sample_rate)?;
 
@@ -115,6 +116,10 @@ fn replace_linear_phase_eq_from_state(
 ///   if you need it to outlive the next call.
 #[unsafe(no_mangle)]
 pub extern "C" fn plugin_get_last_error() -> *const c_char {
+    let static_error = LAST_STATIC_ERROR.with(std::cell::Cell::get);
+    if !static_error.is_null() {
+        return static_error;
+    }
     LAST_ERROR.with(|e| {
         e.borrow()
             .as_ref()
@@ -297,13 +302,23 @@ pub extern "C" fn plugin_create(
         // cannot disagree.
         let plugin_type_str = super::plugin_factory::canonical_direct_plugin_type(plugin_type_str);
 
+        let max_callback_frames =
+            match super::plugin_factory::max_callback_frames_from_config(config_str) {
+                Ok(value) => value,
+                Err(error) => {
+                    set_last_error(&error);
+                    return ptr::null_mut();
+                }
+            };
+
         // Create plugin
-        let mut plugin = match super::plugin_factory::create_plugin(
+        let mut plugin = match super::plugin_factory::create_plugin_with_max_callback(
             plugin_type_str,
             config_str,
             input_channels,
             output_channels,
             sample_rate,
+            max_callback_frames,
         ) {
             Ok(p) => p,
             Err(e) => {
@@ -328,6 +343,7 @@ pub extern "C" fn plugin_create(
             config_json: config_str.to_string(),
             parameter_map,
             sample_rate,
+            max_callback_frames,
             input_channels,
             output_channels,
             midi_output_events: Vec::with_capacity(MAX_FFI_OUTPUT_EVENTS_PER_BLOCK),
