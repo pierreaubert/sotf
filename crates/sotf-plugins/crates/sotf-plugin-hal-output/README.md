@@ -19,8 +19,12 @@ not through the automation parameter schema.
 Daemon restarts, shared-memory remapping, configuration changes, and encryption
 key rotation are serviced by `service_transport()`. Hosts must call it from a
 non-realtime control thread; the audio callback never performs filesystem or
-key-loading work. A configuration-change notification quiesces writes and
-queues input until servicing completes.
+key-loading work. Re-service quiesces readiness once, discards stale queued
+audio, flushes the shared ring, and re-primes it before publishing readiness.
+A failed prime leaves readiness false and the ring empty.
 
-`latency_samples()` is zero because ring capacity is not a known compensable
-playout delay. Capacity and queued frames are reported separately in telemetry.
+Initialization maintains a target shared-ring fill equal to the negotiated HAL
+buffer size. `latency_samples()` reports that deterministic transport delay plus
+the Swift virtual device latency (one negotiated device buffer) and its
+zero-frame safety offset. `HalOutputTelemetry` v2 exposes target and observed
+fill, device latency, safety offset, and their fixed boundary-latency sum.

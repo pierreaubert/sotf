@@ -1,3 +1,21 @@
+# 0.5.12
+
+## Fixes
+
+- Establish a deterministic output-boundary fill equal to the negotiated HAL
+  buffer size before publishing engine readiness.
+- Report fixed boundary latency as target ring fill plus the Swift HAL device
+  latency and safety offset, with each component exposed in typed v2 telemetry.
+- Make initialization and transport re-service transactional: each transition
+  quiesces readiness once, discards stale queued audio, flushes and re-primes
+  the shared ring, and leaves it empty and not ready if priming fails.
+
+## Testing
+
+- Added target-fill/latency telemetry, re-service, transactional priming
+  failure, and readiness-transition coverage while retaining allocation-free
+  maximum-channel callback checks.
+
 # 0.5.11
 
 ## Fixes

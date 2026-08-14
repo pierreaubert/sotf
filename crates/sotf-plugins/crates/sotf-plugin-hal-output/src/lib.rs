@@ -25,6 +25,8 @@ trait HalWriter: Send {
     fn reconnect(&mut self) -> Result<(), String>;
     fn reload_cipher(&mut self) -> Result<(), String>;
     fn encryption_key_ready(&self) -> bool;
+    fn available_read_frames(&self) -> usize;
+    fn flush_audio(&self);
 }
 
 #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -64,6 +66,14 @@ impl HalWriter for HalOutputWriter {
     fn encryption_key_ready(&self) -> bool {
         HalOutputWriter::encryption_key_ready(self)
     }
+
+    fn available_read_frames(&self) -> usize {
+        HalOutputWriter::available_read_frames(self)
+    }
+
+    fn flush_audio(&self) {
+        HalOutputWriter::flush_audio(self);
+    }
 }
 
 // Static error messages used on the audio hot path. Using constants avoids
@@ -80,6 +90,8 @@ const ERR_HAL_UNSUPPORTED_PLATFORM: &str =
     "HAL output plugin is only supported on macOS with 'hal' feature enabled";
 const ERR_NO_ADJUSTABLE_PARAMETERS: &str = "HAL output has no adjustable parameters";
 const ERR_HAL_WRITER_NOT_AVAILABLE: &str = "HAL writer not available";
+pub const HAL_OUTPUT_TELEMETRY_VERSION: u32 = 2;
+const SWIFT_HAL_SAFETY_OFFSET_FRAMES: usize = 0;
 
 // ============================================================================
 // Configuration
@@ -92,12 +104,14 @@ pub type HalOutputPluginParams = params::Params;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HalOutputTransportState {
     Uninitialized,
+    Servicing,
     Ready,
     Disconnected,
     KeyMismatch,
     Backpressured,
     ConfigurationChanged,
     FormatError,
+    PrimingFailed,
 }
 
 /// Versioned, lossless transport diagnostics. Unlike plugin parameters these
@@ -114,6 +128,11 @@ pub struct HalOutputTelemetry {
     pub backpressure_events: u64,
     pub connected: bool,
     pub encryption_key_ready: bool,
+    pub transport_fill_frames: usize,
+    pub target_fill_frames: usize,
+    pub device_latency_frames: usize,
+    pub safety_offset_frames: usize,
+    pub boundary_latency_frames: usize,
 }
 
 // ============================================================================
@@ -148,6 +167,13 @@ pub struct HalOutputPlugin {
     /// Frame-aligned unwritten tail retained after transport backpressure.
     pending: VecDeque<f32>,
     pending_capacity_samples: usize,
+
+    /// Silence used to establish a deterministic initial shared-ring fill.
+    /// Prepared on the control thread during initialization.
+    prefill_silence: Vec<f32>,
+    target_fill_frames: usize,
+    device_latency_frames: usize,
+    safety_offset_frames: usize,
 
     state: HalOutputTransportState,
     requested_frames: u64,
@@ -189,6 +215,10 @@ impl HalOutputPlugin {
                 sample_rate: 0,
                 pending: VecDeque::new(),
                 pending_capacity_samples: 0,
+                prefill_silence: Vec::new(),
+                target_fill_frames: 0,
+                device_latency_frames: 0,
+                safety_offset_frames: 0,
                 state: HalOutputTransportState::Uninitialized,
                 requested_frames: 0,
                 written_frames: 0,
@@ -220,7 +250,7 @@ impl HalOutputPlugin {
 
     pub fn telemetry(&self) -> HalOutputTelemetry {
         HalOutputTelemetry {
-            version: 1,
+            version: HAL_OUTPUT_TELEMETRY_VERSION,
             state: self.state,
             requested_frames: self.requested_frames,
             written_frames: self.written_frames,
@@ -233,6 +263,14 @@ impl HalOutputPlugin {
                 .writer
                 .as_ref()
                 .is_some_and(|writer| writer.encryption_key_ready()),
+            transport_fill_frames: self
+                .writer
+                .as_ref()
+                .map_or(0, |writer| writer.available_read_frames()),
+            target_fill_frames: self.target_fill_frames,
+            device_latency_frames: self.device_latency_frames,
+            safety_offset_frames: self.safety_offset_frames,
+            boundary_latency_frames: self.latency_samples(),
         }
     }
 
@@ -244,13 +282,24 @@ impl HalOutputPlugin {
                 .writer
                 .as_mut()
                 .ok_or_else(|| ERR_HAL_WRITER_NOT_AVAILABLE.to_string())?;
-            writer.set_engine_ready(false);
-            if !writer.is_connected() {
-                writer.reconnect()?;
+            if !writer.is_connected()
+                && let Err(error) = writer.reconnect()
+            {
+                self.is_connected = false;
+                self.state = HalOutputTransportState::Disconnected;
+                return Err(error);
             }
+        }
+        self.quiesce_transport()?;
+        {
+            let writer = self
+                .writer
+                .as_mut()
+                .ok_or_else(|| ERR_HAL_WRITER_NOT_AVAILABLE.to_string())?;
             writer.reload_cipher()?;
         }
         self.validate_transport_format(self.sample_rate)?;
+        self.prime_target_fill()?;
         let writer = self
             .writer
             .as_ref()
@@ -268,6 +317,18 @@ impl HalOutputPlugin {
         Ok(())
     }
 
+    fn quiesce_transport(&mut self) -> Result<(), String> {
+        let writer = self
+            .writer
+            .as_ref()
+            .ok_or_else(|| ERR_HAL_WRITER_NOT_AVAILABLE.to_string())?;
+        writer.set_engine_ready(false);
+        writer.flush_audio();
+        self.pending.clear();
+        self.state = HalOutputTransportState::Servicing;
+        Ok(())
+    }
+
     fn validate_transport_format(&mut self, sample_rate: u32) -> Result<(), String> {
         let writer = self
             .writer
@@ -282,6 +343,11 @@ impl HalOutputPlugin {
             ));
         }
         self.buffer_capacity = buffer_frames as usize;
+        // The Swift virtual device reports one device buffer of latency and a
+        // zero-frame safety offset through its CoreAudio properties.
+        self.target_fill_frames = buffer_frames as usize;
+        self.device_latency_frames = buffer_frames as usize;
+        self.safety_offset_frames = SWIFT_HAL_SAFETY_OFFSET_FRAMES;
         let pending_capacity = (buffer_frames as usize)
             .checked_mul(self.channels)
             .ok_or_else(|| "HAL output pending capacity overflow".to_string())?;
@@ -290,7 +356,44 @@ impl HalOutputPlugin {
                 .reserve_exact(pending_capacity - self.pending.capacity());
         }
         self.pending_capacity_samples = pending_capacity;
+        if self.prefill_silence.len() < pending_capacity {
+            self.prefill_silence.resize(pending_capacity, 0.0);
+        }
         Ok(())
+    }
+
+    fn prime_target_fill(&mut self) -> Result<(), String> {
+        let result = (|| -> Result<(), String> {
+            let samples = self
+                .target_fill_frames
+                .checked_mul(self.channels)
+                .ok_or_else(|| "HAL output target fill overflow".to_string())?;
+            let silence = self
+                .prefill_silence
+                .get(..samples)
+                .ok_or_else(|| "HAL output target-fill storage is not prepared".to_string())?;
+            let writer = self
+                .writer
+                .as_mut()
+                .ok_or_else(|| ERR_HAL_WRITER_NOT_AVAILABLE.to_string())?;
+            let written = Self::write_frames(writer.as_mut(), silence, self.channels)?;
+            let observed = writer.available_read_frames();
+            if written == self.target_fill_frames && observed == self.target_fill_frames {
+                Ok(())
+            } else {
+                Err(format!(
+                    "HAL output could not establish target fill: expected {} frames, wrote {written}, observed {observed}",
+                    self.target_fill_frames
+                ))
+            }
+        })();
+        if result.is_err() {
+            if let Some(writer) = self.writer.as_ref() {
+                writer.flush_audio();
+            }
+            self.state = HalOutputTransportState::PrimingFailed;
+        }
+        result
     }
 
     fn append_pending(&mut self, samples: &[f32]) -> usize {
@@ -390,9 +493,10 @@ impl Plugin for HalOutputPlugin {
         if sample_rate == 0 {
             return Err("HAL output sample rate must be non-zero".to_string());
         }
+        self.quiesce_transport()?;
         self.validate_transport_format(sample_rate)?;
+        self.prime_target_fill()?;
         self.sample_rate = sample_rate;
-        self.pending.clear();
         if let Some(writer) = self.writer.as_ref() {
             writer.clear_config_changed();
             writer.set_engine_ready(true);
@@ -445,6 +549,14 @@ impl Plugin for HalOutputPlugin {
         self.requested_frames = self
             .requested_frames
             .saturating_add(context.num_frames as u64);
+
+        if self.state == HalOutputTransportState::Servicing
+            || self.state == HalOutputTransportState::PrimingFailed
+        {
+            self.append_pending(input);
+            self.is_backpressured = true;
+            return Ok(context.num_frames);
+        }
 
         if self
             .writer
@@ -516,7 +628,9 @@ impl Plugin for HalOutputPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        0
+        self.target_fill_frames
+            .saturating_add(self.device_latency_frames)
+            .saturating_add(self.safety_offset_frames)
     }
 }
 
@@ -611,6 +725,10 @@ mod tests {
             sample_rate: 48_000,
             pending: VecDeque::new(),
             pending_capacity_samples: 0,
+            prefill_silence: Vec::new(),
+            target_fill_frames: 0,
+            device_latency_frames: 0,
+            safety_offset_frames: 0,
             state: HalOutputTransportState::Uninitialized,
             requested_frames: 0,
             written_frames: 0,
@@ -626,6 +744,10 @@ mod tests {
         clear_count: usize,
         reconnect_count: usize,
         reload_count: usize,
+        fill_frames: usize,
+        priming: bool,
+        prime_write: Option<usize>,
+        flush_count: usize,
     }
 
     struct FakeWriter {
@@ -642,12 +764,23 @@ mod tests {
         }
 
         fn write(&mut self, buffer: &[f32]) -> usize {
-            self.state.lock().unwrap().writes.push(buffer.to_vec());
-            if self.writes.is_empty() {
-                buffer.len() / self.format.1 as usize
+            let mut state = self.state.lock().unwrap();
+            let frames = if state.priming {
+                state
+                    .prime_write
+                    .take()
+                    .unwrap_or(buffer.len() / self.format.1 as usize)
             } else {
-                self.writes.remove(0)
-            }
+                state.writes.push(buffer.to_vec());
+                if self.writes.is_empty() {
+                    buffer.len() / self.format.1 as usize
+                } else {
+                    self.writes.remove(0)
+                }
+            };
+            state.fill_frames = state.fill_frames.saturating_add(frames);
+            state.priming = false;
+            frames
         }
 
         fn current_format(&self) -> Result<(u32, u32, u32), String> {
@@ -679,6 +812,15 @@ mod tests {
 
         fn encryption_key_ready(&self) -> bool {
             true
+        }
+        fn available_read_frames(&self) -> usize {
+            self.state.lock().unwrap().fill_frames
+        }
+        fn flush_audio(&self) {
+            let mut state = self.state.lock().unwrap();
+            state.fill_frames = 0;
+            state.priming = true;
+            state.flush_count += 1;
         }
     }
 
@@ -716,6 +858,10 @@ mod tests {
                 sample_rate: 0,
                 pending: VecDeque::with_capacity(format.1 as usize * format.2 as usize),
                 pending_capacity_samples: format.1 as usize * format.2 as usize,
+                prefill_silence: Vec::new(),
+                target_fill_frames: 0,
+                device_latency_frames: 0,
+                safety_offset_frames: 0,
                 state: HalOutputTransportState::Uninitialized,
                 requested_frames: 0,
                 written_frames: 0,
@@ -786,7 +932,7 @@ mod tests {
         assert_eq!(telemetry.dropped_frames, 4);
         plugin.process(&third, &mut output, &context).unwrap();
 
-        let writes = &state.lock().unwrap().writes;
+        let writes = state.lock().unwrap().writes.clone();
         assert_eq!(writes[0], first);
         assert_eq!(writes[1], first);
         assert_eq!(writes[2], first);
@@ -808,11 +954,77 @@ mod tests {
             make_plugin_with_writer_state(2, (48_000, 2, 8), vec![], false, false);
         plugin.sample_rate = 48_000;
         plugin.service_transport().unwrap();
+        assert_eq!(plugin.telemetry().state, HalOutputTransportState::Ready);
         let snapshot = state.lock().unwrap();
         assert_eq!(snapshot.reconnect_count, 1);
         assert_eq!(snapshot.reload_count, 1);
         assert_eq!(snapshot.ready, vec![false, true]);
-        assert_eq!(plugin.telemetry().state, HalOutputTransportState::Ready);
+    }
+
+    #[test]
+    fn initialization_primes_negotiated_fill_and_reports_v2_boundary_latency() {
+        let (mut plugin, state) = make_plugin_with_writer(2, (48_000, 2, 8), vec![]);
+        plugin.initialize(48_000).unwrap();
+
+        let telemetry = plugin.telemetry();
+        assert_eq!(telemetry.version, HAL_OUTPUT_TELEMETRY_VERSION);
+        assert_eq!(telemetry.transport_fill_frames, 8);
+        assert_eq!(telemetry.target_fill_frames, 8);
+        assert_eq!(telemetry.device_latency_frames, 8);
+        assert_eq!(telemetry.safety_offset_frames, 0);
+        assert_eq!(telemetry.boundary_latency_frames, 16);
+        assert_eq!(plugin.latency_samples(), 16);
+        assert_eq!(state.lock().unwrap().ready, vec![false, true]);
+    }
+
+    #[test]
+    fn failed_priming_is_transactional_and_keeps_transport_quiesced() {
+        let (mut plugin, state) = make_plugin_with_writer(2, (48_000, 2, 8), vec![]);
+        state.lock().unwrap().prime_write = Some(4);
+
+        let error = plugin.initialize(48_000).unwrap_err();
+
+        assert!(error.contains("could not establish target fill"));
+        assert_eq!(plugin.sample_rate, 0);
+        assert_eq!(plugin.state, HalOutputTransportState::PrimingFailed);
+        let snapshot = state.lock().unwrap();
+        assert_eq!(snapshot.ready, vec![false]);
+        assert_eq!(snapshot.fill_frames, 0);
+        assert_eq!(snapshot.flush_count, 2);
+    }
+
+    #[test]
+    fn reservice_discards_stale_audio_and_reestablishes_target_fill() {
+        let (mut plugin, state) = make_plugin_with_writer(2, (48_000, 2, 8), vec![]);
+        plugin.initialize(48_000).unwrap();
+        plugin.pending.extend([1.0, 2.0, 3.0, 4.0]);
+
+        plugin.service_transport().unwrap();
+
+        assert!(plugin.pending.is_empty());
+        let snapshot = state.lock().unwrap();
+        assert_eq!(snapshot.fill_frames, 8);
+        assert_eq!(snapshot.flush_count, 2);
+        assert_eq!(snapshot.ready, vec![false, true, false, true]);
+    }
+
+    #[test]
+    fn failed_reservice_cannot_publish_or_write_partial_prime() {
+        let (mut plugin, state) = make_plugin_with_writer(2, (48_000, 2, 8), vec![]);
+        plugin.initialize(48_000).unwrap();
+        state.lock().unwrap().prime_write = Some(4);
+
+        assert!(plugin.service_transport().is_err());
+        plugin
+            .process(&[0.25; 8], &mut [], &ProcessContext::new(48_000, 4))
+            .unwrap();
+
+        assert_eq!(plugin.state, HalOutputTransportState::PrimingFailed);
+        assert_eq!(plugin.pending.len(), 8);
+        let snapshot = state.lock().unwrap();
+        assert_eq!(snapshot.ready, vec![false, true, false]);
+        assert_eq!(snapshot.fill_frames, 0);
+        assert!(snapshot.writes.is_empty());
     }
 
     #[test]
@@ -847,12 +1059,18 @@ mod tests {
         struct NoAllocWriter {
             writes: [usize; 4],
             next: usize,
+            priming: std::cell::Cell<bool>,
+            fill_frames: std::cell::Cell<usize>,
         }
         impl HalWriter for NoAllocWriter {
             fn is_connected(&self) -> bool {
                 true
             }
             fn write(&mut self, _buffer: &[f32]) -> usize {
+                if self.priming.replace(false) {
+                    self.fill_frames.set(8);
+                    return 8;
+                }
                 let value = self.writes[self.next];
                 self.next += 1;
                 value
@@ -874,6 +1092,13 @@ mod tests {
             fn encryption_key_ready(&self) -> bool {
                 true
             }
+            fn available_read_frames(&self) -> usize {
+                self.fill_frames.get()
+            }
+            fn flush_audio(&self) {
+                self.fill_frames.set(0);
+                self.priming.set(true);
+            }
         }
         let mut plugin = make_test_plugin();
         plugin.channels = 16;
@@ -881,6 +1106,8 @@ mod tests {
         plugin.writer = Some(Box::new(NoAllocWriter {
             writes: [8, 0, 8, 8],
             next: 0,
+            priming: std::cell::Cell::new(false),
+            fill_frames: std::cell::Cell::new(0),
         }));
         plugin.initialize(48_000).unwrap();
         let input = [0.25; 8 * 16];
