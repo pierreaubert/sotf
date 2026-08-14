@@ -592,6 +592,8 @@ impl App {
                     max_filters: filter_count.clamp(1, 20),
                     tdf2: false,
                     topology: 0.0,
+                    auto_gain_enabled: false,
+                    oversampling: 1.0,
                 };
                 Ok(())
             } else {

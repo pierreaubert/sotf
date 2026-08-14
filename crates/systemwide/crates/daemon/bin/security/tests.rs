@@ -16,6 +16,7 @@ use super::types::encryption_impl;
 pub use encryption_impl::KeyManager;
 use std::ffi::OsString;
 use std::path::PathBuf;
+use serial_test::serial;
 
 #[test]
 fn test_socket_path_is_user_specific() {
@@ -64,6 +65,7 @@ fn test_current_uid() {
 }
 
 #[test]
+#[serial]
 fn test_key_manager_creation() {
     let manager = KeyManager::default();
     #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -78,6 +80,7 @@ fn test_key_manager_creation() {
 }
 
 #[test]
+#[serial]
 fn test_encryption_status() {
     let manager = KeyManager::default();
     let status = manager.status();
@@ -90,6 +93,7 @@ fn test_encryption_status() {
 }
 
 #[test]
+#[serial]
 fn test_hal_key_path_is_under_uid_tmpdir() {
     let path = get_hal_key_path();
     let path_str = path.to_string_lossy();
@@ -99,6 +103,7 @@ fn test_hal_key_path_is_under_uid_tmpdir() {
 }
 
 #[test]
+#[serial]
 fn test_key_manager_enable_disable() {
     let mut manager = KeyManager::default();
     #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -256,6 +261,7 @@ fn test_peer_allows_command_coreaudiod_restricted() {
 /// regression is caught.
 #[cfg(all(target_os = "macos", feature = "hal"))]
 #[test]
+#[serial]
 fn test_published_hal_key_copy_is_0600() {
     use std::os::unix::fs::PermissionsExt;
 
@@ -323,6 +329,7 @@ fn test_socket_path_under_tmpdir_or_contains_uid() {
 /// stub API is consistent so daemon command tests are portable.
 #[cfg(not(all(target_os = "macos", feature = "hal")))]
 #[test]
+#[serial]
 fn test_key_manager_stub_does_not_pretend_to_rotate() {
     let mut manager = KeyManager::default();
     let before = manager.fingerprint_hex();
@@ -341,6 +348,7 @@ fn test_key_manager_stub_does_not_pretend_to_rotate() {
 /// feature, where KeyManager has a real cipher backend.
 #[cfg(all(target_os = "macos", feature = "hal"))]
 #[test]
+#[serial]
 fn test_key_manager_force_rotate_changes_fingerprint() {
     use std::os::unix::fs::PermissionsExt;
 
@@ -378,6 +386,7 @@ fn test_key_manager_force_rotate_changes_fingerprint() {
 /// session key may have been rotated by another daemon instance.
 #[cfg(all(target_os = "macos", feature = "hal"))]
 #[test]
+#[serial]
 fn test_key_manager_check_and_reload_detects_modification() {
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;

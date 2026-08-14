@@ -61,6 +61,7 @@ fn loudness_data_json_includes_meter_fields() {
         correlation_lr: Some(0.42),
         correlation_matrix: Arc::new(Vec::new()),
         correlation_samples_seen: 0,
+        ..Default::default()
     };
 
     let json = loudness_data_to_json(&loudness);

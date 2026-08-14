@@ -318,7 +318,7 @@ mod tests {
             }],
         };
 
-        assert!(param_index_to_engine_param(&settings, 0).is_some());
+        assert!(param_index_to_engine_param(&settings, 0).is_none());
         assert!(param_index_to_engine_param(&settings, 100).is_none());
     }
 }

@@ -26,7 +26,7 @@ pub fn channel_count(order: usize) -> usize {
 /// so that increasing MAX_ORDER without updating this function fails early in
 /// debug builds.
 pub fn acn_to_degree_index(acn: usize) -> (i32, i32) {
-    debug_assert!(
+    assert!(
         acn < channel_count(MAX_ORDER),
         "acn={acn} exceeds channel_count(MAX_ORDER={}); update acn_to_degree_index for larger orders",
         MAX_ORDER

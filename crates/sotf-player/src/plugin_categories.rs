@@ -42,6 +42,7 @@ pub const CATEGORIES: &[PluginCategory] = &[
             PluginType::Gain,
             PluginType::Delay,
             PluginType::LoudnessCompensation,
+            PluginType::Dither,
         ],
     },
     PluginCategory {

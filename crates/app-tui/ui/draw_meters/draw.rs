@@ -980,6 +980,7 @@ mod tests {
             correlation_lr: Some(0.8),
             correlation_matrix: Arc::new(Vec::new()),
             correlation_samples_seen: 0,
+            ..Default::default()
         });
         app
     }

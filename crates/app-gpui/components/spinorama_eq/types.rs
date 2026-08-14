@@ -1452,6 +1452,8 @@ impl PlayerView {
                         max_filters: 10,
                         tdf2: false,
                         topology: 0.0,
+                        auto_gain_enabled: false,
+                        oversampling: 1.0,
                     };
                     log::info!("Updated existing EQ plugin at index {}", eq_idx);
                 }
@@ -1470,6 +1472,8 @@ impl PlayerView {
                         max_filters: 10,
                         tdf2: false,
                         topology: 0.0,
+                        auto_gain_enabled: false,
+                        oversampling: 1.0,
                     };
                 }
                 log::info!("Inserted new EQ plugin at index {}", insert_idx);

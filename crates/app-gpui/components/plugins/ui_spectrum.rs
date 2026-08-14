@@ -491,7 +491,7 @@ impl PlayerView {
             let magnitudes: Arc<[f32]> = if phone_hold && let Some(held) = phone_hold_magnitudes {
                 Arc::from(held.into_boxed_slice())
             } else {
-                Arc::from(info.magnitudes.as_ref().as_slice())
+                Arc::from(info.magnitudes.as_ref())
             };
 
             div()
