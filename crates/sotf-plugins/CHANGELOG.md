@@ -3,7 +3,12 @@
 ## New
 
 - added a AAE plugin (Active Acoustic Enhancement)
+- added machine-checkable AAE external-validation manifests, run reports, and
+  fail-closed acceptance checks
 - added a spectral compressor plugin
+- added selectable Ambisonics mode matching or AllRAD/VBAP decoding
+- added opt-in PND formant preservation with schema migration and
+  allocation-free envelope correction
 - added a linear phase eq plugin
 - added a dynamic eq plugin
 - added a linear phase eq plugin

@@ -366,6 +366,7 @@ impl_param_accessors! {
             correction_strength: f64, analysis_window_ms: f64, drift_smoothing: f64,
             multi_channel_analysis: bool, confidence_threshold: f64,
             reference_frequency_hz: f64,
+            formant_preservation: bool, formant_strength: f64,
         ]
     },
     ABCompare {
@@ -455,6 +456,7 @@ impl_param_accessors! {
             target_layout: [str ambisonics_layout_to_index, index_to_ambisonics_layout],
             max_re_weighting: bool,
             dual_band: bool,
+            algorithm: [str ambisonics_algorithm_to_index, index_to_ambisonics_algorithm],
         ]
     },
     EQ {
@@ -893,7 +895,7 @@ mod tests;
 
 use aae::aae_room_preset_to_index;
 use aae::aae_speaker_config_to_index;
-use ambisonics::ambisonics_layout_to_index;
+use ambisonics::{ambisonics_algorithm_to_index, ambisonics_layout_to_index};
 use crossfeed::crossfeed_mode_to_index;
 use crossfeed::crossfeed_preset_to_index;
 use crossover::crossover_output_to_index;
@@ -905,7 +907,6 @@ use detection::detection_mode_to_index;
 use hpf::hpf_order_to_index;
 use index::index_to_aae_room_preset;
 use index::index_to_aae_speaker_config;
-use index::index_to_ambisonics_layout;
 use index::index_to_crossfeed_mode;
 use index::index_to_crossfeed_preset;
 use index::index_to_crossover_output;
@@ -916,6 +917,7 @@ use index::index_to_hpf_order;
 use index::index_to_speaker_config;
 use index::index_to_spectral_tilt;
 use index::index_to_tilt_reference;
+use index::{index_to_ambisonics_algorithm, index_to_ambisonics_layout};
 use misc::b2f;
 use misc::f2b;
 use misc::spectral_tilt_to_index;

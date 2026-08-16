@@ -1,3 +1,14 @@
+# 0.5.9
+
+## External validation tooling
+
+- Add machine-checkable corpus manifest and listening-run schemas with required
+  fixture classes, layout coverage, source/license metadata, and SHA-256 checks.
+- Add dialogue-region validation and thresholded acceptance reports that keep
+  deterministic QA evidence separate from external corpus/listening evidence.
+- Fail closed when the external run artifact is missing; no corpus or listening
+  acceptance is claimed without real artifacts.
+
 # Unreleased
 
 ## 0.5.8 acoustic-quality measurement program

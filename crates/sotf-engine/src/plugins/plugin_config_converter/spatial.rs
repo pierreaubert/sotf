@@ -39,6 +39,7 @@ pub fn convert_ambisonics_decoder(
         target_layout,
         max_re_weighting,
         dual_band,
+        algorithm,
     } = settings
     else {
         return None;
@@ -50,6 +51,7 @@ pub fn convert_ambisonics_decoder(
             "target_layout": target_layout,
             "max_re_weighting": max_re_weighting,
             "dual_band": dual_band,
+            "algorithm": algorithm,
         }),
     ))
 }

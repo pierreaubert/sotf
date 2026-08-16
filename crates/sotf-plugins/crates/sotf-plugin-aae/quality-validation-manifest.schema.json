@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sotf.invalid/aae/quality-validation-manifest.schema.json",
+  "title": "AAE external validation manifest",
+  "type": "object",
+  "required": ["schema_version", "fixtures"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "fixtures": {
+      "type": "array",
+      "minItems": 11,
+      "items": { "$ref": "#/$defs/fixture" }
+    }
+  },
+  "$defs": {
+    "fixture": {
+      "type": "object",
+      "required": [
+        "fixture_id",
+        "label",
+        "license_or_source",
+        "sha256",
+        "layout",
+        "sample_rate",
+        "expected_dialogue_regions"
+      ],
+      "properties": {
+        "fixture_id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "license_or_source": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" },
+        "layout": { "enum": ["5.1", "9.1.6"] },
+        "sample_rate": { "type": "integer", "minimum": 1 },
+        "expected_dialogue_regions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["start_frame", "end_frame"],
+            "properties": {
+              "start_frame": { "type": "integer", "minimum": 0 },
+              "end_frame": { "type": "integer", "minimum": 1 }
+            }
+          }
+        },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

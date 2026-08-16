@@ -1,3 +1,14 @@
+# 0.5.12
+
+## Formant preservation
+
+- Add opt-in structural `formant_preservation` and `formant_strength` controls
+  with explicit schema-v3 migration that preserves legacy uniform correction.
+- Add a preallocated smoothed log-magnitude envelope correction with bounded
+  gain and no realtime allocations; structural changes require reconstruction.
+- Add spectral, reset-equivalence, parameter, and realtime allocation
+  regressions while keeping the existing fixed-frame fallback unchanged.
+
 # 0.5.11
 
 - Added allocation-free normalized spectral-flux transient detection and

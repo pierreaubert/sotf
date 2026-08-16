@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sotf.invalid/aae/quality-validation-run.schema.json",
+  "title": "AAE external validation run",
+  "type": "object",
+  "required": [
+    "binary_commit",
+    "parameter_json",
+    "device_and_room",
+    "listener_count",
+    "qa_output_sha256",
+    "manifest_sha256",
+    "compared_against_bypass",
+    "compared_against_previous_release",
+    "ratings",
+    "detector_results"
+  ],
+  "properties": {
+    "binary_commit": { "type": "string", "minLength": 1 },
+    "parameter_json": { "type": "object" },
+    "device_and_room": { "type": "string", "minLength": 1 },
+    "listener_count": { "type": "integer", "minimum": 0 },
+    "qa_output_sha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" },
+    "manifest_sha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" },
+    "compared_against_bypass": { "type": "boolean" },
+    "compared_against_previous_release": { "type": "boolean" },
+    "ratings": { "type": "array" },
+    "detector_results": { "type": "array" }
+  }
+}

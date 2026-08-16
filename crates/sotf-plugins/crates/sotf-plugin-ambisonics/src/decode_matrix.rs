@@ -1,13 +1,12 @@
 // ============================================================================
-// Regularized Mode-Matching Decode Matrix Builder
+// Ambisonics Decode Matrix Builders
 // ============================================================================
 //
-// Builds a decode matrix from Ambisonics channels to a target speaker layout
-// using the mode-matching (pseudoinverse) approach with optional max-rE
-// weighting for improved energy preservation at high frequencies.
-//
-// This is not an AllRAD decoder: it has no virtual-speaker sphere or VBAP
-// projection stage. The matrix below is a directly regularized mode match.
+// The legacy mode-matching path uses a directly regularized pseudoinverse of
+// the physical speaker spherical-harmonic matrix.  The AllRAD path first
+// decodes to a deterministic virtual sphere and then remaps every virtual
+// speaker to the physical layout with setup-time VBAP.  Both paths produce a
+// fixed matrix, so process() has identical realtime behavior.
 
 use crate::spherical_harmonics::{self, channel_count, deg_to_rad, spherical_harmonics_vector};
 use nalgebra::DMatrix;
@@ -25,8 +24,26 @@ pub struct DecodeMatrix {
     pub matrix: Vec<f32>,
     /// max-rE weights per ACN channel (applied to matrix columns)
     pub max_re_weights: Vec<f32>,
+    /// Algorithm used to construct this matrix.
+    pub algorithm: DecodeAlgorithm,
+    /// Number of virtual speakers used by AllRAD, or zero for mode matching.
+    pub virtual_speaker_count: usize,
     quality: DecodeQuality,
 }
+
+/// Decoder construction algorithm.  The enum is deliberately kept in the
+/// matrix metadata so QA can distinguish a true virtual-speaker decode from
+/// the compatible legacy direct solve.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecodeAlgorithm {
+    ModeMatching,
+    AllRad,
+}
+
+/// Deterministic virtual-sphere size used for each supported HOA order.
+/// The grid is a Fibonacci sphere, which has no pole singularity and provides
+/// full-sphere coverage for VBAP remapping.
+pub const ALLRAD_VIRTUAL_SPEAKERS: &[usize] = &[0, 64, 96, 128];
 
 #[derive(Debug, Clone, Copy)]
 pub struct DecodeQuality {
@@ -56,6 +73,112 @@ impl DecodeMatrix {
         Self::build(order, speaker_config, true)
     }
 
+    /// Build a true AllRAD decoder: virtual-sphere mode matching followed by
+    /// setup-time VBAP projection to the physical layout.
+    pub fn build_allrad(
+        order: usize,
+        speaker_config: &SpeakerConfig,
+        apply_max_re: bool,
+    ) -> Result<Self, String> {
+        validate_order(order)?;
+        let ambi_ch = channel_count(order);
+        let physical: Vec<_> = speaker_config
+            .speakers
+            .iter()
+            .filter(|speaker| !speaker.is_lfe)
+            .collect();
+        if physical.is_empty() {
+            return Err("No non-LFE speakers in config".into());
+        }
+
+        let virtual_count = ALLRAD_VIRTUAL_SPEAKERS
+            .get(order)
+            .copied()
+            .ok_or_else(|| format!("No AllRAD grid for order {order}"))?;
+        let directions = fibonacci_sphere(virtual_count);
+
+        // D_virtual = Y_virtual (Y_virtual^T Y_virtual)^-1.  The regularized
+        // SVD implementation is shared with the legacy path and is performed
+        // only during construction.
+        let mut virtual_y = vec![0.0_f64; virtual_count * ambi_ch];
+        let mut sh = vec![0.0_f64; ambi_ch];
+        for (index, direction) in directions.iter().enumerate() {
+            spherical_harmonics_vector(order, direction.azimuth, direction.elevation, &mut sh);
+            virtual_y[index * ambi_ch..(index + 1) * ambi_ch].copy_from_slice(&sh);
+        }
+        let (virtual_decode, mut quality) =
+            mode_matching_decode(&virtual_y, virtual_count, ambi_ch)?;
+
+        let max_re = if apply_max_re {
+            compute_max_re_weights(order)
+        } else {
+            vec![1.0; ambi_ch]
+        };
+        for row in 0..virtual_count {
+            for channel in 0..ambi_ch {
+                virtual_y[row * ambi_ch + channel] =
+                    virtual_decode[row * ambi_ch + channel] * max_re[channel];
+            }
+        }
+
+        // P[speaker, virtual] is the setup-time VBAP remapping.  Its columns
+        // are unit-energy panning vectors; LFE rows stay zero by construction.
+        let mut physical_from_virtual =
+            vec![0.0_f64; speaker_config.total_channels * virtual_count];
+        let has_height = physical.iter().any(|speaker| speaker.elevation.abs() > 1.0);
+        let physical_vectors: Vec<_> = physical
+            .iter()
+            .map(|speaker| (speaker.channel, speaker.to_cartesian()))
+            .collect();
+        for (virtual_index, direction) in directions.iter().enumerate() {
+            let mut gains = vec![0.0_f64; speaker_config.total_channels];
+            if has_height && direction.elevation.abs() > 1e-8 {
+                vbap_3d(&physical_vectors, direction.vector, &mut gains);
+            } else {
+                vbap_2d(&physical_vectors, direction.azimuth, &mut gains);
+            }
+            for (channel, gain) in gains.into_iter().enumerate() {
+                physical_from_virtual[channel * virtual_count + virtual_index] = gain;
+            }
+        }
+
+        // Compose P * D_virtual into the same row-major representation used by
+        // the legacy decoder.  The virtual-speaker stage is therefore explicit
+        // in construction and inspectable through the metadata below.
+        let mut matrix = vec![0.0_f32; speaker_config.total_channels * ambi_ch];
+        for channel in 0..speaker_config.total_channels {
+            for acn in 0..ambi_ch {
+                let mut value = 0.0_f64;
+                for virtual_index in 0..virtual_count {
+                    value += physical_from_virtual[channel * virtual_count + virtual_index]
+                        * virtual_y[virtual_index * ambi_ch + acn];
+                }
+                matrix[channel * ambi_ch + acn] = value as f32;
+            }
+        }
+
+        quality.peak_coefficient = matrix
+            .iter()
+            .map(|value| value.abs() as f64)
+            .fold(0.0, f64::max);
+        if quality.peak_coefficient > 8.0 || !quality.peak_coefficient.is_finite() {
+            return Err(format!(
+                "AllRAD decode is ill-conditioned: peak coefficient {:.3} exceeds 8.0",
+                quality.peak_coefficient
+            ));
+        }
+
+        Ok(Self {
+            ambi_channels: ambi_ch,
+            speaker_count: speaker_config.total_channels,
+            matrix,
+            max_re_weights: max_re.into_iter().map(|weight| weight as f32).collect(),
+            algorithm: DecodeAlgorithm::AllRad,
+            virtual_speaker_count: virtual_count,
+            quality,
+        })
+    }
+
     /// Build a decode matrix for the given Ambisonics order and target speaker layout.
     ///
     /// Uses mode-matching (pseudoinverse of Y matrix) with optional max-rE weighting.
@@ -64,12 +187,7 @@ impl DecodeMatrix {
         speaker_config: &SpeakerConfig,
         apply_max_re: bool,
     ) -> Result<Self, String> {
-        if order > crate::spherical_harmonics::MAX_ORDER {
-            return Err(format!(
-                "Ambisonics order must be at most {}, got {order}",
-                crate::spherical_harmonics::MAX_ORDER
-            ));
-        }
+        validate_order(order)?;
         let ambi_ch = channel_count(order);
         let speakers: Vec<_> = speaker_config
             .speakers
@@ -138,6 +256,8 @@ impl DecodeMatrix {
             speaker_count: total_channels,
             matrix: full_matrix,
             max_re_weights: max_re.into_iter().map(|w| w as f32).collect(),
+            algorithm: DecodeAlgorithm::ModeMatching,
+            virtual_speaker_count: 0,
             quality,
         })
     }
@@ -166,6 +286,199 @@ impl DecodeMatrix {
     pub fn quality(&self) -> DecodeQuality {
         self.quality
     }
+}
+
+fn validate_order(order: usize) -> Result<(), String> {
+    if order > crate::spherical_harmonics::MAX_ORDER {
+        return Err(format!(
+            "Ambisonics order must be at most {}, got {order}",
+            crate::spherical_harmonics::MAX_ORDER
+        ));
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct Direction {
+    vector: [f64; 3],
+    azimuth: f64,
+    elevation: f64,
+}
+
+fn fibonacci_sphere(count: usize) -> Vec<Direction> {
+    let golden_angle = std::f64::consts::PI * (3.0 - 5.0_f64.sqrt());
+    (0..count)
+        .map(|index| {
+            let y = 1.0 - 2.0 * (index as f64 + 0.5) / count as f64;
+            let radius = (1.0 - y * y).max(0.0).sqrt();
+            let azimuth = (index as f64 * golden_angle).rem_euclid(2.0 * std::f64::consts::PI);
+            let vector = [radius * azimuth.sin(), radius * azimuth.cos(), y];
+            Direction {
+                vector,
+                azimuth: vector[0].atan2(vector[1]),
+                elevation: vector[2].asin(),
+            }
+        })
+        .collect()
+}
+
+fn vbap_2d(physical: &[(usize, [f32; 3])], source_azimuth: f64, gains: &mut [f64]) {
+    if physical.is_empty() {
+        return;
+    }
+    if physical.len() == 1 {
+        gains[physical[0].0] = 1.0;
+        return;
+    }
+    let mut entries: Vec<_> = physical
+        .iter()
+        .map(|&(channel, vector)| (channel, (vector[0] as f64).atan2(vector[1] as f64)))
+        .collect();
+    entries.sort_by(|a, b| a.1.total_cmp(&b.1));
+
+    let mut best: Option<([usize; 2], [f64; 2], f64)> = None;
+    for index in 0..entries.len() {
+        let next = (index + 1) % entries.len();
+        let first_azimuth = entries[index].1;
+        let second_azimuth = entries[next].1;
+        let span = (second_azimuth - first_azimuth).rem_euclid(2.0 * std::f64::consts::PI);
+        if span <= 1e-8 || span > std::f64::consts::PI + 1e-8 {
+            continue;
+        }
+        let offset = (source_azimuth - first_azimuth).rem_euclid(2.0 * std::f64::consts::PI);
+        if offset > span + 1e-8 {
+            continue;
+        }
+        let v1 = [first_azimuth.sin(), first_azimuth.cos()];
+        let v2 = [second_azimuth.sin(), second_azimuth.cos()];
+        let source = [source_azimuth.sin(), source_azimuth.cos()];
+        let determinant = v1[0] * v2[1] - v2[0] * v1[1];
+        if determinant.abs() < 1e-10 {
+            continue;
+        }
+        let raw = [
+            (source[0] * v2[1] - v2[0] * source[1]) / determinant,
+            (v1[0] * source[1] - source[0] * v1[1]) / determinant,
+        ];
+        if raw[0] < -1e-7 || raw[1] < -1e-7 {
+            continue;
+        }
+        let norm = (raw[0] * raw[0] + raw[1] * raw[1]).sqrt().max(1e-12);
+        let candidate = [raw[0] / norm, raw[1] / norm];
+        if best.is_none() || candidate[0].min(candidate[1]) > best.unwrap().2 {
+            best = Some((
+                [entries[index].0, entries[next].0],
+                candidate,
+                candidate[0].min(candidate[1]),
+            ));
+        }
+    }
+
+    if let Some((channels, candidate, _)) = best {
+        gains[channels[0]] = candidate[0];
+        gains[channels[1]] = candidate[1];
+    } else {
+        let nearest = physical
+            .iter()
+            .min_by(|(_, a), (_, b)| {
+                let da =
+                    1.0 - (a[0] as f64 * source_azimuth.sin() + a[1] as f64 * source_azimuth.cos());
+                let db =
+                    1.0 - (b[0] as f64 * source_azimuth.sin() + b[1] as f64 * source_azimuth.cos());
+                da.total_cmp(&db)
+            })
+            .expect("physical is non-empty");
+        gains[nearest.0] = 1.0;
+    }
+}
+
+fn vbap_3d(physical: &[(usize, [f32; 3])], source: [f64; 3], gains: &mut [f64]) {
+    if physical.len() < 3 {
+        vbap_2d(physical, source[0].atan2(source[1]), gains);
+        return;
+    }
+    let mut best: Option<([usize; 3], [f64; 3], f64)> = None;
+    for i in 0..physical.len() {
+        for j in (i + 1)..physical.len() {
+            for k in (j + 1)..physical.len() {
+                let matrix = [
+                    [
+                        physical[i].1[0] as f64,
+                        physical[j].1[0] as f64,
+                        physical[k].1[0] as f64,
+                    ],
+                    [
+                        physical[i].1[1] as f64,
+                        physical[j].1[1] as f64,
+                        physical[k].1[1] as f64,
+                    ],
+                    [
+                        physical[i].1[2] as f64,
+                        physical[j].1[2] as f64,
+                        physical[k].1[2] as f64,
+                    ],
+                ];
+                let Some(raw) = solve_3x3(matrix, source) else {
+                    continue;
+                };
+                if raw.iter().any(|gain| *gain < -1e-7) {
+                    continue;
+                }
+                let norm = raw
+                    .iter()
+                    .map(|gain| gain * gain)
+                    .sum::<f64>()
+                    .sqrt()
+                    .max(1e-12);
+                let candidate = [raw[0] / norm, raw[1] / norm, raw[2] / norm];
+                let score = candidate.iter().copied().fold(f64::INFINITY, f64::min);
+                if best.is_none() || score > best.unwrap().2 {
+                    best = Some((
+                        [physical[i].0, physical[j].0, physical[k].0],
+                        candidate,
+                        score,
+                    ));
+                }
+            }
+        }
+    }
+    if let Some((channels, candidate, _)) = best {
+        gains[channels[0]] = candidate[0];
+        gains[channels[1]] = candidate[1];
+        gains[channels[2]] = candidate[2];
+        return;
+    }
+    let nearest = physical
+        .iter()
+        .max_by(|(_, a), (_, b)| {
+            let da = a[0] as f64 * source[0] + a[1] as f64 * source[1] + a[2] as f64 * source[2];
+            let db = b[0] as f64 * source[0] + b[1] as f64 * source[1] + b[2] as f64 * source[2];
+            da.total_cmp(&db)
+        })
+        .expect("physical is non-empty");
+    gains[nearest.0] = 1.0;
+}
+
+fn solve_3x3(matrix: [[f64; 3]; 3], rhs: [f64; 3]) -> Option<[f64; 3]> {
+    let determinant = matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1])
+        - matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0])
+        + matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0]);
+    if determinant.abs() < 1e-10 {
+        return None;
+    }
+    let mut result = [0.0; 3];
+    for column in 0..3 {
+        let mut replaced = matrix;
+        for row in 0..3 {
+            replaced[row][column] = rhs[row];
+        }
+        let det = replaced[0][0]
+            * (replaced[1][1] * replaced[2][2] - replaced[1][2] * replaced[2][1])
+            - replaced[0][1] * (replaced[1][0] * replaced[2][2] - replaced[1][2] * replaced[2][0])
+            + replaced[0][2] * (replaced[1][0] * replaced[2][1] - replaced[1][1] * replaced[2][0]);
+        result[column] = det / determinant;
+    }
+    Some(result)
 }
 
 /// Compute max-rE weights for a given Ambisonics order.
@@ -436,6 +749,79 @@ mod tests {
                 );
                 let input: Vec<f32> = encoded.iter().map(|value| *value as f32).collect();
                 dm.decode_frame(&input, &mut output);
+                let energy: f32 = output.iter().map(|value| value * value).sum();
+                assert!(energy.is_finite() && energy < 100.0);
+            }
+        }
+    }
+
+    #[test]
+    fn allrad_contains_virtual_speaker_and_vbap_stages() {
+        let config = get_speaker_config("7.1.4").unwrap();
+        let matrix = DecodeMatrix::build_allrad(2, config, false).unwrap();
+        assert_eq!(matrix.algorithm, DecodeAlgorithm::AllRad);
+        assert_eq!(matrix.virtual_speaker_count, ALLRAD_VIRTUAL_SPEAKERS[2]);
+        assert!(matrix.matrix.iter().all(|value| value.is_finite()));
+        assert!(matrix.quality().peak_coefficient > 0.0);
+    }
+
+    #[test]
+    fn allrad_omnidirectional_signal_reaches_every_non_lfe_speaker() {
+        let config = get_speaker_config("7.1.4").unwrap();
+        let matrix = DecodeMatrix::build_allrad(1, config, false).unwrap();
+        let mut output = vec![0.0_f32; config.total_channels];
+        matrix.decode_frame(&[1.0, 0.0, 0.0, 0.0], &mut output);
+        for speaker in config.speakers.iter().filter(|speaker| !speaker.is_lfe) {
+            assert!(
+                output[speaker.channel] > 0.01,
+                "omni output at {} was {}",
+                speaker.label,
+                output[speaker.channel]
+            );
+        }
+        assert_eq!(output[3], 0.0); // LFE is never part of AllRAD.
+    }
+
+    #[test]
+    fn allrad_front_direction_prefers_front_over_rear() {
+        let config = get_speaker_config("5.1").unwrap();
+        let matrix = DecodeMatrix::build_allrad(1, config, false).unwrap();
+        let mut output = vec![0.0_f32; config.total_channels];
+        let input = [1.0_f32, 0.0, 0.0, 1.0];
+        matrix.decode_frame(&input, &mut output);
+        let front_energy = output[0] * output[0] + output[1] * output[1] + output[2] * output[2];
+        let rear_energy = output[4] * output[4] + output[5] * output[5];
+        assert!(
+            front_energy > rear_energy,
+            "front={front_energy}, rear={rear_energy}"
+        );
+    }
+
+    #[test]
+    fn allrad_handles_irregular_and_underdetermined_layouts() {
+        let config = get_speaker_config("2.0").unwrap();
+        let matrix = DecodeMatrix::build_allrad(3, config, true).unwrap();
+        assert_eq!(matrix.speaker_count, 2);
+        assert!(matrix.matrix.iter().all(|value| value.is_finite()));
+        assert!(matrix.quality().rank > 0);
+    }
+
+    #[test]
+    fn allrad_dense_directional_sweep_is_finite_and_energy_bounded() {
+        let config = get_speaker_config("9.1.6").unwrap();
+        let matrix = DecodeMatrix::build_allrad(3, config, true).unwrap();
+        let mut encoded = vec![0.0_f64; matrix.ambi_channels];
+        let mut output = vec![0.0_f32; matrix.speaker_count];
+        for azimuth in (-180..180).step_by(20) {
+            for elevation in (-80..=80).step_by(20) {
+                spherical_harmonics_vector(
+                    3,
+                    deg_to_rad(azimuth as f64),
+                    deg_to_rad(elevation as f64),
+                    &mut encoded,
+                );
+                let input: Vec<f32> = encoded.iter().map(|value| *value as f32).collect();
+                matrix.decode_frame(&input, &mut output);
                 let energy: f32 = output.iter().map(|value| value * value).sum();
                 assert!(energy.is_finite() && energy < 100.0);
             }

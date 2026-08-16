@@ -10,9 +10,11 @@ Correction uses a 2048-point, 512-hop Hann/WOLA phase vocoder with
 instantaneous-frequency estimation, spectral-bin remapping, normalized
 spectral-flux onset resets, and identity phase locking around remapped spectral
 peaks. Its fixed causal latency is 2047 frames, including startup prefill and
-group delay, independent of callback partitioning. It does not implement a
-formant-envelope model: uniform pitch correction moves formants with the rest
-of the spectrum, and there is deliberately no unsupported formant toggle.
+group delay, independent of callback partitioning. An optional structural
+`formant_preservation` mode estimates a smoothed log-magnitude envelope and
+transports it to the original absolute frequencies with bounded gains;
+`formant_strength` blends this correction from 0 to 1. The default mode remains
+the legacy uniform correction path.
 
 Automatic estimates compare adjacent analysis frames. Without an explicit
 pilot, note, or clock reference they can detect change but cannot identify a
@@ -27,5 +29,5 @@ correction that no channel observed; silence and broadband noise do not outvote
 a reliable tonal channel.
 
 Legacy presets containing `phase_vocoder: false` or `true` migrate to the sole
-duration-preserving engine. Schema v2 no longer exposes or serializes that
-toggle, avoiding ambiguous fixed-frame SRC behavior.
+duration-preserving engine. Schema v3 retains that migration and adds the
+explicit formant mode while avoiding ambiguous fixed-frame SRC behavior.

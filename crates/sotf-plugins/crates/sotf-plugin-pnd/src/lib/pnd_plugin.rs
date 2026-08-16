@@ -54,6 +54,12 @@ pub struct PndPlugin {
     pub(super) param_reference_frequency_hz: ParameterId,
     pub(super) reference_frequency_hz: f32,
 
+    pub(super) param_formant_preservation: ParameterId,
+    pub(super) formant_preservation: bool,
+
+    pub(super) param_formant_strength: ParameterId,
+    pub(super) formant_strength: f32,
+
     pub(super) vocoder: Option<PhaseVocoder>,
 
     pub(super) cache: RealTimeCache<PndData>,
@@ -93,6 +99,12 @@ impl PndPlugin {
 
             param_reference_frequency_hz: ParameterId::from("reference_frequency_hz"),
             reference_frequency_hz: pk(PD, "reference_frequency_hz").default_f64() as f32,
+
+            param_formant_preservation: ParameterId::from("formant_preservation"),
+            formant_preservation: pk(PD, "formant_preservation").default_bool(),
+
+            param_formant_strength: ParameterId::from("formant_strength"),
+            formant_strength: pk(PD, "formant_strength").default_f64() as f32,
 
             vocoder: None,
 
@@ -163,6 +175,22 @@ impl PndPlugin {
             )
             .with_group("Correction")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "formant_preservation",
+                "Formant Preservation",
+                self.formant_preservation,
+            )
+            .with_group("Correction")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "formant_strength",
+                "Formant Strength",
+                self.formant_strength,
+                pk(PD, "formant_strength").min_f64() as f32,
+                pk(PD, "formant_strength").max_f64() as f32,
+            )
+            .with_group("Correction")
+            .with_importance(ParameterImportance::FineTuning),
         ];
         apply_spec_update_modes(&mut self.cached_parameters, PD);
     }
@@ -179,6 +207,7 @@ impl PndPlugin {
             ("drift_smoothing", params.drift_smoothing),
             ("confidence_threshold", params.confidence_threshold),
             ("reference_frequency_hz", params.reference_frequency_hz),
+            ("formant_strength", params.formant_strength),
         ] {
             let spec = pk(PD, name);
             if !value.is_finite()
@@ -200,6 +229,8 @@ impl PndPlugin {
         plugin.multi_channel_analysis = params.multi_channel_analysis;
         plugin.confidence_threshold = params.confidence_threshold;
         plugin.reference_frequency_hz = params.reference_frequency_hz;
+        plugin.formant_preservation = params.formant_preservation;
+        plugin.formant_strength = params.formant_strength;
         // `phase_vocoder` is a legacy serialized compatibility field. Both
         // historical values now migrate explicitly to the sole fixed-frame,
         // duration-preserving correction engine.
@@ -221,7 +252,8 @@ impl PndPlugin {
     }
 
     /// Phase vocoder processing path: uses STFT analysis/synthesis to shift pitch
-    /// without changing duration. No separate formant-envelope preservation is applied.
+    /// without changing duration. Optional formant-envelope transport is
+    /// applied inside each preallocated phase-vocoder channel.
     pub(super) fn process_phase_vocoder(
         &mut self,
         input: &[f32],
@@ -320,7 +352,12 @@ impl PndPlugin {
 
                 // When we have a full FFT frame, process a hop
                 if pv.input_fill >= PV_FFT_SIZE {
-                    pv.process_hop(pitch_shift);
+                    let formant_strength = if self.formant_preservation {
+                        self.formant_strength
+                    } else {
+                        0.0
+                    };
+                    pv.process_hop_with_formant_strength(pitch_shift, formant_strength);
                 }
             }
 
@@ -577,6 +614,29 @@ impl Plugin for PndPlugin {
                 self.last_drift_ratio = 1.0;
                 self.reference_transition_pending = true;
             }
+        } else if id == self.param_formant_preservation {
+            if self.initialized {
+                return Err(
+                    "formant_preservation is a structural setup parameter; rebuild the plugin"
+                        .to_string(),
+                );
+            }
+            self.formant_preservation = value
+                .as_bool()
+                .unwrap_or(pk(PD, "formant_preservation").default_bool());
+        } else if id == self.param_formant_strength {
+            if self.initialized {
+                return Err(
+                    "formant_strength is a structural setup parameter; rebuild the plugin"
+                        .to_string(),
+                );
+            }
+            let v = value
+                .as_float()
+                .unwrap_or(pk(PD, "formant_strength").default_f64() as f32);
+            if v.is_finite() {
+                self.formant_strength = v;
+            }
         }
         self.rebuild_cached_parameters();
         Ok(())
@@ -595,6 +655,10 @@ impl Plugin for PndPlugin {
             Some(ParameterValue::Float(self.confidence_threshold))
         } else if id == &self.param_reference_frequency_hz {
             Some(ParameterValue::Float(self.reference_frequency_hz))
+        } else if id == &self.param_formant_preservation {
+            Some(ParameterValue::Bool(self.formant_preservation))
+        } else if id == &self.param_formant_strength {
+            Some(ParameterValue::Float(self.formant_strength))
         } else {
             None
         }

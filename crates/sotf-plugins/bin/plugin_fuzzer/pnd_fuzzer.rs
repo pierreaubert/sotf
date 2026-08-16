@@ -14,6 +14,8 @@ impl PluginFuzzer for PndFuzzer {
             multi_channel_analysis: true,
             confidence_threshold: 0.5,
             reference_frequency_hz: 0.0,
+            formant_preservation: false,
+            formant_strength: 1.0,
             phase_vocoder: false,
         };
 

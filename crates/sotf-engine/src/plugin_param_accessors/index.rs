@@ -1,6 +1,6 @@
 use super::aae::aae_room_presets;
 use super::aae::aae_speaker_configs;
-use super::ambisonics::ambisonics_layouts;
+use super::ambisonics::{ambisonics_algorithms, ambisonics_layouts};
 use super::crossover::crossover_types;
 use super::de::de_esser_modes;
 use super::detection::detection_modes;
@@ -67,6 +67,14 @@ pub(super) fn index_to_hpf_order(index: f64) -> String {
 pub(super) fn index_to_ambisonics_layout(index: f64) -> String {
     let idx = index as usize;
     ambisonics_layouts().get(idx).unwrap_or(&"5.1").to_string()
+}
+
+pub(super) fn index_to_ambisonics_algorithm(index: f64) -> String {
+    let idx = index as usize;
+    ambisonics_algorithms()
+        .get(idx)
+        .unwrap_or(&"mode_matching")
+        .to_string()
 }
 
 pub(super) fn index_to_crossover_type(index: f64) -> String {

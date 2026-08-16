@@ -298,6 +298,8 @@ sotf_plugins::serde_param_default! {
     fn default_pnd_multi_channel_analysis() -> bool = "multi_channel_analysis";
     fn default_pnd_confidence_threshold() -> f64 = "confidence_threshold";
     fn default_pnd_reference_frequency_hz() -> f64 = "reference_frequency_hz";
+    fn default_pnd_formant_preservation() -> bool = "formant_preservation";
+    fn default_pnd_formant_strength() -> f64 = "formant_strength";
 }
 sotf_plugins::serde_param_default! {
     ab_compare_specs::PARAMS;
@@ -384,6 +386,7 @@ sotf_plugins::serde_param_default! {
     fn default_ambisonics_order() -> usize = "order";
     fn default_ambisonics_target_layout() -> String = "target_layout";
     fn default_ambisonics_max_re() -> bool = "max_re_weighting";
+    fn default_ambisonics_algorithm() -> String = "algorithm";
 }
 sotf_plugins::serde_param_default! {
     cms_specs::PARAMS;

@@ -1,3 +1,14 @@
+# 0.5.9
+
+## AllRAD/VBAP decoder
+
+- Add a structural `algorithm` choice with serialized-compatible
+  `mode_matching` and setup-time `allrad` modes.
+- Implement deterministic virtual-sphere HOA decoding followed by physical
+  2D-pair/3D-triangle VBAP remapping, composed into a fixed realtime matrix.
+- Keep LFE rows silent and add factory, engine, catalog, QA, response, and
+  allocation-free processing coverage.
+
 # 0.5.8
 
 ## Review closure

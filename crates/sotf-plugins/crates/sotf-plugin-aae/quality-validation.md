@@ -38,3 +38,38 @@ and preference ratings, plus detector region TP/FP/FN counts. Archive the exact
 binary commit, parameter JSON, device/room, listener count, anonymized ratings,
 and `/tmp/aae-quality.tsv`. No listening/corpus acceptance claim is made until
 those artifacts exist.
+
+## Machine-checkable manifest and report
+
+The repository provides a verifier for the external artifacts. The structural
+schemas are [quality-validation-manifest.schema.json](quality-validation-manifest.schema.json)
+and [quality-validation-run.schema.json](quality-validation-run.schema.json).
+The manifest is JSON with `schema_version: 1` and a `fixtures` array. Each fixture contains
+`fixture_id`, `label`, `license_or_source`, lowercase `sha256`, `layout`,
+`sample_rate`, `expected_dialogue_regions`, and an optional `path`. The verifier
+requires all eleven fixture classes named above, both `5.1` and `9.1.6`, unique
+IDs, valid dialogue ranges, and matching hashes when a path is supplied. Restricted
+fixtures can omit `path`; their hash and acquisition source remain required.
+
+The listening run JSON records `binary_commit`, `parameter_json`,
+`device_and_room`, `listener_count`, `qa_output_sha256`, the manifest digest,
+both bypass/previous-release comparisons, per-condition ratings, and detector
+TP/FP/FN counts. The default acceptance thresholds are at least 8 listeners and
+8 ratings per fixture/layout condition, detector precision and recall of 0.80,
+mean preference of 4/7, and mean pumping no worse than 3/7.
+
+Validate and emit the report with:
+
+```bash
+cargo run -p sotf-plugin-aae --bin qa-aae-validation -- \
+  --manifest validation-manifest.json \
+  --run validation-run.json \
+  --report validation-report.json \
+  --fixture-root /path/to/corpus
+```
+
+Without `--run`, the report is deliberately `accepted: false` and marks
+`external_evidence: false`; deterministic QA evidence is never promoted to an
+external acceptance claim. Keep licensed/restricted corpus files and run JSON
+outside version control, retaining only redistributable fixtures and manifests
+where licensing permits.

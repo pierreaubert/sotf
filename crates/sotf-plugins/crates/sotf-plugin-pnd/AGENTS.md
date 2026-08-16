@@ -14,8 +14,8 @@ Preserve these contracts:
 - legacy `phase_vocoder` false/true values both migrate explicitly to the sole duration-preserving engine;
 - identity/peak phase locking and onset resets require objective transient and
   inter-channel phase tests;
-- formant preservation remains unsupported unless a separate envelope model
-  and objective spectral gates are added.
+- formant preservation is an optional structural mode backed by a bounded
+  spectral-envelope model; retain independent spectral and listening gates.
 
 Use impulse partition, long-duration correction, transactional error, detector
 amplitude/SNR/bin-edge/motion, unity SNR, transient localization, multichannel,

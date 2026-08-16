@@ -82,6 +82,28 @@ pub const PARAMS: &[ParamSpec] = &[
         "Correction",
     )
     .doc("Known pilot/note frequency for absolute correction; 0 uses change-only tracking"),
+    ParamSpec::bool_param(
+        "Formant Preservation",
+        "formant_preservation",
+        false,
+        "Correction",
+    )
+    .structural()
+    .setup()
+    .doc("Preserve the broad spectral envelope during pitch correction"),
+    ParamSpec::float(
+        "Formant Strength",
+        "formant_strength",
+        1.0,
+        0.0,
+        1.0,
+        0.05,
+        "",
+        "Correction",
+    )
+    .structural()
+    .setup()
+    .doc("Blend toward the transported spectral envelope"),
 ];
 
 // ============================================================================
@@ -95,9 +117,11 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             "CORRECTION",
             "CORRECTION",
             &[
-                ControlSpec::knob(0), // correction_strength
-                ControlSpec::knob(4), // confidence_threshold
-                ControlSpec::knob(5), // reference_frequency_hz
+                ControlSpec::knob(0),   // correction_strength
+                ControlSpec::knob(4),   // confidence_threshold
+                ControlSpec::knob(5),   // reference_frequency_hz
+                ControlSpec::toggle(6), // formant_preservation
+                ControlSpec::knob(7),   // formant_strength
             ],
         ),
         ControlGroup::new(
@@ -140,6 +164,10 @@ pub struct Params {
     pub confidence_threshold: f64,
     #[serde(default = "d_reference_frequency_hz")]
     pub reference_frequency_hz: f64,
+    #[serde(default = "d_formant_preservation")]
+    pub formant_preservation: bool,
+    #[serde(default = "d_formant_strength")]
+    pub formant_strength: f64,
 }
 
 fn d_correction_strength() -> f64 {
@@ -160,6 +188,12 @@ fn d_confidence_threshold() -> f64 {
 fn d_reference_frequency_hz() -> f64 {
     pk(PARAMS, "reference_frequency_hz").default_f64()
 }
+fn d_formant_preservation() -> bool {
+    pk(PARAMS, "formant_preservation").default_bool()
+}
+fn d_formant_strength() -> f64 {
+    pk(PARAMS, "formant_strength").default_f64()
+}
 
 impl Default for Params {
     fn default() -> Self {
@@ -170,6 +204,8 @@ impl Default for Params {
             multi_channel_analysis: d_multi_channel_analysis(),
             confidence_threshold: d_confidence_threshold(),
             reference_frequency_hz: d_reference_frequency_hz(),
+            formant_preservation: d_formant_preservation(),
+            formant_strength: d_formant_strength(),
         }
     }
 }
@@ -181,7 +217,7 @@ impl Default for Params {
 impl PluginParamDef for Params {
     const PARAMS: &'static [ParamSpec] = PARAMS;
     const LAYOUT: Option<&'static PluginLayout> = Some(&LAYOUT);
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 3;
     const PLUGIN_TYPE_KEY: &'static str = "pnd";
 
     fn param_value(&self, index: usize) -> Option<f64> {
@@ -196,6 +232,8 @@ impl PluginParamDef for Params {
             }),
             4 => Some(self.confidence_threshold),
             5 => Some(self.reference_frequency_hz),
+            6 => Some(if self.formant_preservation { 1.0 } else { 0.0 }),
+            7 => Some(self.formant_strength),
             _ => None,
         }
     }
@@ -208,6 +246,8 @@ impl PluginParamDef for Params {
             3 => self.multi_channel_analysis = value > 0.5,
             4 => self.confidence_threshold = value,
             5 => self.reference_frequency_hz = value,
+            6 => self.formant_preservation = value > 0.5,
+            7 => self.formant_strength = value,
             _ => {}
         }
     }
@@ -219,6 +259,18 @@ impl PluginParamDef for Params {
             // Both legacy values selected behavior that is now replaced by
             // the sole fixed-frame, duration-preserving correction engine.
             object.remove("phase_vocoder");
+        }
+        if from_version < 3
+            && let Some(object) = value.as_object_mut()
+        {
+            // Formant preservation is opt-in so every v1/v2 preset retains
+            // the exact uniform correction behavior it had before v3.
+            object
+                .entry("formant_preservation")
+                .or_insert(serde_json::Value::Bool(false));
+            object
+                .entry("formant_strength")
+                .or_insert(serde_json::json!(1.0));
         }
         value
     }
@@ -265,6 +317,8 @@ mod tests {
             original.reference_frequency_hz,
             restored.reference_frequency_hz
         );
+        assert_eq!(original.formant_preservation, restored.formant_preservation);
+        assert_eq!(original.formant_strength, restored.formant_strength);
     }
 
     #[test]
@@ -294,10 +348,18 @@ mod tests {
             p.reference_frequency_hz,
             pk(PARAMS, "reference_frequency_hz").default_f64()
         );
+        assert_eq!(
+            p.formant_preservation,
+            pk(PARAMS, "formant_preservation").default_bool()
+        );
+        assert_eq!(
+            p.formant_strength,
+            pk(PARAMS, "formant_strength").default_f64()
+        );
     }
 
     #[test]
-    fn legacy_phase_vocoder_values_migrate_explicitly_to_v2_schema() {
+    fn legacy_phase_vocoder_values_migrate_explicitly_to_v3_schema() {
         for legacy in [false, true] {
             let migrated = Params::migrate(
                 serde_json::json!({
@@ -310,6 +372,8 @@ mod tests {
             assert!(migrated.get("phase_vocoder").is_none());
             let params: Params = serde_json::from_value(migrated).unwrap();
             assert_eq!(params.correction_strength, 0.75);
+            assert!(!params.formant_preservation);
+            assert_eq!(params.formant_strength, 1.0);
         }
     }
 }

@@ -58,6 +58,7 @@ use super::default_ab_mix_transition_ms;
 use super::default_aec_echo_tail_ms;
 use super::default_aec_post_filter_enabled;
 use super::default_aec_step_size;
+use super::default_ambisonics_algorithm;
 use super::default_ambisonics_max_re;
 use super::default_ambisonics_order;
 use super::default_ambisonics_target_layout;
@@ -231,6 +232,8 @@ use super::default_pnd_analysis_window_ms;
 use super::default_pnd_confidence_threshold;
 use super::default_pnd_correction_strength;
 use super::default_pnd_drift_smoothing;
+use super::default_pnd_formant_preservation;
+use super::default_pnd_formant_strength;
 use super::default_pnd_multi_channel_analysis;
 use super::default_pnd_reference_frequency_hz;
 use super::default_sat_dc_blocker;
@@ -1127,6 +1130,10 @@ pub enum PluginSettings {
         confidence_threshold: f64,
         #[serde(default = "default_pnd_reference_frequency_hz")]
         reference_frequency_hz: f64,
+        #[serde(default = "default_pnd_formant_preservation")]
+        formant_preservation: bool,
+        #[serde(default = "default_pnd_formant_strength")]
+        formant_strength: f64,
         /// Legacy v1 preset input only. Both values migrate to PND's sole
         /// duration-preserving engine and the field is not serialized again.
         #[serde(default, skip_serializing)]
@@ -1338,6 +1345,8 @@ pub enum PluginSettings {
         max_re_weighting: bool,
         #[serde(default)]
         dual_band: bool,
+        #[serde(default = "default_ambisonics_algorithm")]
+        algorithm: String,
     },
     StereoImager {
         #[serde(default = "default_si_width")]
@@ -2029,6 +2038,8 @@ impl PluginSettings {
                     multi_channel_analysis: p(pn, "multi_channel_analysis").default_bool(),
                     confidence_threshold: p(pn, "confidence_threshold").default_f64(),
                     reference_frequency_hz: p(pn, "reference_frequency_hz").default_f64(),
+                    formant_preservation: p(pn, "formant_preservation").default_bool(),
+                    formant_strength: p(pn, "formant_strength").default_f64(),
                     phase_vocoder: true,
                 }
             }
@@ -2158,6 +2169,7 @@ impl PluginSettings {
                     target_layout: default_ambisonics_target_layout(),
                     max_re_weighting: p(a, "max_re_weighting").default_bool(),
                     dual_band: p(a, "dual_band").default_bool(),
+                    algorithm: p(a, "algorithm").default_choice_label(),
                 }
             }
             PluginType::StereoImager => {

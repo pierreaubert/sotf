@@ -16,6 +16,7 @@ fn main() {
         target_layout: "5.1".to_owned(),
         max_re_weighting: true,
         dual_band: false,
+        algorithm: "mode_matching".to_owned(),
     };
     let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
     plugin.initialize(sample_rate).unwrap();
@@ -50,6 +51,20 @@ fn main() {
     }
     println!("  Omni Decode: PASS");
 
+    // -- Test 1b: true AllRAD virtual-speaker/VBAP path --
+    println!("\n[Test 1b] FOA -> 5.1 AllRAD/VBAP");
+    let allrad_config = AmbisonicsDecoderConfig {
+        algorithm: "allrad".to_owned(),
+        ..config
+    };
+    let mut allrad = AmbisonicsDecoderPlugin::new(&allrad_config).unwrap();
+    allrad.initialize(sample_rate).unwrap();
+    let mut allrad_output = vec![0.0_f32; num_frames * 6];
+    allrad.process(&input, &mut allrad_output, &ctx).unwrap();
+    assert!(allrad_output.iter().all(|sample| sample.is_finite()));
+    assert!(allrad_output.iter().any(|sample| sample.abs() > 0.01));
+    println!("  AllRAD/VBAP: PASS");
+
     // -- Test 2: Silence in = Silence out --
     println!("\n[Test 2] Silence Passthrough");
     let input_silent = vec![0.0_f32; num_frames * 4];
@@ -72,6 +87,7 @@ fn main() {
         target_layout: "7.1.4".to_owned(),
         max_re_weighting: true,
         dual_band: false,
+        algorithm: "mode_matching".to_owned(),
     };
     let mut plugin_soa = AmbisonicsDecoderPlugin::new(&config_soa).unwrap();
     plugin_soa.initialize(sample_rate).unwrap();
@@ -103,6 +119,7 @@ fn main() {
         target_layout: "9.1.6".to_owned(),
         max_re_weighting: true,
         dual_band: true,
+        algorithm: "mode_matching".to_owned(),
     })
     .unwrap();
     worst_case.initialize(sample_rate).unwrap();

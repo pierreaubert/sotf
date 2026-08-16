@@ -12,6 +12,7 @@ fn foa_5_1_config() -> AmbisonicsDecoderConfig {
         target_layout: "5.1".to_owned(),
         max_re_weighting: true,
         dual_band: false,
+        algorithm: "mode_matching".to_owned(),
     }
 }
 
@@ -30,10 +31,24 @@ fn construct_soa_7_1_4() {
         target_layout: "7.1.4".to_owned(),
         max_re_weighting: false,
         dual_band: false,
+        algorithm: "mode_matching".to_owned(),
     };
     let plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
     assert_eq!(plugin.input_channels(), 9);
     assert_eq!(plugin.output_channels(), 12);
+}
+
+#[test]
+fn construct_allrad_mode_from_serialized_config() {
+    let config = AmbisonicsDecoderConfig {
+        algorithm: "allrad".to_owned(),
+        ..foa_5_1_config()
+    };
+    let plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("algorithm")),
+        Some(ParameterValue::Int(1))
+    );
 }
 
 #[test]
@@ -43,6 +58,7 @@ fn invalid_layout_returns_error() {
         target_layout: "not-a-layout".to_owned(),
         max_re_weighting: true,
         dual_band: false,
+        algorithm: "mode_matching".to_owned(),
     };
     assert!(AmbisonicsDecoderPlugin::new(&config).is_err());
 }
@@ -96,6 +112,7 @@ fn order_change_requires_host_rebuild() {
         target_layout: "7.1.4".to_owned(),
         max_re_weighting: true,
         dual_band: false,
+        algorithm: "mode_matching".to_owned(),
     };
     let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
     plugin.initialize(48000).unwrap();

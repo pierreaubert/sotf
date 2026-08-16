@@ -22,6 +22,8 @@ pub const TARGET_LAYOUTS: &[&str] = &[
     "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6",
 ];
 
+pub const ALGORITHMS: &[&str] = &["mode_matching", "allrad"];
+
 pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::int("Order", "order", 1, 1, 3, 1, "", "Ambisonics")
         .structural()
@@ -41,6 +43,9 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::bool_param("Dual-Band", "dual_band", false, "Ambisonics")
         .structural()
         .doc("Separate LF/HF decode weights"),
+    ParamSpec::choice("Algorithm", "algorithm", 0, ALGORITHMS, "Ambisonics")
+        .structural()
+        .doc("Decode algorithm: regularized mode matching or AllRAD/VBAP"),
 ];
 
 // ============================================================================
@@ -51,6 +56,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
         ControlSpec::knob(0),     // order
         ControlSpec::selector(1), // target_layout
+        ControlSpec::selector(4), // algorithm
     ],
     main: &[ControlGroup::new(
         "primary",
@@ -83,6 +89,8 @@ pub struct Params {
     pub max_re_weighting: bool,
     #[serde(default = "d_dual_band")]
     pub dual_band: bool,
+    #[serde(default = "d_algorithm")]
+    pub algorithm: String,
 }
 
 fn d_order() -> usize {
@@ -97,6 +105,12 @@ fn d_max_re_weighting() -> bool {
 fn d_dual_band() -> bool {
     pk(PARAMS, "dual_band").default_bool()
 }
+fn d_algorithm() -> String {
+    ALGORITHMS[pk(PARAMS, "algorithm")
+        .default_usize()
+        .min(ALGORITHMS.len() - 1)]
+    .to_owned()
+}
 
 impl Default for Params {
     fn default() -> Self {
@@ -105,6 +119,7 @@ impl Default for Params {
             target_layout: d_target_layout(),
             max_re_weighting: d_max_re_weighting(),
             dual_band: d_dual_band(),
+            algorithm: d_algorithm(),
         }
     }
 }
@@ -116,7 +131,7 @@ impl Default for Params {
 impl PluginParamDef for Params {
     const PARAMS: &'static [ParamSpec] = PARAMS;
     const LAYOUT: Option<&'static PluginLayout> = Some(&LAYOUT);
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
     const PLUGIN_TYPE_KEY: &'static str = "ambisonics_decoder";
 
     fn param_value(&self, index: usize) -> Option<f64> {
@@ -131,6 +146,12 @@ impl PluginParamDef for Params {
             }
             2 => Some(if self.max_re_weighting { 1.0 } else { 0.0 }),
             3 => Some(if self.dual_band { 1.0 } else { 0.0 }),
+            4 => Some(
+                ALGORITHMS
+                    .iter()
+                    .position(|&algorithm| algorithm == self.algorithm)
+                    .unwrap_or(0) as f64,
+            ),
             _ => None,
         }
     }
@@ -144,6 +165,10 @@ impl PluginParamDef for Params {
             }
             2 => self.max_re_weighting = value > 0.5,
             3 => self.dual_band = value > 0.5,
+            4 => {
+                let index = (value as usize).min(ALGORITHMS.len() - 1);
+                self.algorithm = ALGORITHMS[index].to_owned();
+            }
             _ => {}
         }
     }
@@ -182,6 +207,7 @@ mod tests {
         assert_eq!(original.target_layout, restored.target_layout);
         assert_eq!(original.max_re_weighting, restored.max_re_weighting);
         assert_eq!(original.dual_band, restored.dual_band);
+        assert_eq!(original.algorithm, restored.algorithm);
     }
 
     #[test]
@@ -194,6 +220,7 @@ mod tests {
             pk(PARAMS, "max_re_weighting").default_bool()
         );
         assert_eq!(p.dual_band, pk(PARAMS, "dual_band").default_bool());
+        assert_eq!(p.algorithm, ALGORITHMS[0]);
     }
 
     #[test]

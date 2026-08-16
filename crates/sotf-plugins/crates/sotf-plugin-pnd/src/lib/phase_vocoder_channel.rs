@@ -23,6 +23,8 @@ pub(super) struct PhaseVocoderChannel {
     pub(super) prev_magnitude: Vec<f32>,
     /// Current positive-frequency analysis phases and instantaneous frequencies.
     pub(super) analysis_magnitude: Vec<f32>,
+    /// Smoothed log-magnitude envelope for optional formant transport.
+    pub(super) analysis_envelope: Vec<f32>,
     pub(super) analysis_phase: Vec<f32>,
     pub(super) source_frequency: Vec<f32>,
     /// Source-bin peak regions and dominant contributors after spectral remapping.
@@ -78,6 +80,7 @@ impl PhaseVocoderChannel {
             prev_phase: vec![0.0; PV_FFT_SIZE],
             prev_magnitude: vec![0.0; PV_FFT_SIZE / 2 + 1],
             analysis_magnitude: vec![0.0; PV_FFT_SIZE / 2 + 1],
+            analysis_envelope: vec![0.0; PV_FFT_SIZE / 2 + 1],
             analysis_phase: vec![0.0; PV_FFT_SIZE / 2 + 1],
             source_frequency: vec![0.0; PV_FFT_SIZE / 2 + 1],
             source_peak_owner: vec![0; PV_FFT_SIZE / 2 + 1],
@@ -108,6 +111,7 @@ impl PhaseVocoderChannel {
         self.prev_phase.fill(0.0);
         self.prev_magnitude.fill(0.0);
         self.analysis_magnitude.fill(0.0);
+        self.analysis_envelope.fill(0.0);
         self.analysis_phase.fill(0.0);
         self.source_frequency.fill(0.0);
         self.source_peak_owner.fill(0);
@@ -129,7 +133,21 @@ impl PhaseVocoderChannel {
 
     /// Process a hop of samples with the given pitch shift ratio.
     /// pitch_shift > 1.0 shifts up, < 1.0 shifts down.
+    #[cfg(test)]
     pub(super) fn process_hop(&mut self, pitch_shift: f32) {
+        self.process_hop_with_formant_strength(pitch_shift, 0.0);
+    }
+
+    /// Process a hop with optional formant-preserving spectral-envelope
+    /// transport.  `formant_strength` is in [0, 1]; zero is exactly the legacy
+    /// uniform pitch-shift path.  The envelope is estimated from the current
+    /// positive-frequency magnitude frame and all work uses setup-allocated
+    /// buffers.
+    pub(super) fn process_hop_with_formant_strength(
+        &mut self,
+        pitch_shift: f32,
+        formant_strength: f32,
+    ) {
         let n = PV_FFT_SIZE;
         let hop = PV_HOP_SIZE;
         let expected_phase_advance = 2.0 * std::f32::consts::PI * hop as f32 / n as f32;
@@ -242,6 +260,25 @@ impl PhaseVocoderChannel {
             self.source_peak_owner[bin] = owner;
         }
 
+        // A short log-frequency smoothing kernel suppresses individual
+        // harmonics while retaining the broad spectral peaks that carry vowel
+        // and instrument-body identity.  Use the source frame for both source
+        // and target lookup: gain E(target)/E(source) keeps the envelope at
+        // its original absolute frequency after the harmonic remap.
+        let formant_strength = formant_strength.clamp(0.0, 1.0);
+        if formant_strength > 0.0 {
+            const ENVELOPE_RADIUS: usize = 8;
+            for bin in 0..positive_bins {
+                let start = bin.saturating_sub(ENVELOPE_RADIUS);
+                let end = (bin + ENVELOPE_RADIUS + 1).min(positive_bins);
+                let mut log_sum = 0.0_f32;
+                for sample in start..end {
+                    log_sum += (self.analysis_magnitude[sample] + 1.0e-6).ln();
+                }
+                self.analysis_envelope[bin] = (log_sum / (end - start) as f32).exp();
+            }
+        }
+
         // Identify the strongest source peak contributing to each remapped
         // target peak. Weak numerical sidelobes are not allowed to become phase
         // anchors.
@@ -276,11 +313,21 @@ impl PhaseVocoderChannel {
             let mag = self.analysis_magnitude[bin];
             let target_bin = (bin as f32 * pitch_shift).round() as usize;
             if target_bin <= n / 2 {
+                let formant_gain = if formant_strength > 0.0 {
+                    let source_envelope = self.analysis_envelope[bin].max(1.0e-6);
+                    let target_envelope = self.analysis_envelope[target_bin].max(1.0e-6);
+                    ((target_envelope / source_envelope).ln() * formant_strength)
+                        .clamp(-1.386_294_4, 1.386_294_4)
+                        .exp()
+                } else {
+                    1.0
+                };
+                let transported_magnitude = mag * formant_gain;
                 let shifted_frequency = self.source_frequency[bin] * pitch_shift;
-                self.synth_magnitude[target_bin] += mag;
-                self.synth_frequency_sum[target_bin] += mag * shifted_frequency;
-                if mag > self.dominant_magnitude[target_bin] {
-                    self.dominant_magnitude[target_bin] = mag;
+                self.synth_magnitude[target_bin] += transported_magnitude;
+                self.synth_frequency_sum[target_bin] += transported_magnitude * shifted_frequency;
+                if transported_magnitude > self.dominant_magnitude[target_bin] {
+                    self.dominant_magnitude[target_bin] = transported_magnitude;
                     self.dominant_source[target_bin] = bin;
                 }
             }
@@ -451,13 +498,21 @@ mod tests {
     }
 
     fn render_signal(input: &[f32], ratio: f32) -> Vec<f32> {
+        render_signal_with_formant_strength(input, ratio, 0.0)
+    }
+
+    fn render_signal_with_formant_strength(
+        input: &[f32],
+        ratio: f32,
+        formant_strength: f32,
+    ) -> Vec<f32> {
         let mut channel = PhaseVocoderChannel::new();
         let mut output = vec![0.0; input.len()];
         for (&input_sample, output_sample) in input.iter().zip(&mut output) {
             channel.input_buf[channel.input_fill] = input_sample;
             channel.input_fill += 1;
             if channel.input_fill >= PV_FFT_SIZE {
-                channel.process_hop(ratio);
+                channel.process_hop_with_formant_strength(ratio, formant_strength);
             }
             if channel.output_fill > 0 {
                 let index = channel.output_read % channel.output_accum.len();
@@ -848,6 +903,45 @@ mod tests {
                 "harmonic {harmonic} smeared between peaks: on={on_partial}, off={between_partials}"
             );
         }
+    }
+
+    #[test]
+    fn formant_transport_keeps_broad_peaks_at_absolute_frequencies() {
+        let sample_rate = 48_000.0_f32;
+        let fundamental = 100.0_f32;
+        let frames = 96_000;
+        let input = (0..frames)
+            .map(|frame| {
+                let time = frame as f32 / sample_rate;
+                (1..=40)
+                    .map(|harmonic| {
+                        let frequency = fundamental * harmonic as f32;
+                        let first_formant =
+                            (-(frequency - 700.0).powi(2) / (2.0 * 180.0_f32.powi(2))).exp();
+                        let second_formant =
+                            (-(frequency - 1_800.0).powi(2) / (2.0 * 240.0_f32.powi(2))).exp();
+                        (0.015 + 0.12 * first_formant + 0.08 * second_formant)
+                            * (2.0 * std::f32::consts::PI * frequency * time).sin()
+                    })
+                    .sum::<f32>()
+            })
+            .collect::<Vec<_>>();
+        let uniform = render_signal_with_formant_strength(&input, 1.2, 0.0);
+        let preserved = render_signal_with_formant_strength(&input, 1.2, 1.0);
+        let start = PV_FFT_SIZE * 6;
+        let uniform_first = spectral_amplitude(&uniform[start..], 700.0, sample_rate);
+        let preserved_first = spectral_amplitude(&preserved[start..], 700.0, sample_rate);
+        let uniform_shifted = spectral_amplitude(&uniform[start..], 840.0, sample_rate);
+        let preserved_shifted = spectral_amplitude(&preserved[start..], 840.0, sample_rate);
+        assert!(uniform_first.is_finite() && preserved_first.is_finite());
+        assert!(
+            preserved_first > uniform_first * 1.15,
+            "formant at 700 Hz was not restored: uniform={uniform_first}, preserved={preserved_first}"
+        );
+        assert!(
+            preserved_shifted < uniform_shifted,
+            "shifted formant was not attenuated: uniform={uniform_shifted}, preserved={preserved_shifted}"
+        );
     }
 
     #[test]

@@ -28,17 +28,34 @@ fn integration_default_parameters() {
     assert!(ids.contains(&"confidence_threshold"));
     assert!(ids.contains(&"reference_frequency_hz"));
     assert!(!ids.contains(&"phase_vocoder"));
-    assert!(!ids.contains(&"formant_preservation"));
+    assert!(ids.contains(&"formant_preservation"));
+    assert!(ids.contains(&"formant_strength"));
 
     let mut plugin = plugin;
+    plugin
+        .set_parameter(
+            ParameterId::from("formant_preservation"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("formant_strength"),
+            ParameterValue::Float(0.75),
+        )
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("formant_strength")),
+        Some(ParameterValue::Float(0.75))
+    );
+    plugin.initialize(44_100).unwrap();
     assert!(
         plugin
             .set_parameter(
                 ParameterId::from("formant_preservation"),
-                ParameterValue::Bool(true),
+                ParameterValue::Bool(false),
             )
-            .is_err(),
-        "PND must reject a formant mode until an envelope model and objective gates exist"
+            .is_err()
     );
 }
 
@@ -82,6 +99,36 @@ fn integration_parameter_roundtrip() {
             )
             .is_err()
     );
+}
+
+#[test]
+fn formant_mode_reset_reproduces_fresh_state() {
+    let params = PndPluginParams {
+        formant_preservation: true,
+        formant_strength: 0.8,
+        reference_frequency_hz: 440.0,
+        confidence_threshold: 0.2,
+        ..PndPluginParams::default()
+    };
+    let mut tested = PndPlugin::from_params(1, params.clone()).unwrap();
+    let mut fresh = PndPlugin::from_params(1, params).unwrap();
+    tested.initialize(48_000).unwrap();
+    fresh.initialize(48_000).unwrap();
+    let input: Vec<f32> = (0..4_096)
+        .map(|frame| {
+            let time = frame as f32 / 48_000.0;
+            (2.0 * std::f32::consts::PI * 444.0 * time).sin() * 0.3
+        })
+        .collect();
+    let context = ProcessContext::new(48_000, input.len());
+    let mut discarded = vec![0.0; input.len()];
+    tested.process(&input, &mut discarded, &context).unwrap();
+    tested.reset();
+    let mut reset_output = vec![0.0; input.len()];
+    let mut fresh_output = vec![0.0; input.len()];
+    tested.process(&input, &mut reset_output, &context).unwrap();
+    fresh.process(&input, &mut fresh_output, &context).unwrap();
+    assert_eq!(reset_output, fresh_output);
 }
 
 #[test]
@@ -326,6 +373,8 @@ fn integration_from_params_applies_initial_state() {
         multi_channel_analysis: false,
         confidence_threshold: 0.75,
         reference_frequency_hz: 440.0,
+        formant_preservation: false,
+        formant_strength: 1.0,
         phase_vocoder: true,
     };
     let plugin = PndPlugin::from_params(1, params).unwrap();

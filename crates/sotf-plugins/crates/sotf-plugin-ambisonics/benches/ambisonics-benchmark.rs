@@ -47,6 +47,7 @@ fn benchmark_ambisonics(c: &mut Criterion) {
         target_layout: "5.1".to_owned(),
         max_re_weighting: true,
         dual_band: false,
+        algorithm: "mode_matching".to_owned(),
     })
     .unwrap();
     benchmark_plugin(c, "Ambisonics_FOA_5.1_512", foa_5_1, 512);
@@ -57,6 +58,7 @@ fn benchmark_ambisonics(c: &mut Criterion) {
         target_layout: "7.1.4".to_owned(),
         max_re_weighting: true,
         dual_band: false,
+        algorithm: "mode_matching".to_owned(),
     })
     .unwrap();
     benchmark_plugin(c, "Ambisonics_FOA_7.1.4_512", foa_7_1_4, 512);
@@ -67,6 +69,7 @@ fn benchmark_ambisonics(c: &mut Criterion) {
         target_layout: "7.1.4".to_owned(),
         max_re_weighting: true,
         dual_band: false,
+        algorithm: "mode_matching".to_owned(),
     })
     .unwrap();
     benchmark_plugin(c, "Ambisonics_SOA_7.1.4_512", soa_7_1_4, 512);
@@ -78,6 +81,7 @@ fn benchmark_ambisonics(c: &mut Criterion) {
                 target_layout: (*layout).to_owned(),
                 max_re_weighting: true,
                 dual_band,
+                algorithm: "mode_matching".to_owned(),
             })
             .unwrap();
             benchmark_plugin(
@@ -100,6 +104,7 @@ fn benchmark_ambisonics(c: &mut Criterion) {
                 target_layout: "9.1.6".to_owned(),
                 max_re_weighting: true,
                 dual_band,
+                algorithm: "mode_matching".to_owned(),
             })
             .unwrap();
             benchmark_plugin(

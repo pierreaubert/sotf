@@ -5,6 +5,7 @@ pub mod fdn;
 pub mod hadamard;
 pub mod params;
 pub mod quality;
+pub mod quality_validation;
 pub mod tone_filter;
 
 #[path = "lib/aae_plugin.rs"]

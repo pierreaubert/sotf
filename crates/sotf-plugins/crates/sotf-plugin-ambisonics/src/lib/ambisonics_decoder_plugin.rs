@@ -3,7 +3,7 @@ use super::consts::MAX_AMBI_CHANNELS;
 use super::decode_matrix::DecodeMatrix;
 pub use super::params::Params as AmbisonicsDecoderConfig;
 use super::spherical_harmonics::channel_count;
-use crate::params::{PARAMS, TARGET_LAYOUTS};
+use crate::params::{ALGORITHMS, PARAMS, TARGET_LAYOUTS};
 use plugins_spatial::validate_interleaved_io;
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::param_specs::find_by_key as pk;
@@ -22,6 +22,7 @@ pub struct AmbisonicsDecoderPlugin {
     /// When true, a separate basic (no max-rE) matrix is used for LF and the
     /// max-rE matrix for HF, split at `DUAL_BAND_CROSSOVER_HZ`.
     pub(super) dual_band: bool,
+    pub(super) algorithm: String,
     pub(super) input_channels: usize,
     pub(super) output_channels: usize,
     /// max-rE decode matrix (or the only matrix when `dual_band` is false).
@@ -60,11 +61,19 @@ impl AmbisonicsDecoderPlugin {
             )
         })?;
 
-        let dm = DecodeMatrix::build(order, speaker_config, config.max_re_weighting)?;
+        let build_matrix = |apply_max_re| match config.algorithm.as_str() {
+            "mode_matching" => DecodeMatrix::build(order, speaker_config, apply_max_re),
+            "allrad" => DecodeMatrix::build_allrad(order, speaker_config, apply_max_re),
+            other => Err(format!(
+                "Unknown Ambisonics decode algorithm '{other}'. Available: {}",
+                ALGORITHMS.join(", ")
+            )),
+        };
+        let dm = build_matrix(config.max_re_weighting)?;
         let output_ch = speaker_config.total_channels;
 
         let basic_matrix = if config.dual_band {
-            Some(DecodeMatrix::build_basic(order, speaker_config)?)
+            Some(build_matrix(false)?)
         } else {
             None
         };
@@ -74,6 +83,7 @@ impl AmbisonicsDecoderPlugin {
             target_layout: config.target_layout.clone(),
             max_re_weighting: config.max_re_weighting,
             dual_band: config.dual_band,
+            algorithm: config.algorithm.clone(),
             input_channels: input_ch,
             output_channels: output_ch,
             decode_matrix: Some(dm),
@@ -132,6 +142,21 @@ impl AmbisonicsDecoderPlugin {
                     "Use basic matrix for LF (<700 Hz) and max-rE matrix for HF (>=700 Hz)",
                 )
                 .build(),
+            Parameter::new_int(
+                "algorithm",
+                "Decode Algorithm",
+                ALGORITHMS
+                    .iter()
+                    .position(|&algorithm| algorithm == self.algorithm)
+                    .unwrap_or(0) as i32,
+                0,
+                (ALGORITHMS.len() - 1) as i32,
+            )
+            .with_update_mode(pk(PARAMS, "algorithm").update_mode)
+            .with_group("Ambisonics")
+            .with_importance(ParameterImportance::Critical)
+            .with_description("0=regularized mode matching, 1=AllRAD/VBAP")
+            .build(),
         ];
     }
 }
@@ -144,6 +169,7 @@ impl std::fmt::Debug for AmbisonicsDecoderPlugin {
             .field("input_channels", &self.input_channels)
             .field("output_channels", &self.output_channels)
             .field("dual_band", &self.dual_band)
+            .field("algorithm", &self.algorithm)
             .finish()
     }
 }
@@ -155,8 +181,8 @@ impl Plugin for AmbisonicsDecoderPlugin {
             version: env!("CARGO_PKG_VERSION").into(),
             author: "SotF".into(),
             description: format!(
-                "Ambisonics decoder (order {}, {} -> {}ch)",
-                self.order, self.target_layout, self.output_channels
+                "Ambisonics decoder (order {}, {}, {} -> {}ch)",
+                self.order, self.algorithm, self.target_layout, self.output_channels
             ),
         }
     }
@@ -223,6 +249,16 @@ impl Plugin for AmbisonicsDecoderPlugin {
                 };
                 v != self.dual_band
             }
+            "algorithm" => {
+                let ParameterValue::Int(index) = value else {
+                    return Err("algorithm must be a choice index".to_string());
+                };
+                let algorithm = usize::try_from(index)
+                    .ok()
+                    .and_then(|index| ALGORITHMS.get(index))
+                    .ok_or_else(|| format!("algorithm choice index {index} is out of range"))?;
+                *algorithm != self.algorithm
+            }
             _ => return Err(format!("Unknown parameter: {}", id)),
         };
         if changed {
@@ -243,6 +279,10 @@ impl Plugin for AmbisonicsDecoderPlugin {
                 .map(|index| ParameterValue::Int(index as i32)),
             "max_re_weighting" => Some(ParameterValue::Bool(self.max_re_weighting)),
             "dual_band" => Some(ParameterValue::Bool(self.dual_band)),
+            "algorithm" => ALGORITHMS
+                .iter()
+                .position(|&algorithm| algorithm == self.algorithm)
+                .map(|index| ParameterValue::Int(index as i32)),
             _ => None,
         }
     }
@@ -406,6 +446,7 @@ mod tests {
             target_layout: "5.1".to_owned(),
             max_re_weighting: true,
             dual_band: false,
+            algorithm: "mode_matching".to_owned(),
         }
     }
 
@@ -424,10 +465,30 @@ mod tests {
             target_layout: "7.1.4".to_owned(),
             max_re_weighting: true,
             dual_band: false,
+            algorithm: "mode_matching".to_owned(),
         };
         let plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
         assert_eq!(plugin.input_channels(), 9);
         assert_eq!(plugin.output_channels(), 12);
+    }
+
+    #[test]
+    fn test_allrad_mode_selects_virtual_speaker_decoder() {
+        let config = AmbisonicsDecoderConfig {
+            algorithm: "allrad".to_owned(),
+            ..default_config()
+        };
+        let plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
+        assert_eq!(plugin.algorithm, "allrad");
+        assert_eq!(
+            plugin.decode_matrix.as_ref().unwrap().algorithm,
+            super::super::decode_matrix::DecodeAlgorithm::AllRad
+        );
+        assert!(plugin.decode_matrix.as_ref().unwrap().virtual_speaker_count > 0);
+        assert_eq!(
+            plugin.get_parameter(&ParameterId::from("algorithm")),
+            Some(ParameterValue::Int(1))
+        );
     }
 
     #[test]
@@ -437,6 +498,7 @@ mod tests {
             target_layout: "nonexistent".to_owned(),
             max_re_weighting: false,
             dual_band: false,
+            algorithm: "mode_matching".to_owned(),
         };
         assert!(AmbisonicsDecoderPlugin::new(&config).is_err());
     }
@@ -494,6 +556,7 @@ mod tests {
             target_layout: "5.1".to_owned(),
             max_re_weighting: false,
             dual_band: false,
+            algorithm: "mode_matching".to_owned(),
         };
         let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
         plugin.initialize(48000).unwrap();
@@ -533,6 +596,7 @@ mod tests {
             target_layout: "7.1.4".to_owned(),
             max_re_weighting: true,
             dual_band: false,
+            algorithm: "mode_matching".to_owned(),
         };
         let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
 
@@ -598,6 +662,7 @@ mod tests {
             target_layout: "5.1".to_owned(),
             max_re_weighting: true,
             dual_band: true,
+            algorithm: "mode_matching".to_owned(),
         };
         let plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
         assert_eq!(plugin.latency_samples(), 0);
@@ -622,12 +687,14 @@ mod tests {
             target_layout: "5.1".to_owned(),
             max_re_weighting: true,
             dual_band: false,
+            algorithm: "mode_matching".to_owned(),
         };
         let dual_config = AmbisonicsDecoderConfig {
             order: 1,
             target_layout: "5.1".to_owned(),
             max_re_weighting: true,
             dual_band: true,
+            algorithm: "mode_matching".to_owned(),
         };
 
         let mut single = AmbisonicsDecoderPlugin::new(&single_config).unwrap();
@@ -686,6 +753,7 @@ mod tests {
             target_layout: "5.1".to_owned(),
             max_re_weighting: true,
             dual_band: true,
+            algorithm: "mode_matching".to_owned(),
         };
         let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
         plugin.initialize(48000).unwrap();
@@ -819,6 +887,7 @@ mod tests {
             target_layout: "5.1".to_owned(),
             max_re_weighting: true,
             dual_band: true,
+            algorithm: "mode_matching".to_owned(),
         };
         let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
         plugin.initialize(48000).unwrap();
@@ -887,6 +956,7 @@ mod tests {
             target_layout: "5.1".to_owned(),
             max_re_weighting: true,
             dual_band: false,
+            algorithm: "mode_matching".to_owned(),
         };
         let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
         plugin.initialize(48000).unwrap();

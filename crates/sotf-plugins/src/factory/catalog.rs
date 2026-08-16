@@ -1018,7 +1018,7 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             true,
         ),
         zero_alloc_evidence(
-            "sotf-plugin-pnd stable-tone near-unity, known-drift correction, phase-vocoder transition, smoothing, latency, reset, and block-size tests"
+            "sotf-plugin-pnd stable-tone near-unity, known-drift correction, phase-vocoder transition, bounded formant-envelope transport, smoothing, latency, reset, and block-size tests"
         )
     ),
     entry!(
@@ -1276,7 +1276,7 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             Alpha,
             PluginSupportedInputLayouts::Enumerated(AMBISONIC_WIDTHS),
             PluginChannelOutputModel::Configurable {
-                description: "decoder order and target speaker layout",
+                description: "decoder order, target speaker layout, and mode-matching or AllRAD/VBAP algorithm",
                 default_output: PluginDefaultChannelOutput::Fixed(6),
             },
             PluginLatencyModel::PluginReported("dual-band crossover and decoder configuration"),
@@ -1285,7 +1285,7 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             true,
         ),
         zero_alloc_evidence(
-            "sotf-plugin-ambisonics spherical-harmonic/decode-matrix, max-rE, dual-band, channel-order, energy, reset, and ambisonics-to-binaural chain tests"
+            "sotf-plugin-ambisonics spherical-harmonic/decode-matrix, virtual-speaker/VBAP AllRAD, max-rE, dual-band, channel-order, energy, reset, and ambisonics-to-binaural chain tests"
         )
     ),
     entry!(

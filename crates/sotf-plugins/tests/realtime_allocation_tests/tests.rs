@@ -24,10 +24,10 @@ use sotf_plugins::{
     LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin, MultibandCompressorPlugin,
     MultibandExpanderPlugin, ParameterId, ParameterValue, ParametricInPlacePlugin,
     ParametricPluginAdapter, Plugin, PluginDescriptor, PluginFormat, PluginScanStatus, PndPlugin,
-    ProcessContext, ResamplerPlugin, RoomModel, SPEECH_DENOISER_FRAME_SIZE, SaturationPlugin,
-    SpectralCompressorPlugin, SpectralCompressorPluginParams, SpectrumAnalyzerPlugin,
-    SpectrumConfig, SpeechDenoiserPlugin, StereoImagerPlugin, StereoImagerPluginParams,
-    TransientShaperPlugin, UpmixerPlugin, XtcPlugin, XtcPluginParams,
+    PndPluginParams, ProcessContext, ResamplerPlugin, RoomModel, SPEECH_DENOISER_FRAME_SIZE,
+    SaturationPlugin, SpectralCompressorPlugin, SpectralCompressorPluginParams,
+    SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin, StereoImagerPlugin,
+    StereoImagerPluginParams, TransientShaperPlugin, UpmixerPlugin, XtcPlugin, XtcPluginParams,
 };
 use std::cell::Cell;
 #[cfg(any(
@@ -499,6 +499,32 @@ fn test_pnd_zero_alloc() {
 
     assert_no_allocs("PndPlugin::reset", || {
         plugin.reset();
+    });
+}
+
+#[test]
+#[serial]
+fn test_pnd_formant_mode_zero_alloc() {
+    let mut plugin = PndPlugin::from_params(
+        1,
+        PndPluginParams {
+            formant_preservation: true,
+            formant_strength: 1.0,
+            ..PndPluginParams::default()
+        },
+    )
+    .unwrap();
+    plugin.initialize(SAMPLE_RATE).unwrap();
+    let input = generate_test_buffer(BUFFER_SIZE, 1);
+    let mut output = vec![0.0_f32; BUFFER_SIZE];
+    let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
+    for _ in 0..20 {
+        plugin.process(&input, &mut output, &context).unwrap();
+    }
+    assert_no_allocs("PndPlugin::formant", || {
+        for _ in 0..100 {
+            plugin.process(&input, &mut output, &context).unwrap();
+        }
     });
 }
 
@@ -1404,6 +1430,7 @@ fn test_ambisonics_decoder_zero_alloc() {
             target_layout: "5.1".to_owned(),
             max_re_weighting: true,
             dual_band,
+            algorithm: "mode_matching".to_owned(),
         };
         let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
         let name = if dual_band {

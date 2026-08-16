@@ -763,6 +763,8 @@ pub(super) fn build_rack_mode_plugins(
                         confidence_threshold: 0.5,
                         reference_frequency_hz: 0.0,
                         phase_vocoder: false,
+                        formant_preservation: false,
+                        formant_strength: 1.0,
                     };
                 }
                 log::info!("Rack: Added PND plugin");
