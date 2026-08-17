@@ -367,6 +367,35 @@ fn poll_recording_sets_and_clears_low_level_warning() {
     *slot.lock().unwrap() = Some(Ok((vec![(0, done_recording_result(-10.0))], None)));
     assert!(poll_recording(&mut app));
     assert!(app.recording.model.noise_floor_warning.is_none());
+
+    // R8: a user-requested cancel returns the channel to Empty (idle) —
+    // NOT Error with "Recording failed: cancelled". Same process-global
+    // slot, kept sequential inside this test.
+    app.recording.model.channel_recordings[0].state = ChannelRecordingState::Recording;
+    *slot.lock().unwrap() = Some(Err(sotf_audio::signal_recorder::CANCELLED_ERR.to_string()));
+    assert!(poll_recording(&mut app));
+    assert_eq!(
+        app.recording.model.channel_recordings[0].state,
+        ChannelRecordingState::Empty
+    );
+    assert_eq!(app.recording.model.status_message, "Recording cancelled");
+
+    // A genuine failure still marks the channel Error.
+    app.recording.model.channel_recordings[0].state = ChannelRecordingState::Recording;
+    *slot.lock().unwrap() = Some(Err("device gone".to_string()));
+    assert!(poll_recording(&mut app));
+    assert_eq!(
+        app.recording.model.channel_recordings[0].state,
+        ChannelRecordingState::Error
+    );
+    assert!(
+        app.recording
+            .model
+            .status_message
+            .contains("Recording failed: device gone"),
+        "unexpected status: {}",
+        app.recording.model.status_message
+    );
 }
 
 #[test]

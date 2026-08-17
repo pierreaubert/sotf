@@ -19,6 +19,7 @@ use super::misc::remove_custom_speaker;
 use super::misc::request_bass_anchor_cancel;
 use super::misc::request_probe_cancel;
 use super::misc::request_spl_cancel;
+use super::misc::request_sweep_cancel;
 use super::misc::save_recordings;
 use super::misc::set_recording_field_from_string;
 use super::recording::recording_field_value_string_kind;
@@ -338,7 +339,14 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 }
                 None
             }
-            KeyCode::Enter => {
+            KeyCode::Enter | KeyCode::Char('r') => {
+                // While a capture is in flight the same key requests
+                // cancellation (R8) — mirrors the probe/SPL steps where
+                // Enter/`r` toggles run/cancel.
+                if app.recording.model.capture_in_progress() {
+                    request_sweep_cancel(app);
+                    return None;
+                }
                 // B2: Record current channel via engine
                 if let Some(ch_idx) = app.recording.model.current_recording_channel {
                     let can_record = app

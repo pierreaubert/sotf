@@ -199,6 +199,19 @@ pub fn poll_recording(app: &mut App) -> bool {
                     app.recording.model.status_message = msg;
                 }
             }
+            Err(e) if e == sotf_audio::signal_recorder::CANCELLED_ERR => {
+                // R8: user-requested cancel — return channels to Empty
+                // (idle) rather than marking them Error, mirroring the
+                // probe/SPL/bass-anchor handling above.
+                log::info!("Recording cancelled by user");
+                for ch in &mut app.recording.model.channel_recordings {
+                    if ch.state == ChannelRecordingState::Recording {
+                        ch.state = ChannelRecordingState::Empty;
+                    }
+                }
+                app.recording.model.noise_floor_warning = None;
+                app.recording.model.status_message = "Recording cancelled".to_string();
+            }
             Err(e) => {
                 // Mark the recording channel as error. Also clear any stale
                 // low-level warning from a previous take — a failed retake

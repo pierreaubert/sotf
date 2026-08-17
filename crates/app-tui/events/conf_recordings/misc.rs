@@ -36,6 +36,11 @@ pub(super) fn request_bass_anchor_cancel(app: &mut App) {
         .store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
+pub(super) fn request_sweep_cancel(app: &mut App) {
+    log::info!("Cancel requested for sweep capture");
+    app.recording.model.request_sweep_cancel();
+}
+
 /// Snapshot the current field's display value into `edit_buffer` so
 /// editing an existing value doesn't start from an empty buffer.
 pub(super) fn current_save_field_value(app: &App) -> String {

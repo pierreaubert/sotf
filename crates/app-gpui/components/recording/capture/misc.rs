@@ -947,7 +947,9 @@ impl PlayerView {
             capture_signal_params, measurement_amplitude, resolve_mic_calibration,
             sanitize_recording_name, signal_type_for,
         };
-        use sotf_audio_player::signal_recorder::{SignalType, generate_signal, write_temp_wav};
+        use sotf_audio_player::signal_recorder::{
+            SignalType, prepare_measurement_signal, write_temp_wav,
+        };
 
         // --- Gather parameters from state ---
         #[derive(Clone)]
@@ -1137,20 +1139,22 @@ impl PlayerView {
 
         // Mark all mic entries for this speaker as Recording and clear old results
         // so the evaluating graphs reset immediately (not showing stale data).
+        // R8: reset the cancel flag so a stale request cannot abort this
+        // run, and hand a clone to the capture task (mirrors the probe /
+        // bass-anchor / SPL cancel pattern).
         let mic_vec_indices: Vec<usize> = params.mics.iter().filter_map(|m| m.vec_idx).collect();
-        self.state.update(cx, |state, _| {
+        let cancel_flag = self.state.update(cx, |state, _| {
+            let rec_state = &mut state.app.measurement_state.recording_state;
+            rec_state.reset_sweep_cancel();
             for &vi in &mic_vec_indices {
-                if let Some(recording) = state
-                    .app
-                    .measurement_state
-                    .recording_state
-                    .channel_recordings
-                    .get_mut(vi)
-                {
+                if let Some(recording) = rec_state.channel_recordings.get_mut(vi) {
                     recording.state = ChannelRecordingState::Recording;
                     recording.result = None; // Clear old result so graphs reset
                 }
             }
+            rec_state.sweep_cancel_requested.clone()
+        });
+        self.state.update(cx, |state, _| {
             state
                 .app
                 .measurement_state
@@ -1201,7 +1205,13 @@ impl PlayerView {
             params.post_silence_s,
         );
 
-        let signal = match generate_signal(
+        // Generate the stimulus through the shared entry point (R4):
+        // validates the parameters (Nyquist, start < end, amplitude) and
+        // applies the standard 20 ms fades + 250 ms pre/post padding
+        // (lag-neutral for the whole-signal cross-correlation analysis).
+        // Validation failures (e.g. sweep end above Nyquist) surface via
+        // the status message and Error channel state below.
+        let signal = match prepare_measurement_signal(
             params.signal_type,
             &sig_params,
             params.duration_secs,
@@ -1364,7 +1374,7 @@ impl PlayerView {
                     in_dev,
                     mic_calibrations[0].as_deref(),
                     sweep_range,
-                    None,
+                    Some(cancel_flag),
                 )
                 .map(|r| vec![r])
             } else {
@@ -1381,13 +1391,15 @@ impl PlayerView {
                     in_dev,
                     &mic_calibrations,
                     sweep_range,
-                    None,
+                    Some(cancel_flag),
                 )
             };
 
             #[cfg(target_os = "ios")]
-            let results: Result<Vec<sotf_audio::AnalysisResult>, String> =
-                Err("Recording not available on iOS".to_string());
+            let results: Result<Vec<sotf_audio::AnalysisResult>, String> = {
+                let _ = &cancel_flag;
+                Err("Recording not available on iOS".to_string())
+            };
 
             // Update state with results
             let Some(state_entity) = weak_state.upgrade() else { return; };
@@ -1502,6 +1514,40 @@ impl PlayerView {
                                 .measurement_state
                                 .recording_state
                                 .auto_record_remaining
+                        }
+                        Err(e) if e == sotf_audio::signal_recorder::CANCELLED_ERR => {
+                            // R8: user-requested cancel (Stop button) —
+                            // return channels to Empty (idle), not Error,
+                            // mirroring the probe/SPL/bass-anchor flows.
+                            log::info!("Recording cancelled by user");
+                            for mic in &mics {
+                                let Some(vec_idx) = mic.vec_idx else {
+                                    continue;
+                                };
+                                if let Some(recording) = state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .channel_recordings
+                                    .get_mut(vec_idx)
+                                    && recording.state == ChannelRecordingState::Recording
+                                {
+                                    recording.state = ChannelRecordingState::Empty;
+                                }
+                            }
+                            state
+                                .app
+                                .measurement_state
+                                .recording_state
+                                .noise_floor_warning = None;
+                            state.app.measurement_state.recording_state.status_message =
+                                "Recording cancelled".to_string();
+                            state
+                                .app
+                                .measurement_state
+                                .recording_state
+                                .auto_record_remaining = false;
+                            false
                         }
                         Err(e) => {
                             log::error!("Recording failed: {}", e);
@@ -1632,6 +1678,13 @@ impl PlayerView {
     /// Stop all recording
     pub(super) fn stop_recording(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _| {
+            // R8: signal the in-flight engine capture to abort; it returns
+            // Err(CANCELLED_ERR), which the result handler maps to idle.
+            state
+                .app
+                .measurement_state
+                .recording_state
+                .request_sweep_cancel();
             state
                 .app
                 .measurement_state

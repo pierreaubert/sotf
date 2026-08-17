@@ -11,6 +11,7 @@ use crate::recording_types::{
     RecordingSignalType, RecordingStep, RoomDimensionUnit, SplCalibrationCaptureState,
     TransferMatrixLoopbackRecording,
 };
+use sotf_audio::signal_recorder::CancelFlag;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -59,6 +60,10 @@ pub struct RecordingScreenModel {
     pub recording_progress: f32,
     /// Whether to automatically record all remaining channels.
     pub auto_record_remaining: bool,
+    /// Cancel-request flag passed to the sweep-capture engine
+    /// (`record_and_analyze` / `record_and_analyze_multi`); polled by the
+    /// engine at ~50 ms cadence (R8).
+    pub sweep_cancel_requested: CancelFlag,
 
     /// Directory where recordings will be stored.
     /// Format: `user_selected_dir/recording-YYYYMMDD-HHMMSS/`.
@@ -151,6 +156,7 @@ impl Default for RecordingScreenModel {
             current_recording_channel: None,
             recording_progress: 0.0,
             auto_record_remaining: false,
+            sweep_cancel_requested: CancelFlag::default(),
             recording_directory: None,
             recording_base_directory: None,
             probe_capture: ProbeCaptureState::default(),
@@ -298,6 +304,30 @@ impl RecordingScreenModel {
     /// Check if any recording is in progress.
     pub fn is_recording(&self) -> bool {
         self.current_recording_channel.is_some()
+    }
+
+    /// True while a sweep capture is in flight (any channel in the
+    /// `Recording` state). Unlike `is_recording`, this is independent of
+    /// the UI cursor (`current_recording_channel`).
+    pub fn capture_in_progress(&self) -> bool {
+        self.channel_recordings
+            .iter()
+            .any(|r| r.state == ChannelRecordingState::Recording)
+    }
+
+    /// Request cancellation of the in-flight sweep capture. The engine
+    /// polls the flag (~50 ms cadence) and returns
+    /// `Err(CANCELLED_ERR)`, which the frontends map back to idle state.
+    pub fn request_sweep_cancel(&self) {
+        self.sweep_cancel_requested
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Reset the sweep cancel flag before starting a fresh capture so a
+    /// stale request cannot abort the new run.
+    pub fn reset_sweep_cancel(&self) {
+        self.sweep_cancel_requested
+            .store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Ensure `channel_speakers` has one slot per physical playback
@@ -766,6 +796,38 @@ mod tests {
         );
         assert!(model.recording_config.mic_calibration_paths.len() <= 1);
         assert!(model.active_mic_cal_path_mut(None).is_none());
+    }
+
+    #[test]
+    fn sweep_cancel_accessors_drive_shared_flag() {
+        use std::sync::atomic::Ordering;
+
+        let model = RecordingScreenModel::default();
+        // Starts disarmed so a fresh capture is not aborted by default.
+        assert!(!model.sweep_cancel_requested.load(Ordering::Relaxed));
+
+        model.request_sweep_cancel();
+        assert!(model.sweep_cancel_requested.load(Ordering::Relaxed));
+        // The flag is shared: a clone handed to the capture thread sees
+        // the same state.
+        let shared = model.sweep_cancel_requested.clone();
+        assert!(shared.load(Ordering::Relaxed));
+
+        model.reset_sweep_cancel();
+        assert!(!shared.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn capture_in_progress_tracks_recording_state_not_cursor() {
+        let mut model = RecordingScreenModel::default();
+        model.channel_recordings = vec![ChannelRecording::new(0, "FL".to_string())];
+        assert!(!model.capture_in_progress());
+
+        model.channel_recordings[0].state = ChannelRecordingState::Recording;
+        assert!(model.capture_in_progress());
+
+        model.channel_recordings[0].state = ChannelRecordingState::Done;
+        assert!(!model.capture_in_progress());
     }
 
     #[test]

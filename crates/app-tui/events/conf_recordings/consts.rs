@@ -74,7 +74,9 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
         sanitize_recording_name, signal_type_for,
     };
     use sotf_audio_player::recording_types::ChannelRecordingState;
-    use sotf_audio_player::signal_recorder::{SignalType, generate_signal, write_temp_wav};
+    use sotf_audio_player::signal_recorder::{
+        SignalType, prepare_measurement_signal, write_temp_wav,
+    };
 
     let selected = match app.recording.model.channel_recordings.get(channel_idx) {
         Some(ch) => ch.clone(),
@@ -183,12 +185,20 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
         post_silence_s,
     );
 
-    // Generate the test signal
-    let signal = match generate_signal(signal_type, &params, duration_secs, sample_rate) {
+    // Prepare the test signal through the shared entry point (R4):
+    // validates the parameters (Nyquist, start < end, amplitude) and
+    // applies the standard 20 ms fades + 250 ms pre/post padding. The
+    // padding is lag-neutral for the whole-signal cross-correlation
+    // analysis. Validation failures (e.g. sweep end above Nyquist at
+    // 44.1 kHz) surface as a status message and an Error channel state.
+    let signal = match prepare_measurement_signal(signal_type, &params, duration_secs, sample_rate)
+    {
         Ok(s) => s,
         Err(e) => {
-            if let Some(ch) = app.recording.model.channel_recordings.get_mut(channel_idx) {
-                ch.state = ChannelRecordingState::Error;
+            for idx in &capture_indices {
+                if let Some(ch) = app.recording.model.channel_recordings.get_mut(*idx) {
+                    ch.state = ChannelRecordingState::Error;
+                }
             }
             app.recording.model.status_message = format!("Error generating signal: {}", e);
             return;
@@ -310,6 +320,12 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     let reference_signal = signal;
     let temp_wav_path = temp_wav.path().to_path_buf();
 
+    // R8: reset the cancel flag so a stale request cannot abort this run,
+    // then hand a clone to the capture thread (mirrors
+    // `spawn_probe_capture`).
+    app.recording.model.reset_sweep_cancel();
+    let cancel_flag = app.recording.model.sweep_cancel_requested.clone();
+
     std::thread::spawn(move || {
         use sotf_audio_player::recording_types::RecordingResult;
         use sotf_audio_player::signal_recorder::{record_and_analyze, record_and_analyze_multi};
@@ -354,7 +370,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 in_dev,
                 &calibrations,
                 sweep_range,
-                None,
+                Some(cancel_flag.clone()),
             )
             .map(|mut results| {
                 if loopback_input.is_some() {
@@ -375,7 +391,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 in_dev,
                 mic_calibration.as_deref(),
                 sweep_range,
-                None,
+                Some(cancel_flag),
             )
             .map(|result| vec![result])
         };
