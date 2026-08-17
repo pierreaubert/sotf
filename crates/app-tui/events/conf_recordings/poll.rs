@@ -3,11 +3,10 @@ use super::consts::PROBE_CAPTURE_RESULT;
 use super::consts::RECORDING_RESULT;
 use super::consts::SPL_CAPTURE_RESULT;
 use crate::app::App;
+use sotf_audio_player::recording_helpers::{
+    check_low_measured_level, low_measured_level_warning,
+};
 use std::sync::{Arc, Mutex};
-
-/// Transfer-function average level (dB rel. unity) below which a completed
-/// capture is flagged as suspiciously low (R10). Same threshold as GPUI.
-const LOW_LEVEL_THRESHOLD_DB: f32 = -50.0;
 
 /// Drain the probe-capture slot into `app.recording.model.probe_capture`.
 /// Returns `true` if state changed and the UI should redraw.
@@ -153,26 +152,20 @@ pub fn poll_recording(app: &mut App) -> bool {
                     if let Some(ch) = app.recording.model.channel_recordings.get_mut(ch_idx) {
                         ch.state = ChannelRecordingState::Done;
                         completed_names.push(ch.channel_name.clone());
-                        // R10: post-capture level check (same semantics as
-                        // GPUI). Note this measures the *transfer-function
-                        // average level* in the sweep band (dB rel. unity),
-                        // not a true acoustic noise floor — the warning text
-                        // below is worded accordingly.
-                        let avg_min = ch.sweep_start_freq.max(20.0);
-                        let avg_max = ch.sweep_end_freq.min(20000.0);
-                        let mut sum = 0.0_f32;
-                        let mut count = 0usize;
-                        for (&freq, &mag) in rec_result
-                            .frequencies
-                            .iter()
-                            .zip(rec_result.magnitude_db.iter())
+                        // R10: post-capture level check via the shared helper
+                        // (same semantics as GPUI). Note this measures the
+                        // *transfer-function average level* over the
+                        // per-channel sweep band (dB rel. unity), not a true
+                        // acoustic noise floor — the warning text is worded
+                        // accordingly.
+                        if check_low_measured_level(
+                            &rec_result.frequencies,
+                            &rec_result.magnitude_db,
+                            ch.sweep_start_freq,
+                            ch.sweep_end_freq,
+                        )
+                        .is_some()
                         {
-                            if freq >= avg_min && freq <= avg_max && mag > -150.0 {
-                                sum += mag;
-                                count += 1;
-                            }
-                        }
-                        if count > 0 && sum / (count as f32) < LOW_LEVEL_THRESHOLD_DB {
                             low_level_names.push(ch.channel_name.clone());
                         }
                         ch.result = Some(rec_result);
@@ -181,10 +174,7 @@ pub fn poll_recording(app: &mut App) -> bool {
                 if low_level_names.is_empty() {
                     app.recording.model.noise_floor_warning = None;
                 } else {
-                    let warning = format!(
-                        "Very low measured level on {} — check mic connection and input gain",
-                        low_level_names.join(", ")
-                    );
+                    let warning = low_measured_level_warning(&low_level_names.join(", "));
                     log::warn!("Low-level warning: {}", warning);
                     app.recording.model.noise_floor_warning = Some(warning);
                 }
@@ -210,12 +200,15 @@ pub fn poll_recording(app: &mut App) -> bool {
                 }
             }
             Err(e) => {
-                // Mark the recording channel as error
+                // Mark the recording channel as error. Also clear any stale
+                // low-level warning from a previous take — a failed retake
+                // must not leave it behind.
                 for ch in &mut app.recording.model.channel_recordings {
                     if ch.state == ChannelRecordingState::Recording {
                         ch.state = ChannelRecordingState::Error;
                     }
                 }
+                app.recording.model.noise_floor_warning = None;
                 app.recording.model.status_message = format!("Recording failed: {}", e);
             }
         }

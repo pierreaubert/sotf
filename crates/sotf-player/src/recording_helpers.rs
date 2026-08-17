@@ -95,6 +95,54 @@ pub fn resolve_mic_calibration(
         .or_else(|| global.filter(|s| !s.is_empty()).map(str::to_string))
 }
 
+/// Transfer-function average level (dB rel. unity) below which a completed
+/// capture is flagged as suspiciously low (R10). Shared by all frontends.
+pub const LOW_MEASURED_LEVEL_THRESHOLD_DB: f32 = -50.0;
+
+/// Post-capture sanity check (R10): average the measured transfer-function
+/// level (dB rel. unity) over the channel's own sweep band and return the
+/// average when it falls below [`LOW_MEASURED_LEVEL_THRESHOLD_DB`].
+///
+/// The band is clamped to [20 Hz, 20 kHz]; bins at or below −150 dB are
+/// treated as "no data" and ignored. The per-channel sweep band (not a
+/// global band) is used so LFE channels with a narrow low-frequency sweep
+/// are judged on their actual stimulus range. Returns `None` when the level
+/// is healthy or when no usable bin falls inside the band.
+///
+/// Note this measures the *average measured level*, not a true acoustic
+/// noise floor — phrase user-facing text accordingly (see
+/// [`low_measured_level_warning`]).
+pub fn check_low_measured_level(
+    frequencies: &[f32],
+    level_db: &[f32],
+    sweep_start_freq: f32,
+    sweep_end_freq: f32,
+) -> Option<f32> {
+    let band_min = sweep_start_freq.max(20.0);
+    let band_max = sweep_end_freq.min(20000.0);
+    let mut sum = 0.0_f32;
+    let mut count = 0usize;
+    for (&freq, &mag) in frequencies.iter().zip(level_db.iter()) {
+        if freq >= band_min && freq <= band_max && mag > -150.0 {
+            sum += mag;
+            count += 1;
+        }
+    }
+    if count == 0 {
+        return None;
+    }
+    let avg = sum / count as f32;
+    (avg < LOW_MEASURED_LEVEL_THRESHOLD_DB).then_some(avg)
+}
+
+/// Canonical user-facing text for a [`check_low_measured_level`] hit,
+/// worded honestly (low *measured level*, pointing at mic connection and
+/// input gain — not a "noise floor"). `subjects` names the affected
+/// channel(s) or speaker.
+pub fn low_measured_level_warning(subjects: &str) -> String {
+    format!("Very low measured level on {subjects} — check mic connection and input gain")
+}
+
 /// Build the engine [`SignalParams`] for a per-channel capture (B1).
 ///
 /// The sweep path routes through the engine's [`sweep_params_from_config`]
@@ -213,10 +261,7 @@ mod tests {
 
     #[test]
     fn resolve_mic_calibration_prefers_per_mic_slot() {
-        let paths = vec![
-            Some("mic0.txt".to_string()),
-            Some("mic1.txt".to_string()),
-        ];
+        let paths = vec![Some("mic0.txt".to_string()), Some("mic1.txt".to_string())];
         assert_eq!(
             resolve_mic_calibration(&paths, 1, Some("global.txt")),
             Some("mic1.txt".to_string())
@@ -253,6 +298,58 @@ mod tests {
         // Empty global is also filtered out.
         assert_eq!(resolve_mic_calibration(&paths, 0, Some("")), None);
         assert_eq!(resolve_mic_calibration(&[], 0, None), None);
+    }
+
+    #[test]
+    fn check_low_measured_level_flags_low_band_average() {
+        // Flat -80 dB across the band → flagged, average returned.
+        let freqs: Vec<f32> = (0..100).map(|i| 20.0 + i as f32 * 200.0).collect();
+        let levels = vec![-80.0; 100];
+        let avg = check_low_measured_level(&freqs, &levels, 20.0, 20000.0)
+            .expect("low band average should be flagged");
+        assert!((avg - -80.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn check_low_measured_level_passes_healthy_level() {
+        let freqs: Vec<f32> = (0..100).map(|i| 20.0 + i as f32 * 200.0).collect();
+        let levels = vec![-10.0; 100];
+        assert!(check_low_measured_level(&freqs, &levels, 20.0, 20000.0).is_none());
+        // Exactly at the threshold is not "below".
+        let levels = vec![LOW_MEASURED_LEVEL_THRESHOLD_DB; 100];
+        assert!(check_low_measured_level(&freqs, &levels, 20.0, 20000.0).is_none());
+    }
+
+    #[test]
+    fn check_low_measured_level_restricts_to_sweep_band() {
+        // Low level outside the sweep band must not trip the check (the
+        // per-channel band semantics matter for LFE channels).
+        let freqs = vec![5.0, 100.0, 1000.0];
+        let levels = vec![-90.0, -10.0, -10.0];
+        assert!(check_low_measured_level(&freqs, &levels, 20.0, 500.0).is_none());
+        // Low level inside a narrow LFE band is caught.
+        let levels = vec![-90.0, -80.0, -10.0];
+        assert!(check_low_measured_level(&freqs, &levels, 20.0, 500.0).is_some());
+    }
+
+    #[test]
+    fn check_low_measured_level_ignores_no_data_bins() {
+        // Bins at or below -150 dB carry no information and are skipped.
+        let freqs = vec![100.0, 200.0, 300.0];
+        let levels = vec![-150.0, -200.0, -10.0];
+        assert!(check_low_measured_level(&freqs, &levels, 20.0, 20000.0).is_none());
+        // All bins unusable → no verdict rather than a false alarm.
+        let levels = vec![-150.0, -200.0, -160.0];
+        assert!(check_low_measured_level(&freqs, &levels, 20.0, 20000.0).is_none());
+        assert!(check_low_measured_level(&[], &[], 20.0, 20000.0).is_none());
+    }
+
+    #[test]
+    fn low_measured_level_warning_names_subjects() {
+        let msg = low_measured_level_warning("FL, FR");
+        assert!(msg.contains("Very low measured level"));
+        assert!(msg.contains("FL, FR"));
+        assert!(msg.contains("mic connection"));
     }
 
     #[test]

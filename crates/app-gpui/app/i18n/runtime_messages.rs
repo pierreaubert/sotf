@@ -187,6 +187,12 @@ const RUNTIME_MESSAGE_PATTERNS: &[RuntimeMessagePattern] = &[
         "Los monitores de nivel deben permanecer en un extremo de la cadena"
     ),
     message!(
+        "Level must be ≤ 0 dB (positive values clip the signal)",
+        "Le niveau doit être ≤ 0 dB (les valeurs positives écrêtent le signal)",
+        "Pegel muss ≤ 0 dB sein (positive Werte übersteuern das Signal)",
+        "El nivel debe ser ≤ 0 dB (los valores positivos recortan la señal)"
+    ),
+    message!(
         "Enter a MusicBrainz search query",
         "Saisissez une recherche MusicBrainz",
         "Geben Sie eine MusicBrainz-Suchanfrage ein",

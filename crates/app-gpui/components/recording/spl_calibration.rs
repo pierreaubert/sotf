@@ -111,7 +111,7 @@ impl PlayerView {
                         NumberInput::new("spl_calibration_signal_level")
                             .value(signal_level_db as f64)
                             .min(-60.0)
-                            .max(6.0)
+                            .max(0.0)
                             .step(1.0)
                             .decimals(0)
                             .unit("dBFS")
@@ -121,9 +121,17 @@ impl PlayerView {
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
                                         let rec = &mut state.app.measurement_state.recording_state;
-                                        rec.signal_level_db = val as f32;
-                                        rec.spl_calibration_capture.tone_amp =
-                                            10.0_f32.powf(val as f32 / 20.0).clamp(0.0, 1.0);
+                                        // R3: reject levels above full scale
+                                        // with a clear message instead of
+                                        // producing a clipped tone/sweep.
+                                        if val > 0.0 {
+                                            rec.status_message = "Level must be ≤ 0 dB (positive values clip the signal)"
+                                                .to_string();
+                                        } else {
+                                            rec.signal_level_db = val as f32;
+                                            rec.spl_calibration_capture.tone_amp =
+                                                10.0_f32.powf(val as f32 / 20.0).clamp(0.0, 1.0);
+                                        }
                                     });
                                     cx.notify();
                                 });

@@ -943,9 +943,11 @@ impl PlayerView {
     /// all N input channels in one pass and populates every mic entry for the speaker.
     #[allow(clippy::type_complexity)]
     pub fn start_recording_channel(&mut self, channel_idx: usize, cx: &mut Context<Self>) {
-        use sotf_audio_player::signal_recorder::{
-            DEFAULT_MLS_ORDER, SignalParams, SignalType, generate_signal, write_temp_wav,
+        use sotf_audio_player::recording_helpers::{
+            capture_signal_params, measurement_amplitude, resolve_mic_calibration,
+            sanitize_recording_name, signal_type_for,
         };
+        use sotf_audio_player::signal_recorder::{SignalType, generate_signal, write_temp_wav};
 
         // --- Gather parameters from state ---
         #[derive(Clone)]
@@ -967,6 +969,9 @@ impl PlayerView {
             level_db: f32,
             sweep_start_freq: f32,
             sweep_end_freq: f32,
+            bass_octave_duration_s: f32,
+            pre_silence_s: f32,
+            post_silence_s: Option<f32>,
             output_device: String,
             input_device: String,
             output_channel: u16,
@@ -1011,22 +1016,14 @@ impl PlayerView {
                         .or_else(|| rec_state.recording_config.channel_mappings.first())
                         .copied()
                         .unwrap_or(0) as u16;
-                    let calibration = rec_state
-                        .mic_calibration_paths
-                        .get(r.mic_index)
-                        .and_then(|p| p.clone())
-                        .or_else(|| rec_state.mic_calibration_path.clone());
-                    let safe_name: String = r
-                        .channel_name
-                        .chars()
-                        .map(|c| {
-                            if c.is_alphanumeric() || c == '_' || c == '-' {
-                                c
-                            } else {
-                                '_'
-                            }
-                        })
-                        .collect();
+                    // Per-mic calibration indexed by mic slot, falling back
+                    // to the session-global path (B3) — shared helper.
+                    let calibration = resolve_mic_calibration(
+                        &rec_state.mic_calibration_paths,
+                        r.mic_index,
+                        rec_state.mic_calibration_path.as_deref(),
+                    );
+                    let safe_name = sanitize_recording_name(&r.channel_name);
                     MicInfo {
                         vec_idx: Some(vi),
                         mic_index: r.mic_index,
@@ -1044,17 +1041,7 @@ impl PlayerView {
                 == crate::app::types::CtcMatrixExportStrategy::RawSweep
                 && let Some(loopback_input) = rec_state.recording_config.ctc_loopback_input_channel
             {
-                let safe_speaker: String = channel
-                    .channel_name
-                    .chars()
-                    .map(|c| {
-                        if c.is_alphanumeric() || c == '_' || c == '-' {
-                            c
-                        } else {
-                            '_'
-                        }
-                    })
-                    .collect();
+                let safe_speaker = sanitize_recording_name(&channel.channel_name);
                 mics.push(MicInfo {
                     vec_idx: None,
                     mic_index: usize::MAX,
@@ -1067,19 +1054,9 @@ impl PlayerView {
                 });
             }
 
-            let signal_type = match rec_state.signal_type {
-                RecordingSignalType::Sweep => SignalType::Sweep,
-                RecordingSignalType::WhiteNoise => SignalType::WhiteNoise,
-                RecordingSignalType::PinkNoise => SignalType::PinkNoise,
-                RecordingSignalType::Mls => SignalType::Mls,
-                RecordingSignalType::Dirac => SignalType::Dirac,
-                RecordingSignalType::DelayProbe => {
-                    log::warn!(
-                        "DelayProbe selected in per-channel mode; use probe_channel_delays() instead. Falling back to Sweep."
-                    );
-                    SignalType::Sweep
-                }
-            };
+            // Map signal type via the shared helper (DelayProbe falls back
+            // to Sweep with a warning).
+            let signal_type = signal_type_for(rec_state.signal_type);
 
             let output_ch = rec_state
                 .playback_config
@@ -1100,6 +1077,12 @@ impl PlayerView {
                 level_db: rec_state.signal_level_db,
                 sweep_start_freq: sweep_start,
                 sweep_end_freq: sweep_end,
+                // GD-Opt sweep shaping (B1): the same model values
+                // `build_recording_configuration` persists at save time, so
+                // the saved metadata describes the stimulus actually played.
+                bass_octave_duration_s: rec_state.bass_octave_duration_s,
+                pre_silence_s: rec_state.pre_silence_s,
+                post_silence_s: rec_state.post_silence_s,
                 output_device: rec_state.playback_config.device_name.clone(),
                 input_device: rec_state.recording_config.device_name.clone(),
                 output_channel: output_ch,
@@ -1202,28 +1185,21 @@ impl PlayerView {
             mic_vec_indices,
         );
 
-        // Generate signal
-        let amplitude = 10.0_f32.powf(params.level_db / 20.0);
-        let sig_params = match params.signal_type {
-            SignalType::Sweep => SignalParams::Sweep {
-                start_freq: params.sweep_start_freq,
-                end_freq: params.sweep_end_freq,
-                amp: amplitude,
-            },
-            SignalType::WhiteNoise | SignalType::PinkNoise => {
-                SignalParams::Noise { amp: amplitude }
-            }
-            SignalType::Mls => SignalParams::Mls {
-                order: DEFAULT_MLS_ORDER,
-                amp: amplitude,
-            },
-            SignalType::Dirac => SignalParams::Dirac { amp: amplitude },
-            _ => SignalParams::Sweep {
-                start_freq: params.sweep_start_freq,
-                end_freq: params.sweep_end_freq,
-                amp: amplitude,
-            },
-        };
+        // Generate signal. dB → linear amplitude via the shared helper
+        // (clamped to ≤ 0 dBFS, R3). The sweep path routes through the
+        // shared helper (B1): with `bass_octave_duration_s` set, the
+        // stimulus becomes the self-timed octave-scaled sweep with silence
+        // windows — the same values persisted at save time.
+        let amplitude = measurement_amplitude(params.level_db as f64);
+        let sig_params = capture_signal_params(
+            params.signal_type,
+            params.sweep_start_freq,
+            params.sweep_end_freq,
+            amplitude,
+            Some(params.bass_octave_duration_s),
+            Some(params.pre_silence_s),
+            params.post_silence_s,
+        );
 
         let signal = match generate_signal(
             params.signal_type,
@@ -1298,13 +1274,15 @@ impl PlayerView {
             ) {
                 log::warn!("Failed to persist CTC reference sweep: {}", e);
             } else {
+                // B1: the octave-scaled sweep is self-timed, so persist the
+                // *actual* stimulus duration alongside the reference path —
+                // `signal_duration_secs` no longer describes this WAV.
+                let actual_duration_s = signal.len() as f32 / params.sample_rate as f32;
                 self.state.update(cx, |state, _| {
-                    state
-                        .app
-                        .measurement_state
-                        .recording_state
-                        .ctc_reference_sweep_path =
+                    let rec_state = &mut state.app.measurement_state.recording_state;
+                    rec_state.ctc_reference_sweep_path =
                         Some(reference_path.to_string_lossy().to_string());
+                    rec_state.ctc_reference_sweep_duration_s = Some(actual_duration_s);
                 });
             }
         }
@@ -1339,6 +1317,9 @@ impl PlayerView {
         let sample_rate = params.sample_rate;
 
         cx.spawn(async move |_, cx| {
+            use sotf_audio_player::recording_helpers::{
+                check_low_measured_level, low_measured_level_warning,
+            };
             use sotf_audio_player::signal_recorder::SignalType;
 
             let sweep_range = if signal_type == SignalType::Sweep {
@@ -1414,7 +1395,6 @@ impl PlayerView {
                 state_entity.update(&mut cx.clone(), |state, _| {
                     let should_continue = match results {
                         Ok(analysis_results) => {
-                            const NOISE_FLOOR_THRESHOLD_DB: f32 = -50.0;
                             let mut any_low_signal = false;
 
                             for (mic_i, analysis_result) in
@@ -1423,34 +1403,20 @@ impl PlayerView {
                                 let mic = &mics[mic_i];
                                 let mic_name = &mics[mic_i].safe_name;
 
-                                // Compute avg SPL within the actual sweep range
-                                // (not hardcoded 100-10000 Hz — LFE uses 20-500 Hz)
-                                let avg_spl = {
-                                    let avg_min = sweep_start_freq.max(20.0);
-                                    let avg_max = sweep_end_freq.min(20000.0);
-                                    let mut sum = 0.0_f32;
-                                    let mut count = 0;
-                                    for (&freq, &mag) in analysis_result
-                                        .frequencies
-                                        .iter()
-                                        .zip(analysis_result.spl_db.iter())
-                                    {
-                                        if freq >= avg_min && freq <= avg_max && mag > -150.0 {
-                                            sum += mag;
-                                            count += 1;
-                                        }
-                                    }
-                                    if count > 0 {
-                                        sum / count as f32
-                                    } else {
-                                        0.0
-                                    }
-                                };
-
-                                if avg_spl < NOISE_FLOOR_THRESHOLD_DB {
+                                // R10: post-capture level check via the
+                                // shared helper — averages the transfer
+                                // function over this channel's actual sweep
+                                // band (not a hardcoded range, so LFE
+                                // channels are judged on 20-500 Hz).
+                                if let Some(avg_spl) = check_low_measured_level(
+                                    &analysis_result.frequencies,
+                                    &analysis_result.spl_db,
+                                    sweep_start_freq,
+                                    sweep_end_freq,
+                                ) {
                                     any_low_signal = true;
                                     log::warn!(
-                                        "Noise floor warning: {} avg SPL = {:.1} dB",
+                                        "Low measured level: {} band average = {:.1} dB",
                                         mic_name,
                                         avg_spl,
                                     );
@@ -1518,22 +1484,15 @@ impl PlayerView {
                                 }
                             }
 
-                            if any_low_signal {
-                                state
-                                    .app
-                                    .measurement_state
-                                    .recording_state
-                                    .noise_floor_warning = Some(format!(
-                                    "Speaker '{}' has mic(s) with very low signal. Check connections or increase level.",
-                                    speaker_name,
-                                ));
+                            state
+                                .app
+                                .measurement_state
+                                .recording_state
+                                .noise_floor_warning = if any_low_signal {
+                                Some(low_measured_level_warning(&speaker_name))
                             } else {
-                                state
-                                    .app
-                                    .measurement_state
-                                    .recording_state
-                                    .noise_floor_warning = None;
-                            }
+                                None
+                            };
 
                             state.app.measurement_state.recording_state.status_message =
                                 format!("{} recording complete", speaker_name);
@@ -1560,6 +1519,14 @@ impl PlayerView {
                                     recording.state = ChannelRecordingState::Error;
                                 }
                             }
+                            // Clear any stale low-level warning from a
+                            // previous take — a failed retake must not
+                            // leave it behind.
+                            state
+                                .app
+                                .measurement_state
+                                .recording_state
+                                .noise_floor_warning = None;
                             state.app.measurement_state.recording_state.status_message =
                                 format!("Recording error: {}", e);
                             state
@@ -1842,7 +1809,8 @@ impl PlayerView {
     /// Outputs autoeq::RoomConfig format compatible with roomeq CLI
     pub(crate) fn save_recordings(&mut self, cx: &mut Context<Self>) {
         use crate::app::types::RoomEqMeasurementsFile;
-        use autoeq::{OptimizerConfig, RecordingConfiguration, RoomConfig};
+        use autoeq::{OptimizerConfig, RoomConfig};
+        use sotf_audio_player::recording_helpers::RECORDINGS_FILENAME;
         use sotf_audio_player::room_eq_types::{
             DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY, build_speakers_from_recordings,
             ctc_system_config_for_speaker_names, default_bass_management_crossovers,
@@ -1949,132 +1917,14 @@ impl PlayerView {
                 ctc_reference_sweep = None;
             }
 
-            // Build recording configuration from current state
-            let recording_config = RecordingConfiguration {
-                playback_device_name: Some(rec_state.playback_config.device_name.clone()),
-                playback_device_id: Some(rec_state.playback_config.device_id.clone()),
-                playback_sample_rate: Some(rec_state.playback_config.sample_rate),
-                playback_channels: Some(rec_state.playback_config.num_channels),
-                speaker_configuration: Some(
-                    rec_state
-                        .playback_config
-                        .speaker_configuration
-                        .as_str()
-                        .to_string(),
-                ),
-                channel_names: Some(channel_names.clone()),
-                recording_device_name: Some(rec_state.recording_config.device_name.clone()),
-                recording_device_id: Some(rec_state.recording_config.device_id.clone()),
-                recording_sample_rate: Some(rec_state.recording_config.sample_rate),
-                recording_channels: Some(rec_state.recording_config.num_channels),
-                mic_calibration_path: rec_state.mic_calibration_path.clone(),
-                mic_calibration_paths: {
-                    let paths = &rec_state.mic_calibration_paths;
-                    if paths.is_empty() {
-                        None
-                    } else {
-                        Some(paths.clone())
-                    }
-                },
-                recording_directory: Some(recording_dir.clone()),
-                signal_type: Some(rec_state.signal_type.as_str().to_string()),
-                signal_duration_secs: Some(rec_state.signal_duration_secs),
-                signal_level_db: Some(rec_state.signal_level_db),
-                // Sweep parameters for recomputing metrics from WAV
-                sweep_start_freq: Some(rec_state.sweep_start_freq),
-                sweep_end_freq: Some(rec_state.sweep_end_freq),
-                // Room info collected on the save step. `room_dimensions`
-                // is converted to canonical metric; `setup_description`
-                // and `channel_speakers` round-trip as-is. `None` when
-                // the user left the field blank.
-                room_dimensions: rec_state.room_dimensions_for_save(),
-                setup_description: {
-                    let s = rec_state.setup_description.trim();
-                    if s.is_empty() {
-                        None
-                    } else {
-                        Some(s.to_string())
-                    }
-                },
-                channel_speakers: rec_state.channel_speakers_map_for_save(),
-                // Tone-burst delay probe captured during the Probe
-                // step. Translate the engine `ProbeDelayResults` into
-                // the autoeq-local `ProbeResultsLegacy` mirror so the
-                // RoomConfig JSON only depends on autoeq types.
-                probe_results: rec_state.probe_capture.results.as_ref().map(|r| {
-                    autoeq::roomeq::ProbeResultsLegacy {
-                        channels: r
-                            .channels
-                            .iter()
-                            .map(|c| autoeq::roomeq::ProbeChannelResultLegacy {
-                                channel_name: c.channel_name.clone(),
-                                channel_index: c.channel_index,
-                                arrival_ms: c.arrival_ms,
-                                gain_db: c.gain_db,
-                                snr_db: c.snr_db,
-                            })
-                            .collect(),
-                        sample_rate: r.sample_rate,
-                        alignment_delays_ms: r.alignment_delays_ms.clone(),
-                    }
-                }),
-                probe_wav_relative: rec_state
-                    .probe_capture
-                    .wav_path
-                    .as_ref()
-                    .and_then(|p| std::path::Path::new(p).file_name())
-                    .map(|f| f.to_string_lossy().to_string()),
-                // GD-Opt v2 Phase GD-1e — bass anchor results, when captured.
-                bass_anchor_results: rec_state.bass_anchor_capture.results.as_ref().map(|r| {
-                    autoeq::roomeq::BassAnchorResultsLegacy {
-                        channels: r
-                            .channels
-                            .iter()
-                            .map(|c| autoeq::roomeq::BassAnchorChannelResultLegacy {
-                                channel_name: c.channel_name.clone(),
-                                channel_index: c.channel_index,
-                                bass_anchor_phase_deg: c.bass_anchor_phase_deg,
-                                bass_anchor_magnitude: c.bass_anchor_magnitude,
-                                bass_anchor_stability_deg: c.bass_anchor_stability_deg,
-                                bass_anchor_loopback_phase_deg: c.bass_anchor_loopback_phase_deg,
-                                bass_anchor_coherence: c.bass_anchor_coherence,
-                            })
-                            .collect(),
-                        sample_rate: r.sample_rate,
-                        bass_freq_hz: r.bass_freq_hz,
-                        bass_duration_s: r.bass_duration_s,
-                    }
-                }),
-                bass_anchor_wav_relative: rec_state
-                    .bass_anchor_capture
-                    .wav_path
-                    .as_ref()
-                    .and_then(|p| std::path::Path::new(p).file_name())
-                    .map(|f| f.to_string_lossy().to_string()),
-                // GD-Opt v2 Phase GD-1b fields — wired from RecordingState UI knobs.
-                // bass_octave_duration_s of 3.0 is the default; the UI allows 1×/2×/4×
-                // presets (1.5/3.0/5.0). pre_silence_s defaults to 2.0.
-                // post_silence_s is None here (derived from RT60 at record time).
-                bass_octave_duration_s: Some(rec_state.bass_octave_duration_s),
-                pre_silence_s: Some(rec_state.pre_silence_s),
-                post_silence_s: rec_state.post_silence_s,
-                // Remaining GD-Opt v2 fields (later phases): leave as None for now.
-                sweep_level_db_spl: None,
-                num_sweeps: None,
-                coherence_threshold: None,
-                bass_probe_freq_hz: Some(rec_state.bass_anchor_capture.bass_freq_hz),
-                bass_probe_duration_s: Some(rec_state.bass_anchor_capture.bass_duration_s),
-                mic_phase_calibration_path: None,
-                mic_phase_calibration_paths: None,
-                // GD-Opt v2 Phase GD-1e.5 — SPL calibration, when captured
-                // and the user has entered their meter reading.
-                spl_calibration: rec_state.spl_calibration_capture.to_spl_calibration(),
-                recording_seed: None,
-                num_positions: {
-                    let n = rec_state.recording_config.num_positions.max(1);
-                    if n > 1 { Some(n) } else { None }
-                },
-            };
+            // Build recording configuration from current state via the
+            // shared builder (B4/B1): sets every field explicitly, persists
+            // probe / bass-anchor / SPL results, and only writes the GD-Opt
+            // sweep metadata when the actual stimulus is a sweep generated
+            // with the same values (see `capture_signal_params` at capture
+            // time).
+            let recording_config =
+                rec_state.build_recording_configuration(Some(&recording_dir));
 
             // Group every completed (channel × mic × position) take by
             // channel_index so each output channel produces exactly one
@@ -2104,7 +1954,12 @@ impl PlayerView {
                     measurements: Some(measurements),
                     reference_sweep: ctc_reference_sweep,
                     sweep_duration_s: if raw {
-                        Some(rec_state.signal_duration_secs as f64)
+                        // Actual duration of the persisted reference sweep,
+                        // recorded at capture time (B1): the octave-scaled
+                        // sweep is self-timed, so `signal_duration_secs`
+                        // would misdescribe the WAV. `None` (unknown, e.g.
+                        // after loading a session) rather than a lie.
+                        rec_state.ctc_reference_sweep_duration_s.map(f64::from)
                     } else {
                         None
                     },
@@ -2154,8 +2009,9 @@ impl PlayerView {
             (room_config, recording_dir, ctc_raw_fallback)
         };
 
-        // Save to recording directory (no dialog needed)
-        let json_path = std::path::Path::new(&recording_dir).join("recordings.json");
+        // Save to recording directory (no dialog needed). B5: canonical
+        // session filename shared by all frontends.
+        let json_path = std::path::Path::new(&recording_dir).join(RECORDINGS_FILENAME);
 
         match serde_json::to_string_pretty(&room_config) {
             Ok(json) => {

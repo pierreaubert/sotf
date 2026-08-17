@@ -46,6 +46,13 @@ pub struct RecordingState {
     /// Index of the channel-speaker row whose autocomplete suggestions
     /// are currently visible, or `None` when no dropdown is open.
     pub channel_speaker_autocomplete_open: Option<usize>,
+
+    /// Actual duration (seconds) of the persisted `ctc_reference_sweep.wav`
+    /// stimulus. Tracked GPUI-side because the octave-scaled sweep (B1) is
+    /// self-timed: `signal_duration_secs` no longer describes the reference
+    /// WAV, so the real length is recorded at capture time and persisted as
+    /// `CtcConfig::sweep_duration_s` at save time.
+    pub ctc_reference_sweep_duration_s: Option<f32>,
 }
 
 impl Default for RecordingState {
@@ -72,6 +79,7 @@ impl Default for RecordingState {
             plot_channel_dropdown_open: false,
             plot_smoothing_dropdown_open: false,
             channel_speaker_autocomplete_open: None,
+            ctc_reference_sweep_duration_s: None,
         }
     }
 }

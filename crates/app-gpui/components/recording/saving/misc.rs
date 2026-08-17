@@ -296,7 +296,10 @@ impl PlayerView {
                                 .align(StackAlign::Center)
                                 .child(Text::new("+").size(TextSize::Xs).color(theme.success))
                                 .child(
-                                    Text::label(format!("{}.json", safe_save_name))
+                                    // B5: the session JSON is always saved
+                                    // under the canonical filename, not the
+                                    // user-chosen session name.
+                                    Text::label(sotf_audio_player::recording_helpers::RECORDINGS_FILENAME)
                                         .color(theme.text_primary),
                                 )
                                 .child(Text::caption(translations.recording_files_config_data)),
@@ -306,17 +309,12 @@ impl PlayerView {
                             recorded_channels
                                 .iter()
                                 .flat_map(|rec| {
-                                    let safe_channel_name: String = rec
-                                        .channel_name
-                                        .chars()
-                                        .map(|c| {
-                                            if c.is_alphanumeric() || c == '_' || c == '-' {
-                                                c
-                                            } else {
-                                                '_'
-                                            }
-                                        })
-                                        .collect();
+                                    // Shared sanitizer (C1) — matches the
+                                    // names capture actually writes.
+                                    let safe_channel_name =
+                                        sotf_audio_player::recording_helpers::sanitize_recording_name(
+                                            &rec.channel_name,
+                                        );
 
                                     vec![
                                         HStack::new()
