@@ -68,6 +68,16 @@ fn main() {
         }
     }
 
+    // Run pre-flight checks before opening any audio streams (R7): on Linux
+    // this catches a missing 'audio' group or absent sound cards with
+    // actionable guidance instead of opaque cpal stream errors.
+    if let Err(e) = sotf_audio::run_preflight_checks() {
+        let e = redact_secrets(&e.to_string());
+        eprintln!("\nPre-flight check failed:\n");
+        eprintln!("{}\n", e);
+        std::process::exit(1);
+    }
+
     if let Err(e) = record_signal(
         signal,
         duration,

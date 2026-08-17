@@ -60,12 +60,12 @@ pub(super) struct Cli {
     pub(super) freq2: Option<f32>,
 
     /// Start frequency in Hz (for sweep signal)
-    #[arg(long, default_value = "5")]
-    pub(super) start_freq: Option<f32>,
+    #[arg(long, default_value_t = sotf_audio_player::recording_helpers::DEFAULT_SWEEP_START_FREQ)]
+    pub(super) start_freq: f32,
 
     /// End frequency in Hz (for sweep signal)
-    #[arg(long, default_value = "22000")]
-    pub(super) end_freq: Option<f32>,
+    #[arg(long, default_value_t = sotf_audio_player::recording_helpers::DEFAULT_SWEEP_END_FREQ)]
+    pub(super) end_freq: f32,
 
     /// Amplitude (0.0-1.0)
     #[arg(long)]

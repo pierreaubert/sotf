@@ -4,6 +4,7 @@
 //! results, save metadata) lives here; view state (dropdowns, focus flags, edit
 //! buffers) stays in `app-gpui` / `app-tui`.
 
+use crate::recording_helpers::{DEFAULT_SWEEP_END_FREQ, DEFAULT_SWEEP_START_FREQ};
 use crate::recording_types::{
     BassAnchorCaptureState, CalibrationData, ChannelRecording, ChannelRecordingState,
     PlaybackDeviceConfig, PlotSmoothing, ProbeCaptureState, RecordingDeviceConfig,
@@ -142,8 +143,8 @@ impl Default for RecordingScreenModel {
             signal_type: RecordingSignalType::Sweep,
             signal_duration_secs: 5.0,
             signal_level_db: DEFAULT_SIGNAL_LEVEL_DB,
-            sweep_start_freq: 20.0,
-            sweep_end_freq: 20000.0,
+            sweep_start_freq: DEFAULT_SWEEP_START_FREQ,
+            sweep_end_freq: DEFAULT_SWEEP_END_FREQ,
             channel_recordings: Vec::new(),
             transfer_matrix_loopbacks: Vec::new(),
             ctc_reference_sweep_path: None,
@@ -692,7 +693,10 @@ mod tests {
             Some(3)
         );
         model.recording_config.num_positions = 1;
-        assert_eq!(model.build_recording_configuration(None).num_positions, None);
+        assert_eq!(
+            model.build_recording_configuration(None).num_positions,
+            None
+        );
     }
 
     #[test]

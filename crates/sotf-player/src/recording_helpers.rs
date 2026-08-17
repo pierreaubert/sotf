@@ -20,6 +20,12 @@ use sotf_audio::signal_recorder::{
 /// regardless of the user-chosen session name.
 pub const RECORDINGS_FILENAME: &str = "recordings.json";
 
+/// Shared default sweep start frequency (Hz) for all frontends (C2).
+pub const DEFAULT_SWEEP_START_FREQ: f32 = 20.0;
+
+/// Shared default sweep end frequency (Hz) for all frontends (C2).
+pub const DEFAULT_SWEEP_END_FREQ: f32 = 20000.0;
+
 /// Map the wizard's [`RecordingSignalType`] to the engine's [`SignalType`].
 ///
 /// `DelayProbe` has no per-channel generator — it uses the separate

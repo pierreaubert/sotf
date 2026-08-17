@@ -1,4 +1,19 @@
+use sotf_audio_player::recording_helpers::capture_signal_params;
 use std::str::FromStr;
+
+/// Validate a user-supplied amplitude flag (R3): reject anything outside
+/// `(0.0, 1.0]` with a clear error instead of silently clamping, so a level
+/// above 0 dBFS can never clip the stimulus unnoticed.
+fn validated_amp(amp: Option<f32>, flag: &str) -> Result<f32, String> {
+    let amp = amp.unwrap_or(0.5);
+    if !amp.is_finite() || amp <= 0.0 || amp > 1.0 {
+        return Err(format!(
+            "{} must be in the range (0.0, 1.0] — level must be ≤ 0 dBFS to avoid clipping the stimulus, got {}",
+            flag, amp
+        ));
+    }
+    Ok(amp)
+}
 
 pub(super) fn list_audio_devices() {
     println!("{}", "=".repeat(80));
@@ -93,8 +108,8 @@ pub fn record_signal(
     freq: Option<f32>,
     freq1: Option<f32>,
     freq2: Option<f32>,
-    start_freq: Option<f32>,
-    end_freq: Option<f32>,
+    start_freq: f32,
+    end_freq: f32,
     amp: Option<f32>,
     amp1: Option<f32>,
     amp2: Option<f32>,
@@ -148,18 +163,22 @@ pub fn record_signal(
         ));
     }
 
-    // Build signal parameters based on signal type
+    // Build signal parameters based on signal type. The sweep case routes
+    // through the shared sotf-player helper so every frontend builds sweep
+    // params identically; Tone/TwoTone/MLS stay local because the CLI has
+    // dedicated flags (--freq/--freq1/--freq2/--mls-order) the shared
+    // helper does not model.
     let params = match signal_type {
         SignalType::Tone => {
             let freq = freq.ok_or("--freq is required for tone signal")?;
-            let amp = amp.unwrap_or(0.5).clamp(0.0, 1.0);
+            let amp = validated_amp(amp, "--amp")?;
             SignalParams::Tone { freq, amp }
         }
         SignalType::TwoTone => {
             let freq1 = freq1.ok_or("--freq1 is required for two-tone signal")?;
             let freq2 = freq2.ok_or("--freq2 is required for two-tone signal")?;
-            let amp1 = amp1.unwrap_or(0.5).clamp(0.0, 1.0);
-            let amp2 = amp2.unwrap_or(0.5).clamp(0.0, 1.0);
+            let amp1 = validated_amp(amp1, "--amp1")?;
+            let amp2 = validated_amp(amp2, "--amp2")?;
             SignalParams::TwoTone {
                 freq1,
                 amp1,
@@ -167,33 +186,29 @@ pub fn record_signal(
                 amp2,
             }
         }
-        SignalType::Sweep => {
-            let start_freq = start_freq.ok_or("--start-freq is required for sweep signal")?;
-            let end_freq = end_freq.ok_or("--end-freq is required for sweep signal")?;
-            let amp = amp.unwrap_or(0.5).clamp(0.0, 1.0);
-            SignalParams::Sweep {
-                start_freq,
-                end_freq,
-                amp,
-            }
-        }
+        SignalType::Sweep => capture_signal_params(
+            SignalType::Sweep,
+            start_freq,
+            end_freq,
+            validated_amp(amp, "--amp")?,
+            None,
+            None,
+            None,
+        ),
         SignalType::WhiteNoise | SignalType::PinkNoise | SignalType::MNoise => {
-            let amp = amp.unwrap_or(0.5).clamp(0.0, 1.0);
+            let amp = validated_amp(amp, "--amp")?;
             SignalParams::Noise { amp }
         }
         SignalType::Mls => {
             let order = mls_order.unwrap_or(DEFAULT_MLS_ORDER);
-            let amp = amp.unwrap_or(0.5).clamp(0.0, 1.0);
+            let amp = validated_amp(amp, "--amp")?;
             SignalParams::Mls { order, amp }
         }
         SignalType::Dirac => {
-            let amp = amp.unwrap_or(0.5).clamp(0.0, 1.0);
+            let amp = validated_amp(amp, "--amp")?;
             SignalParams::Dirac { amp }
         }
     };
-
-    // Validate parameters
-    validate_signal_params(signal_type, &params, duration, sample_rate)?;
 
     println!("\nConfiguration:");
     println!("  Signal: {}", signal_type.as_str());
@@ -226,54 +241,65 @@ pub fn record_signal(
     }
     println!();
 
-    // Generate the base signal
+    // Prepare the stimulus (validate → generate → 20 ms fades + 250 ms
+    // padding) through the shared engine helper so all frontends share one
+    // prepare+validate path (R4).
     let total_recordings = send_to_channels.len(); // One recording per send/record pair
-    println!("[1/{}] Generating signal...", total_recordings + 2);
-    let mut base_signal = generate_signal(signal_type, &params, duration, sample_rate)?;
+    println!("[1/{}] Preparing signal...", total_recordings + 1);
+
+    // Load playback pre-compensation up front (sweeps only). It modulates
+    // the raw sweep sample-by-sample using the buffer length as the sweep
+    // duration, so it must run between generation and `prepare_signal` —
+    // the one case that cannot go through `prepare_measurement_signal`
+    // end to end; it composes the same engine steps around it.
+    let pre_compensation = match microphone_compensation {
+        Some(ref comp_path) => {
+            use sotf_audio::signal_analysis::MicrophoneCompensation;
+            use std::path::Path;
+
+            println!("\n  Loading microphone compensation for playback pre-compensation...");
+            let compensation = MicrophoneCompensation::from_file(Path::new(comp_path))?;
+            if signal_type == SignalType::Sweep {
+                println!(
+                    "  Applying inverse microphone compensation to sweep ({} Hz - {} Hz)...",
+                    start_freq, end_freq
+                );
+                println!(
+                    "  This pre-compensates the playback signal so the microphone records flat"
+                );
+                Some(compensation)
+            } else {
+                // Only sweeps have a well-defined instantaneous frequency
+                println!(
+                    "  Note: Pre-compensation only supported for sweep signals (got {})",
+                    signal_type.as_str()
+                );
+                println!("  Post-compensation will still be applied to CSV output");
+                None
+            }
+        }
+        None => None,
+    };
 
     // Validate that the signal is mono (Vec<f32> represents mono)
     // All our signal generation functions return mono signals
-    println!(
-        "  ✓ Generated mono signal with {} samples",
-        base_signal.len()
-    );
-
-    // Apply pre-compensation if provided (for sweeps only)
-    if let Some(ref comp_path) = microphone_compensation {
-        use sotf_audio::signal_analysis::MicrophoneCompensation;
-        use std::path::Path;
-
-        println!("\n  Loading microphone compensation for playback pre-compensation...");
-        let compensation = MicrophoneCompensation::from_file(Path::new(comp_path))?;
-
-        // Only apply to sweeps - other signal types don't have well-defined instantaneous frequency
-        if signal_type == SignalType::Sweep {
-            let start_freq = start_freq.unwrap_or(5.0);
-            let end_freq = end_freq.unwrap_or(22000.0);
-
-            println!(
-                "  Applying inverse microphone compensation to sweep ({} Hz - {} Hz)...",
-                start_freq, end_freq
-            );
-            println!("  This pre-compensates the playback signal so the microphone records flat");
-
+    let prepared_signal = match pre_compensation {
+        Some(ref compensation) => {
+            validate_signal_params(signal_type, &params, duration, sample_rate)?;
+            let raw_signal = generate_signal(signal_type, &params, duration, sample_rate)?;
             // Apply inverse compensation: boost where mic is weak, cut where mic is loud
-            base_signal =
-                compensation.apply_to_sweep(&base_signal, start_freq, end_freq, sample_rate, true);
-
-            println!("  ✓ Applied pre-compensation to playback signal");
-        } else {
-            println!(
-                "  Note: Pre-compensation only supported for sweep signals (got {})",
-                signal_type.as_str()
+            let compensated = compensation.apply_to_sweep(
+                &raw_signal,
+                start_freq,
+                end_freq,
+                sample_rate,
+                true,
             );
-            println!("  Post-compensation will still be applied to CSV output");
+            println!("  ✓ Applied pre-compensation to playback signal");
+            prepare_signal(compensated, sample_rate)
         }
-    }
-
-    // Prepare mono signal with fades and padding
-    println!("\n[2/{}] Preparing mono signal...", total_recordings + 2);
-    let prepared_signal = prepare_signal(base_signal.clone(), sample_rate);
+        None => prepare_measurement_signal(signal_type, &params, duration, sample_rate)?,
+    };
     println!(
         "  ✓ Prepared mono signal with {} samples",
         prepared_signal.len()
@@ -289,8 +315,8 @@ pub fn record_signal(
         };
         println!(
             "\n[{}/{}] Playing to hw channel {}, recording from hw channel {}...",
-            idx + 3,
-            total_recordings + 2,
+            idx + 2,
+            total_recordings + 1,
             send_ch,
             record_ch
         );
@@ -360,6 +386,7 @@ pub fn record_signal(
 mod tests {
 
     use super::super::format_sample_rate_range;
+    use super::validated_amp;
 
     #[test]
     fn sample_rate_range_handles_empty_single_and_multiple_rates() {
@@ -368,6 +395,40 @@ mod tests {
         assert_eq!(
             format_sample_rate_range(&[44_100, 48_000, 96_000]),
             "44100-96000 Hz"
+        );
+    }
+
+    #[test]
+    fn validated_amp_defaults_and_passes_valid_values() {
+        assert_eq!(validated_amp(None, "--amp").unwrap(), 0.5);
+        assert_eq!(validated_amp(Some(1.0), "--amp").unwrap(), 1.0);
+        assert_eq!(validated_amp(Some(0.25), "--amp1").unwrap(), 0.25);
+    }
+
+    #[test]
+    fn validated_amp_rejects_clipping_and_invalid_levels() {
+        for bad in [1.5, 0.0, -0.5, f32::NAN, f32::INFINITY] {
+            let err = validated_amp(Some(bad), "--amp").unwrap_err();
+            assert!(err.contains("--amp"), "error names the flag: {}", err);
+            assert!(
+                err.contains("0 dBFS"),
+                "error explains the dBFS limit: {}",
+                err
+            );
+        }
+    }
+
+    #[test]
+    fn sweep_defaults_match_shared_player_defaults() {
+        use clap::Parser;
+        let cli = crate::types::Cli::try_parse_from(["sotf_recorder"]).expect("defaults parse");
+        assert_eq!(
+            cli.start_freq,
+            sotf_audio_player::recording_helpers::DEFAULT_SWEEP_START_FREQ
+        );
+        assert_eq!(
+            cli.end_freq,
+            sotf_audio_player::recording_helpers::DEFAULT_SWEEP_END_FREQ
         );
     }
 }
