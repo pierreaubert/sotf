@@ -5,7 +5,7 @@
 //! 2. Capture - Record frequency response for each channel
 //! 3. Probe - Tone-burst arrival-time probe per channel
 //! 4. BassAnchor - Low-frequency tone burst for first-bin phase anchor
-//!    (GD-Opt v2; `docs/gd_opt_v2_plan.md` §2.6)
+//!    (GD-Opt v2 plan §2.6, `docs/gd_opt_v2_plan.md` in the autoeq repo)
 //! 5. Evaluating - View and analyze frequency response graphs
 //! 6. Saving - Save recordings and configuration to disk
 

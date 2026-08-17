@@ -9,6 +9,7 @@ use super::generate::prepare_measurement_signal;
 use super::measurement::measurement_amplitude_from_level_db;
 use super::misc::CLIP_BLOCK_SAMPLES;
 use super::misc::CLIP_THRESHOLD;
+use super::misc::actionable_capture_error;
 use super::misc::analyze_clipping;
 #[cfg(not(target_os = "ios"))]
 use super::misc::check_capture_clipping;
@@ -36,9 +37,9 @@ use super::write::write_wav_file;
 use hound::SampleFormat;
 use hound::WavReader;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 #[cfg(not(target_os = "ios"))]
 use std::sync::atomic::Ordering;
-use std::str::FromStr;
 use tempfile::tempdir;
 
 mod misc;
@@ -1730,4 +1731,56 @@ fn record_and_analyze_multi_honors_pre_set_cancel_flag() {
     .unwrap_err();
     assert_eq!(err, CANCELLED_ERR);
     assert!(!wav_paths[0].exists());
+}
+
+#[test]
+fn actionable_capture_error_maps_permission_denial() {
+    let msg = actionable_capture_error(
+        "[test] Failed to build input stream",
+        &"PermissionDenied: microphone access not authorized",
+    );
+    #[cfg(target_os = "macos")]
+    assert!(
+        msg.contains("System Settings") && msg.contains("Microphone"),
+        "macOS permission advice: {msg}"
+    );
+    #[cfg(target_os = "linux")]
+    assert!(msg.contains("'audio' group"), "Linux permission advice: {msg}");
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    assert!(msg.contains("privacy"), "generic permission advice: {msg}");
+    // Original error text is kept for debugging.
+    assert!(msg.contains("original error"), "{msg}");
+    assert!(msg.contains("PermissionDenied"), "{msg}");
+}
+
+#[test]
+fn actionable_capture_error_maps_busy_device() {
+    let msg = actionable_capture_error(
+        "[test] Failed to start input stream",
+        &"ALSA: Device or resource busy",
+    );
+    assert!(msg.contains("busy"), "{msg}");
+    assert!(msg.contains("close other apps"), "{msg}");
+    assert!(msg.contains("Device or resource busy"), "{msg}");
+}
+
+#[test]
+fn actionable_capture_error_maps_missing_device() {
+    let msg = actionable_capture_error(
+        "[test] Input device not usable",
+        &"Audio device 'UMIK-1' not found. Available input devices (1 total): Built-in Microphone",
+    );
+    assert!(msg.contains("--list-devices"), "{msg}");
+    assert!(msg.contains("not found"), "{msg}");
+
+    let no_default =
+        actionable_capture_error("[test]", &"No default input device available");
+    assert!(no_default.contains("--list-devices"), "{no_default}");
+}
+
+#[test]
+fn actionable_capture_error_passes_through_unclassified_errors() {
+    let msg = actionable_capture_error("[test] Failed to load file", &"no such file: temp.wav");
+    assert_eq!(msg, "[test] Failed to load file: no such file: temp.wav");
+    assert!(!msg.contains("original error"), "{msg}");
 }

@@ -59,7 +59,8 @@ impl BassAnchorCaptureState {
     }
 
     /// `true` when every channel's stability metric is under the 20°
-    /// advisory threshold from `docs/gd_opt_v2_plan.md` §2.8.
+    /// advisory threshold from the GD-Opt v2 plan §2.8
+    /// (`docs/gd_opt_v2_plan.md` in the autoeq repo).
     pub fn all_channels_reliable(&self) -> bool {
         match (&self.status, &self.results) {
             (BassAnchorCaptureStatus::Complete, Some(r)) => r

@@ -129,7 +129,8 @@ pub enum RecordingField {
     NumRecordingChannels,
     CtcStrategy,
     CtcLoopbackInput,
-    /// Per-channel mic-calibration path (`recording_config.mic_calibration_paths[i]`).
+    /// Per-channel mic-calibration path (model-level `model.mic_calibration_paths[i]`,
+    /// indexed by mic slot — the working copy the editing accessors write).
     MicCal(usize),
     /// Per-channel input mapping (`recording_config.channel_mappings[i]`).
     ChannelInput(usize),

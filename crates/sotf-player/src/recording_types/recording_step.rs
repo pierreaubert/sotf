@@ -7,7 +7,8 @@ pub enum RecordingStep {
     /// Step 2: SPL calibration — plays a 1 kHz reference tone; user
     /// enters the dBSPL their external meter reads at the listening
     /// position. GD-Opt v2 uses the captured offset to target sweep
-    /// levels deterministically (`docs/gd_opt_v2_plan.md` §2.6, §2.11 Q4).
+    /// levels deterministically (GD-Opt v2 plan §2.6, §2.11 Q4 —
+    /// `docs/gd_opt_v2_plan.md` in the autoeq repo).
     SplCalibration,
     /// Step 3: Record frequency response for each channel
     Capture,
@@ -20,7 +21,7 @@ pub enum RecordingStep {
     /// 5 cycles by default) per channel and records the fundamental's
     /// phase. GD-Opt v2 feeds the per-channel anchor into the sweep
     /// unwrap as a hard constraint on the first bass bin
-    /// (`docs/gd_opt_v2_plan.md` §2.6).
+    /// (GD-Opt v2 plan §2.6, `docs/gd_opt_v2_plan.md` in the autoeq repo).
     BassAnchor,
     /// Step 6: Evaluate recordings and view frequency response
     Evaluating,

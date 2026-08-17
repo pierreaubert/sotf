@@ -5,7 +5,8 @@
 //! phase + stability of the burst's fundamental via a single-bin DFT.
 //! The result anchors the sweep-derived phase at the first bin,
 //! eliminating the 2π wraparound ambiguity that plagues log-sweep
-//! bass measurements (§2.6 of `docs/gd_opt_v2_plan.md`).
+//! bass measurements (§2.6 of the GD-Opt v2 plan,
+//! `docs/gd_opt_v2_plan.md` in the autoeq repo).
 //!
 //! Mirrors the Probe step (`probe.rs`): status line, Run/Cancel
 //! control, per-channel results table once Complete.

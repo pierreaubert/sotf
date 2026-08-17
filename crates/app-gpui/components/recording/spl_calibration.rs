@@ -7,7 +7,8 @@
 //! deterministic map from digital level to dBSPL at the mic, which
 //! `sweep_level_db_spl` targets during the Capture step.
 //!
-//! See `docs/gd_opt_v2_plan.md` §2.6 and §2.11 Q4 for the calibration
+//! See the GD-Opt v2 plan (`docs/gd_opt_v2_plan.md` in the autoeq repo)
+//! §2.6 and §2.11 Q4 for the calibration
 //! rationale and the "require SPL cap" decision.
 //!
 //! The live capture follows the same `smol::unblock + state.update`

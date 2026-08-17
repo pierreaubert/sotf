@@ -255,7 +255,7 @@ fn probe_channel_delays_core(
         "[probe_channel_delays] Generated narrowband probe: {} samples ({:.1}ms), 800-2000Hz, level={:.1}dBFS",
         probe_samples,
         probe_duration_ms,
-        signal_level_db.clamp(-40.0, 20.0)
+        signal_level_db.clamp(-40.0, 0.0)
     );
 
     // Play on each output channel in turn and capture the mic — shared

@@ -1,6 +1,8 @@
 #[cfg(not(target_os = "ios"))]
 use super::consts::CANCELLED_ERR;
 #[cfg(not(target_os = "ios"))]
+use super::misc::actionable_capture_error;
+#[cfg(not(target_os = "ios"))]
 use super::misc::capture_capacity;
 #[cfg(not(target_os = "ios"))]
 use super::misc::check_capture_clipping;
@@ -128,11 +130,13 @@ pub fn record_and_analyze(
             "[record_and_analyze] Looking for input device: {}",
             dev_name
         );
-        crate::devices::find_device(&host, dev_name, true)?
+        crate::devices::find_device(&host, dev_name, true)
+            .map_err(|e| actionable_capture_error("[record_and_analyze] Input device not usable", &e))?
     } else {
         log::debug!("[record_and_analyze] Using default input device");
-        host.default_input_device()
-            .ok_or_else(|| "No default input device available".to_string())?
+        host.default_input_device().ok_or_else(|| {
+            actionable_capture_error("[record_and_analyze]", &"No default input device available")
+        })?
     };
 
     log::info!(
@@ -146,9 +150,12 @@ pub fn record_and_analyze(
     // Find a supported input config that has enough channels for our input_channel
     // and supports the requested sample rate. Use default config as primary choice
     // since it's known to work with the device.
-    let default_input_config = input_device
-        .default_input_config()
-        .map_err(|e| format!("Failed to get default input config: {}", e))?;
+    let default_input_config = input_device.default_input_config().map_err(|e| {
+        actionable_capture_error(
+            "[record_and_analyze] Failed to get default input config",
+            &e,
+        )
+    })?;
 
     let default_input_channels = default_input_config.channels() as usize;
     let default_input_sample_rate = default_input_config.sample_rate();
@@ -274,12 +281,14 @@ pub fn record_and_analyze(
             },
             None,
         )
-        .map_err(|e| format!("Failed to build input stream: {}", e))?;
+        .map_err(|e| {
+            actionable_capture_error("[record_and_analyze] Failed to build input stream", &e)
+        })?;
 
     // Start recording
-    input_stream
-        .play()
-        .map_err(|e| format!("Failed to start input stream: {}", e))?;
+    input_stream.play().map_err(|e| {
+        actionable_capture_error("[record_and_analyze] Failed to start input stream", &e)
+    })?;
     log::debug!("[record_and_analyze] Recording started");
 
     // Small delay to let recording buffer fill
@@ -306,11 +315,14 @@ pub fn record_and_analyze(
             "[record_and_analyze] Looking for output device: {}",
             dev_name
         );
-        crate::devices::find_device(&host, dev_name, false)?
+        crate::devices::find_device(&host, dev_name, false).map_err(|e| {
+            actionable_capture_error("[record_and_analyze] Output device not usable", &e)
+        })?
     } else {
         log::debug!("[record_and_analyze] Using default output device");
-        host.default_output_device()
-            .ok_or_else(|| "No default output device available".to_string())?
+        host.default_output_device().ok_or_else(|| {
+            actionable_capture_error("[record_and_analyze]", &"No default output device available")
+        })?
     };
 
     log::info!(
@@ -325,7 +337,12 @@ pub fn record_and_analyze(
     // (not just the default, which might be less than the hardware capability)
     let hardware_channels = output_device
         .supported_output_configs()
-        .map_err(|e| format!("Failed to get supported output configs: {}", e))?
+        .map_err(|e| {
+            actionable_capture_error(
+                "[record_and_analyze] Failed to get supported output configs",
+                &e,
+            )
+        })?
         .map(|config| config.channels() as usize)
         .max()
         .unwrap_or_else(|| {
@@ -397,7 +414,7 @@ pub fn record_and_analyze(
             plugins,
             hardware_channels,
         )
-        .map_err(|e| format!("Failed to start playback: {}", e))?;
+        .map_err(|e| actionable_capture_error("[record_and_analyze] Failed to start playback", &e))?;
 
     log::debug!("[record_and_analyze] Playback started, waiting for completion...");
 
@@ -645,15 +662,24 @@ pub fn record_and_analyze_multi(
     let host = cpal::default_host();
 
     let input_device = if let Some(dev_name) = input_device_name {
-        crate::devices::find_device(&host, dev_name, true)?
+        crate::devices::find_device(&host, dev_name, true).map_err(|e| {
+            actionable_capture_error("[record_and_analyze_multi] Input device not usable", &e)
+        })?
     } else {
-        host.default_input_device()
-            .ok_or_else(|| "No default input device available".to_string())?
+        host.default_input_device().ok_or_else(|| {
+            actionable_capture_error(
+                "[record_and_analyze_multi]",
+                &"No default input device available",
+            )
+        })?
     };
 
-    let default_input_config = input_device
-        .default_input_config()
-        .map_err(|e| format!("Failed to get default input config: {}", e))?;
+    let default_input_config = input_device.default_input_config().map_err(|e| {
+        actionable_capture_error(
+            "[record_and_analyze_multi] Failed to get default input config",
+            &e,
+        )
+    })?;
 
     let max_input_ch = input_channels.iter().copied().max().unwrap_or(0) as usize;
     let min_channels_needed = max_input_ch + 1;
@@ -757,11 +783,19 @@ pub fn record_and_analyze_multi(
             },
             None,
         )
-        .map_err(|e| format!("Failed to build input stream: {}", e))?;
+        .map_err(|e| {
+            actionable_capture_error(
+                "[record_and_analyze_multi] Failed to build input stream",
+                &e,
+            )
+        })?;
 
-    input_stream
-        .play()
-        .map_err(|e| format!("Failed to start input stream: {}", e))?;
+    input_stream.play().map_err(|e| {
+        actionable_capture_error(
+            "[record_and_analyze_multi] Failed to start input stream",
+            &e,
+        )
+    })?;
 
     sleep(Duration::from_millis(100));
 
@@ -778,15 +812,26 @@ pub fn record_and_analyze_multi(
         .map_err(|e| format!("Failed to load file: {}", e))?;
 
     let output_device = if let Some(dev_name) = output_device_name {
-        crate::devices::find_device(&host, dev_name, false)?
+        crate::devices::find_device(&host, dev_name, false).map_err(|e| {
+            actionable_capture_error("[record_and_analyze_multi] Output device not usable", &e)
+        })?
     } else {
-        host.default_output_device()
-            .ok_or_else(|| "No default output device available".to_string())?
+        host.default_output_device().ok_or_else(|| {
+            actionable_capture_error(
+                "[record_and_analyze_multi]",
+                &"No default output device available",
+            )
+        })?
     };
 
     let hardware_channels = output_device
         .supported_output_configs()
-        .map_err(|e| format!("Failed to get supported output configs: {}", e))?
+        .map_err(|e| {
+            actionable_capture_error(
+                "[record_and_analyze_multi] Failed to get supported output configs",
+                &e,
+            )
+        })?
         .map(|config| config.channels() as usize)
         .max()
         .unwrap_or_else(|| {
@@ -833,7 +878,9 @@ pub fn record_and_analyze_multi(
             plugins,
             hardware_channels,
         )
-        .map_err(|e| format!("Failed to start playback: {}", e))?;
+        .map_err(|e| {
+            actionable_capture_error("[record_and_analyze_multi] Failed to start playback", &e)
+        })?;
 
     // --- Wait for playback to complete ---
     let total_wait = Duration::from_secs_f64(expected_duration + 3.0);

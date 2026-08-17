@@ -98,6 +98,59 @@ pub(super) fn drain_capture<T>(consumer: &mut rtrb::Consumer<T>, expected_len: u
     out
 }
 
+/// Wrap a low-level audio device/stream error with actionable guidance (C3).
+///
+/// cpal surfaces permission denials, busy devices and missing devices as
+/// host-specific strings, so this classifies the error text and prepends
+/// user-facing advice for the common failure modes. The original message is
+/// always kept (appended in parentheses) for debugging; when no advice
+/// applies, the result is just `"{context}: {err}"`, i.e. identical to the
+/// previous formatting.
+pub fn actionable_capture_error(context: &str, err: &dyn std::fmt::Display) -> String {
+    let raw = err.to_string();
+    let lower = raw.to_lowercase();
+    let advice = if lower.contains("permission")
+        || lower.contains("denied")
+        || lower.contains("not authorized")
+    {
+        #[cfg(target_os = "macos")]
+        {
+            "Grant microphone permission in System Settings → Privacy & Security → Microphone, \
+             then restart the app."
+        }
+        #[cfg(target_os = "ios")]
+        {
+            "Grant microphone permission in Settings → Privacy & Security → Microphone, \
+             then restart the app."
+        }
+        #[cfg(target_os = "linux")]
+        {
+            "Check that your user is in the 'audio' group \
+             (e.g. `sudo usermod -aG audio $USER`, then log out and back in)."
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "linux")))]
+        {
+            "Check the OS microphone privacy settings, then restart the app."
+        }
+    } else if lower.contains("busy") || lower.contains("in use") || lower.contains("exclusive") {
+        "The device is busy — close other apps using it and try again."
+    } else if lower.contains("not found")
+        || lower.contains("no such device")
+        || lower.contains("no default input device")
+        || lower.contains("no default output device")
+    {
+        "Run with --list-devices (or the UI device picker) to see available devices."
+    } else {
+        ""
+    };
+
+    if advice.is_empty() {
+        format!("{context}: {raw}")
+    } else {
+        format!("{context}: {advice} (original error: {raw})")
+    }
+}
+
 /// Prepare a signal for playback with fades and padding
 pub fn prepare_signal(signal: Vec<f32>, sample_rate: u32) -> Vec<f32> {
     const FADE_MS: f32 = 20.0;

@@ -8,6 +8,8 @@ use super::choose::choose_measurement_input_config;
 use super::choose::choose_measurement_output_config;
 use super::consts::CANCELLED_ERR;
 #[cfg(not(target_os = "ios"))]
+use super::misc::actionable_capture_error;
+#[cfg(not(target_os = "ios"))]
 use super::misc::drain_capture;
 use crate::signals::*;
 use serde::{Deserialize, Serialize};
@@ -204,10 +206,16 @@ pub(super) fn play_per_channel_and_record_mono(
     // --- Output device discovery + hardware channel count ---
     let host = cpal::default_host();
     let output_device = if let Some(dev_name) = output_device_name {
-        crate::devices::find_device(&host, dev_name, false)?
+        crate::devices::find_device(&host, dev_name, false).map_err(|e| {
+            actionable_capture_error(&format!("[{log_tag}] Output device not usable"), &e)
+        })?
     } else {
-        host.default_output_device()
-            .ok_or_else(|| format!("[{log_tag}] No default output device available"))?
+        host.default_output_device().ok_or_else(|| {
+            actionable_capture_error(
+                &format!("[{log_tag}]"),
+                &"No default output device available",
+            )
+        })?
     };
 
     // Use a direct CPAL stream with at least enough channels to address
@@ -216,7 +224,12 @@ pub(super) fn play_per_channel_and_record_mono(
     // interpretation or normal playback downmix/upmix paths.
     let supported_output_configs: Vec<_> = output_device
         .supported_output_configs()
-        .map_err(|e| format!("[{log_tag}] Failed to get supported output configs: {}", e))?
+        .map_err(|e| {
+            actionable_capture_error(
+                &format!("[{log_tag}] Failed to get supported output configs"),
+                &e,
+            )
+        })?
         .collect();
     let device_max_channels = supported_output_configs
         .iter()
@@ -273,10 +286,16 @@ pub(super) fn play_per_channel_and_record_mono(
 
     // --- Input device + stream setup ---
     let input_device = if let Some(dev_name) = input_device_name {
-        crate::devices::find_device(&host, dev_name, true)?
+        crate::devices::find_device(&host, dev_name, true).map_err(|e| {
+            actionable_capture_error(&format!("[{log_tag}] Input device not usable"), &e)
+        })?
     } else {
-        host.default_input_device()
-            .ok_or_else(|| format!("[{log_tag}] No default input device available"))?
+        host.default_input_device().ok_or_else(|| {
+            actionable_capture_error(
+                &format!("[{log_tag}]"),
+                &"No default input device available",
+            )
+        })?
     };
 
     if let Some(lb) = loopback_input_channel
@@ -289,9 +308,12 @@ pub(super) fn play_per_channel_and_record_mono(
 
     let min_input_ch =
         (input_channel as usize).max(loopback_input_channel.map(|c| c as usize).unwrap_or(0)) + 1;
-    let default_input_config = input_device
-        .default_input_config()
-        .map_err(|e| format!("[{log_tag}] Failed to get default input config: {}", e))?;
+    let default_input_config = input_device.default_input_config().map_err(|e| {
+        actionable_capture_error(
+            &format!("[{log_tag}] Failed to get default input config"),
+            &e,
+        )
+    })?;
     let supported_input_configs: Vec<_> = input_device
         .supported_input_configs()
         .map(|configs| configs.collect())
@@ -360,9 +382,9 @@ pub(super) fn play_per_channel_and_record_mono(
         log_tag,
     )?;
 
-    input_stream
-        .play()
-        .map_err(|e| format!("[{log_tag}] Failed to start input stream: {}", e))?;
+    input_stream.play().map_err(|e| {
+        actionable_capture_error(&format!("[{log_tag}] Failed to start input stream"), &e)
+    })?;
     sleep(Duration::from_millis(100));
 
     // --- Start direct playback ---
@@ -377,9 +399,9 @@ pub(super) fn play_per_channel_and_record_mono(
         playback_cursor.clone(),
         log_tag,
     )?;
-    output_stream
-        .play()
-        .map_err(|e| format!("[{log_tag}] Failed to start output stream: {}", e))?;
+    output_stream.play().map_err(|e| {
+        actionable_capture_error(&format!("[{log_tag}] Failed to start output stream"), &e)
+    })?;
 
     // Wait for playback to finish — same stability-loop pattern both
     // original functions used. Honors `cancel` between polls so a UI
@@ -603,8 +625,8 @@ pub struct BassAnchorChannelResult {
     /// Circular standard deviation of phase across the sub-window
     /// lock-in estimates, in degrees. Combines the mic-side spread
     /// with the loopback-side spread in quadrature when a loopback
-    /// channel is present. Advisory threshold is 20° (§2.8 of
-    /// `docs/gd_opt_v2_plan.md`).
+    /// channel is present. Advisory threshold is 20° (§2.8 of the
+    /// GD-Opt v2 plan, `docs/gd_opt_v2_plan.md` in the autoeq repo).
     pub bass_anchor_stability_deg: f64,
     /// Raw loopback reference phase in degrees (sin-referenced). `None`
     /// when no loopback channel was recorded.

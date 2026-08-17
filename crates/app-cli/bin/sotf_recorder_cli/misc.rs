@@ -23,7 +23,13 @@ pub(super) fn list_audio_devices() {
     let devices = match sotf_audio::devices::get_audio_devices() {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("Failed to get devices: {}", e);
+            eprintln!(
+                "{}",
+                sotf_audio::signal_recorder::actionable_capture_error(
+                    "Failed to enumerate audio devices",
+                    &e
+                )
+            );
             return;
         }
     };

@@ -1605,7 +1605,8 @@ fn draw_recording_bass_anchor_step(f: &mut Frame, content: Rect, app: &App) {
             .channels
             .iter()
             .map(|ch| {
-                // 20° advisory threshold (§2.8 of gd_opt_v2_plan.md).
+                // 20° advisory threshold (§2.8 of the GD-Opt v2 plan,
+                // `docs/gd_opt_v2_plan.md` in the autoeq repo).
                 let reliable = ch.bass_anchor_stability_deg < 20.0;
                 let (quality, color) = if reliable {
                     ("OK", app.theme.accent_success)

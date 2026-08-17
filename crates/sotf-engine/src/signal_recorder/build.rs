@@ -1,4 +1,6 @@
 #[cfg(not(target_os = "ios"))]
+use super::misc::actionable_capture_error;
+#[cfg(not(target_os = "ios"))]
 use super::misc::fill_measurement_output;
 #[cfg(not(target_os = "ios"))]
 use super::types::MeasurementOutputConfig;
@@ -107,10 +109,9 @@ where
             None,
         )
         .map_err(|e| {
-            format!(
-                "[{log_tag}] Failed to build {:?} output stream: {}",
-                T::FORMAT,
-                e
+            actionable_capture_error(
+                &format!("[{log_tag}] Failed to build {:?} output stream", T::FORMAT),
+                &e,
             )
         })
 }
@@ -217,10 +218,9 @@ where
             None,
         )
         .map_err(|e| {
-            format!(
-                "[{log_tag}] Failed to build {:?} input stream: {}",
-                T::FORMAT,
-                e
+            actionable_capture_error(
+                &format!("[{log_tag}] Failed to build {:?} input stream", T::FORMAT),
+                &e,
             )
         })
 }
