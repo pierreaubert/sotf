@@ -31,7 +31,7 @@ supported on iOS.
 ## Module Layout
 
 - `engine/` — Core 4-thread implementation, config, GC thread, RT priority
-- `decoder/` — Symphonia-based decoding, format detection, IAMF support (behind `iamf` feature)
+- `decoder/` — Symphonia-based decoding, format detection, IAMF support (behind `iamf` feature). `decoder/service_resolver.rs` holds the service-stream resolver hook: a higher layer (sotf-player's `ServiceManager`) installs a `ServiceStreamResolver` at startup, and the decoder thread resolves `AudioSource::ServiceStream` (Tidal → URL, Spotify → PCM via `PcmDecoder`) at load time, including gapless preload. The hook is process-global — tests touching it must be consolidated into one test fn (`core.rs::test_create_decoder_from_source_service_stream`).
 - `plugins/` — Plugin chain building (`chain.rs`), PluginSettings, PluginType, EQ/matrix helpers
 - `plugin_param_accessors.rs` — Centralized parameter access for UI consumers
 - `manager.rs` — High-level streaming API

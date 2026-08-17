@@ -1,25 +1,26 @@
 # sotf-services
 
-Streaming service integrations (Spotify, Tidal).
+Core streaming service traits and types. Provider implementations live in
+sibling crates: `sotf-service-tidal` and `sotf-service-spotify`.
 
 ## Key Types
 
 - `StreamingService` trait -- Common interface for streaming backends
 - `ServiceCredentials` -- Authentication
 - `ServiceTrack` -- Track metadata
+- `ServiceAlbum` -- Album metadata
 - `PcmStream` -- PCM audio stream
 - `AudioQuality` -- Quality level selection
+- `redact_secret` -- Redaction helper for logging secrets
 
 ## Module Layout
 
-- `service.rs` -- Common trait and types
-- `spotify.rs` -- Spotify Connect via librespot (behind `spotify` feature)
-- `tidal.rs` -- Tidal API (behind `tidal` feature)
+- `service.rs` -- Common trait and types (std-only, no dependencies)
 
-## Features
+## Providers
 
-- `spotify` -- Spotify Connect via librespot
-- `tidal` -- Tidal API integration
+- `sotf-service-tidal` -- Tidal API integration (`TidalService`)
+- `sotf-service-spotify` -- Spotify Connect via librespot (`SpotifyService`)
 
 ## Testing
 

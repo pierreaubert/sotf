@@ -143,6 +143,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         app.set_scanner_threads(Some(threads as usize));
     }
 
+    // Install the engine service-stream resolver so the decoder thread
+    // resolves `AudioSource::ServiceStream` (Tidal/Spotify) itself, including
+    // gapless preload. Without these features the hook stays uninstalled and
+    // service streams fail at decode time with a clear error.
+    #[cfg(any(feature = "tidal", feature = "spotify"))]
+    sotf_audio_player::install_service_stream_resolver();
+
     // Initialize audio player
     let mut player = Player::new();
 

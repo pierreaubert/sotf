@@ -12,7 +12,9 @@ use crate::components::design::Ds;
 use crate::i18n::{AppearanceTranslations, Language};
 use crate::theme::{CommunityThemeId, ThemeAccentPreference, ThemeId};
 use crate::ui::PlayerView;
-use crate::ui::{DEFAULT_MAX_FONT_SIZE_PX, DEFAULT_MIN_FONT_SIZE_PX};
+use crate::ui::{
+    DEFAULT_MAX_FONT_SIZE_PX, DEFAULT_MIN_FONT_SIZE_PX, MIN_CONFIGURABLE_FONT_SIZE_PX,
+};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_design::{DesignLanguage, DesignSystem, DesignSystemState};
@@ -239,19 +241,35 @@ impl PlayerView {
                             .gap(d.section)
                             .child({
                                 let state_entity = self.state.clone();
-                                let current_max = max_font_px.unwrap_or(DEFAULT_MAX_FONT_SIZE_PX);
+                                let current_max = max_font_px
+                                    .unwrap_or(DEFAULT_MAX_FONT_SIZE_PX)
+                                    .clamp(MIN_CONFIGURABLE_FONT_SIZE_PX + 1.0, 48.0);
                                 NumberInput::new("appearance-min-font-size")
-                                    .value(min_font_px.unwrap_or(DEFAULT_MIN_FONT_SIZE_PX) as f64)
-                                    .range(4.0, (current_max - 1.0) as f64)
+                                    .value(
+                                        min_font_px
+                                            .unwrap_or(DEFAULT_MIN_FONT_SIZE_PX)
+                                            .clamp(MIN_CONFIGURABLE_FONT_SIZE_PX, current_max - 1.0)
+                                            as f64,
+                                    )
+                                    .range(
+                                        MIN_CONFIGURABLE_FONT_SIZE_PX as f64,
+                                        (current_max - 1.0) as f64,
+                                    )
                                     .step(1.0)
                                     .decimals(0)
                                     .unit("px min")
                                     .size(NumberInputSize::Sm)
                                     .width(128.0)
                                     .on_change(move |val, _window, cx| {
-                                        let px = (val as f32).clamp(4.0, current_max - 1.0);
+                                        let px = (val as f32).clamp(
+                                            MIN_CONFIGURABLE_FONT_SIZE_PX,
+                                            current_max - 1.0,
+                                        );
                                         state_entity.update(cx, |state, cx| {
                                             state.app.ui_state.min_font_size_px = Some(px);
+                                            crate::ui::recalculate_pagination_for_state(
+                                                state, true,
+                                            );
                                             let layout = state.layout.read(cx);
                                             if let Err(error) = state.app.save_config(layout) {
                                                 log::error!("Failed to save config: {error}");
@@ -261,9 +279,16 @@ impl PlayerView {
                             })
                             .child({
                                 let state_entity = self.state.clone();
-                                let current_min = min_font_px.unwrap_or(DEFAULT_MIN_FONT_SIZE_PX);
+                                let current_min = min_font_px
+                                    .unwrap_or(DEFAULT_MIN_FONT_SIZE_PX)
+                                    .clamp(MIN_CONFIGURABLE_FONT_SIZE_PX, 47.0);
                                 NumberInput::new("appearance-max-font-size")
-                                    .value(max_font_px.unwrap_or(DEFAULT_MAX_FONT_SIZE_PX) as f64)
+                                    .value(
+                                        max_font_px
+                                            .unwrap_or(DEFAULT_MAX_FONT_SIZE_PX)
+                                            .clamp(current_min + 1.0, 48.0)
+                                            as f64,
+                                    )
                                     .range((current_min + 1.0) as f64, 48.0)
                                     .step(1.0)
                                     .decimals(0)
@@ -274,6 +299,9 @@ impl PlayerView {
                                         let px = (val as f32).clamp(current_min + 1.0, 48.0);
                                         state_entity.update(cx, |state, cx| {
                                             state.app.ui_state.max_font_size_px = Some(px);
+                                            crate::ui::recalculate_pagination_for_state(
+                                                state, true,
+                                            );
                                             let layout = state.layout.read(cx);
                                             if let Err(error) = state.app.save_config(layout) {
                                                 log::error!("Failed to save config: {error}");
@@ -658,6 +686,15 @@ impl PlayerView {
             .rounded(d.r_md)
             .overflow_hidden()
             .cursor_pointer()
+            .id(SharedString::from(format!(
+                "theme-preview-{}",
+                theme_id.name()
+            )))
+            .focusable()
+            .focus_visible(|s| {
+                s.border_color(current_theme.border_focused)
+                    .bg(current_theme.surface_hover)
+            })
             .border_2()
             .border_color(if is_selected {
                 current_theme.accent
@@ -682,6 +719,14 @@ impl PlayerView {
                     cx.notify();
                 }),
             )
+            .on_key_down(cx.listener(move |view, event: &KeyDownEvent, _window, cx| {
+                if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                    view.state.update(cx, |state, _cx| {
+                        state.app.set_theme(theme_id);
+                    });
+                    cx.stop_propagation();
+                }
+            }))
             .child(
                 // Theme name header
                 div()

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Federation sources: Tidal/Spotify login flows (`l` = login, `L` = logout on a
+  selected source, feature-gated `tidal`/`spotify`). Tidal shows the device-code
+  prompt (URL + code + expiry) in a login panel while a background thread polls;
+  Spotify opens the browser OAuth flow (URL shown as fallback) and caches
+  librespot credentials. Tokens are persisted into the source config / credential
+  cache and never displayed.
+- The engine service-stream resolver is installed at startup, so the decoder
+  thread resolves Tidal/Spotify streams itself (including gapless preload).
+
+### Changed
+- Playback no longer pre-resolves service streams in the UI thread; resolution
+  happens in the engine decoder via the installed resolver hook.
+
+### Fixed
+- Tidal/Spotify login hardening: the Tidal device-code poll interval is now 5 s
+  (matching GPUI and Tidal's `slow_down` guidance), a failed login thread spawn
+  surfaces an error status instead of panicking, the Spotify logout arm is
+  feature-gated like the Tidal one, and token-carrying login events redact
+  tokens in their `Debug` output.
+
 ## [0.5.209] - 2026-07-08
 
 ### Added

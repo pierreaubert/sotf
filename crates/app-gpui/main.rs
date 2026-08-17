@@ -108,6 +108,12 @@ fn main() {
             .init();
     }
 
+    // Install the engine's streaming-service resolver so the decoder thread
+    // resolves `AudioSource::ServiceStream` itself at decode time (including
+    // gapless preload). Must happen before server mode and before any playback.
+    #[cfg(any(feature = "tidal", feature = "spotify"))]
+    sotf_audio_player::install_service_stream_resolver();
+
     // Headless server mode — skip UI entirely
     if args.server {
         match sotf_audio_player::server::run_server_mode() {

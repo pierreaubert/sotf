@@ -478,6 +478,348 @@ impl PlayerView {
                     )
                     .build(),
             )
+            // Streaming-service login (Tidal device code / Spotify OAuth)
+            .when_some(
+                self.render_service_login_section(source_idx, source, theme, cx),
+                |card, section| card.child(section),
+            )
+    }
+
+    /// Login/logout controls and in-flight login progress for streaming
+    /// service sources (Tidal device code, Spotify OAuth). Returns `None` for
+    /// every other source type and when no streaming feature is compiled in.
+    fn render_service_login_section(
+        &self,
+        source_idx: usize,
+        source: &sotf_audio_player::federation_config::FederationSourceEntry,
+        theme: &crate::app::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        #[cfg(feature = "tidal")]
+        if let sotf_audio_player::federation_config::SourceConnectionConfig::Tidal {
+            access_token,
+            ..
+        } = &source.connection
+        {
+            let logged_in = !access_token.trim().is_empty();
+            return Some(
+                self.render_tidal_login_section(
+                    source_idx,
+                    &source.source_id,
+                    logged_in,
+                    theme,
+                    cx,
+                )
+                .into_any_element(),
+            );
+        }
+
+        #[cfg(feature = "spotify")]
+        if let sotf_audio_player::federation_config::SourceConnectionConfig::Spotify { .. } =
+            &source.connection
+        {
+            return Some(
+                self.render_spotify_login_section(source_idx, &source.source_id, theme, cx)
+                    .into_any_element(),
+            );
+        }
+
+        let _ = (source_idx, source, theme, cx);
+        None
+    }
+
+    /// Tidal login controls: Login (device-code flow) / Logout plus, while a
+    /// login runs, the verification URL (clickable) and user code (copyable).
+    #[cfg(feature = "tidal")]
+    fn render_tidal_login_section(
+        &self,
+        source_idx: usize,
+        source_id: &str,
+        logged_in: bool,
+        theme: &crate::app::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
+        let text = FederationTranslations::for_language(self.state.read(cx).app.ui_state.language);
+        let active_login = self
+            .state
+            .read(cx)
+            .app
+            .federation
+            .tidal_login
+            .as_ref()
+            .filter(|login| login.source_id == source_id)
+            .map(|login| login.prompt.clone());
+        let flow_active = active_login.is_some();
+
+        let action_button: gpui::AnyElement = if flow_active {
+            Button::new(
+                SharedString::from(format!("tidal-login-cancel-{source_idx}")),
+                text.cancel_login,
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ButtonSize::Xs)
+            .theme(theme.to_button_theme())
+            .on_click_event(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                view.state.update(cx, |state, _cx| {
+                    state.app.cancel_tidal_login();
+                });
+                cx.notify();
+            }))
+            .into_any_element()
+        } else {
+            Button::new(
+                SharedString::from(format!("tidal-login-{source_idx}")),
+                text.login,
+            )
+            .variant(ButtonVariant::Secondary)
+            .size(ButtonSize::Xs)
+            .theme(theme.to_button_theme())
+            .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                view.state.update(cx, |state, _cx| {
+                    state.app.start_tidal_login(source_idx);
+                });
+                cx.notify();
+            }))
+            .into_any_element()
+        };
+
+        let logout_button: Option<gpui::AnyElement> = (logged_in && !flow_active).then(|| {
+            Button::new(
+                SharedString::from(format!("tidal-logout-{source_idx}")),
+                text.logout,
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ButtonSize::Xs)
+            .theme(theme.to_button_theme())
+            .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                view.state.update(cx, |state, _cx| {
+                    state.app.tidal_logout(source_idx);
+                });
+                cx.notify();
+            }))
+            .into_any_element()
+        });
+
+        let mut section = div().flex().flex_col().gap(d.gap).child(
+            div()
+                .flex()
+                .items_center()
+                .gap(d.gap)
+                .child(action_button)
+                .when_some(logout_button, |row, button| row.child(button))
+                .child(
+                    Text::new(if logged_in {
+                        text.logged_in
+                    } else {
+                        text.not_logged_in
+                    })
+                    .size(TextSize::Xs)
+                    .color(if logged_in {
+                        theme.success
+                    } else {
+                        theme.text_muted
+                    }),
+                ),
+        );
+
+        if let Some(prompt) = active_login.flatten() {
+            let url = prompt.verification_url.clone();
+            let code = prompt.user_code.clone();
+            section = section.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.gap)
+                    .p(d.pad_y)
+                    .bg(theme.background)
+                    .rounded(d.r_sm)
+                    .child(Text::label(text.login_open_page))
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("tidal-login-url-{source_idx}")))
+                            .cursor_pointer()
+                            .child(
+                                Text::new(url.clone())
+                                    .size(TextSize::Sm)
+                                    .color(theme.accent),
+                            )
+                            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                                cx.open_url(&url);
+                            }),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(d.gap)
+                            .child(Text::label(text.login_code_label))
+                            .child(
+                                // intentional: numeric-value emphasis for the device login code
+                                Text::new(code.clone())
+                                    .size(TextSize::Md)
+                                    .weight(gpui_ui_kit::TextWeight::Bold)
+                                    .color(theme.text_primary),
+                            )
+                            .child(
+                                Button::new(
+                                    SharedString::from(format!("tidal-code-copy-{source_idx}")),
+                                    text.copy_code,
+                                )
+                                .variant(ButtonVariant::Secondary)
+                                .size(ButtonSize::Xs)
+                                .theme(theme.to_button_theme())
+                                .on_click_event(cx.listener(
+                                    move |view, _: &ClickEvent, _window, cx| {
+                                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                            code.clone(),
+                                        ));
+                                        view.state.update(cx, |state, _cx| {
+                                            state.app.ui_state.toast_message = Some(
+                                                crate::app::ToastMessage::success("Code copied."),
+                                            );
+                                        });
+                                        cx.notify();
+                                    },
+                                )),
+                            ),
+                    )
+                    .child(Text::caption(text.login_code_expires)),
+            );
+        } else if flow_active {
+            section = section.child(Text::caption(text.login_starting));
+        }
+
+        section
+    }
+
+    /// Spotify login controls: Login (OAuth in the system browser) / Logout
+    /// plus, while a login runs, the authorize URL as a clickable fallback.
+    #[cfg(feature = "spotify")]
+    fn render_spotify_login_section(
+        &self,
+        source_idx: usize,
+        source_id: &str,
+        theme: &crate::app::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
+        let text = FederationTranslations::for_language(self.state.read(cx).app.ui_state.language);
+        let active_login = self
+            .state
+            .read(cx)
+            .app
+            .federation
+            .spotify_login
+            .as_ref()
+            .filter(|login| login.source_id == source_id)
+            .map(|login| login.authorize_url.clone());
+        let flow_active = active_login.is_some();
+        let logged_in = sotf_audio_player::service_login::spotify_cache_dir()
+            .map(|dir| sotf_audio_player::service_login::spotify_credentials_path(&dir).exists())
+            .unwrap_or(false);
+
+        let action_button: gpui::AnyElement = if flow_active {
+            Button::new(
+                SharedString::from(format!("spotify-login-cancel-{source_idx}")),
+                text.cancel_login,
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ButtonSize::Xs)
+            .theme(theme.to_button_theme())
+            .on_click_event(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                view.state.update(cx, |state, _cx| {
+                    state.app.cancel_spotify_login();
+                });
+                cx.notify();
+            }))
+            .into_any_element()
+        } else {
+            Button::new(
+                SharedString::from(format!("spotify-login-{source_idx}")),
+                text.login,
+            )
+            .variant(ButtonVariant::Secondary)
+            .size(ButtonSize::Xs)
+            .theme(theme.to_button_theme())
+            .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                view.state.update(cx, |state, _cx| {
+                    state.app.start_spotify_login(source_idx);
+                });
+                cx.notify();
+            }))
+            .into_any_element()
+        };
+
+        let logout_button: Option<gpui::AnyElement> = (logged_in && !flow_active).then(|| {
+            Button::new(
+                SharedString::from(format!("spotify-logout-{source_idx}")),
+                text.logout,
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ButtonSize::Xs)
+            .theme(theme.to_button_theme())
+            .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                view.state.update(cx, |state, _cx| {
+                    state.app.spotify_logout(source_idx);
+                });
+                cx.notify();
+            }))
+            .into_any_element()
+        });
+
+        let mut section = div().flex().flex_col().gap(d.gap).child(
+            div()
+                .flex()
+                .items_center()
+                .gap(d.gap)
+                .child(action_button)
+                .when_some(logout_button, |row, button| row.child(button))
+                .child(
+                    Text::new(if logged_in {
+                        text.logged_in
+                    } else {
+                        text.not_logged_in
+                    })
+                    .size(TextSize::Xs)
+                    .color(if logged_in {
+                        theme.success
+                    } else {
+                        theme.text_muted
+                    }),
+                ),
+        );
+
+        if flow_active {
+            let mut waiting = div()
+                .flex()
+                .flex_col()
+                .gap(d.gap)
+                .p(d.pad_y)
+                .bg(theme.background)
+                .rounded(d.r_sm)
+                .child(Text::label(text.login_waiting_browser));
+            if let Some(Some(url)) = active_login {
+                waiting = waiting.child(
+                    div()
+                        .id(SharedString::from(format!(
+                            "spotify-login-url-{source_idx}"
+                        )))
+                        .cursor_pointer()
+                        .child(
+                            Text::new(url.clone())
+                                .size(TextSize::Sm)
+                                .color(theme.accent),
+                        )
+                        .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                            cx.open_url(&url);
+                        }),
+                );
+            }
+            section = section.child(waiting);
+        }
+
+        section
     }
 
     /// Render a single-line progress row for an active federation scan.

@@ -17,6 +17,7 @@ Shared business logic for all SOTF audio players. When adding features to player
 - `Queue` (`queue.rs`): Album-based playback queue with track navigation
 - `BlissScanner` (`bliss.rs`): Music similarity analysis for recommendations (pure Rust)
 - `PluginGraph` (`plugin_graph.rs`): DAG-based visual plugin routing for UI
+- `ServiceManager` (`service_manager.rs`): process-global streaming-service sessions (Tidal/Spotify) behind `parking_lot::Mutex`; installs the engine service-stream resolver hook. `service_streams.rs` is the legacy `AudioSource` shim over it (no PCM support — use the hook). `service_login.rs` holds the login/logout helpers frontends share (apply/clear Tidal tokens on a source config, librespot credential-cache paths, browser-open); `reset_service_sessions()` drops cached sessions after a login/logout.
 - `ReplayGainScanner` (`replay_gain_scanner.rs`): Background ReplayGain scanning
 - `WaveformScanner` (`waveform_scanner.rs`): Background waveform extraction
 - `autoeq/` — AutoEQ integration (speaker, headphone, multi-speaker, spinorama)
@@ -24,6 +25,13 @@ Shared business logic for all SOTF audio players. When adding features to player
 - `headphone_eq_types.rs` — Headphone EQ configuration types
 - `spinorama_eq_types.rs` — Spinorama EQ configuration types
 - `recording_types.rs` — Recording session types
+
+## Service streams (Tidal/Spotify)
+
+- `install_service_stream_resolver()` wires the engine decoder hook; `resolve_service_stream()` goes through the same global manager
+- Credential precedence: first **enabled** Tidal federation source (music DB `library_sources.config_json`) beats `TIDAL_ACCESS_TOKEN` env; Spotify always uses the librespot credential cache under `<config dir>/spotify`, the source only sets quality
+- Tidal auth: `set_tokens` → `authenticate_refresh()` → `authenticate(AccessToken)` validation → rotated tokens are persisted back via `save_federation_source` (persist happens only after validation succeeds); a stream-time 401/403 triggers one refresh + persist + single retry
+- Never log unredacted tokens (`sotf_services::redact_secret`); the resolver closure never panics and never holds engine locks across network calls
 
 ## Module Layout
 
@@ -36,6 +44,7 @@ Shared business logic for all SOTF audio players. When adding features to player
 - `bliss.rs` — Audio analysis via math-dsp
 - `plugin_graph.rs` — DAG-based plugin routing
 - `security.rs` — Path validation for file access
+- `service_login.rs` — Login/logout helpers for the settings UIs (Tidal device-auth token persistence, Spotify credential cache, browser-open) plus `persist_federation_source()`, the shared "write a source config back to the default music DB" path also used for rotated Tidal tokens from the library-scan path
 - `config.rs` — Player configuration (AppConfig)
 - `ui_params/` — UI parameter descriptors
 
@@ -43,6 +52,7 @@ Shared business logic for all SOTF audio players. When adding features to player
 
 - `testing` — Bypasses security validation for tests
 - `hal` — macOS HAL support
+- `tidal` / `spotify` — Streaming-service playback (provider crates + federation providers)
 
 ## Binaries
 

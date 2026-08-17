@@ -48,6 +48,8 @@ pub use autoeq as room_eq;
 pub mod library_stats;
 pub mod security;
 pub mod server;
+pub mod service_login;
+pub mod service_manager;
 pub mod service_streams;
 pub mod sotf_api_client;
 pub mod sotf_remote;
@@ -84,6 +86,18 @@ pub use plugin_graph::{
     PluginGraph, PluginGraphNode, SpecialNode, SpecialNodeType,
 };
 pub use queue::{Queue, QueueItem};
+pub use service_login::{
+    apply_tidal_device_tokens, clear_spotify_cached_credentials, clear_tidal_tokens,
+    open_url_in_browser, spotify_cache_dir, spotify_credentials_path,
+};
+#[cfg(feature = "spotify")]
+pub use service_manager::select_spotify_quality;
+pub use service_manager::{
+    ServiceManager, ServiceManagerError, clear_service_stream_resolver,
+    install_service_stream_resolver, reset_service_sessions, resolve_service_stream,
+};
+#[cfg(feature = "tidal")]
+pub use service_manager::{TidalCredentials, select_tidal_credentials};
 pub use service_streams::{ServiceStreamResolveError, resolve_service_stream_from_env};
 pub use sotf_remote::{
     SotfRemoteAuthToken, SotfRemoteConnection, SotfRemoteConnectionInfo, SotfRemoteServer,

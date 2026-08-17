@@ -87,6 +87,11 @@ pub struct PlayerView {
     /// Plugin index the engine was last focused on, so we know when to
     /// rebuild the auto-map for a different plugin.
     pub(super) midi_focused_plugin: Option<usize>,
+    /// Latest pointer position over the graph canvas during a palette drag,
+    /// in canvas-element screen coordinates. The drop callback itself does
+    /// not expose the target bounds, so `on_drag_move` records them while the
+    /// drag is active.
+    pub(crate) graph_canvas_drop_position: Option<(f32, f32)>,
 }
 
 impl PlayerView {
@@ -304,6 +309,7 @@ impl PlayerView {
             media_controls,
             midi_input,
             midi_focused_plugin: None,
+            graph_canvas_drop_position: None,
         }
     }
 
@@ -1584,18 +1590,10 @@ impl PlayerView {
 
         let plugins = state.app.plugin_state.graph.to_plugin_configs(sample_rate);
 
-        let source = match sotf_audio_player::resolve_service_stream_from_env(source) {
-            Ok(source) => source,
-            Err(err) => {
-                log::error!("Failed to resolve service stream: {}", err);
-                state.app.playback.is_playing = false;
-                state
-                    .app
-                    .record_playback_error(format!("Resolve service stream failed: {}", err));
-                return;
-            }
-        };
-
+        // `AudioSource::ServiceStream` sources are resolved by the engine's
+        // decoder thread through the service-stream resolver installed at
+        // startup (`install_service_stream_resolver`); failures surface as
+        // engine ServiceError playback errors.
         let play_result = state.player.load_or_switch_source_at(
             source,
             plugins,

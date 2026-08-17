@@ -45,18 +45,10 @@ pub fn build_channel_meter_data(
                 .copied()
                 .unwrap_or(0.0);
 
-            let peak_db = if peak > 0.0001 {
-                20.0 * peak.log10()
-            } else {
-                -60.0
-            };
+            let peak_db = sample_peak_db(peak);
 
             let peak_hold_value = peak_hold.get(channel.index).copied().unwrap_or(0.0);
-            let peak_hold_db = if peak_hold_value > 0.0001 {
-                20.0 * peak_hold_value.log10()
-            } else {
-                -60.0
-            };
+            let peak_hold_db = sample_peak_db(peak_hold_value);
             let peak_hold_ratio = if peak_hold_value > 0.0001 {
                 Some(db_to_position(peak_hold_db))
             } else {
@@ -72,6 +64,18 @@ pub fn build_channel_meter_data(
             }
         })
         .collect()
+}
+
+/// Convert a linear sample peak to the bounded dB scale used by the
+/// horizontal meter. This is also used when a snapshot predates the
+/// oversampled true-peak field, so callers can preserve its channel count
+/// without inventing an L/R pair.
+pub fn sample_peak_db(peak: f64) -> f64 {
+    if peak > 0.0001 {
+        20.0 * peak.log10()
+    } else {
+        -60.0
+    }
 }
 
 /// Static labels for the vertical dB legend ticks.
@@ -168,6 +172,12 @@ mod tests {
         assert_eq!(data.len(), 1);
         assert_eq!(data[0].fill_ratio, db_to_position(-60.0));
         assert!(data[0].peak_hold_ratio.is_none());
+    }
+
+    #[test]
+    fn sample_peak_db_preserves_silence_floor() {
+        assert_eq!(sample_peak_db(0.0), -60.0);
+        assert!((sample_peak_db(0.5) + 6.020599913).abs() < 1e-9);
     }
 
     #[test]

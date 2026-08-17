@@ -1,4 +1,4 @@
-use crate::service::*;
+use sotf_services::*;
 
 /// Tidal API base URL.
 pub(super) const API_BASE: &str = "https://api.tidal.com/v1";

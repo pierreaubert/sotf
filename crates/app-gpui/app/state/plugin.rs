@@ -229,6 +229,9 @@ pub struct PluginGraphState {
     pub editing_original_enabled: Option<bool>,
     /// Whether the close control is showing the dirty-edit confirmation.
     pub confirm_close_dirty: bool,
+    /// Whether generic setup/output controls are expanded in the graph node
+    /// editor. This is separate from the rack configuration overlay.
+    pub graph_config_open: bool,
 }
 
 impl PluginGraphState {
@@ -269,6 +272,7 @@ impl PluginGraphState {
         self.editing_original_settings_json = None;
         self.editing_original_enabled = None;
         self.confirm_close_dirty = false;
+        self.graph_config_open = false;
     }
 }
 

@@ -8,6 +8,7 @@ GPUI-based desktop music player with GPU-accelerated rendering.
 - Real-time spectrum and loudness visualization
 - Plugin configuration UI
 - Library management
+- Streaming-service login flows (Tidal device code, Spotify OAuth) in the federation settings; the engine resolves service streams at decode time via the resolver installed in `main.rs`
 - Read `GPUI.md` at the project root before working on GPUI code
 
 ## Architecture
@@ -20,6 +21,7 @@ GPUI-based desktop music player with GPU-accelerated rendering.
 ## Features
 
 - `hal` - macOS HAL support
+- `tidal` / `spotify` - streaming-service playback + login flows (via `sotf-player/tidal|spotify`)
 
 ## Testing
 

@@ -20,8 +20,8 @@ onnx = ["sotf-plugins/onnx"]
 iamf = ["sotf-engine/iamf", "sotf-plugins/iamf"]
 streaming = ["sotf-engine/streaming", "sotf-player/streaming"]
 hls = ["streaming", "sotf-engine/hls", "sotf-player/hls"]
-tidal = ["dep:sotf-services", "sotf-services/tidal", "sotf-player/tidal"]
-spotify = ["dep:sotf-services", "sotf-services/spotify", "sotf-player/spotify"]
+tidal = ["dep:sotf-service-tidal", "sotf-player/tidal"]
+spotify = ["dep:sotf-service-spotify", "sotf-player/spotify"]
 # QA/debug-only HTTP API for scripted E2E testing.
 qa = []
 dev-api = ["sotf-player/dev-api"]
@@ -35,7 +35,8 @@ sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
 sotf-federation = { workspace = true }
 sotf-cast = { workspace = true }
-sotf-services = { workspace = true, optional = true }
+sotf-service-tidal = { workspace = true, optional = true }
+sotf-service-spotify = { workspace = true, optional = true }
 math-iir-fir = { workspace = true }
 autoeq = { workspace = true }
 
@@ -109,6 +110,8 @@ core-foundation-sys = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 sotf-test = { workspace = true }
+# Test-only helpers on sotf-player (e.g. `with_custom_database_for_testing`).
+sotf-player = { workspace = true, features = ["testing"] }
 
 [lib]
 name = "sotf_audio_player_tui"

@@ -197,7 +197,11 @@ impl AudioEngineManager {
                 );
 
                 // For service streams, we provide minimal info.
-                // The actual decoding happens in the decoder thread.
+                // The actual decoding (and real spec) happens in the decoder
+                // thread via the service-stream resolver hook. We deliberately
+                // do NOT probe here: resolving a PCM-backed service (e.g.
+                // Spotify) starts playback of the stream, so probing would
+                // double-start it when the decoder thread resolves again.
                 let spec = AudioSpec {
                     sample_rate: 44100,
                     channels: 2,

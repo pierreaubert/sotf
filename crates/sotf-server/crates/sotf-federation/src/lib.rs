@@ -17,6 +17,12 @@ pub mod local_provider;
 pub mod mpd_provider;
 pub mod provider;
 pub mod registry;
+#[cfg(any(feature = "tidal", feature = "spotify"))]
+mod service_common;
+#[cfg(feature = "spotify")]
+pub mod spotify_provider;
+#[cfg(feature = "tidal")]
+pub mod tidal_provider;
 
 pub use dlna_provider::{DlnaProvider, DlnaProviderConfig};
 pub use identity::{album_uuid, track_uuid};
@@ -27,3 +33,7 @@ pub use provider::{
     ProviderFuture, ProviderTrack, SourceId, SourceType,
 };
 pub use registry::{SourceConfig, SourceRegistry};
+#[cfg(feature = "spotify")]
+pub use spotify_provider::{SpotifyProvider, SpotifyProviderConfig};
+#[cfg(feature = "tidal")]
+pub use tidal_provider::{TidalProvider, TidalProviderConfig, TidalTokenPersister};

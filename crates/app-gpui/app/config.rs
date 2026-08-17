@@ -313,7 +313,7 @@ pub struct Config {
     /// Maximum number of CPU cores SotF is allowed to use (None = all available)
     #[serde(default)]
     pub max_cpu_cores: Option<u8>,
-    /// Minimum font size in pixels (None = default 8px)
+    /// Minimum font size in pixels (None = default 12px)
     #[serde(default)]
     pub min_font_size_px: Option<f32>,
     /// Maximum font size in pixels (None = default 32px)

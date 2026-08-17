@@ -104,12 +104,34 @@ fn test_default_for_type() {
 fn test_tidal_config_roundtrip() {
     let config = SourceConnectionConfig::Tidal {
         access_token: "tok_abc123".to_string(),
+        client_id: "client_xyz".to_string(),
+        refresh_token: "refresh_abc".to_string(),
         quality: "LOSSLESS".to_string(),
         country_code: "FR".to_string(),
     };
     let json = serde_json::to_string(&config).expect("serialize");
     let back: SourceConnectionConfig = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(config, back);
+}
+
+#[test]
+fn test_tidal_config_deserializes_without_new_fields() {
+    // Configs persisted before client_id/refresh_token existed must still load.
+    let json = r#"{"type":"Tidal","access_token":"tok","quality":"LOSSLESS","country_code":"FR"}"#;
+    let config: SourceConnectionConfig = serde_json::from_str(json).expect("deserialize");
+    match config {
+        SourceConnectionConfig::Tidal {
+            access_token,
+            client_id,
+            refresh_token,
+            ..
+        } => {
+            assert_eq!(access_token, "tok");
+            assert!(client_id.is_empty());
+            assert!(refresh_token.is_empty());
+        }
+        other => panic!("expected Tidal, got: {other:?}"),
+    }
 }
 
 #[test]
@@ -138,18 +160,45 @@ fn test_icy_radio_config_roundtrip() {
 #[test]
 fn test_tidal_field_get_set() {
     let mut config = SourceConnectionConfig::default_for_type("tidal");
-    assert_eq!(config.field_names().len(), 3);
+    assert_eq!(config.field_names().len(), 4);
     assert_eq!(config.field_names()[0], "Access Token");
+    assert_eq!(config.field_names()[1], "Client ID");
 
     config.set_field_value(0, "my_token");
     // Tokens are masked in display
     assert_eq!(config.field_value(0), "********");
 
-    config.set_field_value(1, "HI_RES_LOSSLESS");
-    assert_eq!(config.field_value(1), "HI_RES_LOSSLESS");
+    config.set_field_value(1, "my_client_id");
+    assert_eq!(config.field_value(1), "my_client_id");
 
-    config.set_field_value(2, "GB");
-    assert_eq!(config.field_value(2), "GB");
+    config.set_field_value(2, "HI_RES_LOSSLESS");
+    assert_eq!(config.field_value(2), "HI_RES_LOSSLESS");
+
+    config.set_field_value(3, "GB");
+    assert_eq!(config.field_value(3), "GB");
+}
+
+#[test]
+fn test_tidal_refresh_token_is_not_editable() {
+    let mut config = SourceConnectionConfig::default_for_type("tidal");
+    // The refresh token is managed by the login flow and must never appear in
+    // the editable field list.
+    assert!(
+        !config.field_names().contains(&"Refresh Token"),
+        "refresh token must not be user-editable"
+    );
+    for i in 0..config.field_names().len() + 2 {
+        config.set_field_value(i, "injected_refresh");
+    }
+    match config {
+        SourceConnectionConfig::Tidal { refresh_token, .. } => {
+            assert!(
+                refresh_token.is_empty(),
+                "refresh token was modified via set_field_value"
+            );
+        }
+        other => panic!("expected Tidal, got: {other:?}"),
+    }
 }
 
 #[test]
@@ -315,11 +364,14 @@ fn test_set_field_value_tidal() {
     config.set_field_value(0, "token123");
     assert_eq!(config.field_value(0), "********");
 
-    config.set_field_value(1, "HI_RES_LOSSLESS");
-    assert_eq!(config.field_value(1), "HI_RES_LOSSLESS");
+    config.set_field_value(1, "client456");
+    assert_eq!(config.field_value(1), "client456");
 
-    config.set_field_value(2, "US");
-    assert_eq!(config.field_value(2), "US");
+    config.set_field_value(2, "HI_RES_LOSSLESS");
+    assert_eq!(config.field_value(2), "HI_RES_LOSSLESS");
+
+    config.set_field_value(3, "US");
+    assert_eq!(config.field_value(3), "US");
 }
 
 #[test]

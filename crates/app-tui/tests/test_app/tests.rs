@@ -46,8 +46,9 @@ fn test_adjust_eq_parameters() {
     let orig_gain = filters[0].gain_db;
     let orig_type = filters[0].filter_type;
 
-    // Frequency
-    app.plugin_rack.param_selection = 1; // Index 0 is now 'Max Filters'
+    // Frequency (indices 0-4 are the EQ globals: Max Filters, TDF-II,
+    // Topology, Auto Gain, Oversampling; band params start at index 5)
+    app.plugin_rack.param_selection = 5;
     assert!(app.adjust_selected_param(1.0));
     let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let filters = match &plugin.settings {
@@ -57,7 +58,7 @@ fn test_adjust_eq_parameters() {
     assert_ne!(filters[0].frequency, orig_freq);
 
     // Q
-    app.plugin_rack.param_selection = 2;
+    app.plugin_rack.param_selection = 6;
     assert!(app.adjust_selected_param(1.0));
     let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let filters = match &plugin.settings {
@@ -67,7 +68,7 @@ fn test_adjust_eq_parameters() {
     assert_ne!(filters[0].q, orig_q);
 
     // Gain
-    app.plugin_rack.param_selection = 3;
+    app.plugin_rack.param_selection = 7;
     assert!(app.adjust_selected_param(1.0));
     let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let filters = match &plugin.settings {
@@ -77,7 +78,7 @@ fn test_adjust_eq_parameters() {
     assert_ne!(filters[0].gain_db, orig_gain);
 
     // Type
-    app.plugin_rack.param_selection = 4;
+    app.plugin_rack.param_selection = 8;
     assert!(app.adjust_selected_param(1.0));
     let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let filters = match &plugin.settings {
@@ -1039,10 +1040,9 @@ mod scanner_tests {
             .tempdir()
             .unwrap();
         let mut app = App::new(Theme::default(), false);
-        app.library = MusicLibrary::with_custom_database_for_testing(
-            temp_dir.path().join("library.sqlite"),
-        )
-        .unwrap();
+        app.library =
+            MusicLibrary::with_custom_database_for_testing(temp_dir.path().join("library.sqlite"))
+                .unwrap();
         app.library.directories.clear();
         app.library.directories.push(DirectoryInfo {
             path: temp_dir.path().to_path_buf(),

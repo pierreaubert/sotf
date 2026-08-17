@@ -9,6 +9,12 @@ keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
 
+[features]
+# Tidal favorites provider (sotf-service-tidal backend)
+tidal = ["dep:sotf-service-tidal", "dep:sotf-services", "dep:reqwest"]
+# Spotify saved-library provider (sotf-service-spotify backend)
+spotify = ["dep:sotf-service-spotify", "dep:sotf-services", "dep:reqwest"]
+
 [dependencies]
 log = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -16,9 +22,14 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt", "net", "time", "io-util"] }
 uuid = { workspace = true, features = ["v5"] }
+reqwest = { workspace = true, optional = true }
 
 sotf-engine = { workspace = true }
+sotf-services = { workspace = true, optional = true }
+sotf-service-tidal = { workspace = true, optional = true }
+sotf-service-spotify = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 proptest = { workspace = true }
+tempfile = { workspace = true }

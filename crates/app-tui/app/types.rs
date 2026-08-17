@@ -22,6 +22,7 @@ mod recording;
 mod recording_tui_state;
 mod room_eq_tui_state;
 mod servers_tui_state;
+mod service_login_state;
 mod spinorama_eq_tui_state;
 mod spinorama_step;
 
@@ -39,6 +40,7 @@ pub use recording::*;
 pub use recording_tui_state::*;
 pub use room_eq_tui_state::*;
 pub use servers_tui_state::*;
+pub use service_login_state::*;
 pub use spinorama_eq_tui_state::*;
 pub use spinorama_step::*;
 

@@ -1004,6 +1004,120 @@ const RUNTIME_MESSAGE_PATTERNS: &[RuntimeMessagePattern] = &[
         "Fehler bei der Raumoptimierung: {}",
         "Error de optimización de sala: {}"
     ),
+    message!(
+        "A Tidal login is already in progress.",
+        "Une connexion Tidal est déjà en cours.",
+        "Eine Tidal-Anmeldung läuft bereits.",
+        "Ya hay un inicio de sesión de Tidal en curso."
+    ),
+    message!(
+        "Failed to start Tidal login: {e}",
+        "Échec du démarrage de la connexion Tidal : {e}",
+        "Tidal-Anmeldung konnte nicht gestartet werden: {e}",
+        "No se pudo iniciar la sesión de Tidal: {e}"
+    ),
+    message!(
+        "Tidal login code expired; please try again.",
+        "Le code de connexion Tidal a expiré ; réessayez.",
+        "Der Tidal-Anmeldecode ist abgelaufen; bitte erneut versuchen.",
+        "El código de inicio de sesión de Tidal caducó; inténtelo de nuevo."
+    ),
+    message!(
+        "Tidal login failed: {error}",
+        "Échec de la connexion Tidal : {error}",
+        "Tidal-Anmeldung fehlgeschlagen: {error}",
+        "Error al iniciar sesión en Tidal: {error}"
+    ),
+    message!(
+        "Tidal login worker stopped unexpectedly.",
+        "Le processus de connexion Tidal s’est arrêté inopinément.",
+        "Der Tidal-Anmeldeprozess wurde unerwartet beendet.",
+        "El proceso de inicio de sesión de Tidal se detuvo inesperadamente."
+    ),
+    message!(
+        "Tidal login succeeded, but the source was removed before it could be saved.",
+        "Connexion Tidal réussie, mais la source a été supprimée avant l’enregistrement.",
+        "Tidal-Anmeldung erfolgreich, aber die Quelle wurde vor dem Speichern entfernt.",
+        "Inicio de sesión de Tidal correcto, pero la fuente se eliminó antes de guardarse."
+    ),
+    message!(
+        "Tidal login succeeded, but the source is no longer a Tidal source.",
+        "Connexion Tidal réussie, mais la source n’est plus une source Tidal.",
+        "Tidal-Anmeldung erfolgreich, aber die Quelle ist keine Tidal-Quelle mehr.",
+        "Inicio de sesión de Tidal correcto, pero la fuente ya no es una fuente de Tidal."
+    ),
+    message!(
+        "Tidal login successful.",
+        "Connexion Tidal réussie.",
+        "Tidal-Anmeldung erfolgreich.",
+        "Inicio de sesión de Tidal correcto."
+    ),
+    message!(
+        "Logged out of Tidal.",
+        "Déconnexion de Tidal effectuée.",
+        "Von Tidal abgemeldet.",
+        "Sesión de Tidal cerrada."
+    ),
+    message!(
+        "A Spotify login is already in progress.",
+        "Une connexion Spotify est déjà en cours.",
+        "Eine Spotify-Anmeldung läuft bereits.",
+        "Ya hay un inicio de sesión de Spotify en curso."
+    ),
+    message!(
+        "Could not determine the config directory for Spotify credentials.",
+        "Impossible de déterminer le dossier de configuration des identifiants Spotify.",
+        "Konfigurationsverzeichnis für Spotify-Zugangsdaten konnte nicht ermittelt werden.",
+        "No se pudo determinar el directorio de configuración de las credenciales de Spotify."
+    ),
+    message!(
+        "Failed to start Spotify login: {e}",
+        "Échec du démarrage de la connexion Spotify : {e}",
+        "Spotify-Anmeldung konnte nicht gestartet werden: {e}",
+        "No se pudo iniciar la sesión de Spotify: {e}"
+    ),
+    message!(
+        "Spotify login successful.",
+        "Connexion Spotify réussie.",
+        "Spotify-Anmeldung erfolgreich.",
+        "Inicio de sesión de Spotify correcto."
+    ),
+    message!(
+        "Spotify login failed: {error}",
+        "Échec de la connexion Spotify : {error}",
+        "Spotify-Anmeldung fehlgeschlagen: {error}",
+        "Error al iniciar sesión en Spotify: {error}"
+    ),
+    message!(
+        "Spotify login worker stopped unexpectedly.",
+        "Le processus de connexion Spotify s’est arrêté inopinément.",
+        "Der Spotify-Anmeldeprozess wurde unerwartet beendet.",
+        "El proceso de inicio de sesión de Spotify se detuvo inesperadamente."
+    ),
+    message!(
+        "Logged out of Spotify.",
+        "Déconnexion de Spotify effectuée.",
+        "Von Spotify abgemeldet.",
+        "Sesión de Spotify cerrada."
+    ),
+    message!(
+        "No Spotify credentials were cached.",
+        "Aucun identifiant Spotify n’était en cache.",
+        "Keine Spotify-Zugangsdaten im Cache.",
+        "No había credenciales de Spotify en caché."
+    ),
+    message!(
+        "Failed to delete Spotify credentials: {e}",
+        "Échec de la suppression des identifiants Spotify : {e}",
+        "Spotify-Zugangsdaten konnten nicht gelöscht werden: {e}",
+        "No se pudieron eliminar las credenciales de Spotify: {e}"
+    ),
+    message!(
+        "Code copied.",
+        "Code copié.",
+        "Code kopiert.",
+        "Código copiado."
+    ),
 ];
 
 fn translate_pattern(source: &str, target: &str, message: &str) -> Option<String> {

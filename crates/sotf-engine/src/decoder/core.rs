@@ -339,13 +339,78 @@ pub fn create_decoder_from_source_with_dsd_mode_and_metadata(
             url
         ))),
         AudioSource::ServiceStream { service, track_id } => {
-            // Service streams are resolved at a higher level (player/manager) into
-            // either AudioSource::Url (Tidal) or a pre-configured PcmDecoder (Spotify).
-            // If we reach here, the service wasn't configured.
-            Err(AudioDecoderError::ServiceError(format!(
-                "Service {} not configured — cannot stream {}",
-                service, track_id
-            )))
+            use crate::decoder::service_resolver::{ResolvedServiceStream, resolve_service_stream};
+
+            match resolve_service_stream(*service, track_id) {
+                // The resolver handed back a plain URL (e.g. Tidal): run it
+                // through the normal URL path (streaming/HLS handling included).
+                Some(Ok(ResolvedServiceStream::Url {
+                    url,
+                    format_hint,
+                    seekable,
+                })) => create_decoder_from_source_with_dsd_mode_and_metadata(
+                    &AudioSource::Url {
+                        url,
+                        format_hint,
+                        seekable,
+                    },
+                    dsd_output,
+                ),
+                // The service decodes internally and provides f32 PCM (e.g.
+                // Spotify via librespot): wrap the reader in a PcmDecoder.
+                Some(Ok(ResolvedServiceStream::Pcm {
+                    sample_rate,
+                    channels,
+                    bits_per_sample,
+                    total_frames,
+                    reader,
+                })) => {
+                    // The resolver is higher-layer code; validate the spec at
+                    // the trust boundary. `channels == 0` would silently decode
+                    // as instant EOF, and `sample_rate == 0` makes
+                    // `AudioSpec::duration()` panic on `Duration::from_secs_f64(inf)`.
+                    // Upper bounds: `PcmDecoder::new` pre-allocates
+                    // `1024 * channels` f32 per decoder (~268 MB at u16::MAX),
+                    // and anything beyond the engine's channel ceiling cannot
+                    // be routed through the processing graph anyway.
+                    // `bits_per_sample` must be honest: the wire format is
+                    // fixed f32, and the value lands in `AudioSpec` where
+                    // `bytes_per_frame()` and UI bitrate displays trust it.
+                    const MAX_SERVICE_SAMPLE_RATE: u32 = 384_000;
+                    if sample_rate == 0
+                        || sample_rate > MAX_SERVICE_SAMPLE_RATE
+                        || channels == 0
+                        || channels as usize > crate::EngineConfig::MAX_CHANNELS
+                        || bits_per_sample != 32
+                    {
+                        return Err(AudioDecoderError::ServiceError(format!(
+                            "resolver returned invalid PCM spec: {} Hz, {} ch, {} bits \
+                             (want 1..={} Hz, 1..={} ch, 32 bits)",
+                            sample_rate,
+                            channels,
+                            bits_per_sample,
+                            MAX_SERVICE_SAMPLE_RATE,
+                            crate::EngineConfig::MAX_CHANNELS,
+                        )));
+                    }
+                    Ok((
+                        Box::new(crate::decoder::PcmDecoder::new(
+                            sample_rate,
+                            channels,
+                            bits_per_sample,
+                            total_frames,
+                            reader,
+                        )),
+                        None,
+                    ))
+                }
+                Some(Err(err)) => Err(AudioDecoderError::ServiceError(err)),
+                // No resolver installed: the service wasn't configured.
+                None => Err(AudioDecoderError::ServiceError(format!(
+                    "Service {} not configured — cannot stream {}",
+                    service, track_id
+                ))),
+            }
         }
         AudioSource::Driver => Err(AudioDecoderError::ConfigError(
             "Driver source does not use a decoder".to_string(),
@@ -518,17 +583,159 @@ mod tests {
 
     #[test]
     fn test_create_decoder_from_source_service_stream() {
+        use crate::decoder::service_resolver::{
+            ResolvedServiceStream, clear_service_stream_resolver, set_service_stream_resolver,
+        };
+        use std::io::Cursor;
+        use std::sync::Arc;
+
+        // Single test function for everything that touches the process-global
+        // resolver, so tests cannot race on it. Any future resolver-touching
+        // test must be folded in here for the same reason.
+        struct ResolverGuard;
+        impl Drop for ResolverGuard {
+            fn drop(&mut self) {
+                clear_service_stream_resolver();
+            }
+        }
+        let _resolver_guard = ResolverGuard;
+
+        // 1. No resolver installed: service is reported as not configured.
+        clear_service_stream_resolver();
+        assert!(!crate::decoder::has_service_stream_resolver());
         let source = AudioSource::ServiceStream {
             service: crate::ServiceId::Spotify,
             track_id: "test-track".to_string(),
         };
-
-        let result = create_decoder_from_source(&source);
-
+        // `Box<dyn AudioDecoder>` is not Debug; discard it for assertions.
+        let result = create_decoder_from_source(&source).map(drop);
         assert!(
-            matches!(result, Err(AudioDecoderError::ServiceError(_))),
-            "unexpected result"
+            matches!(&result, Err(AudioDecoderError::ServiceError(message)) if message.contains("not configured")),
+            "unexpected result: {result:?}"
         );
+
+        // 2. Resolver returning PCM: a PcmDecoder is produced and decodes.
+        let pcm_samples: Vec<f32> = vec![0.5, -0.5, 0.25, -0.25];
+        let pcm_bytes: Vec<u8> = pcm_samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+        set_service_stream_resolver(Arc::new(move |service, track_id| {
+            assert_eq!(service, crate::ServiceId::Spotify);
+            assert_eq!(track_id, "test-track");
+            Ok(ResolvedServiceStream::Pcm {
+                sample_rate: 44100,
+                channels: 2,
+                bits_per_sample: 32,
+                total_frames: Some(2),
+                reader: Box::new(Cursor::new(pcm_bytes.clone())),
+            })
+        }));
+        assert!(crate::decoder::has_service_stream_resolver());
+        let (mut decoder, metadata_rx) =
+            create_decoder_from_source_with_dsd_mode_and_metadata(&source, DsdOutputMode::Disabled)
+                .expect("PCM service stream should decode");
+        assert!(metadata_rx.is_none());
+        assert_eq!(decoder.spec().sample_rate, 44100);
+        assert_eq!(decoder.spec().channels, 2);
+        let mut dest = DecodedAudio::new(decoder.spec().clone());
+        let frames = decoder.decode_into(&mut dest).unwrap();
+        assert_eq!(frames, 2);
+        assert_eq!(dest.samples, pcm_samples);
+
+        // 3. Resolver errors surface as ServiceError.
+        set_service_stream_resolver(Arc::new(|_, _| Err("auth expired".to_string())));
+        let result = create_decoder_from_source(&source).map(drop);
+        assert!(
+            matches!(&result, Err(AudioDecoderError::ServiceError(message)) if message.contains("auth expired")),
+            "unexpected result: {result:?}"
+        );
+
+        // 3a. A panicking resolver is caught and reported, not unwound into
+        // the decoder thread.
+        set_service_stream_resolver(Arc::new(|_, _| panic!("boom")));
+        let result = create_decoder_from_source(&source).map(drop);
+        assert!(
+            matches!(&result, Err(AudioDecoderError::ServiceError(message)) if message.contains("panicked")),
+            "unexpected result: {result:?}"
+        );
+
+        // 3b. A resolver that re-enters the hook (self-uninstall on auth
+        // failure) must not deadlock: the read guard is released before the
+        // resolver runs. Pre-fix this hung the calling thread forever.
+        set_service_stream_resolver(Arc::new(|_, _| {
+            clear_service_stream_resolver();
+            Err("auth expired".to_string())
+        }));
+        let result = create_decoder_from_source(&source).map(drop);
+        assert!(
+            matches!(&result, Err(AudioDecoderError::ServiceError(message)) if message.contains("auth expired")),
+            "unexpected result: {result:?}"
+        );
+
+        // 3c. An invalid PCM spec (0 Hz / 0 channels) is rejected at the trust
+        // boundary instead of producing a silently-empty or panicking decoder.
+        set_service_stream_resolver(Arc::new(|_, _| {
+            Ok(ResolvedServiceStream::Pcm {
+                sample_rate: 0,
+                channels: 0,
+                bits_per_sample: 32,
+                total_frames: Some(1),
+                reader: Box::new(Cursor::new(Vec::<u8>::new())),
+            })
+        }));
+        let result = create_decoder_from_source(&source).map(drop);
+        assert!(
+            matches!(&result, Err(AudioDecoderError::ServiceError(message)) if message.contains("invalid PCM spec")),
+            "unexpected result: {result:?}"
+        );
+
+        // 3d. Out-of-range specs are rejected too: an absurd sample rate, a
+        // channel count above the engine's ceiling (PcmDecoder pre-allocates
+        // 1024 * channels f32 — ~268 MB at u16::MAX), and a dishonest
+        // bits_per_sample (the wire format is fixed f32).
+        for (sample_rate, channels, bits_per_sample) in [
+            (384_001, 2, 32),
+            (44_100, 17, 32),
+            (44_100, 2, 16),
+        ] {
+            set_service_stream_resolver(Arc::new(move |_, _| {
+                Ok(ResolvedServiceStream::Pcm {
+                    sample_rate,
+                    channels,
+                    bits_per_sample,
+                    total_frames: Some(1),
+                    reader: Box::new(Cursor::new(Vec::<u8>::new())),
+                })
+            }));
+            let result = create_decoder_from_source(&source).map(drop);
+            assert!(
+                matches!(&result, Err(AudioDecoderError::ServiceError(message)) if message.contains("invalid PCM spec")),
+                "spec {sample_rate} Hz / {channels} ch / {bits_per_sample} bits must be rejected: {result:?}"
+            );
+        }
+
+        // 4. Resolver returning a URL goes through the URL path: without the
+        // `streaming` feature that is an UnsupportedFormat error; with it, a
+        // bogus loopback URL deterministically fails with a network error.
+        set_service_stream_resolver(Arc::new(|_, _| {
+            Ok(ResolvedServiceStream::Url {
+                url: "http://127.0.0.1:1/none.flac".to_string(),
+                format_hint: Some("flac".to_string()),
+                seekable: true,
+            })
+        }));
+        let result = create_decoder_from_source(&source).map(drop);
+        #[cfg(not(feature = "streaming"))]
+        assert!(
+            matches!(result, Err(AudioDecoderError::UnsupportedFormat(_))),
+            "unexpected result: {result:?}"
+        );
+        #[cfg(feature = "streaming")]
+        assert!(
+            matches!(result, Err(AudioDecoderError::NetworkError(_))),
+            "unexpected result: {result:?}"
+        );
+
+        clear_service_stream_resolver();
+        assert!(!crate::decoder::has_service_stream_resolver());
     }
 
     #[test]

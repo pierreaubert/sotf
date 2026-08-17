@@ -1,10 +1,8 @@
-use super::misc::parse_release_year;
-use super::misc::tidal_cover_url;
-use super::misc::truncate_for_log;
-use super::tidal_service::TidalService;
-use crate::service::*;
-
-use super::*;
+use crate::misc::parse_release_year;
+use crate::misc::tidal_cover_url;
+use crate::misc::truncate_for_log;
+use crate::tidal_service::TidalService;
+use sotf_services::*;
 
 #[test]
 fn test_tidal_service_not_authenticated() {
@@ -27,7 +25,10 @@ fn test_tidal_quality_mapping() {
 
 #[test]
 fn test_tidal_device_code_requires_client_id() {
-    let mut service = TidalService::new();
+    // Force an empty client id so the test is hermetic: `new()` would
+    // otherwise honor TIDAL_CLIENT_ID from the environment and this test
+    // would POST to the real auth server.
+    let mut service = TidalService::new().with_client_id("");
     let result = service.authenticate(ServiceCredentials::DeviceCode);
     assert!(result.is_err());
     match result {
@@ -107,29 +108,39 @@ fn test_tidal_service_debug_redacts_tokens() {
 
 #[test]
 fn test_malformed_tidal_session_json_is_rejected() {
-    let result: Result<super::types::TidalSession, _> =
+    let result: Result<crate::types::TidalSession, _> =
         serde_json::from_str(r#"{"userId": "not-a-number"}"#);
     assert!(result.is_err());
 
-    let result: Result<super::types::TidalSession, _> =
+    let result: Result<crate::types::TidalSession, _> =
         serde_json::from_str(r#"{"countryCode": "US"}"#);
     assert!(result.is_err());
 }
 
 #[test]
 fn test_malformed_tidal_device_auth_json_is_rejected() {
-    let result: Result<super::types::TidalDeviceAuth, _> =
+    let result: Result<crate::types::TidalDeviceAuth, _> =
         serde_json::from_str(r#"{"expiresIn": "not-a-number"}"#);
     assert!(result.is_err());
 }
 
 #[test]
 fn test_service_error_auth_does_not_echo_secret() {
+    // ServiceError Display prints messages verbatim by design — device-flow
+    // messages legitimately carry user codes — so the real contract enforced
+    // at construction sites is that secrets are passed through
+    // `redact_secret` before being embedded in an error. This test pins that
+    // contract: a redacted error must not echo the raw token, but must carry
+    // the redacted prefix for debuggability.
     let token = "bearer-secret-token-12345";
-    let err = ServiceError::AuthError(format!("token validation failed: {token}"));
+    let err = ServiceError::AuthError(format!("token validation failed: {}", redact_secret(token)));
     let text = err.to_string();
     assert!(
         !text.contains(token),
         "ServiceError must not echo the raw secret, got: {text}"
+    );
+    assert!(
+        text.contains("bear***"),
+        "ServiceError should carry the redacted prefix, got: {text}"
     );
 }

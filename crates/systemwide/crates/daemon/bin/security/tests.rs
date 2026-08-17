@@ -14,9 +14,9 @@ use super::types::PeerClass;
 #[cfg(not(all(target_os = "macos", feature = "hal")))]
 use super::types::encryption_impl;
 pub use encryption_impl::KeyManager;
+use serial_test::serial;
 use std::ffi::OsString;
 use std::path::PathBuf;
-use serial_test::serial;
 
 #[test]
 fn test_socket_path_is_user_specific() {

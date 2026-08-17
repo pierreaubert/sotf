@@ -1,5 +1,6 @@
 use super::FederationMode;
 use super::federation_edit_state::FederationEditState;
+use super::service_login_state::ServiceLoginState;
 use sotf_audio_player::federation_config::{ConnectionStatus, FederationSourceEntry};
 use std::collections::HashMap;
 
@@ -11,6 +12,9 @@ pub struct FederationTuiState {
     pub selected_idx: usize,
     pub mode: FederationMode,
     pub edit: Option<FederationEditState>,
+    /// In-progress Tidal/Spotify login, if any (see
+    /// `events::conf_federation::poll_service_login`).
+    pub login: Option<ServiceLoginState>,
 }
 
 impl Default for FederationTuiState {
@@ -21,6 +25,7 @@ impl Default for FederationTuiState {
             selected_idx: 0,
             mode: FederationMode::List,
             edit: None,
+            login: None,
         }
     }
 }

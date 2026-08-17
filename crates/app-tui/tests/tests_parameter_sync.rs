@@ -88,8 +88,9 @@ fn test_eq_filter_limit() {
     let descriptors = settings.get_descriptors();
     assert_eq!(descriptors[0].name, "Max Filters");
 
-    // Initial descriptors count: 3 (Max Filters + TDF2 + Topology) + 5 * 4 (filters) = 23
-    assert_eq!(descriptors.len(), 23);
+    // Initial descriptors count: 5 globals (Max Filters, TDF-II, Topology,
+    // Auto Gain, Oversampling) + 5 filters * 5 (Frequency, Q, Gain, Type, Order) = 30
+    assert_eq!(descriptors.len(), 30);
 
     // Change Max Filters to 3
     settings.adjust_param(0, -2.0);
@@ -104,8 +105,8 @@ fn test_eq_filter_limit() {
     }
 
     let descriptors = settings.get_descriptors();
-    // New count: 3 (Max Filters + TDF2 + Topology) + 3 * 4 (filters) = 15
-    assert_eq!(descriptors.len(), 15);
+    // New count: 5 globals + 3 * 5 (filters) = 20
+    assert_eq!(descriptors.len(), 20);
 
     // Change Max Filters to 6 (add one)
     settings.adjust_param(0, 3.0);
@@ -120,12 +121,14 @@ fn test_eq_filter_limit() {
     }
 
     let descriptors = settings.get_descriptors();
-    // New count: 3 (Max Filters + TDF2 + Topology) + 6 * 4 (filters) = 27
-    assert_eq!(descriptors.len(), 27);
+    // New count: 5 globals + 6 * 5 (filters) = 35
+    assert_eq!(descriptors.len(), 35);
 
-    // Verify we can edit the new filter (index 22-25)
-    let res = settings.adjust_param(22, 10.0); // Frequency of 6th filter
+    // Verify we can edit the new filter: index 30 = 5 globals + 5 filters * 5
+    // = Frequency of the 6th filter
+    let res = settings.adjust_param(30, 10.0);
     assert!(res);
+    assert_eq!(settings.get_value_as_string(30), "1100");
 }
 
 #[test]
@@ -133,9 +136,9 @@ fn test_delay_parameter_sync_deep() {
     let mut settings = PluginSettings::default_for(&PluginType::Delay).unwrap();
     let descriptors = settings.get_descriptors();
 
-    // Delay has 7 parameters: delay_ms, feedback, mix, lfo_rate_hz, lfo_depth_ms,
-    // allpass_coeff, allpass_feedback
-    assert_eq!(descriptors.len(), 7);
+    // Delay has 8 parameters: delay_ms, feedback, mix, lfo_rate_hz, lfo_depth_ms,
+    // allpass_coeff, allpass_feedback, pitch_preserving
+    assert_eq!(descriptors.len(), 8);
 
     // Verify all params are editable
     for i in 0..descriptors.len() {
@@ -151,6 +154,7 @@ fn test_delay_parameter_sync_deep() {
     assert_eq!(descriptors[4].name, "LFO Depth");
     assert_eq!(descriptors[5].name, "Allpass Coeff");
     assert_eq!(descriptors[6].name, "Allpass Feedback");
+    assert_eq!(descriptors[7].name, "Pitch Preserving");
 }
 
 #[test]
@@ -166,7 +170,14 @@ fn test_crossfeed_mode_cycling() {
         "Default mode should be Mb (index 3)"
     );
 
-    // Cycle through modes: Mb(3) -> Off(0) -> Bauer(1) -> Meier(2) -> Mb(3)
+    // Cycle through modes: Mb(3) -> HRTF(4) -> Off(0) -> Bauer(1) -> Meier(2) -> Mb(3)
+    settings.adjust_param(0, 1.0);
+    assert_eq!(
+        settings.param_value(0),
+        Some(4.0),
+        "Mode should cycle to HRTF (index 4)"
+    );
+
     settings.adjust_param(0, 1.0);
     assert_eq!(
         settings.param_value(0),

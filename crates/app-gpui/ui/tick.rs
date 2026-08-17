@@ -42,6 +42,12 @@ pub(crate) struct TickSnapshot {
     signal_path_stream_errors: u64,
     signal_path_frames_dropped: u64,
     signal_path_clipping: Option<bool>,
+    /// 0 = no login flow, 1 = waiting for the device-code prompt, 2 = prompt shown.
+    #[cfg(feature = "tidal")]
+    tidal_login_stage: u8,
+    /// 0 = no login flow, 1 = starting, 2 = authorize URL known.
+    #[cfg(feature = "spotify")]
+    spotify_login_stage: u8,
 }
 
 /// Screens where rack analyzer data is visible. Library/Queue only show rack
@@ -187,6 +193,18 @@ impl PlayerView {
                 .signal_path
                 .as_ref()
                 .and_then(|p| p.health.clipping_detected),
+            #[cfg(feature = "tidal")]
+            tidal_login_stage: match &state.app.federation.tidal_login {
+                None => 0,
+                Some(login) if login.prompt.is_some() => 2,
+                Some(_) => 1,
+            },
+            #[cfg(feature = "spotify")]
+            spotify_login_stage: match &state.app.federation.spotify_login {
+                None => 0,
+                Some(login) if login.authorize_url.is_some() => 2,
+                Some(_) => 1,
+            },
         }
     }
 
@@ -218,11 +236,7 @@ impl PlayerView {
         let include_spectrum = should_update_spectrum
             && (state.app.layout.spectrum_visible || current_screen == Screen::Spectrum);
         let structural_update_pending = matches!(
-            state
-                .app
-                .plugin_state
-                .update_state
-                .pending_plugin_update,
+            state.app.plugin_state.update_state.pending_plugin_update,
             Some(crate::app::types::PluginUpdateType::Structural)
         );
         // Engine indices describe the pre-update graph until the structural
@@ -240,6 +254,14 @@ impl PlayerView {
         let was_playing = state.app.playback.is_playing;
         let (input_monitor_idx, output_monitor_idx, spectrum_idx, compressor_idx, rack_plugin_idx) = {
             let graph = &state.app.plugin_state.graph;
+            // The graph editor's modal can be editing a node that is not the
+            // rack's selected plugin. Request live data for that node while
+            // the graph screen is active so generic output/GR meters do not
+            // silently fall back to zero.
+            let graph_editor_plugin_idx = (current_screen == Screen::PluginGraph)
+                .then_some(state.app.plugin_state.graph_state.editing_graph_node_uuid)
+                .flatten()
+                .and_then(|node_id| graph.linear_index_of_node(node_id));
             let compressor_idx = if include_compressor {
                 match *compressor_idx_cache {
                     Some(cached) => cached,
@@ -263,7 +285,8 @@ impl PlayerView {
                 compressor_idx,
                 if include_rack_data {
                     graph.get_engine_index_by_linear_position(
-                        state.app.plugin_state.selected_plugin_index,
+                        graph_editor_plugin_idx
+                            .unwrap_or(state.app.plugin_state.selected_plugin_index),
                     )
                 } else {
                     None
@@ -271,16 +294,18 @@ impl PlayerView {
             )
         };
 
-        if let Err(error) = state.player.request_snapshot(
-            crate::app::player_handle::PlayerSnapshotRequest {
-                input_monitor_idx,
-                output_monitor_idx,
-                spectrum_idx,
-                compressor_idx,
-                rack_plugin_idx,
-                include_external_diagnostics,
-            },
-        ) {
+        if let Err(error) =
+            state
+                .player
+                .request_snapshot(crate::app::player_handle::PlayerSnapshotRequest {
+                    input_monitor_idx,
+                    output_monitor_idx,
+                    spectrum_idx,
+                    compressor_idx,
+                    rack_plugin_idx,
+                    include_external_diagnostics,
+                })
+        {
             log::debug!("Player snapshot request failed: {error}");
         }
 
@@ -314,10 +339,15 @@ impl PlayerView {
         let playback_state = snapshot_read.playback_state;
 
         if let Some(engine_state) = snapshot.external_engine_state.as_ref() {
-            state.app.plugin_state.sync_external_plugin_engine_diagnostics(
-                engine_state.plugin_build_diagnostics.clone(),
-                engine_state.isolated_external_plugin_worker_statuses.clone(),
-            );
+            state
+                .app
+                .plugin_state
+                .sync_external_plugin_engine_diagnostics(
+                    engine_state.plugin_build_diagnostics.clone(),
+                    engine_state
+                        .isolated_external_plugin_worker_statuses
+                        .clone(),
+                );
         } else if poll_external_diagnostics && !include_external_diagnostics {
             state
                 .app
@@ -538,6 +568,8 @@ impl PlayerView {
         state.app.scan.ctrl.update_all();
         state.app.update_library_scan();
         state.app.update_federation_scan();
+        #[cfg(any(feature = "tidal", feature = "spotify"))]
+        state.app.update_service_logins();
         state.app.update_cast_discovery();
         state.app.update_remote_server_discovery();
         state.app.update_remote_server_probe();

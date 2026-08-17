@@ -186,6 +186,7 @@ pub struct FederationReceivers {
             sotf_audio_player::federation_config::ConnectionStatus,
         )>,
     >,
+    pub login: Option<std::sync::mpsc::Receiver<super::super::types::ServiceLoginEvent>>,
 }
 
 pub struct FederationRuntimeState {
@@ -422,6 +423,7 @@ impl App {
                 receivers: FederationReceivers {
                     scan: None,
                     test: None,
+                    login: None,
                 },
             },
         };

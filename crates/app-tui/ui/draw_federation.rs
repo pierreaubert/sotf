@@ -5,26 +5,29 @@ use sotf_audio_player::federation_config::ConnectionStatus;
 pub(crate) fn draw_federation_screen(f: &mut Frame, area: Rect, app: &App) {
     let state = &app.federation.state;
 
-    // Check if we should show the diagnostic panel below the list
+    // Check if we should show a panel below the list: an in-progress
+    // service login takes precedence over the connection diagnostic.
+    let has_login = state.login.is_some();
     let has_diagnostic = state
         .sources
         .get(state.selected_idx)
         .and_then(|s| state.statuses.get(&s.source_id))
         .is_some_and(|s| s.is_diagnostic());
+    let has_panel = has_login || has_diagnostic;
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints(if has_diagnostic {
+        .constraints(if has_panel {
             vec![
                 Constraint::Length(1), // Help
                 Constraint::Min(5),    // Source list or edit form
-                Constraint::Length(8), // Diagnostic panel
+                Constraint::Length(8), // Login / diagnostic panel
             ]
         } else {
             vec![
                 Constraint::Length(1), // Help
                 Constraint::Min(5),    // Source list or edit form
-                Constraint::Length(0), // No diagnostic panel
+                Constraint::Length(0), // No panel
             ]
         })
         .split(area);
@@ -33,7 +36,11 @@ pub(crate) fn draw_federation_screen(f: &mut Frame, area: Rect, app: &App) {
         app,
         match state.mode {
             FederationMode::List => {
-                " a=Add  e/Enter=Edit  d=Delete  t=Test+Scan  s=Scan  Space=Toggle  Esc=Back"
+                if cfg!(any(feature = "tidal", feature = "spotify")) {
+                    " a=Add  e/Enter=Edit  d=Delete  t=Test+Scan  s=Scan  l=Login  L=Logout  Space=Toggle  Esc=Back"
+                } else {
+                    " a=Add  e/Enter=Edit  d=Delete  t=Test+Scan  s=Scan  Space=Toggle  Esc=Back"
+                }
             }
             FederationMode::EditSource =>
                 " Up/Down=Navigate  Enter=Edit field  s/Tab=Save  Esc=Cancel",
@@ -46,7 +53,9 @@ pub(crate) fn draw_federation_screen(f: &mut Frame, area: Rect, app: &App) {
     match state.mode {
         FederationMode::List => {
             draw_source_list(f, chunks[1], app);
-            if has_diagnostic {
+            if has_login {
+                draw_login_panel(f, chunks[2], app);
+            } else if has_diagnostic {
                 draw_diagnostic_panel(f, chunks[2], app);
             }
         }
@@ -308,5 +317,76 @@ fn draw_diagnostic_panel(f: &mut Frame, area: Rect, app: &App) {
         .border_type(BorderType::Rounded)
         .title(crate::tui_text!(app, " Diagnostic "));
     let para = Paragraph::new(lines).block(block);
+    f.render_widget(para, area);
+}
+
+/// Panel shown while a Tidal/Spotify login is in progress: the device-code
+/// prompt (Tidal) or the OAuth URL fallback (Spotify), plus a waiting hint.
+/// Never renders tokens — only the public verification URL and user code.
+fn draw_login_panel(f: &mut Frame, area: Rect, app: &App) {
+    use crate::app::ServiceLoginStatus;
+
+    let Some(login) = &app.federation.state.login else {
+        return;
+    };
+
+    let mut lines: Vec<Line> = Vec::new();
+    match &login.status {
+        ServiceLoginStatus::Starting => {
+            lines.push(Line::from(Span::styled(
+                crate::tui_text!(app, "  Starting login..."),
+                Style::default().fg(app.theme.fg_secondary),
+            )));
+        }
+        ServiceLoginStatus::TidalDevicePrompt {
+            verification_url,
+            user_code,
+            expires_in_secs,
+            started,
+        } => {
+            let remaining = expires_in_secs.saturating_sub(started.elapsed().as_secs());
+            lines.push(Line::from(Span::styled(
+                crate::tui_text!(app, format!("  Visit: {verification_url}")),
+                Style::default()
+                    .fg(app.theme.accent_primary)
+                    .add_modifier(Modifier::BOLD),
+            )));
+            lines.push(Line::from(Span::styled(
+                crate::tui_text!(
+                    app,
+                    format!("  Code: {user_code} (expires in {remaining}s)")
+                ),
+                Style::default()
+                    .fg(app.theme.accent_warning)
+                    .add_modifier(Modifier::BOLD),
+            )));
+            lines.push(Line::from(Span::styled(
+                crate::tui_text!(app, "  Waiting for authorization... (l = cancel)"),
+                Style::default().fg(app.theme.fg_secondary),
+            )));
+        }
+        ServiceLoginStatus::SpotifyOAuth { url, .. } => {
+            lines.push(Line::from(Span::styled(
+                crate::tui_text!(app, "  Complete the sign-in in your browser."),
+                Style::default().fg(app.theme.fg_primary),
+            )));
+            lines.push(Line::from(Span::styled(
+                crate::tui_text!(app, format!("  URL: {url}")),
+                Style::default().fg(app.theme.fg_secondary),
+            )));
+            lines.push(Line::from(Span::styled(
+                crate::tui_text!(app, "  Waiting for the browser callback... (l = cancel)"),
+                Style::default().fg(app.theme.fg_secondary),
+            )));
+        }
+    }
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(crate::tui_text!(app, " Service Login "));
+    let para = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
     f.render_widget(para, area);
 }

@@ -108,6 +108,10 @@ pub(super) fn render_accent_swatch(
     fallback_accent: Rgba,
 ) -> impl IntoElement {
     let preview_color = preference.preview_color(fallback_accent);
+    let keyboard_state_entity = state_entity.clone();
+    let focus_background = theme.surface_hover;
+    let focus_border = theme.border_focused;
+    let preference_name = preference.name();
     div()
         .id(SharedString::from(format!(
             "theme-accent-{}",
@@ -127,6 +131,9 @@ pub(super) fn render_accent_swatch(
             theme.surface
         })
         .cursor_pointer()
+        .focusable()
+        .focus_visible(move |style| style.border_color(focus_border).bg(focus_background))
+        .aria_label(format!("Accent {preference_name}"))
         .child(
             div()
                 .w(rems(1.0))
@@ -150,5 +157,13 @@ pub(super) fn render_accent_swatch(
             state_entity.update(cx, |state, _cx| {
                 state.app.set_theme_accent_preference(preference);
             });
+        })
+        .on_key_down(move |event, _, cx| {
+            if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                keyboard_state_entity.update(cx, |state, _cx| {
+                    state.app.set_theme_accent_preference(preference);
+                });
+                cx.stop_propagation();
+            }
         })
 }

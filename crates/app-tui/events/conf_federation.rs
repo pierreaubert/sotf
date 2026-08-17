@@ -1,10 +1,18 @@
 use super::PlayerCommand;
+#[cfg(any(feature = "tidal", feature = "spotify"))]
+use crate::app::ServiceLoginState;
 use crate::app::{
     ADD_SOURCE_TYPE_IDX, App, FederationEditState, FederationMode, InputMode, SOURCE_TYPE_NAMES,
+    ServiceLoginEvent, ServiceLoginStatus,
 };
 use crossterm::event::{KeyCode, KeyEvent};
 use sotf_audio_player::federation_config::{
     ConnectionStatus, FederationSourceEntry, SourceConnectionConfig,
+};
+#[cfg(any(feature = "tidal", feature = "spotify"))]
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 pub(super) fn handle_federation_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
@@ -69,6 +77,14 @@ fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         }
         KeyCode::Char('s') => {
             scan_federation_source(app);
+        }
+        #[cfg(any(feature = "tidal", feature = "spotify"))]
+        KeyCode::Char('l') => {
+            toggle_service_login(app);
+        }
+        #[cfg(any(feature = "tidal", feature = "spotify"))]
+        KeyCode::Char('L') => {
+            service_logout(app);
         }
         _ => {}
     }
@@ -392,4 +408,366 @@ pub fn poll_federation_test(app: &mut App) -> bool {
             false
         }
     }
+}
+
+/// 'l' in the source list: start a login for the selected Tidal/Spotify
+/// source, or cancel the in-progress one.
+#[cfg(any(feature = "tidal", feature = "spotify"))]
+fn toggle_service_login(app: &mut App) {
+    if let Some(login) = &app.federation.state.login {
+        login.cancel.store(true, Ordering::Relaxed);
+        app.federation.state.login = None;
+        app.federation.receivers.login = None;
+        app.ui.status_message = Some("Login cancelled.".to_string());
+        return;
+    }
+
+    let Some(source) = app
+        .federation
+        .state
+        .sources
+        .get(app.federation.state.selected_idx)
+        .cloned()
+    else {
+        return;
+    };
+    if source.source_id == "local" {
+        return;
+    }
+
+    match &source.connection {
+        #[cfg(feature = "tidal")]
+        SourceConnectionConfig::Tidal { client_id, .. } => {
+            start_tidal_login(app, &source.source_id, client_id);
+        }
+        #[cfg(feature = "spotify")]
+        SourceConnectionConfig::Spotify { .. } => {
+            start_spotify_login(app, &source.source_id);
+        }
+        _ => {
+            app.ui.status_message =
+                Some("Login is only available for Tidal and Spotify sources.".to_string());
+        }
+    }
+}
+
+/// 'L' in the source list: clear the selected source's login state — Tidal
+/// tokens on the source config, or the Spotify librespot credential cache.
+#[cfg(any(feature = "tidal", feature = "spotify"))]
+fn service_logout(app: &mut App) {
+    let idx = app.federation.state.selected_idx;
+    let Some(source) = app.federation.state.sources.get_mut(idx) else {
+        return;
+    };
+    if source.source_id == "local" {
+        return;
+    }
+
+    match &mut source.connection {
+        #[cfg(feature = "tidal")]
+        SourceConnectionConfig::Tidal { .. } => {
+            sotf_audio_player::clear_tidal_tokens(source);
+            if let Some(db) = app.library.get_database()
+                && let Err(e) = db.save_federation_source(source)
+            {
+                log::error!(
+                    "Failed to persist Tidal logout for {}: {e}",
+                    source.source_id
+                );
+                app.ui.status_message = Some(format!("Failed to save source: {e}"));
+                return;
+            }
+            app.ui.status_message = Some(format!(
+                "Logged out of Tidal — tokens cleared for '{}'.",
+                source.display_name
+            ));
+            sotf_audio_player::reset_service_sessions();
+        }
+        #[cfg(feature = "spotify")]
+        SourceConnectionConfig::Spotify { .. } => {
+            let Some(cache_dir) = sotf_audio_player::spotify_cache_dir() else {
+                app.ui.status_message =
+                    Some("Could not determine the Spotify credential cache directory.".to_string());
+                return;
+            };
+            app.ui.status_message = Some(
+                match sotf_audio_player::clear_spotify_cached_credentials(&cache_dir) {
+                    Ok(true) => {
+                        sotf_audio_player::reset_service_sessions();
+                        "Logged out of Spotify (cached credentials removed).".to_string()
+                    }
+                    Ok(false) => "Spotify logout: no cached credentials to remove.".to_string(),
+                    Err(e) => format!("Spotify logout failed: {e}"),
+                },
+            );
+        }
+        _ => {
+            app.ui.status_message =
+                Some("Logout is only available for Tidal and Spotify sources.".to_string());
+        }
+    }
+}
+
+/// Spawn the Tidal device-code flow: request the prompt, report it to the UI
+/// for display, then poll every 5 s until completion, expiry, or cancel.
+/// (Tidal's device-auth endpoint answers `slow_down` to aggressive polling.)
+#[cfg(feature = "tidal")]
+fn start_tidal_login(app: &mut App, source_id: &str, client_id: &str) {
+    use sotf_service_tidal::DeviceAuthPoll;
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel_thread = Arc::clone(&cancel);
+    let client_id = client_id.trim().to_string();
+
+    app.federation.receivers.login = Some(rx);
+    app.federation.state.login = Some(ServiceLoginState {
+        source_id: source_id.to_string(),
+        status: ServiceLoginStatus::Starting,
+        cancel,
+    });
+
+    if let Err(e) = std::thread::Builder::new()
+        .name("tidal-login".into())
+        .spawn(move || {
+            let mut service = sotf_service_tidal::TidalService::new();
+            if !client_id.is_empty() {
+                service = service.with_client_id(&client_id);
+            }
+            let prompt = match service.begin_device_auth() {
+                Ok(prompt) => prompt,
+                Err(e) => {
+                    let _ = tx.send(ServiceLoginEvent::Failed(e.to_string()));
+                    return;
+                }
+            };
+            if tx
+                .send(ServiceLoginEvent::TidalPrompt {
+                    verification_url: prompt.verification_url,
+                    user_code: prompt.user_code,
+                    expires_in_secs: prompt.expires_in_secs,
+                })
+                .is_err()
+            {
+                return; // UI went away
+            }
+            loop {
+                if cancel_thread.load(Ordering::Relaxed) {
+                    let _ = tx.send(ServiceLoginEvent::Cancelled);
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                match service.poll_device_auth() {
+                    Ok(DeviceAuthPoll::Pending) => {}
+                    Ok(DeviceAuthPoll::Complete) => {
+                        let _ = tx.send(ServiceLoginEvent::Complete {
+                            tidal_tokens: Some((
+                                service.access_token().unwrap_or_default().to_string(),
+                                service.refresh_token().unwrap_or_default().to_string(),
+                            )),
+                        });
+                        return;
+                    }
+                    Ok(DeviceAuthPoll::Expired) => {
+                        let _ = tx.send(ServiceLoginEvent::Failed(
+                            "device code expired — start the login again".to_string(),
+                        ));
+                        return;
+                    }
+                    Err(e) => {
+                        let _ = tx.send(ServiceLoginEvent::Failed(e.to_string()));
+                        return;
+                    }
+                }
+            }
+        })
+    {
+        app.federation.receivers.login = None;
+        app.federation.state.login = None;
+        app.ui.status_message = Some(format!("Failed to start Tidal login: {e}"));
+    }
+}
+
+/// Spawn the Spotify OAuth flow: open the authorize URL in the system
+/// browser (also reported to the UI as a fallback), then block on the
+/// loopback callback. Credentials are written to the librespot cache by the
+/// service itself, so completion carries no payload.
+#[cfg(feature = "spotify")]
+fn start_spotify_login(app: &mut App, source_id: &str) {
+    let Some(cache_dir) = sotf_audio_player::spotify_cache_dir() else {
+        app.ui.status_message =
+            Some("Could not determine the Spotify credential cache directory.".to_string());
+        return;
+    };
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let tx_url = tx.clone();
+
+    app.federation.receivers.login = Some(rx);
+    app.federation.state.login = Some(ServiceLoginState {
+        source_id: source_id.to_string(),
+        status: ServiceLoginStatus::Starting,
+        // Spotify's blocking loopback listener cannot be interrupted (it has
+        // its own 180 s timeout); the flag only detaches the UI.
+        cancel: Arc::new(AtomicBool::new(false)),
+    });
+
+    if let Err(e) = std::thread::Builder::new()
+        .name("spotify-login".into())
+        .spawn(move || {
+            // `login_with_oauth` needs an ambient tokio runtime
+            // (`librespot_core::Session::new` panics without one).
+            let result = tokio::runtime::Runtime::new()
+                .map_err(|e| e.to_string())
+                .and_then(|rt| {
+                    rt.block_on(async {
+                        let mut service = sotf_service_spotify::SpotifyService::new();
+                        service.login_with_oauth(&cache_dir, move |url| {
+                            if let Err(e) = sotf_audio_player::open_url_in_browser(url) {
+                                log::warn!("[Spotify] could not open the browser: {e}");
+                            }
+                            let _ = tx_url.send(ServiceLoginEvent::SpotifyUrl {
+                                url: url.to_string(),
+                            });
+                        })
+                    })
+                    .map_err(|e| e.to_string())
+                });
+            let event = match result {
+                Ok(()) => ServiceLoginEvent::Complete { tidal_tokens: None },
+                Err(e) => ServiceLoginEvent::Failed(e),
+            };
+            let _ = tx.send(event);
+        })
+    {
+        app.federation.receivers.login = None;
+        app.federation.state.login = None;
+        app.ui.status_message = Some(format!("Failed to start Spotify login: {e}"));
+    }
+}
+
+/// Poll for streaming-service login progress. Call from the main tick loop.
+/// Returns true if the UI needs a redraw.
+pub fn poll_service_login(app: &mut App) -> bool {
+    let mut events = Vec::new();
+    let mut disconnected = false;
+    match &app.federation.receivers.login {
+        Some(rx) => loop {
+            match rx.try_recv() {
+                Ok(event) => events.push(event),
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    disconnected = true;
+                    break;
+                }
+            }
+        },
+        None => return false,
+    }
+
+    if events.is_empty() && !disconnected {
+        return false;
+    }
+
+    for event in events {
+        handle_service_login_event(app, event);
+    }
+    if disconnected {
+        app.federation.receivers.login = None;
+        // A sender that vanishes without a final event means the thread died
+        // (e.g. panicked while building its HTTP client).
+        if app.federation.state.login.take().is_some() {
+            app.ui.status_message =
+                Some("Login failed unexpectedly (background thread terminated).".to_string());
+        }
+    }
+    true
+}
+
+fn handle_service_login_event(app: &mut App, event: ServiceLoginEvent) {
+    match event {
+        ServiceLoginEvent::TidalPrompt {
+            verification_url,
+            user_code,
+            expires_in_secs,
+        } => {
+            if let Some(login) = &mut app.federation.state.login {
+                login.status = ServiceLoginStatus::TidalDevicePrompt {
+                    verification_url,
+                    user_code,
+                    expires_in_secs,
+                    started: std::time::Instant::now(),
+                };
+            }
+        }
+        ServiceLoginEvent::SpotifyUrl { url } => {
+            if let Some(login) = &mut app.federation.state.login {
+                login.status = ServiceLoginStatus::SpotifyOAuth {
+                    url,
+                    started: std::time::Instant::now(),
+                };
+            }
+        }
+        ServiceLoginEvent::Complete { tidal_tokens } => {
+            let Some(login) = app.federation.state.login.take() else {
+                return;
+            };
+            app.federation.receivers.login = None;
+            if let Some((access_token, refresh_token)) = tidal_tokens {
+                finish_tidal_login(app, &login.source_id, &access_token, &refresh_token);
+            } else {
+                sotf_audio_player::reset_service_sessions();
+                app.ui.status_message =
+                    Some("Spotify login complete — credentials cached.".to_string());
+            }
+        }
+        ServiceLoginEvent::Failed(err) => {
+            app.federation.state.login = None;
+            app.federation.receivers.login = None;
+            app.ui.status_message = Some(format!("Login failed: {err}"));
+        }
+        ServiceLoginEvent::Cancelled => {
+            // The UI already cleared the state and showed the message when
+            // the user pressed 'l'; just drop the receiver.
+            app.federation.state.login = None;
+            app.federation.receivers.login = None;
+        }
+    }
+}
+
+/// Write freshly-issued Tidal tokens into the source and persist them via
+/// the usual federation-source save path.
+fn finish_tidal_login(app: &mut App, source_id: &str, access_token: &str, refresh_token: &str) {
+    let Some(source) = app
+        .federation
+        .state
+        .sources
+        .iter_mut()
+        .find(|s| s.source_id == source_id)
+    else {
+        app.ui.status_message = Some(format!("Login failed: source {source_id} no longer exists"));
+        return;
+    };
+    if !sotf_audio_player::apply_tidal_device_tokens(source, access_token, refresh_token) {
+        return;
+    }
+    // Keep an open edit form for the same source in sync, otherwise saving
+    // it later would clobber the freshly-persisted tokens with stale ones.
+    if let Some(edit) = &mut app.federation.state.edit
+        && edit.source.source_id == source_id
+    {
+        sotf_audio_player::apply_tidal_device_tokens(&mut edit.source, access_token, refresh_token);
+    }
+    let display_name = source.display_name.clone();
+    if let Some(db) = app.library.get_database()
+        && let Err(e) = db.save_federation_source(source)
+    {
+        log::error!("Failed to persist Tidal tokens for {source_id}: {e}");
+        app.ui.status_message = Some(format!("Failed to save source: {e}"));
+        return;
+    }
+    sotf_audio_player::reset_service_sessions();
+    app.ui.status_message = Some(format!(
+        "Tidal login complete — tokens saved to '{display_name}'."
+    ));
 }

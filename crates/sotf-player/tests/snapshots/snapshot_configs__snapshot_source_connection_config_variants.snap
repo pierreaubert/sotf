@@ -35,6 +35,8 @@ expression: configs
   {
     "type": "Tidal",
     "access_token": "tidal-token",
+    "client_id": "tidal-client",
+    "refresh_token": "tidal-refresh",
     "quality": "HI_RES",
     "country_code": "FR"
   },

@@ -1,4 +1,4 @@
-# 0.7.10 (unreleased)
+# 0.7.11 (unreleased)
 
 ## Signal path visibility
 

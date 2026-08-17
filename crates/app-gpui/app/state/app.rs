@@ -104,6 +104,7 @@ pub struct DragState {
 pub struct PluginUiState {
     pub upmixer_config_open: bool,
     pub upmixer_tab: usize,
+    pub upmixer_expanded_sections: Vec<String>,
     pub spatial_spider: crate::components::plugins::spatial_spider::SpatialSpiderUiState,
     pub spectrum_tilt_select_open: bool,
     pub spectrum_reference_select_open: bool,
@@ -257,6 +258,15 @@ impl App {
                 upmixer_config_open: false,
                 // Upmixer configuration tabs use the 10..=13 namespace.
                 upmixer_tab: 10,
+                upmixer_expanded_sections: vec![
+                    "upmixer-lfe".to_string(),
+                    "upmixer-output".to_string(),
+                    "upmixer-dialogue".to_string(),
+                    "upmixer-ambient".to_string(),
+                    "upmixer-height".to_string(),
+                    "upmixer-hr-direct".to_string(),
+                    "upmixer-decorrelation".to_string(),
+                ],
                 spatial_spider:
                     crate::components::plugins::spatial_spider::SpatialSpiderUiState::default(),
                 spectrum_tilt_select_open: false,

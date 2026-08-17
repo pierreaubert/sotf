@@ -187,7 +187,7 @@ pub struct UIState {
     pub scanner_threads: Option<u8>,
     /// Maximum number of CPU cores SotF is allowed to use (None = all available)
     pub max_cpu_cores: Option<u8>,
-    /// Minimum font size in pixels (None = default 8px)
+    /// Minimum font size in pixels (None = default 12px)
     pub min_font_size_px: Option<f32>,
     /// Maximum font size in pixels (None = default 32px)
     pub max_font_size_px: Option<f32>,

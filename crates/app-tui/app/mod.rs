@@ -27,7 +27,8 @@ pub use types::{
     LibrarySortOrder, LibraryViewMode, MatrixEditMode, MetadataEditorFields, MetadataEditorScope,
     MetadataEditorState, PendingParameterUpdate, PlaylistMode, QueueEntry, QueueItem,
     RecordingTuiState, ReplayGainMode, RoomEqTuiState, Screen, ServerSection, ServersTuiState,
-    SpinUpdateSubStep, SpinoramaEqTuiState, SpinoramaStep, Tool, TreeItem,
+    ServiceLoginEvent, ServiceLoginState, ServiceLoginStatus, SpinUpdateSubStep,
+    SpinoramaEqTuiState, SpinoramaStep, Tool, TreeItem,
 };
 // Allow access to types submodule for full detail (SOURCE_TYPE_NAMES, etc.)
 pub(crate) use types::{

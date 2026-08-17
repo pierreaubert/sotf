@@ -67,6 +67,21 @@ pub(super) struct TidalStreamInfo {
     pub(super) codec: Option<String>,
 }
 
+/// Paged response wrapper used by the `/users/{id}/favorites/*` endpoints.
+#[derive(Deserialize)]
+pub(super) struct TidalFavoritesResponse<T> {
+    pub(super) items: Vec<TidalFavoriteItem<T>>,
+    #[serde(rename = "totalNumberOfItems", default)]
+    pub(super) total_number_of_items: u64,
+}
+
+/// A single favorites entry: `{ "created": ..., "item": { ... } }`.
+/// `created` is ignored (unknown fields are skipped by serde).
+#[derive(Deserialize)]
+pub(super) struct TidalFavoriteItem<T> {
+    pub(super) item: T,
+}
+
 #[derive(Deserialize)]
 pub(super) struct TidalTokenResponse {
     #[serde(rename = "access_token")]

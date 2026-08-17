@@ -6,6 +6,25 @@
 - Bring EQ construction fixtures and AutoEQ/CLI adapters forward with the
   canonical Auto Gain and oversampling fields rather than dropping state.
 
+## Fixed
+
+- Tidal stream-time 401/403 (expired access token) now triggers a single
+  token refresh, persists the rotated tokens, and retries the stream request
+  exactly once instead of failing the track.
+- Rotated Tidal tokens are persisted only after the new access token has been
+  validated, so a failed validation no longer leaves dead tokens in the
+  database.
+- Persisting rotated Tidal tokens re-loads the federation source at persist
+  time and updates only the token fields, so user edits made between connect
+  and persist (quality, country) are no longer clobbered.
+- `open_url_in_browser` only opens `https://` URLs (plus `http://` on loopback
+  hosts for local auth mocks); other schemes from a device-auth response are
+  rejected.
+- Deduplicated the `<config dir>/spotify` credential-cache path convention
+  into `service_login::spotify_cache_dir()`.
+- Replaced fixed temp-dir names in service-stream tests with `tempfile` to
+  avoid collisions across concurrent test binaries.
+
 # 0.5.125 (unreleased)
 
 ## Signal path model (QA-SOTA-004)

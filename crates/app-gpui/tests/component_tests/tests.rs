@@ -29,6 +29,7 @@ use sotf_audio_player_gpui::components::plugins::common::{
 use sotf_audio_player_gpui::components::plugins::custom_view_registry::{
     GpuiViewRegistry, plugin_type_key,
 };
+use sotf_audio_player_gpui::components::plugins::spatial_spider::data::correlation_row;
 use sotf_audio_player_gpui::components::plugins::theme::{
     PluginThemeId, plugin_theme_id_for_app_theme,
 };
@@ -139,6 +140,15 @@ fn matrix_stale_coordinates_do_not_alias_after_channel_shrink() {
     assert_eq!(checked_matrix_cell_index(2, 0, 2, 2, 4), None);
     assert_eq!(checked_matrix_cell_index(0, 2, 2, 2, 4), None);
     assert_eq!(checked_matrix_cell_index(1, 1, 2, 2, 4), Some(3));
+}
+
+#[test]
+fn spatial_spider_correlation_row_rejects_invalid_shape() {
+    let matrix = [1.0, -0.2, -0.2, 1.0];
+
+    assert_eq!(correlation_row(&matrix, 2, 1), Some(&matrix[2..4]));
+    assert_eq!(correlation_row(&matrix, 3, 0), None);
+    assert_eq!(correlation_row(&matrix, 2, 2), None);
 }
 
 #[test]
@@ -313,6 +323,14 @@ fn every_file_path_param_resolves_its_settings_value() {
                 (PluginSettings::Convolution { ir_file, .. }, "ir_file") => *ir_file = value,
                 (PluginSettings::BinauralDecoder { sofa_file, .. }, "sofa_file") => {
                     *sofa_file = value;
+                }
+                (
+                    PluginSettings::BinauralDecoder {
+                        hrtf_database_dir, ..
+                    },
+                    "hrtf_database_dir",
+                ) => {
+                    *hrtf_database_dir = value;
                 }
                 (PluginSettings::XTC { room_ir_file, .. }, "room_ir_file") => {
                     *room_ir_file = Some(value);

@@ -53,13 +53,23 @@ pub fn estimate_grid_dimensions(
 /// readable at the minimum supported desktop window size.
 pub const DEFAULT_MIN_FONT_SIZE_PX: f32 = 12.0;
 
+/// Lowest user-configurable font floor; smaller values make compact labels
+/// unreadable even when the window is otherwise large enough.
+pub const MIN_CONFIGURABLE_FONT_SIZE_PX: f32 = 8.0;
+
 /// Default maximum font size in pixels.
 pub const DEFAULT_MAX_FONT_SIZE_PX: f32 = 32.0;
 
 /// Convert min/max font size in pixels to combined scale bounds.
 /// Uses defaults when `None` is provided.
 pub fn combined_scale_bounds(min_px: Option<f32>, max_px: Option<f32>) -> (f32, f32) {
-    let min = min_px.unwrap_or(DEFAULT_MIN_FONT_SIZE_PX) / 16.0;
-    let max = max_px.unwrap_or(DEFAULT_MAX_FONT_SIZE_PX) / 16.0;
-    (min, max)
+    let min = min_px
+        .unwrap_or(DEFAULT_MIN_FONT_SIZE_PX)
+        .clamp(MIN_CONFIGURABLE_FONT_SIZE_PX, DEFAULT_MAX_FONT_SIZE_PX)
+        / 16.0;
+    let max = max_px
+        .unwrap_or(DEFAULT_MAX_FONT_SIZE_PX)
+        .clamp(MIN_CONFIGURABLE_FONT_SIZE_PX + 1.0, 48.0)
+        / 16.0;
+    (min.min(max), max.max(min))
 }

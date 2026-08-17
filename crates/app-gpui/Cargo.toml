@@ -21,8 +21,8 @@ hls = ["streaming", "sotf-engine/hls", "sotf-player/hls"]
 gpu-2d = ["gpui-px/gpu-2d", "gpui-d3rs/gpu-2d"]
 gpu-3d = ["gpui-px/gpu-3d", "gpui-d3rs/gpu-3d"]
 mimalloc-allocator = ["dep:mimalloc"]
-tidal = ["dep:sotf-services", "sotf-services/tidal", "sotf-player/tidal"]
-spotify = ["dep:sotf-services", "sotf-services/spotify", "sotf-player/spotify"]
+tidal = ["dep:sotf-service-tidal", "sotf-player/tidal"]
+spotify = ["dep:sotf-service-spotify", "sotf-player/spotify"]
 # QA/debug-only HTTP API for scripted E2E testing. Compile errors in release builds
 # and only starts at runtime when `sotf-desktop --qa <dir>` is used.
 qa = []
@@ -55,7 +55,8 @@ sotf-engine = { workspace = true }
 sotf-midi = { workspace = true }
 sotf-cast = { workspace = true }
 sotf-tls = { workspace = true }
-sotf-services = { workspace = true, optional = true }
+sotf-service-tidal = { workspace = true, optional = true }
+sotf-service-spotify = { workspace = true, optional = true }
 plugins-gpui = { workspace = true }
 # math libraries
 math-iir-fir = { workspace = true }

@@ -67,6 +67,8 @@ members = [
     "crates/sotf-server/crates/sotf-streaming",
     "crates/sotf-server/crates/sotf-mpd",
     "crates/sotf-server/crates/sotf-services",
+    "crates/sotf-server/crates/sotf-service-tidal",
+    "crates/sotf-server/crates/sotf-service-spotify",
     "crates/sotf-server/crates/sotf-dlna",
     "crates/sotf-server/crates/sotf-cast",
     "crates/sotf-server/crates/sotf-federation",
@@ -83,7 +85,7 @@ exclude = [
 resolver = "3"
 
 [workspace.package]
-version = "0.7.10"
+version = "0.7.11"
 authors = ["Pierre F. Aubert pierre@spinorama.org"]
 description = "Optimise the sound of your speakers or your headphones"
 edition = "2024"
@@ -110,6 +112,9 @@ m3u8-rs = { version = "6" }
 librespot-core = { version = "0.6" }
 librespot-playback = { version = "0.6" }
 librespot-metadata = { version = "0.6" }
+librespot-oauth = { version = "0.6" }
+librespot-protocol = { version = "0.6" }
+oauth2 = { version = "4.4" }
 rcgen = "0.13"
 rustls = "0.23"
 socket2 = "0.6"
@@ -258,6 +263,8 @@ sotf-iamf = { path = "crates/sotf-iamf" }
 sotf-streaming = { path = "crates/sotf-server/crates/sotf-streaming" }
 sotf-mpd = { path = "crates/sotf-server/crates/sotf-mpd" }
 sotf-services = { path = "crates/sotf-server/crates/sotf-services", default-features = false }
+sotf-service-tidal = { path = "crates/sotf-server/crates/sotf-service-tidal", default-features = false }
+sotf-service-spotify = { path = "crates/sotf-server/crates/sotf-service-spotify", default-features = false }
 sotf-dlna = { path = "crates/sotf-server/crates/sotf-dlna" }
 sotf-cast = { path = "crates/sotf-server/crates/sotf-cast" }
 sotf-federation = { path = "crates/sotf-server/crates/sotf-federation" }

@@ -1967,6 +1967,31 @@ mod localization_render_tests {
             app.federation.state.mode = FederationMode::AddSource;
             render(&mut terminal, &app, draw_federation_screen);
             app.federation.state.mode = FederationMode::List;
+
+            // Service-login panel (Tidal prompt, Spotify OAuth, starting) in
+            // every locale — exercises the dynamic catalog entries.
+            let login_cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            for status in [
+                crate::app::ServiceLoginStatus::Starting,
+                crate::app::ServiceLoginStatus::TidalDevicePrompt {
+                    verification_url: "https://link.tidal.com/ABCDE".to_string(),
+                    user_code: "ABCD-EFGH".to_string(),
+                    expires_in_secs: 300,
+                    started: std::time::Instant::now(),
+                },
+                crate::app::ServiceLoginStatus::SpotifyOAuth {
+                    url: "https://accounts.spotify.com/authorize?...".to_string(),
+                    started: std::time::Instant::now(),
+                },
+            ] {
+                app.federation.state.login = Some(crate::app::ServiceLoginState {
+                    source_id: "tidal:test".to_string(),
+                    status,
+                    cancel: std::sync::Arc::clone(&login_cancel),
+                });
+                render(&mut terminal, &app, draw_federation_screen);
+            }
+            app.federation.state.login = None;
             render(&mut terminal, &app, draw_servers_screen);
             app.server_state.editing_value = true;
             render(&mut terminal, &app, draw_servers_screen);

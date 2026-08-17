@@ -9,6 +9,10 @@ Production-quality terminal UI music player.
 - Full plugin chain integration (EQ, upmixer, compressor, etc.)
 - Queue management with auto-advance
 - ReplayGain support
+- Streaming services (Tidal, Spotify) behind the `tidal` / `spotify` cargo
+  features: device-code / OAuth-PKCE login from the federation source list
+  (`l` key, see `events/conf_federation.rs`), playback via the engine's
+  service-stream resolver hook (`sotf-player::service_manager`).
 
 ## Architecture
 

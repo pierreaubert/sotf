@@ -162,7 +162,9 @@ pub(super) fn start_playback(
     // Sync volume to the engine before playback starts
     player.set_volume(app.playback.volume)?;
 
-    let source = sotf_audio_player::resolve_service_stream_from_env(source)?;
+    // Service streams (Tidal/Spotify) are resolved by the engine decoder
+    // thread via the resolver hook installed at startup — no pre-resolution
+    // here, failures surface as decode-time errors.
     let source_path = source.as_path().map(|p| p.to_path_buf());
     player.load_and_play_source(
         source,

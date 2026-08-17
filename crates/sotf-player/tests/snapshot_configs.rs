@@ -34,6 +34,8 @@ fn snapshot_source_connection_config_variants() {
         },
         SourceConnectionConfig::Tidal {
             access_token: "tidal-token".into(),
+            client_id: "tidal-client".into(),
+            refresh_token: "tidal-refresh".into(),
             quality: "HI_RES".into(),
             country_code: "FR".into(),
         },

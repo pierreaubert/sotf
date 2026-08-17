@@ -613,14 +613,14 @@ fn sotf_api_plugin_presets_supports_filter_and_errors_on_unknown_plugin() {
 
 #[test]
 fn client_server_p1_source_contracts_are_gated_or_nonblocking() {
-    let service_streams = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/service_streams.rs"),
+    let service_manager = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/service_manager.rs"),
     )
     .unwrap();
-    assert!(service_streams.contains("#[cfg(feature = \"tidal\")]"));
-    assert!(service_streams.contains("#[cfg(not(feature = \"tidal\"))]"));
-    assert!(service_streams.contains("#[cfg(feature = \"spotify\")]"));
-    assert!(service_streams.contains("#[cfg(not(feature = \"spotify\"))]"));
+    assert!(service_manager.contains("#[cfg(feature = \"tidal\")]"));
+    assert!(service_manager.contains("#[cfg(not(feature = \"tidal\"))]"));
+    assert!(service_manager.contains("#[cfg(feature = \"spotify\")]"));
+    assert!(service_manager.contains("#[cfg(not(feature = \"spotify\"))]"));
 
     let streaming_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../sotf-server/crates/sotf-streaming/src");

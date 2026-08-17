@@ -29,7 +29,6 @@ pub struct WorkflowNodeMapping {
 pub struct LevelMeterState {
     pub groups: Vec<ChannelGroup>,
     pub selected_group: usize,
-    pub control_selection: usize, // 0 = Mute, 1 = Solo, 2 = Dim
     /// Cached channel count to avoid rebuilding meter groups every frame
     pub last_channel_count: usize,
     /// Cached speaker config to avoid rebuilding meter groups every frame

@@ -136,18 +136,29 @@ impl TuiEditablePlugin for PluginSettings {
                 max_filters,
                 ..
             } => {
+                use sotf_plugins::param_specs::eq::{BAND_TEMPLATE, GLOBAL_PARAMS};
+                let global_count = GLOBAL_PARAMS.len();
+                let band_params = BAND_TEMPLATE.len();
                 if index == 0 {
                     return format!("{}", max_filters);
                 }
-                let filter_offset = index - 1;
-                let filter_idx = filter_offset / 4;
-                let param_idx = filter_offset % 4;
+                if index < global_count {
+                    // tdf2 / topology / auto_gain_enabled / oversampling
+                    if let Some(v) = self.param_value(index) {
+                        return GLOBAL_PARAMS[index].format_value(v);
+                    }
+                    return String::new();
+                }
+                let filter_offset = index - global_count;
+                let filter_idx = filter_offset / band_params;
+                let param_idx = filter_offset % band_params;
                 if let Some(filter) = filters.get(filter_idx) {
                     match param_idx {
                         0 => format!("{:.0}", filter.frequency),
                         1 => format!("{:.2}", filter.q),
                         2 => format!("{:.1}", filter.gain_db),
                         3 => format!("{:?}", filter.filter_type),
+                        // 4 = Order: no backing field on EQFilter, nothing to show
                         _ => String::new(),
                     }
                 } else {
@@ -428,6 +439,9 @@ impl TuiEditablePlugin for PluginSettings {
                 max_filters,
                 ..
             } => {
+                use sotf_plugins::param_specs::eq::{BAND_TEMPLATE, GLOBAL_PARAMS};
+                let global_count = GLOBAL_PARAMS.len();
+                let band_params = BAND_TEMPLATE.len();
                 if index == 0 {
                     let old_max = *max_filters;
                     *max_filters = ((*max_filters as i64) + delta as i64).clamp(1, 20) as usize;
@@ -445,13 +459,25 @@ impl TuiEditablePlugin for PluginSettings {
                     }
                     return true;
                 }
-                // TUI index space: idx 0 is `max_filters` (handled above), idx
-                // 1+ maps to (band, field). Delegate to the shared helper so
-                // this matches `controllers::plugin::adjust_plugin_param` (which
-                // uses the same per-field math but a different outer indexing).
-                let filter_offset = index - 1;
-                let filter_idx = filter_offset / 4;
-                let field_idx = filter_offset % 4;
+                if index < global_count {
+                    // tdf2 / topology / auto_gain_enabled / oversampling
+                    if let Some(current) = self.param_value(index) {
+                        let new_val = GLOBAL_PARAMS[index].adjust_f64(current, delta);
+                        self.set_param_value(index, new_val);
+                    }
+                    return true;
+                }
+                // TUI index space: GLOBAL_PARAMS first, then (band, field) from
+                // BAND_TEMPLATE. The per-field math is shared with
+                // `controllers::plugin::adjust_plugin_param` via
+                // `apply_eq_band_field` so the two index spaces stay in lockstep.
+                let filter_offset = index - global_count;
+                let filter_idx = filter_offset / band_params;
+                let field_idx = filter_offset % band_params;
+                if field_idx == 4 {
+                    // Order: no backing field on EQFilter; not editable in the TUI.
+                    return false;
+                }
                 if let Some(filter) = filters.get_mut(filter_idx) {
                     return apply_eq_band_field(filter, field_idx, delta);
                 }
@@ -1017,13 +1043,23 @@ impl TuiEditablePlugin for PluginSettings {
     fn get_choice_labels(&self, index: usize) -> Vec<String> {
         match self {
             PluginSettings::EQ { filters, .. } => {
+                use sotf_plugins::param_specs::eq::{BAND_TEMPLATE, GLOBAL_PARAMS};
+                let global_count = GLOBAL_PARAMS.len();
+                let band_params = BAND_TEMPLATE.len();
                 if index == 0 {
                     return Vec::new();
                 }
-                let filter_offset = index - 1;
-                let param_idx = filter_offset % 4;
-                if param_idx == 3 && (filter_offset / 4) < filters.len() {
-                    let spec = &sotf_plugins::param_specs::eq::BAND_TEMPLATE[3];
+                if index < global_count {
+                    return GLOBAL_PARAMS[index]
+                        .choice_labels()
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect();
+                }
+                let filter_offset = index - global_count;
+                let param_idx = filter_offset % band_params;
+                if param_idx == 3 && (filter_offset / band_params) < filters.len() {
+                    let spec = &BAND_TEMPLATE[3];
                     return spec.choice_labels().iter().map(|s| s.to_string()).collect();
                 }
                 Vec::new()

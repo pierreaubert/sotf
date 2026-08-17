@@ -16,7 +16,8 @@ use sotf_audio_player_tui::events::{
     poll_bass_anchor_capture, poll_delay_detection, poll_federation_scan, poll_federation_test,
     poll_headphone_download, poll_headphone_eq_optimization, poll_headphone_list_load,
     poll_probe_capture, poll_recording, poll_room_eq_optimization, poll_save_recordings,
-    poll_spinorama_optimization, poll_spinorama_speaker_load, poll_spl_calibration_capture,
+    poll_service_login, poll_spinorama_optimization, poll_spinorama_speaker_load,
+    poll_spl_calibration_capture,
 };
 use sotf_audio_player_tui::media_controls::{self, TuiMediaControls};
 use sotf_audio_player_tui::ui;
@@ -160,6 +161,9 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         app.ui.needs_redraw = true;
                     }
                     if poll_federation_test(app) {
+                        app.ui.needs_redraw = true;
+                    }
+                    if poll_service_login(app) {
                         app.ui.needs_redraw = true;
                     }
                     if app.poll_cast_discovery() {

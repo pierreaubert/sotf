@@ -224,4 +224,63 @@ mod tests {
         assert_eq!(library.len(), 1);
         assert_eq!(library[0].tracks.len(), 2);
     }
+
+    #[test]
+    fn merge_albums_into_db_merges_service_stream_tracks() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("music.sqlite");
+        let db = MusicDatabase::open_for_testing(&db_path).unwrap();
+
+        let source = FederationSourceEntry {
+            source_id: "tidal:account".to_string(),
+            display_name: "Tidal".to_string(),
+            priority: 0,
+            is_enabled: true,
+            connection: SourceConnectionConfig::Tidal {
+                access_token: "token".to_string(),
+                client_id: "client".to_string(),
+                refresh_token: "refresh".to_string(),
+                quality: "LOSSLESS".to_string(),
+                country_code: "US".to_string(),
+            },
+            is_available: None,
+        };
+        db.save_federation_source(&source).unwrap();
+        let cancel = AtomicBool::new(false);
+
+        let tidal_album = ProviderAlbum {
+            external_id: "7".to_string(),
+            title: "The Wall".to_string(),
+            artist: "Pink Floyd".to_string(),
+            year: Some(1979),
+            album_art_url: Some("https://resources.tidal.com/images/ab/640x640.jpg".to_string()),
+            tracks: vec![ProviderTrack {
+                external_id: "101".to_string(),
+                title: "In the Flesh?".to_string(),
+                artist: Some("Pink Floyd".to_string()),
+                album_artist: Some("Pink Floyd".to_string()),
+                track_number: Some(1),
+                disc_number: None,
+                duration_secs: Some(200.0),
+                genre: None,
+                composer: None,
+                channels: None,
+                sample_rate: None,
+                bit_depth: None,
+                audio_source: AudioSource::ServiceStream {
+                    service: sotf_audio::decoder::ServiceId::Tidal,
+                    track_id: "101".to_string(),
+                },
+            }],
+        };
+
+        let result = merge_albums_into_db(&db, &source.source_id, &[tidal_album], &cancel, None);
+        assert!(result.error.is_none(), "{result:?}");
+        assert_eq!(result.albums, 1);
+        assert_eq!(result.tracks, 1);
+        let library = db.load_library().unwrap();
+        assert_eq!(library.len(), 1);
+        assert_eq!(library[0].title, "The Wall");
+        assert_eq!(library[0].tracks.len(), 1);
+    }
 }

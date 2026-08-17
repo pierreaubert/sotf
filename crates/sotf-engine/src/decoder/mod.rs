@@ -5,6 +5,7 @@ pub mod formats;
 #[cfg(feature = "iamf")]
 pub mod iamf;
 pub mod pcm_reader;
+pub mod service_resolver;
 pub mod source;
 pub mod stream;
 
@@ -20,5 +21,9 @@ pub use dsd::{DffPcmDecoder, DsfPcmDecoder};
 pub use error::{AudioDecoderError, AudioDecoderResult};
 pub use formats::{AudioFormat, DsdDecodeCapability};
 pub use pcm_reader::PcmDecoder;
+pub use service_resolver::{
+    ResolvedServiceStream, ServiceStreamResolver, clear_service_stream_resolver,
+    has_service_stream_resolver, set_service_stream_resolver,
+};
 pub use source::{AudioSource, ServiceId};
 pub use stream::{AudioStream, StreamConfig, StreamEvent, StreamPosition, StreamState};

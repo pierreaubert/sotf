@@ -49,6 +49,11 @@ pub enum SourceConnectionConfig {
     Tidal {
         #[serde(default)]
         access_token: String,
+        #[serde(default)]
+        client_id: String,
+        /// OAuth refresh token (populated by the login flow, not user-editable).
+        #[serde(default)]
+        refresh_token: String,
         #[serde(default = "default_tidal_quality")]
         quality: String,
         #[serde(default = "default_country_code")]
@@ -128,6 +133,8 @@ impl SourceConnectionConfig {
             },
             "tidal" => Self::Tidal {
                 access_token: String::new(),
+                client_id: String::new(),
+                refresh_token: String::new(),
                 quality: default_tidal_quality(),
                 country_code: default_country_code(),
             },
@@ -158,7 +165,7 @@ impl SourceConnectionConfig {
             Self::Mpd { .. } => vec!["Host", "Port", "Auth Mode", "Password", "HTTP Stream Port"],
             Self::Dlna { .. } => vec!["Location URL", "Friendly Name"],
             Self::Peer { .. } => vec!["Host", "Port", "Fingerprint", "API Token"],
-            Self::Tidal { .. } => vec!["Access Token", "Quality", "Country Code"],
+            Self::Tidal { .. } => vec!["Access Token", "Client ID", "Quality", "Country Code"],
             Self::Spotify { .. } => vec!["Username", "Password", "Quality"],
             Self::IcyRadio { .. } => vec!["Stream URL", "Station Name"],
         }
@@ -220,12 +227,15 @@ impl SourceConnectionConfig {
             },
             Self::Tidal {
                 access_token,
+                client_id,
                 quality,
                 country_code,
+                ..
             } => match index {
                 0 => "*".repeat(access_token.len().min(8)),
-                1 => quality.clone(),
-                2 => country_code.clone(),
+                1 => client_id.clone(),
+                2 => quality.clone(),
+                3 => country_code.clone(),
                 _ => String::new(),
             },
             Self::Spotify {
@@ -345,12 +355,15 @@ impl SourceConnectionConfig {
             },
             Self::Tidal {
                 access_token,
+                client_id,
                 quality,
                 country_code,
+                ..
             } => match index {
                 0 => *access_token = value.to_string(),
-                1 => *quality = value.to_string(),
-                2 => *country_code = value.to_string(),
+                1 => *client_id = value.to_string(),
+                2 => *quality = value.to_string(),
+                3 => *country_code = value.to_string(),
                 _ => {}
             },
             Self::Spotify {
@@ -403,6 +416,8 @@ mod tests {
             },
             SourceConnectionConfig::Tidal {
                 access_token: String::new(),
+                client_id: String::new(),
+                refresh_token: String::new(),
                 quality: default_tidal_quality(),
                 country_code: default_country_code(),
             },
@@ -461,8 +476,9 @@ mod tests {
             },
             SourceConnectionConfig::Tidal { .. } => match index {
                 0 => "tidal-token",
-                1 => "HI_RES",
-                2 => "FR",
+                1 => "tidal-client-id",
+                2 => "HI_RES",
+                3 => "FR",
                 _ => "",
             },
             SourceConnectionConfig::Spotify { .. } => match index {
@@ -510,7 +526,7 @@ mod tests {
             },
             SourceConnectionConfig::Tidal { .. } => match index {
                 0 => masked(set_value),
-                1 | 2 => set_value.to_string(),
+                1 | 2 | 3 => set_value.to_string(),
                 _ => String::new(),
             },
             SourceConnectionConfig::Spotify { .. } => match index {
@@ -750,14 +766,20 @@ mod tests {
         fn tidal_config_strategy() -> BoxedStrategy<SourceConnectionConfig> {
             (
                 token_strategy(),
+                token_strategy(),
+                token_strategy(),
                 proptest::string::string_regex("[A-Z_]+").unwrap().boxed(),
                 proptest::string::string_regex("[A-Z]{2}").unwrap().boxed(),
             )
                 .prop_map(
-                    |(access_token, quality, country_code)| SourceConnectionConfig::Tidal {
-                        access_token,
-                        quality,
-                        country_code,
+                    |(access_token, client_id, refresh_token, quality, country_code)| {
+                        SourceConnectionConfig::Tidal {
+                            access_token,
+                            client_id,
+                            refresh_token,
+                            quality,
+                            country_code,
+                        }
                     },
                 )
                 .boxed()

@@ -10096,7 +10096,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-docs-gen"
-version = "0.7.10"
+version = "0.7.11"
 dependencies = [
  "sotf-host",
  "sotf-plugins",
@@ -10175,9 +10175,14 @@ version = "0.8.2"
 dependencies = [
  "log",
  "proptest 1.11.0",
+ "reqwest 0.13.4",
  "serde",
  "serde_json",
  "sotf-engine",
+ "sotf-service-spotify",
+ "sotf-service-tidal",
+ "sotf-services",
+ "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "uuid",
@@ -10185,7 +10190,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-gpui"
-version = "0.7.10"
+version = "0.7.11"
 dependencies = [
  "anyhow",
  "autoeq",
@@ -10240,7 +10245,8 @@ dependencies = [
  "sotf-midi",
  "sotf-player",
  "sotf-plugins",
- "sotf-services",
+ "sotf-service-spotify",
+ "sotf-service-tidal",
  "sotf-testkit",
  "sotf-tls",
  "sotf-tui",
@@ -10421,6 +10427,8 @@ dependencies = [
  "sotf-mpd",
  "sotf-player",
  "sotf-plugins",
+ "sotf-service-spotify",
+ "sotf-service-tidal",
  "sotf-services",
  "sotf-test",
  "sotf-testkit",
@@ -10448,13 +10456,14 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-aae"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "criterion",
  "hound",
  "log",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "sotf-host",
 ]
 
@@ -10487,7 +10496,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-ambisonics"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "approx",
  "criterion",
@@ -10842,7 +10851,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-pnd"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "hound",
  "rustfft 6.4.1",
@@ -10951,7 +10960,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugins"
-version = "0.7.10"
+version = "0.7.11"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -11054,19 +11063,39 @@ dependencies = [
 ]
 
 [[package]]
-name = "sotf-services"
-version = "0.8.1"
+name = "sotf-service-spotify"
+version = "0.1.0"
 dependencies = [
- "env_logger",
  "librespot-core",
- "librespot-metadata",
+ "librespot-oauth",
  "librespot-playback",
+ "librespot-protocol",
+ "log",
+ "oauth2",
+ "reqwest 0.11.27",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "sotf-services",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "sotf-service-tidal"
+version = "0.1.0"
+dependencies = [
  "log",
  "reqwest 0.13.4",
  "serde",
  "serde_json",
+ "sotf-services",
  "tokio",
 ]
+
+[[package]]
+name = "sotf-services"
+version = "0.8.1"
 
 [[package]]
 name = "sotf-streaming"
@@ -11177,7 +11206,8 @@ dependencies = [
  "sotf-media-controls",
  "sotf-player",
  "sotf-plugins",
- "sotf-services",
+ "sotf-service-spotify",
+ "sotf-service-tidal",
  "sotf-test",
  "symphonia 0.6.0",
  "symphonia-bundle-flac",
@@ -12998,15 +13028,15 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "vergen"
-version = "9.1.0"
+version = "9.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b849a1f6d8639e8de261e81ee0fc881e3e3620db1af9f2e0da015d4382ceaf75"
+checksum = "6b2bf58be11fc9414104c6d3a2e464163db5ef74b12296bda593cac37b6e4777"
 dependencies = [
  "anyhow",
  "derive_builder",
  "rustversion",
  "time",
- "vergen-lib 9.1.0",
+ "vergen-lib",
 ]
 
 [[package]]
@@ -13020,7 +13050,7 @@ dependencies = [
  "rustversion",
  "time",
  "vergen",
- "vergen-lib 0.1.6",
+ "vergen-lib",
 ]
 
 [[package]]
@@ -13028,17 +13058,6 @@ name = "vergen-lib"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b07e6010c0f3e59fcb164e0163834597da68d1f864e2b8ca49f74de01e9c166"
-dependencies = [
- "anyhow",
- "derive_builder",
- "rustversion",
-]
-
-[[package]]
-name = "vergen-lib"
-version = "9.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b34a29ba7e9c59e62f229ae1932fb1b8fb8a6fdcc99215a641913f5f5a59a569"
 dependencies = [
  "anyhow",
  "derive_builder",
