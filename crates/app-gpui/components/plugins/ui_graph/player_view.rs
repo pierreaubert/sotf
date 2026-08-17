@@ -13,16 +13,20 @@ use super::plugin::plugin_max_ports;
 use super::plugin::plugin_node_menu_items;
 use super::types::PaletteItemType;
 use crate::app::ToastMessage;
+use crate::app::i18n::{PluginCommonTranslations, PluginRackTranslations};
 use crate::app::types::Screen;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
+use crate::components::plugins::theme::plugin_theme_id_for_app_theme;
 use crate::i18n::PluginGraphTranslations;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::workflow::{Position, WorkflowCanvas, WorkflowNodeData};
-use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant,
+};
 use sotf_audio_player::PluginSettings;
 
 impl PlayerView {
@@ -111,6 +115,19 @@ impl PlayerView {
                             .and_then(|s| sotf_audio_player::GraphNodeId::parse_str(s).ok());
 
                         state.update(cx, |state, _cx| {
+                            if let Some(uuid) = graph_node_uuid {
+                                // Keep the app-side keyboard/action model in
+                                // step with the node opened by pointer input.
+                                // The toolkit canvas owns its visual selection;
+                                // this state is the source used by graph
+                                // actions and the header status below.
+                                state
+                                    .app
+                                    .plugin_state
+                                    .graph_state
+                                    .graph_selection
+                                    .select_node(uuid, false);
+                            }
                             let original_plugin = graph_node_uuid
                                 .and_then(|uuid| state.app.plugin_state.graph.nodes.get(&uuid));
                             let original_settings = original_plugin
@@ -127,6 +144,7 @@ impl PlayerView {
                             state.app.plugin_state.graph_state.editing_original_enabled =
                                 original_enabled;
                             state.app.plugin_state.graph_state.confirm_close_dirty = false;
+                            state.app.plugin_state.graph_state.graph_config_open = false;
                             state.app.ui_state.input_mode =
                                 crate::app::InputMode::EditingPluginNode;
                         });
@@ -244,8 +262,18 @@ impl PlayerView {
                             .drag_over::<PaletteDragData>(move |style, _, _, _| {
                                 style.bg(drag_highlight)
                             })
-                            .on_drop(cx.listener(|view, data: &PaletteDragData, _window, cx| {
-                                view.handle_palette_drop(data, cx);
+                            .on_drag_move::<PaletteDragData>(cx.listener(
+                                |view, event: &DragMoveEvent<PaletteDragData>, _window, _cx| {
+                                    let x: f32 = event.event.position.x.into();
+                                    let y: f32 = event.event.position.y.into();
+                                    let origin_x: f32 = event.bounds.origin.x.into();
+                                    let origin_y: f32 = event.bounds.origin.y.into();
+                                    view.graph_canvas_drop_position =
+                                        Some((x - origin_x, y - origin_y));
+                                },
+                            ))
+                            .on_drop(cx.listener(|view, data: &PaletteDragData, window, cx| {
+                                view.handle_palette_drop(data, window, cx);
                             }))
                             .when_some(workflow_canvas, |el, canvas| el.child(canvas))
                     }),
@@ -257,7 +285,12 @@ impl PlayerView {
     /// Adds the node to both the `WorkflowCanvas` (visual) and the
     /// `PluginGraph` (persistent data model) so the node survives canvas
     /// rebuilds.
-    pub(super) fn handle_palette_drop(&mut self, data: &PaletteDragData, cx: &mut Context<Self>) {
+    pub(super) fn handle_palette_drop(
+        &mut self,
+        data: &PaletteDragData,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let canvas = self
             .state
             .read(cx)
@@ -267,18 +300,20 @@ impl PlayerView {
             .workflow_canvas
             .clone();
         if let Some(canvas) = canvas {
-            // Offset drop position by existing node count so nodes don't stack
-            let node_count = self.state.read(cx).app.plugin_state.graph.nodes.len()
-                + self
-                    .state
-                    .read(cx)
-                    .app
-                    .plugin_state
-                    .graph
-                    .special_nodes
-                    .len();
-            let drop_x = 300.0 + (node_count as f32 % 4.0) * 180.0;
-            let drop_y = 150.0 + (node_count as f32 / 4.0).floor() * 120.0;
+            let drop_position = self
+                .graph_canvas_drop_position
+                .take()
+                .map(|(x, y)| canvas.read(cx).viewport().screen_to_canvas(x, y))
+                .unwrap_or_else(|| {
+                    // A drop normally records its pointer location through
+                    // `on_drag_move`. Keep a deterministic center fallback
+                    // for synthetic drops and platforms that omit a final
+                    // drag-move event.
+                    let viewport = canvas.read(cx).viewport();
+                    viewport.screen_to_canvas(viewport.size.0 / 2.0, viewport.size.1 / 2.0)
+                });
+            let drop_x = drop_position.x;
+            let drop_y = drop_position.y;
 
             // Also persist plugin drops into the PluginGraph
             let graph_node_id = match &data.item_type {
@@ -372,6 +407,20 @@ impl PlayerView {
         let state_for_home = self.state.clone();
         let text_muted = theme.text_muted;
         let surface_hover = theme.surface_hover;
+        let selected_count = self
+            .state
+            .read(cx)
+            .app
+            .plugin_state
+            .graph_state
+            .graph_selection
+            .selected_nodes
+            .len();
+        let selection_status = if selected_count == 0 {
+            graph_text.none_selected.to_string()
+        } else {
+            format!("{}: {selected_count}", graph_text.selected)
+        };
 
         div()
             .flex()
@@ -425,6 +474,12 @@ impl PlayerView {
                             .text_size(d.text_xs)
                             .text_color(theme.text_muted)
                             .child(format!("#{} links", connection_count)),
+                    )
+                    .child(
+                        div()
+                            .text_size(d.text_xs)
+                            .text_color(theme.text_secondary)
+                            .child(selection_status),
                     )
                     .when_some(signal_path_source_rate, |el, rate| {
                         el.child(
@@ -680,9 +735,17 @@ impl PlayerView {
         let settings_are_dirty =
             graph_state.settings_are_dirty(plugin_settings.as_ref(), plugin_enabled);
         let confirm_close_dirty = graph_state.confirm_close_dirty;
+        let graph_config_open = graph_state.graph_config_open;
+        let has_graph_config = plugin_settings.as_ref().is_some_and(|settings| {
+            settings
+                .layout()
+                .is_some_and(|layout| !layout.config.is_empty() || !layout.output.is_empty())
+        });
         let state_for_close = self.state.clone();
         let state_for_keep = self.state.clone();
         let state_for_continue = self.state.clone();
+        let state_for_config = self.state.clone();
+        let rack_text = PluginRackTranslations::for_language(state.app.ui_state.language);
 
         // Determine the title based on node type
         let title = if node_type == NODE_TYPE_PLUGIN {
@@ -753,6 +816,36 @@ impl PlayerView {
                                     .flex()
                                     .items_center()
                                     .gap(d.gap)
+                                    .children(has_graph_config.then(|| {
+                                        let state = state_for_config.clone();
+                                        IconButton::with_child(
+                                            "graph-node-config",
+                                            Icon::new(IconName::Settings)
+                                                .small()
+                                                .color(if graph_config_open {
+                                                    theme.text_on_accent
+                                                } else {
+                                                    theme.text_secondary
+                                                }),
+                                        )
+                                        .variant(if graph_config_open {
+                                            IconButtonVariant::Filled
+                                        } else {
+                                            IconButtonVariant::Outline
+                                        })
+                                        .size(IconButtonSize::Sm)
+                                        .theme(theme.to_icon_button_theme())
+                                        .aria_label(rack_text.plugin_configuration)
+                                        .on_click_event(move |_event, _window, cx| {
+                                            state.update(cx, |state, cx| {
+                                                let graph_state =
+                                                    &mut state.app.plugin_state.graph_state;
+                                                graph_state.graph_config_open =
+                                                    !graph_state.graph_config_open;
+                                                cx.notify();
+                                            });
+                                        })
+                                    }))
                                     .children(confirm_close_dirty.then(|| {
                                         let state = state_for_continue.clone();
                                         Button::new(
@@ -865,6 +958,9 @@ impl PlayerView {
                             .flex_1()
                             .overflow_y_scroll()
                             .p(d.card)
+                            .flex()
+                            .flex_col()
+                            .gap(d.section)
                             .child(self.render_plugin_node_content(
                                 &node_type,
                                 plugin_type.as_deref(),
@@ -873,9 +969,102 @@ impl PlayerView {
                                 node_exists_in_graph,
                                 &theme,
                                 cx,
-                            )),
+                            ))
+                            .when_some(
+                                plugin_settings
+                                    .as_ref()
+                                    .filter(|_| graph_config_open && has_graph_config),
+                                |body, settings| {
+                                    body.child(self.render_plugin_graph_config(
+                                        settings,
+                                        plugin_linear_idx.unwrap_or(0),
+                                        plugin_linear_idx.is_some() || node_exists_in_graph,
+                                        modal_w,
+                                        &theme,
+                                        cx,
+                                    ))
+                                },
+                            ),
                     ),
             )
+    }
+
+    /// Render generic setup/output controls inside the graph node editor.
+    ///
+    /// Rack mode exposes these controls through its configuration overlay.
+    /// The graph modal needs its own disclosure so file pickers, routing
+    /// controls, and output meters remain reachable from the graph surface.
+    fn render_plugin_graph_config(
+        &self,
+        settings: &PluginSettings,
+        plugin_idx: usize,
+        is_editing: bool,
+        modal_width: f32,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let d = Ds::from_cx(cx);
+        let common_text =
+            PluginCommonTranslations::for_language(self.state.read(cx).app.ui_state.language);
+        let (plugin_data, layout_scale, plugin_theme) = {
+            let state = self.state.read(cx);
+            let selected_theme = state
+                .app
+                .plugin_state
+                .rack_theme_state
+                .resolved_id(plugin_idx);
+            (
+                state.app.playback.rack_plugin_data.clone(),
+                crate::ui::compute_combined_scale(
+                    state.app.ui_state.window_width,
+                    state.app.ui_state.window_height,
+                    state.app.ui_state.font_scale,
+                    state.app.ui_state.min_font_size_px,
+                    state.app.ui_state.max_font_size_px,
+                ),
+                plugin_theme_id_for_app_theme(
+                    selected_theme,
+                    &state.app.ui_state.theme,
+                    state.app.ui_state.theme_id,
+                )
+                .theme(),
+            )
+        };
+        let selected_param = if is_editing {
+            self.state.read(cx).app.plugin_state.plugin_param_selection
+        } else {
+            0
+        };
+        let available_width = (modal_width - 64.0).max(240.0);
+        let Some(content) = super::super::ui_layout_renderer::render_config_controls_from_layout(
+            &d,
+            self.state.clone(),
+            plugin_idx,
+            settings,
+            is_editing,
+            selected_param,
+            available_width,
+            layout_scale,
+            plugin_data.as_ref(),
+            common_text,
+            theme,
+            &plugin_theme,
+        ) else {
+            return div().into_any_element();
+        };
+
+        div()
+            .id("graph-node-config-panel")
+            .flex()
+            .flex_col()
+            .gap(d.section)
+            .p(d.card)
+            .bg(theme.background_secondary)
+            .border_1()
+            .border_color(theme.border)
+            .rounded(d.r_lg)
+            .child(content)
+            .into_any_element()
     }
 
     /// Render the content for a plugin node based on its type.
@@ -1049,8 +1238,14 @@ impl PlayerView {
                     .playback
                     .compressor_info
                     .clone()
-                    .map(|c| c as std::sync::Arc<dyn std::any::Any + Send + Sync>),
-                _ => None,
+                    .map(|c| c as std::sync::Arc<dyn std::any::Any + Send + Sync>)
+                    .or_else(|| state.app.playback.rack_plugin_data.clone()),
+                // The rack snapshot carries the currently edited graph node
+                // while the graph screen is active. Reuse it for every
+                // generic live visualization (limiter, gate, expander,
+                // de-esser, and future layout meters) instead of pinning the
+                // output meter to its zero fallback.
+                _ => state.app.playback.rack_plugin_data.clone(),
             };
             (
                 state.app.plugin_state.graph.clone(),

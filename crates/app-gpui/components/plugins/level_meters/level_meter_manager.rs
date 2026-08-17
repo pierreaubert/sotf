@@ -8,8 +8,14 @@ use sotf_plugins::speaker_config::{
 
 const PEAK_HOLD_DECAY_RATE: f64 = 0.95;
 const PEAK_HOLD_DECAY_THRESHOLD: f64 = 0.0001;
+const PEAK_HOLD_REFERENCE_INTERVAL_SECONDS: f64 = 0.1;
 
-fn update_peak_hold_values(held: &mut Vec<f64>, current: &[f64], reduce_motion: bool) {
+fn update_peak_hold_values(
+    held: &mut Vec<f64>,
+    current: &[f64],
+    reduce_motion: bool,
+    elapsed_seconds: f64,
+) {
     held.resize(current.len(), 0.0);
 
     if reduce_motion {
@@ -17,11 +23,17 @@ fn update_peak_hold_values(held: &mut Vec<f64>, current: &[f64], reduce_motion: 
         return;
     }
 
+    // Keep the historical 0.95 decay at the normal 100 ms UI cadence while
+    // making the release independent of timer jitter or a temporarily busy
+    // main thread.
+    let decay = PEAK_HOLD_DECAY_RATE
+        .powf((elapsed_seconds.max(0.0) / PEAK_HOLD_REFERENCE_INTERVAL_SECONDS).max(0.0));
+
     for (held_peak, &current_peak) in held.iter_mut().zip(current) {
         if current_peak > *held_peak {
             *held_peak = current_peak;
         } else {
-            *held_peak *= PEAK_HOLD_DECAY_RATE;
+            *held_peak *= decay;
             if *held_peak < PEAK_HOLD_DECAY_THRESHOLD {
                 *held_peak = 0.0;
             }
@@ -41,9 +53,6 @@ pub trait LevelMeterManager {
     fn set_level_meter_dim(&mut self, group_idx: usize, dimmed: bool);
     fn select_next_level_meter_group(&mut self);
     fn select_previous_level_meter_group(&mut self);
-    fn select_next_level_meter_control(&mut self);
-    fn select_previous_level_meter_control(&mut self);
-    fn toggle_selected_level_meter_control(&mut self);
     fn update_matrix_plugin(&mut self);
 }
 
@@ -224,6 +233,11 @@ impl LevelMeterManager for AppState {
     /// Peak hold captures the maximum value and decays over time
     fn update_level_meter_peak_hold(&mut self) {
         let now = std::time::Instant::now();
+        let elapsed_seconds = self
+            .level_meters
+            .peak_hold_last_update
+            .map(|last| now.duration_since(last).as_secs_f64())
+            .unwrap_or(PEAK_HOLD_REFERENCE_INTERVAL_SECONDS);
 
         // Get current channel peaks from loudness data (zero-copy slice reference)
         let current_peaks: &[f64] = self
@@ -237,6 +251,7 @@ impl LevelMeterManager for AppState {
             &mut self.level_meters.peak_hold,
             current_peaks,
             self.ui_state.reduce_motion,
+            elapsed_seconds,
         );
 
         self.level_meters.peak_hold_last_update = Some(now);
@@ -403,30 +418,6 @@ impl LevelMeterManager for AppState {
             }
         }
     }
-
-    /// Navigate between mute, solo, and dim controls
-    fn select_next_level_meter_control(&mut self) {
-        self.level_meters.control_selection = (self.level_meters.control_selection + 1) % 3;
-    }
-
-    /// Navigate between mute, solo, and dim controls (previous)
-    fn select_previous_level_meter_control(&mut self) {
-        self.level_meters.control_selection = if self.level_meters.control_selection == 0 {
-            2
-        } else {
-            self.level_meters.control_selection - 1
-        };
-    }
-
-    /// Toggle the currently selected level meter control (mute/solo/dim)
-    fn toggle_selected_level_meter_control(&mut self) {
-        match self.level_meters.control_selection {
-            0 => self.toggle_level_meter_mute(),
-            1 => self.toggle_level_meter_solo(),
-            2 => self.toggle_level_meter_dim(),
-            _ => {}
-        }
-    }
 }
 
 #[cfg(test)]
@@ -436,15 +427,24 @@ mod tests {
     #[test]
     fn peak_hold_snaps_to_current_values_when_motion_is_reduced() {
         let mut held = vec![0.9, 0.1, 0.4];
-        update_peak_hold_values(&mut held, &[0.2, 0.8], true);
+        update_peak_hold_values(&mut held, &[0.2, 0.8], true, 0.4);
         assert_eq!(held, vec![0.2, 0.8]);
     }
 
     #[test]
     fn peak_hold_retains_and_decays_peaks_when_motion_is_enabled() {
         let mut held = vec![0.8, 0.2];
-        update_peak_hold_values(&mut held, &[0.1, 0.7], false);
+        update_peak_hold_values(&mut held, &[0.1, 0.7], false, 0.1);
         assert!((held[0] - 0.76).abs() < f64::EPSILON);
         assert_eq!(held[1], 0.7);
+    }
+
+    #[test]
+    fn peak_hold_decay_scales_with_elapsed_time() {
+        let mut held = vec![0.8];
+
+        update_peak_hold_values(&mut held, &[0.1], false, 0.2);
+
+        assert!((held[0] - 0.722).abs() < 1e-12);
     }
 }

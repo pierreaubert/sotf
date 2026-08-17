@@ -1,4 +1,8 @@
 use super::render::render_ab_compare;
+use super::render::render_binaural;
+use super::render::render_convolution;
+use super::render::render_crossfeed;
+use super::render::render_denoiser;
 use super::render::render_dynamic_eq;
 use super::render::render_eq;
 use super::render::render_external;
@@ -10,6 +14,7 @@ use super::render::render_mb_expander;
 use super::render::render_mute_solo;
 use super::render::render_spectrum;
 use super::render::render_upmixer;
+use super::render::render_xtc;
 use super::types::CustomViewRenderFn;
 use std::collections::HashMap;
 
@@ -25,6 +30,11 @@ impl GpuiViewRegistry {
 
         views.insert("eq", render_eq);
         views.insert("dynamic_eq", render_dynamic_eq);
+        views.insert("denoiser", render_denoiser);
+        views.insert("convolution", render_convolution);
+        views.insert("xtc", render_xtc);
+        views.insert("crossfeed", render_crossfeed);
+        views.insert("binaural", render_binaural);
         views.insert("fir_designer", render_linear_phase_eq);
         views.insert("linear_phase_eq", render_linear_phase_eq);
         views.insert("spectrum_analyzer", render_spectrum);

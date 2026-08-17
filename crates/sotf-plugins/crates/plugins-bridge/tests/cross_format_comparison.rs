@@ -244,7 +244,11 @@ fn test_all_factory_plugins_create_successfully() {
         }
         // MonoToStereo has a deliberately fixed one-channel input contract;
         // all other factory entries use the stereo smoke-test layout.
-        let input_channels = if plugin_type == "MonoToStereo" { 1 } else { 2 };
+        let input_channels = match plugin_type {
+            "AmbisonicsDecoder" => 4,
+            "MonoToStereo" => 1,
+            _ => 2,
+        };
         match create_plugin(plugin_type, input_channels, SAMPLE_RATE, "{}") {
             Ok(mut plugin) => {
                 if let Err(e) = plugin.initialize(SAMPLE_RATE) {

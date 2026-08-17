@@ -17,7 +17,9 @@ pub(super) const Q_BAR_HEIGHT: f32 = 3.0;
 #[derive(Clone, Copy)]
 pub(super) struct EqChartGeometry {
     pub control_point_radius: f32,
+    pub control_point_hit_radius: f32,
     pub q_handle_radius: f32,
+    pub q_handle_hit_radius: f32,
     pub q_bar_height: f32,
     pub q_bar_min_width: f32,
     pub q_bar_max_width: f32,
@@ -41,7 +43,11 @@ impl EqChartGeometry {
         };
         Self {
             control_point_radius: CONTROL_POINT_RADIUS * scale,
+            // Keep the visual points compact while giving mouse and touch
+            // users a stable 24px minimum target at every zoom level.
+            control_point_hit_radius: (CONTROL_POINT_RADIUS * scale).max(12.0),
             q_handle_radius: Q_HANDLE_RADIUS * scale,
+            q_handle_hit_radius: (Q_HANDLE_RADIUS * scale).max(12.0),
             q_bar_height: Q_BAR_HEIGHT * scale,
             q_bar_min_width: Q_BAR_MIN_WIDTH * scale,
             q_bar_max_width: Q_BAR_MAX_WIDTH * scale,

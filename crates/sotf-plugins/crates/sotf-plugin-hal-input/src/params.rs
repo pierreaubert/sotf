@@ -36,8 +36,12 @@ pub const PARAMS: &[ParamSpec] = &[ParamSpec::int(
 // ============================================================================
 
 pub const LAYOUT: PluginLayout = PluginLayout {
-    config: &[ControlSpec::knob(0)], // input_channels
-    main: &[],
+    config: &[],
+    main: &[ControlGroup::new(
+        "INPUT",
+        "INPUT",
+        &[ControlSpec::knob(0)], // input_channels
+    )],
     output: &[],
     tabs: &[],
     visualizations: &[],
@@ -119,6 +123,13 @@ mod tests {
             p.param_value(PARAMS.len()).is_none(),
             "param_value beyond PARAMS.len() should return None"
         );
+    }
+
+    #[test]
+    fn input_channels_are_on_the_primary_surface() {
+        assert!(LAYOUT.config.is_empty());
+        assert_eq!(LAYOUT.main.len(), 1);
+        assert_eq!(LAYOUT.main[0].controls.len(), 1);
     }
 
     #[test]

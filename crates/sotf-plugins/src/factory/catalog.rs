@@ -471,7 +471,7 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             PluginChannelOutputModel::PreservesInput,
             PluginLatencyModel::PluginReported("detector and lookahead configuration"),
             "runtime broadband schema (unsupported legacy sidechain controls rejected)",
-            Custom,
+            Generated,
             true,
         ),
         zero_alloc_evidence(
@@ -587,7 +587,7 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             PluginChannelOutputModel::PreservesInput,
             PluginLatencyModel::FrameBased("IR partition and active convolution configuration"),
             "sotf_plugin_convolution::params::PARAMS",
-            Generated,
+            Custom,
             true,
         ),
         zero_alloc_evidence(
@@ -897,7 +897,7 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             PluginChannelOutputModel::PreservesInput,
             PluginLatencyModel::PluginReported("crossfeed delay configuration"),
             "sotf_plugin_crossfeed::params::PARAMS",
-            Generated,
+            Custom,
             true,
         ),
         zero_alloc_evidence(
@@ -919,7 +919,7 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             },
             PluginLatencyModel::FrameBased("one full FFT frame"),
             "sotf_plugin_xtc::params::PARAMS",
-            Generated,
+            Custom,
             true,
         ),
         zero_alloc_evidence(
@@ -938,7 +938,7 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             PluginChannelOutputModel::PreservesInput,
             PluginLatencyModel::FrameBased("Wiener/MCRA analysis frame"),
             "sotf_plugin_denoiser::params::PARAMS",
-            Generated,
+            Custom,
             true,
         ),
         zero_alloc_evidence(
@@ -1033,7 +1033,7 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             PluginChannelOutputModel::Fixed(2),
             PluginLatencyModel::FrameBased("HRTF convolution partition"),
             "sotf_plugin_binaural::params::PARAMS",
-            Generated,
+            Custom,
             true,
         ),
         zero_alloc_evidence(

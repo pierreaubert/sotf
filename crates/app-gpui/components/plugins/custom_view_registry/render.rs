@@ -1,4 +1,5 @@
 use super::types::CustomViewRenderContext;
+use crate::app::i18n::PluginCommonTranslations;
 use crate::app::state::{
     ExternalPluginWorkerHealth, external_plugin_error_key, external_plugin_worker_health,
 };
@@ -207,10 +208,535 @@ pub(super) fn render_dynamic_eq(
         ctx.selected_band_idx,
         ctx.plugin_data.clone(),
         ctx.available_width,
+        ctx.layout_scale,
         ctx.theme,
         cx,
     )
     .into_any_element()
+}
+
+/// Render the denoiser's live noise-estimation surface.
+///
+/// The declarative layout still owns all parameter controls, including the
+/// Learn/Clear profile actions. This view only adds the monitoring surface
+/// that cannot be represented by `PluginLayout`: compact per-band noise-floor
+/// and SNR strips plus profile/reduction status.
+pub(super) fn render_denoiser(
+    ctx: &CustomViewRenderContext,
+    cx: &mut Context<PlayerView>,
+) -> AnyElement {
+    let d = Ds::from_cx(cx);
+    let text = PluginCommonTranslations::for_language(ctx.entity.read(cx).app.ui_state.language);
+    let data = ctx
+        .plugin_data
+        .as_ref()
+        .and_then(|value| value.downcast_ref::<sotf_plugins::DenoiserData>());
+
+    let mut root = div().flex().flex_col().gap(d.section).w_full().min_w_0();
+
+    if let Some(data) = data {
+        let profile_state = if data.is_learning_noise {
+            format!(
+                "{} · {} {:.0}%",
+                text.denoiser_profile,
+                text.denoiser_learning,
+                data.learning_progress * 100.0
+            )
+        } else if data.has_captured_profile {
+            format!(
+                "{} · {}",
+                text.denoiser_profile,
+                if data.using_captured_profile {
+                    text.denoiser_active
+                } else {
+                    text.denoiser_captured
+                }
+            )
+        } else {
+            format!("{} · {}", text.denoiser_profile, text.denoiser_none)
+        };
+
+        root = root.child(
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .justify_between()
+                .gap(d.gap)
+                .text_size(d.text_sm)
+                .text_color(ctx.theme.text_secondary)
+                .child(profile_state)
+                .child(format!(
+                    "{}: {:.1} dB",
+                    text.denoiser_reduction, data.avg_reduction_db
+                )),
+        );
+        root = root.child(render_denoiser_band_row(
+            &d,
+            text.denoiser_noise_floor,
+            data.noise_floor_db.as_slice(),
+            -80.0,
+            0.0,
+            ctx.theme.info,
+            ctx.theme,
+        ));
+        root = root.child(render_denoiser_band_row(
+            &d,
+            text.denoiser_snr,
+            data.snr_db.as_slice(),
+            0.0,
+            40.0,
+            ctx.theme.success,
+            ctx.theme,
+        ));
+    } else {
+        root = root.child(
+            div()
+                .w_full()
+                .py(d.card)
+                .flex()
+                .justify_center()
+                .text_size(d.text_sm)
+                .text_color(ctx.theme.text_muted)
+                .child(text.spatial_waiting_data),
+        );
+    }
+
+    root.child(
+        super::super::ui_layout_renderer::render_main_controls_from_layout(
+            &d,
+            ctx.entity.clone(),
+            ctx.plugin_idx,
+            ctx.settings,
+            ctx.is_editing,
+            ctx.selected_param,
+            ctx.plugin_data.as_ref(),
+            ctx.available_width,
+            ctx.layout_scale,
+            ctx.theme,
+        ),
+    )
+    .into_any_element()
+}
+
+fn render_denoiser_band_row(
+    d: &Ds,
+    label: &'static str,
+    values: &[f32],
+    min_value: f32,
+    max_value: f32,
+    color: gpui::Rgba,
+    theme: &crate::theme::Theme,
+) -> AnyElement {
+    let mut bars = div()
+        .flex()
+        .items_end()
+        .gap(d.half_grid)
+        .h(rems(5.0))
+        .w_full()
+        .min_w_0();
+    for value in values.iter().take(64) {
+        let normalized = if value.is_finite() {
+            ((*value - min_value) / (max_value - min_value)).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        bars = bars.child(
+            div().flex_1().min_w_0().h_full().flex().items_end().child(
+                div()
+                    .w_full()
+                    .h(rems(0.25 + normalized * 4.25))
+                    .rounded(d.r_sm)
+                    .bg(color),
+            ),
+        );
+    }
+
+    div()
+        .flex()
+        .flex_col()
+        .gap(d.grid)
+        .child(
+            div()
+                .text_size(d.text_xs)
+                .text_color(theme.text_muted)
+                .child(label),
+        )
+        .child(bars)
+        .into_any_element()
+}
+
+fn render_main_controls(ctx: &CustomViewRenderContext, d: &Ds) -> AnyElement {
+    super::super::ui_layout_renderer::render_main_controls_from_layout(
+        d,
+        ctx.entity.clone(),
+        ctx.plugin_idx,
+        ctx.settings,
+        ctx.is_editing,
+        ctx.selected_param,
+        ctx.plugin_data.as_ref(),
+        ctx.available_width,
+        ctx.layout_scale,
+        ctx.theme,
+    )
+}
+
+pub(super) fn render_convolution(
+    ctx: &CustomViewRenderContext,
+    cx: &mut Context<PlayerView>,
+) -> AnyElement {
+    let d = Ds::from_cx(cx);
+    let text = PluginCommonTranslations::for_language(ctx.entity.read(cx).app.ui_state.language);
+    let PluginSettings::Convolution {
+        ir_file,
+        zero_latency_head,
+        head_taps,
+        ..
+    } = ctx.settings
+    else {
+        return Empty.into_any_element();
+    };
+
+    let has_ir = !ir_file.trim().is_empty();
+    let status = if has_ir {
+        text.label("Impulse response selected")
+    } else {
+        text.label("Choose or drop an impulse-response WAV file")
+    };
+    let latency = if *zero_latency_head {
+        format!("Zero-latency head · {head_taps} taps")
+    } else {
+        format!("Partitioned FFT · {head_taps} head taps")
+    };
+
+    div()
+        .flex()
+        .flex_col()
+        .gap(d.section)
+        .w_full()
+        .min_w_0()
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(d.gap)
+                .p(d.card)
+                .rounded(d.r_md)
+                .border_1()
+                .border_color(if has_ir {
+                    ctx.theme.success
+                } else {
+                    ctx.theme.border
+                })
+                .bg(ctx.theme.surface)
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap(d.gap)
+                        .text_size(d.text_sm)
+                        .text_color(ctx.theme.text_primary)
+                        .child(text.convolution_ir)
+                        .child(
+                            div()
+                                .text_size(d.text_xs)
+                                .text_color(if has_ir {
+                                    ctx.theme.success
+                                } else {
+                                    ctx.theme.text_muted
+                                })
+                                .child(status),
+                        ),
+                )
+                .child(
+                    div()
+                        .w_full()
+                        .min_w_0()
+                        .py(d.pad_y)
+                        .text_size(d.text_xs)
+                        .text_color(ctx.theme.text_secondary)
+                        .child(if has_ir {
+                            ir_file.clone()
+                        } else {
+                            text.label("Use the file picker below to load an IR")
+                                .to_string()
+                        }),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(d.gap)
+                        .text_size(d.text_xs)
+                        .text_color(ctx.theme.text_muted)
+                        .child(latency)
+                        .child(format!("· {}", text.convolution_preview)),
+                ),
+        )
+        .child(render_main_controls(ctx, &d))
+        .into_any_element()
+}
+
+pub(super) fn render_xtc(
+    ctx: &CustomViewRenderContext,
+    cx: &mut Context<PlayerView>,
+) -> AnyElement {
+    let d = Ds::from_cx(cx);
+    let text = PluginCommonTranslations::for_language(ctx.entity.read(cx).app.ui_state.language);
+    let PluginSettings::XTC {
+        distance_m,
+        speaker_angle_deg,
+        head_offset_x,
+        head_offset_z,
+        head_yaw_deg,
+        ..
+    } = ctx.settings
+    else {
+        return Empty.into_any_element();
+    };
+
+    let node = |label: &'static str, color: gpui::Rgba| {
+        div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(d.half_grid)
+            .text_size(d.text_xs)
+            .text_color(ctx.theme.text_secondary)
+            .child(div().size(rems(1.75)).rounded_full().bg(color))
+            .child(label)
+    };
+
+    div()
+        .flex()
+        .flex_col()
+        .gap(d.section)
+        .w_full()
+        .min_w_0()
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(d.gap)
+                .p(d.card)
+                .rounded(d.r_md)
+                .border_1()
+                .border_color(ctx.theme.border)
+                .bg(ctx.theme.surface)
+                .child(
+                    div()
+                        .text_size(d.text_sm)
+                        .text_color(ctx.theme.text_primary)
+                        .child(text.xtc_geometry),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap(d.gap)
+                        .w_full()
+                        .py(d.card)
+                        .child(node("Left speaker", ctx.theme.accent))
+                        .child(div().flex_1().h(d.half_grid).bg(ctx.theme.border).min_w_0())
+                        .child(node("Listener", ctx.theme.info))
+                        .child(div().flex_1().h(d.half_grid).bg(ctx.theme.border).min_w_0())
+                        .child(node("Right speaker", ctx.theme.accent)),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap(d.gap)
+                        .text_size(d.text_xs)
+                        .text_color(ctx.theme.text_secondary)
+                        .child(format!("{}: {distance_m:.2} m", text.label("Distance")))
+                        .child(format!("{}: {speaker_angle_deg:.1}°", text.label("Angle")))
+                        .child(format!(
+                            "{}: {head_offset_x:.2} / {head_offset_z:.2} m",
+                            text.label("Head offset")
+                        ))
+                        .child(format!("{}: {head_yaw_deg:.1}°", text.label("Yaw"))),
+                ),
+        )
+        .child(render_main_controls(ctx, &d))
+        .into_any_element()
+}
+
+pub(super) fn render_crossfeed(
+    ctx: &CustomViewRenderContext,
+    cx: &mut Context<PlayerView>,
+) -> AnyElement {
+    let d = Ds::from_cx(cx);
+    let text = PluginCommonTranslations::for_language(ctx.entity.read(cx).app.ui_state.language);
+    let PluginSettings::Crossfeed {
+        enabled,
+        mix,
+        itd_delay_ms,
+        ..
+    } = ctx.settings
+    else {
+        return Empty.into_any_element();
+    };
+
+    let status = if *enabled { "Enabled" } else { "Bypassed" };
+    div()
+        .flex()
+        .flex_col()
+        .gap(d.section)
+        .w_full()
+        .min_w_0()
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(d.gap)
+                .p(d.card)
+                .rounded(d.r_md)
+                .border_1()
+                .border_color(if *enabled {
+                    ctx.theme.accent
+                } else {
+                    ctx.theme.border
+                })
+                .bg(ctx.theme.surface)
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .text_size(d.text_sm)
+                        .text_color(ctx.theme.text_primary)
+                        .child(text.crossfeed_signal)
+                        .child(
+                            div()
+                                .text_size(d.text_xs)
+                                .text_color(if *enabled {
+                                    ctx.theme.success
+                                } else {
+                                    ctx.theme.text_muted
+                                })
+                                .child(status),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(d.gap)
+                        .w_full()
+                        .py(d.card)
+                        .child(div().size(rems(1.5)).rounded_full().bg(ctx.theme.accent))
+                        .child(
+                            div()
+                                .flex_1()
+                                .h(d.half_grid)
+                                .bg(ctx.theme.accent.opacity(0.55))
+                                .min_w_0(),
+                        )
+                        .child(div().size(rems(1.5)).rounded_full().bg(ctx.theme.accent))
+                        .child(
+                            div()
+                                .text_size(d.text_xs)
+                                .text_color(ctx.theme.text_secondary)
+                                .child(format!(
+                                    "{:.0}% mix · {itd_delay_ms:.1} ms ITD",
+                                    mix * 100.0
+                                )),
+                        ),
+                ),
+        )
+        .child(render_main_controls(ctx, &d))
+        .into_any_element()
+}
+
+pub(super) fn render_binaural(
+    ctx: &CustomViewRenderContext,
+    cx: &mut Context<PlayerView>,
+) -> AnyElement {
+    let d = Ds::from_cx(cx);
+    let text = PluginCommonTranslations::for_language(ctx.entity.read(cx).app.ui_state.language);
+    let PluginSettings::BinauralDecoder {
+        sofa_file,
+        input_channels,
+        externalization,
+        near_field_strength,
+        ..
+    } = ctx.settings
+    else {
+        return Empty.into_any_element();
+    };
+
+    let has_sofa = !sofa_file.trim().is_empty();
+    div()
+        .flex()
+        .flex_col()
+        .gap(d.section)
+        .w_full()
+        .min_w_0()
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(d.gap)
+                .p(d.card)
+                .rounded(d.r_md)
+                .border_1()
+                .border_color(if has_sofa {
+                    ctx.theme.success
+                } else {
+                    ctx.theme.border
+                })
+                .bg(ctx.theme.surface)
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap(d.gap)
+                        .text_size(d.text_sm)
+                        .text_color(ctx.theme.text_primary)
+                        .child(text.binaural_hrtf)
+                        .child(
+                            div()
+                                .text_size(d.text_xs)
+                                .text_color(if has_sofa {
+                                    ctx.theme.success
+                                } else {
+                                    ctx.theme.warning
+                                })
+                                .child(if has_sofa {
+                                    "SOFA loaded"
+                                } else {
+                                    "Select a SOFA file"
+                                }),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap(d.gap)
+                        .text_size(d.text_xs)
+                        .text_color(ctx.theme.text_secondary)
+                        .child(format!("{input_channels} input channels"))
+                        .child(format!("Externalization: {:.0}%", externalization * 100.0))
+                        .child(format!("Near-field: {:.0}%", near_field_strength * 100.0)),
+                )
+                .when(has_sofa, |panel| {
+                    panel.child(
+                        div()
+                            .w_full()
+                            .min_w_0()
+                            .text_size(d.text_xs)
+                            .text_color(ctx.theme.text_muted)
+                            .child(sofa_file.clone()),
+                    )
+                }),
+        )
+        .child(render_main_controls(ctx, &d))
+        .into_any_element()
 }
 
 pub(super) fn render_linear_phase_eq(
@@ -428,10 +954,11 @@ pub(super) fn render_upmixer(
             },
     } = ctx.settings
     {
-        let (upmixer_tab, loudness_info, spatial_spider) = {
+        let (upmixer_tab, expanded_sections, loudness_info, spatial_spider) = {
             let app = &ctx.entity.read(cx).app;
             (
                 app.plugin_ui.upmixer_tab,
+                app.plugin_ui.upmixer_expanded_sections.clone(),
                 app.playback.loudness_info.clone(),
                 app.plugin_ui.spatial_spider.clone(),
             )
@@ -496,6 +1023,7 @@ pub(super) fn render_upmixer(
                 selected_param: ctx.selected_param,
                 config_open: false,
                 upmixer_tab,
+                expanded_sections,
                 loudness_info,
                 spatial_spider,
             },
@@ -571,6 +1099,8 @@ pub(super) fn render_matrix(
                 plugin_instance_id,
                 input_channels: *input_channels,
                 output_channels: *output_channels,
+                available_width: ctx.available_width,
+                layout_scale: ctx.layout_scale,
                 matrix,
                 channel_states,
                 speaker_config,

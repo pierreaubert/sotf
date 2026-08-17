@@ -15,6 +15,7 @@ use super::types::MsdAction;
 use crate::app::AppState;
 use crate::app::types::PluginUpdateType;
 use crate::components::design::Ds;
+use crate::components::themed_tooltip;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -23,6 +24,36 @@ use sotf_audio_player::{
     apply_matrix_preset, available_matrix_presets, db_to_linear, detect_matrix_preset,
     get_channel_label_from_config,
 };
+
+#[derive(Clone, Copy)]
+struct MatrixGeometry {
+    cell_size: f32,
+    label_width: f32,
+    msd_col_width: f32,
+    msd_button_size: f32,
+}
+
+fn matrix_geometry(state: &MatrixRenderState<'_>) -> MatrixGeometry {
+    let scale = state.layout_scale.max(0.01);
+    let base_cell_size = CELL_SIZE * scale;
+    let label_width = LABEL_WIDTH * scale;
+    let msd_col_width = MSD_COL_WIDTH * scale;
+    let channel_count = state.input_channels.max(state.output_channels).max(1) as f32;
+    let available_for_cells =
+        state.available_width.max(0.0) - label_width - msd_col_width - (8.0 * scale);
+    let width_limited_cell_size = available_for_cells / channel_count;
+
+    MatrixGeometry {
+        // Preserve a readable minimum, but let dense 12–16 channel matrices
+        // use the available width before the outer scroll view takes over.
+        cell_size: base_cell_size
+            .min(width_limited_cell_size.max(24.0))
+            .clamp(24.0, 96.0),
+        label_width,
+        msd_col_width,
+        msd_button_size: (MSD_BTN_SIZE * scale).clamp(18.0, 42.0),
+    }
+}
 
 /// Render the Matrix plugin
 pub fn render_matrix_plugin(
@@ -34,6 +65,7 @@ pub fn render_matrix_plugin(
 ) -> impl IntoElement {
     let preset_name =
         detect_matrix_preset(state.input_channels, state.output_channels, state.matrix);
+    let geometry = matrix_geometry(&state);
 
     div()
         .w_full()
@@ -68,6 +100,7 @@ pub fn render_matrix_plugin(
                     entity.clone(),
                     plugin_idx,
                     &state,
+                    geometry,
                     theme,
                 )),
         )
@@ -217,6 +250,7 @@ fn render_matrix_grid(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &MatrixRenderState,
+    geometry: MatrixGeometry,
     theme: &Theme,
 ) -> impl IntoElement {
     let output_groups =
@@ -238,8 +272,8 @@ fn render_matrix_grid(
                         .child(
                             // Empty corner cell
                             div()
-                                .w(px(LABEL_WIDTH))
-                                .h(px(24.0))
+                                .w(px(geometry.label_width))
+                                .h(px(geometry.cell_size * 0.5))
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -254,8 +288,8 @@ fn render_matrix_grid(
                                 state.speaker_config.as_deref(),
                             );
                             div()
-                                .w(px(CELL_SIZE))
-                                .h(px(24.0))
+                                .w(px(geometry.cell_size))
+                                .h(px(geometry.cell_size * 0.5))
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -267,7 +301,15 @@ fn render_matrix_grid(
                 )
                 // Grid rows
                 .children((0..state.output_channels).map(|out_idx| {
-                    render_matrix_row(d, entity.clone(), plugin_idx, out_idx, state, theme)
+                    render_matrix_row(
+                        d,
+                        entity.clone(),
+                        plugin_idx,
+                        out_idx,
+                        state,
+                        geometry,
+                        theme,
+                    )
                 })),
         )
         // Right: M/S/D sidebar
@@ -277,6 +319,7 @@ fn render_matrix_grid(
             plugin_idx,
             state,
             &output_groups,
+            geometry,
             theme,
         ))
 }
@@ -288,19 +331,20 @@ fn render_msd_sidebar(
     plugin_idx: usize,
     state: &MatrixRenderState,
     output_groups: &[(String, Vec<usize>)],
+    geometry: MatrixGeometry,
     theme: &Theme,
 ) -> impl IntoElement {
-    // Row height for each output channel: CELL_SIZE + 2px margin (m_px on each side)
-    let row_height = CELL_SIZE + 2.0;
+    // Keep the sidebar aligned with matrix rows, including the cell margin.
+    let row_height = geometry.cell_size + 2.0;
 
     div()
         .flex()
         .flex_col()
-        .w(px(MSD_COL_WIDTH))
+        .w(px(geometry.msd_col_width))
         // Header spacer to align with column header row
         .child(
             div()
-                .h(px(24.0))
+                .h(px(geometry.cell_size * 0.5))
                 .flex()
                 .items_center()
                 .justify_center()
@@ -343,6 +387,7 @@ fn render_msd_sidebar(
                     channels.clone(),
                     output_channels,
                     MsdAction::Mute,
+                    geometry.msd_button_size,
                 ))
                 .child(render_msd_button(
                     d,
@@ -356,6 +401,7 @@ fn render_msd_sidebar(
                     channels.clone(),
                     output_channels,
                     MsdAction::Solo,
+                    geometry.msd_button_size,
                 ))
                 .child(render_msd_button(
                     d,
@@ -369,6 +415,7 @@ fn render_msd_sidebar(
                     channels.clone(),
                     output_channels,
                     MsdAction::Dim,
+                    geometry.msd_button_size,
                 ));
 
             let mut container = div()
@@ -408,7 +455,16 @@ fn render_msd_button(
     channels: Vec<usize>,
     output_channels: usize,
     action: MsdAction,
+    button_size: f32,
 ) -> impl IntoElement {
+    let action_name = match &action {
+        MsdAction::Mute => "Mute",
+        MsdAction::Solo => "Solo",
+        MsdAction::Dim => "Dim",
+    };
+    let tooltip = format!("{action_name} output group");
+    let tooltip_theme = theme.clone();
+
     div()
         .id(ElementId::Name(
             format!(
@@ -421,7 +477,7 @@ fn render_msd_button(
         ))
         .min_w(rems(1.5))
         .min_h(rems(1.5))
-        .w(px(MSD_BTN_SIZE.max(24.0)))
+        .w(px(button_size.max(24.0)))
         .rounded(d.r_sm)
         .cursor_pointer()
         .bg(if is_active {
@@ -452,6 +508,7 @@ fn render_msd_button(
         } else {
             theme.text_muted
         })
+        .tooltip(move |_window, cx| themed_tooltip(tooltip.clone(), &tooltip_theme, cx))
         .child(label)
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
             entity.update(cx, |state, _| {
@@ -494,6 +551,7 @@ fn render_matrix_row(
     plugin_idx: usize,
     output_idx: usize,
     state: &MatrixRenderState,
+    geometry: MatrixGeometry,
     theme: &Theme,
 ) -> impl IntoElement {
     let output_label = get_channel_label_from_config(
@@ -507,8 +565,8 @@ fn render_matrix_row(
         // Row label (output channel)
         .child(
             div()
-                .w(px(LABEL_WIDTH))
-                .h(px(CELL_SIZE))
+                .w(px(geometry.label_width))
+                .h(px(geometry.cell_size))
                 .flex()
                 .items_center()
                 .justify_center()
@@ -533,8 +591,10 @@ fn render_matrix_row(
                 in_idx,
                 output_idx,
                 state.input_channels,
+                state.output_channels,
                 gain,
                 is_selected,
+                geometry.cell_size,
                 theme,
             )
         }))
@@ -549,8 +609,10 @@ fn render_matrix_cell(
     input_idx: usize,
     output_idx: usize,
     input_count: usize,
+    output_count: usize,
     gain: f32,
     is_selected: bool,
+    cell_size: f32,
     theme: &Theme,
 ) -> impl IntoElement {
     let gain_db = format_gain_db(gain);
@@ -584,13 +646,15 @@ fn render_matrix_cell(
 
     let entity_click = entity.clone();
     let entity_scroll = entity.clone();
+    let entity_keyboard = entity.clone();
+    let focus_color = theme.border_focused;
 
     div()
         .id(ElementId::Name(
             format!("matrix-cell-{}-{}-{}", plugin_idx, input_idx, output_idx).into(),
         ))
-        .w(px(CELL_SIZE))
-        .h(px(CELL_SIZE))
+        .w(px(cell_size))
+        .h(px(cell_size))
         .flex()
         .items_center()
         .justify_center()
@@ -607,6 +671,8 @@ fn render_matrix_cell(
             theme.background_secondary
         })
         .hover(|s| s.border_color(theme.accent))
+        .focusable()
+        .focus_visible(move |s| s.border_1().border_color(focus_color))
         .text_size(d.text_xs)
         .font_weight(if is_active {
             FontWeight::SEMIBOLD
@@ -661,6 +727,27 @@ fn render_matrix_cell(
                 }
             });
         })
+        .on_key_down(move |event, _, cx| {
+            let key = event.keystroke.key.as_str();
+            let (next_input, next_output) = if matches!(key, "enter" | "space") {
+                (input_idx, output_idx)
+            } else if let Some(next) =
+                matrix_navigation(input_idx, output_idx, input_count, output_count, key)
+            {
+                next
+            } else {
+                return;
+            };
+
+            entity_keyboard.update(cx, |state, _| {
+                state.app.plugin_state.matrix_selected_cell =
+                    Some((plugin_instance_id, next_input, next_output));
+                state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                state.app.plugin_state.plugin_param_selection =
+                    cell_index(next_input, next_output, input_count);
+            });
+            cx.stop_propagation();
+        })
         // Scroll to adjust value (preserving sign for negative gains)
         .on_scroll_wheel(move |event, _, cx| {
             entity_scroll.update(cx, |state, _| {
@@ -709,4 +796,85 @@ fn render_matrix_cell(
                 }
             });
         })
+}
+
+fn matrix_navigation(
+    input_idx: usize,
+    output_idx: usize,
+    input_count: usize,
+    output_count: usize,
+    key: &str,
+) -> Option<(usize, usize)> {
+    let next = match key {
+        "left" if input_idx > 0 => (input_idx - 1, output_idx),
+        "right" if input_idx + 1 < input_count => (input_idx + 1, output_idx),
+        "up" if output_idx > 0 => (input_idx, output_idx - 1),
+        "down" if output_idx + 1 < output_count => (input_idx, output_idx + 1),
+        _ => return None,
+    };
+    Some(next)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn matrix_geometry_compresses_dense_channel_layouts() {
+        let matrix = [0.0_f32; 16];
+        let channel_states = [sotf_plugins::ChannelState::default(); 4];
+        let state = MatrixRenderState {
+            plugin_instance_id: 1,
+            input_channels: 16,
+            output_channels: 16,
+            available_width: 640.0,
+            layout_scale: 1.0,
+            matrix: &matrix,
+            channel_states: &channel_states,
+            speaker_config: None,
+            is_editing: false,
+            selected_param: 0,
+            selected_cell: None,
+        };
+
+        let geometry = matrix_geometry(&state);
+
+        assert!(geometry.cell_size < CELL_SIZE);
+        assert!(geometry.cell_size >= 24.0);
+    }
+
+    #[test]
+    fn matrix_geometry_tracks_zoom_for_readable_controls() {
+        let matrix = [0.0_f32; 4];
+        let channel_states = [sotf_plugins::ChannelState::default(); 2];
+        let state = MatrixRenderState {
+            plugin_instance_id: 1,
+            input_channels: 2,
+            output_channels: 2,
+            available_width: 1200.0,
+            layout_scale: 1.5,
+            matrix: &matrix,
+            channel_states: &channel_states,
+            speaker_config: None,
+            is_editing: false,
+            selected_param: 0,
+            selected_cell: None,
+        };
+
+        let geometry = matrix_geometry(&state);
+
+        assert_eq!(geometry.cell_size, 72.0);
+        assert_eq!(geometry.label_width, LABEL_WIDTH * 1.5);
+    }
+
+    #[test]
+    fn matrix_navigation_moves_within_grid_without_wrapping() {
+        assert_eq!(matrix_navigation(1, 1, 3, 3, "left"), Some((0, 1)));
+        assert_eq!(matrix_navigation(1, 1, 3, 3, "right"), Some((2, 1)));
+        assert_eq!(matrix_navigation(1, 1, 3, 3, "up"), Some((1, 0)));
+        assert_eq!(matrix_navigation(1, 1, 3, 3, "down"), Some((1, 2)));
+        assert_eq!(matrix_navigation(0, 0, 3, 3, "left"), None);
+        assert_eq!(matrix_navigation(2, 2, 3, 3, "down"), None);
+        assert_eq!(matrix_navigation(1, 1, 3, 3, "tab"), None);
+    }
 }

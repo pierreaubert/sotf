@@ -324,6 +324,8 @@ fn render_rail_band_button(
     theme: &Theme,
 ) -> impl IntoElement {
     let entity_clone = entity.clone();
+    let key_entity = entity.clone();
+    let focus_color = theme.border_focused;
     div()
         .id(("eq-band-rail-button", band_idx))
         .flex()
@@ -345,12 +347,24 @@ fn render_rail_band_button(
                 .hover(|s| s.bg(theme.surface_hover))
         })
         .when(filter.muted, |div| div.opacity(0.5))
+        .focusable()
+        .focus_visible(move |s| s.border_1().border_color(focus_color))
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
             entity_clone.update(cx, |state, cx| {
                 state.app.plugin_state.selected_eq_band = band_idx;
                 state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                 cx.notify();
             });
+        })
+        .on_key_down(move |event, _window, cx| {
+            if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                key_entity.update(cx, |state, cx| {
+                    state.app.plugin_state.selected_eq_band = band_idx;
+                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                    cx.notify();
+                });
+                cx.stop_propagation();
+            }
         })
         .child(
             div()
@@ -562,7 +576,7 @@ fn render_compact_config_panel(
                     text.all_channels,
                     !per_channel,
                     theme,
-                    move |_, _, cx| {
+                    move |cx| {
                         all_entity.update(cx, |state, cx| {
                             state.app.set_eq_per_channel_mode(plugin_idx, false);
                             cx.notify();
@@ -574,7 +588,7 @@ fn render_compact_config_panel(
                     text.per_channel,
                     per_channel,
                     theme,
-                    move |_, _, cx| {
+                    move |cx| {
                         per_entity.update(cx, |state, cx| {
                             state.app.set_eq_per_channel_mode(plugin_idx, true);
                             cx.notify();
@@ -595,7 +609,7 @@ fn render_compact_config_panel(
                         channel_label(ch, state.channels),
                         is_selected,
                         theme,
-                        move |_, _, cx| {
+                        move |cx| {
                             entity.update(cx, |state, cx| {
                                 state.app.plugin_state.selected_eq_channel = ch;
                                 cx.notify();
@@ -718,6 +732,8 @@ fn render_add_band_button(
     plugin_idx: usize,
     theme: &Theme,
 ) -> impl IntoElement {
+    let key_entity = entity.clone();
+    let focus_color = theme.border_focused;
     div()
         .id("eq-add-band")
         .px(d.pad_x)
@@ -729,6 +745,8 @@ fn render_add_band_button(
         .bg(theme.success)
         .text_color(theme.text_on_accent)
         .hover(|s| s.opacity(0.8))
+        .focusable()
+        .focus_visible(move |s| s.border_1().border_color(focus_color))
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
             entity.update(cx, |state, cx| {
                 state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
@@ -737,6 +755,18 @@ fn render_add_band_button(
                 }
                 cx.notify();
             });
+        })
+        .on_key_down(move |event, _window, cx| {
+            if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                key_entity.update(cx, |state, cx| {
+                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                    if let Err(error) = state.app.add_eq_band() {
+                        log::warn!("Failed to add EQ band: {error}");
+                    }
+                    cx.notify();
+                });
+                cx.stop_propagation();
+            }
         })
         .child(
             Icon::new(IconName::Plus)
@@ -754,10 +784,13 @@ fn mode_pill<F>(
     on_click: F,
 ) -> impl IntoElement
 where
-    F: Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
+    F: Fn(&mut App) + Clone + 'static,
 {
     let label = label.into();
+    let focus_color = theme.border_focused;
+    let keyboard_on_click = on_click.clone();
     div()
+        .id(ElementId::Name(format!("eq-mode-pill-{label}").into()))
         .px(d.pad_y)
         .py(d.pad_y_half)
         .text_size(d.text_xs)
@@ -772,7 +805,15 @@ where
                 .text_color(theme.text_secondary)
                 .hover(|s| s.bg(theme.surface_hover))
         })
-        .on_mouse_down(MouseButton::Left, on_click)
+        .focusable()
+        .focus_visible(move |s| s.border_1().border_color(focus_color))
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| on_click(cx))
+        .on_key_down(move |event, _, cx| {
+            if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                keyboard_on_click(cx);
+                cx.stop_propagation();
+            }
+        })
         .child(label)
 }
 
@@ -784,7 +825,10 @@ fn config_toggle_button(
     open: bool,
     theme: &Theme,
 ) -> impl IntoElement {
+    let keyboard_entity = entity.clone();
+    let focus_color = theme.border_focused;
     div()
+        .id(("eq-config-toggle", _plugin_idx))
         .px(d.pad_y)
         .py(d.pad_y_half)
         .text_size(d.text_xs)
@@ -799,6 +843,8 @@ fn config_toggle_button(
                 .text_color(theme.text_secondary)
                 .hover(|s| s.bg(theme.surface_hover))
         })
+        .focusable()
+        .focus_visible(move |s| s.border_1().border_color(focus_color))
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
             entity.update(cx, |state, cx| {
                 let open = &mut state
@@ -809,6 +855,20 @@ fn config_toggle_button(
                 *open = !*open;
                 cx.notify();
             });
+        })
+        .on_key_down(move |event, _, cx| {
+            if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                keyboard_entity.update(cx, |state, cx| {
+                    let open = &mut state
+                        .app
+                        .plugin_state
+                        .plugin_ui_state
+                        .eq_compact_config_open;
+                    *open = !*open;
+                    cx.notify();
+                });
+                cx.stop_propagation();
+            }
         })
         .child(Icon::new(IconName::Settings).small().color(if open {
             theme.text_on_accent

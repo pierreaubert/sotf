@@ -1,3 +1,12 @@
+# 0.7.11 (unreleased)
+
+## QA
+
+- Added factory smoke coverage for the Dither plugin and updated the Band Split
+  fixture to use its current `num_bands` configuration field.
+- Corrected the plugin-bridge Ambisonics fixture to supply the four input
+  channels required by the order-1 decoder.
+
 # 0.7.10
 
 ## New

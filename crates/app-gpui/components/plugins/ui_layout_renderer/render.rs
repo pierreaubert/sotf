@@ -29,7 +29,7 @@ use gpui::*;
 use gpui_audio_kit::audio::potentiometer::PotentiometerSize;
 use gpui_ui_kit::{
     AdaptiveOverflow, Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize,
-    IconButtonVariant,
+    IconButtonVariant, NumberInput, NumberInputSize,
 };
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::layout_solver::{Direction, KnobSize, SolvedLayout, solve_layout_scaled};
@@ -169,6 +169,7 @@ pub fn render_config_controls_from_layout(
     available_width: f32,
     layout_scale: f32,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
+    text: PluginCommonTranslations,
     theme: &Theme,
     plugin_theme: &PluginTheme,
 ) -> Option<AnyElement> {
@@ -191,7 +192,7 @@ pub fn render_config_controls_from_layout(
             d,
             entity.clone(),
             plugin_idx,
-            "CONFIG",
+            text.label("CONFIG"),
             layout.config,
             params,
             &values,
@@ -210,7 +211,7 @@ pub fn render_config_controls_from_layout(
             d,
             entity,
             plugin_idx,
-            "OUTPUT",
+            text.label("OUTPUT"),
             layout.output,
             params,
             &values,
@@ -277,6 +278,7 @@ pub fn render_tabs_from_layout(
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     available_width: f32,
     layout_scale: f32,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> AnyElement {
     let Some(layout) = settings.layout() else {
@@ -300,7 +302,7 @@ pub fn render_tabs_from_layout(
                 .flex()
                 .flex_col()
                 .gap(d.gap)
-                .child(render_section_title(d, tab.name, theme))
+                .child(render_section_title(d, text.label(tab.name), theme))
                 .child(render_layout_tab_content(
                     d,
                     entity.clone(),
@@ -316,7 +318,7 @@ pub fn render_tabs_from_layout(
                     plugin_data,
                     theme,
                     None,
-                    None,
+                    Some(text),
                 )),
         );
     }
@@ -506,8 +508,95 @@ fn render_main_column(
     // aliased groups are filtered to only show the one matching the active mode.
     let mode = detect_mode_selector(layout, params);
 
-    // Render control groups
-    if !layout.main.is_empty() {
+    // A few plugins intentionally keep their primary controls in `config`,
+    // `output`, or tabs (Convolution is the important example). The normal
+    // rack surface only used to render `main`, leaving those plugins as a
+    // blank chassis until the gear popover was opened. Keep the declarative
+    // layout useful on the primary surface by promoting the remaining
+    // controls when no main groups exist.
+    if layout.main.is_empty() {
+        let mut fallback = div()
+            .flex()
+            .flex_wrap()
+            .justify_center()
+            .items_start()
+            .gap(d.section);
+
+        let fallback_controls = layout
+            .config
+            .iter()
+            .chain(layout.output.iter())
+            .filter(|spec| !spec.hidden)
+            .count();
+        let fallback_tabs = collect_all_tabs(layout, solved, &[]);
+
+        for spec in layout.config.iter().chain(layout.output.iter()) {
+            if spec.hidden {
+                continue;
+            }
+            fallback = fallback.child(render_control(
+                d,
+                entity.clone(),
+                plugin_idx,
+                spec,
+                params,
+                values,
+                file_paths,
+                is_editing,
+                selected_param,
+                plugin_data,
+                solved.knob_size,
+                solved.slider_height,
+                theme,
+            ));
+        }
+
+        for tab in &fallback_tabs {
+            fallback = fallback.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.gap)
+                    .child(render_section_title(
+                        d,
+                        text.map_or(tab.name, |translations| translations.label(tab.name)),
+                        theme,
+                    ))
+                    .child(render_layout_tab_content(
+                        d,
+                        entity.clone(),
+                        plugin_idx,
+                        tab.content,
+                        layout,
+                        params,
+                        values,
+                        file_paths,
+                        is_editing,
+                        selected_param,
+                        solved,
+                        plugin_data,
+                        theme,
+                        spider_snapshot,
+                        text,
+                    )),
+            );
+        }
+
+        if fallback_controls == 0 && fallback_tabs.is_empty() {
+            fallback = fallback.child(
+                div()
+                    .w_full()
+                    .flex()
+                    .justify_center()
+                    .py(d.card)
+                    .text_size(d.text_sm)
+                    .text_color(theme.text_muted)
+                    .child(text.map_or("No configurable controls", |t| t.no_controls)),
+            );
+        }
+
+        center = center.child(fallback);
+    } else {
         // Top toolbar (centered) for the mode selector, when detected.
         if let Some(info) = mode.as_ref() {
             let value = values.get(info.param_idx).copied().unwrap_or(0.0);
@@ -572,6 +661,47 @@ fn render_main_column(
             ));
         }
         center = center.child(container);
+
+        // Output meters are live feedback, not setup controls. Keep them on
+        // the primary surface even though other output parameters remain in
+        // the gear popover. This also makes generic layouts useful for any
+        // dynamics plugin that declares its GR meter in `layout.output`.
+        if layout
+            .output
+            .iter()
+            .any(|spec| !spec.hidden && matches!(&spec.control_type, ControlType::BarMeter { .. }))
+        {
+            let mut meter_row = div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .gap(d.gap)
+                .child(render_section_title(
+                    d,
+                    text.map_or("OUTPUT", |translations| translations.label("OUTPUT")),
+                    theme,
+                ));
+            for spec in layout.output.iter().filter(|spec| {
+                !spec.hidden && matches!(&spec.control_type, ControlType::BarMeter { .. })
+            }) {
+                meter_row = meter_row.child(render_control(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    spec,
+                    params,
+                    values,
+                    file_paths,
+                    is_editing,
+                    selected_param,
+                    plugin_data,
+                    solved.knob_size,
+                    solved.slider_height,
+                    theme,
+                ));
+            }
+            center = center.child(meter_row);
+        }
 
         if !overflow_groups.is_empty() {
             let overflow_count: usize = overflow_groups
@@ -651,6 +781,7 @@ fn render_main_column(
             for (i, tab) in all_tabs.iter().enumerate() {
                 let is_active = i == clamped_tab;
                 let tab_entity = entity.clone();
+                let key_tab_entity = tab_entity.clone();
                 let tab_plugin_idx = plugin_idx;
                 let tab_idx = i;
                 tab_bar = tab_bar.child(
@@ -681,6 +812,12 @@ fn render_main_column(
                         } else {
                             Theme::with_opacity(theme.border, 0.0)
                         })
+                        .focusable()
+                        .focus_visible(|s| {
+                            s.bg(theme.surface_hover)
+                                .text_color(theme.text_primary)
+                                .border_color(theme.border_focused)
+                        })
                         .hover(|s| {
                             s.text_color(theme.text_primary).border_color(if is_active {
                                 theme.accent
@@ -697,7 +834,22 @@ fn render_main_column(
                                     .insert(tab_plugin_idx, tab_idx);
                             });
                         })
-                        .child(tab.name.to_string()),
+                        .on_key_down(move |event, _window, cx| {
+                            if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                                key_tab_entity.update(cx, |state, _| {
+                                    state
+                                        .app
+                                        .plugin_ui
+                                        .plugin_auto_tab
+                                        .insert(tab_plugin_idx, tab_idx);
+                                });
+                                cx.stop_propagation();
+                            }
+                        })
+                        .child(
+                            text.map_or(tab.name, |translations| translations.label(tab.name))
+                                .to_string(),
+                        ),
                 );
             }
             center = center.child(tab_bar);
@@ -761,7 +913,11 @@ fn render_group(
 
     let mut col = div().flex().flex_col().gap(d.gap).flex_none();
     if !group.title.is_empty() {
-        col = col.child(render_section_title(d, group.title, theme));
+        col = col.child(render_section_title(
+            d,
+            text.map_or(group.title, |translations| translations.label(group.title)),
+            theme,
+        ));
     }
 
     if has_sliders {
@@ -833,11 +989,16 @@ fn render_group(
                 VizSlot::TransferCurve {
                     position: VizPosition::BelowGroup(target),
                 } if *target == group.title => {
+                    let curve_width = solved
+                        .column_width(ColumnRole::Main)
+                        .unwrap_or(200.0)
+                        .max(200.0);
                     col = col.child(render_transfer_curve_for_layout(
                         d,
                         params,
                         values,
                         plugin_data,
+                        curve_width,
                         theme,
                     ));
                 }
@@ -1049,6 +1210,19 @@ fn render_param_as_knob(
     interactive: bool,
     theme: &Theme,
 ) -> AnyElement {
+    if let Some(input) = render_param_as_number_input(
+        entity.clone(),
+        plugin_idx,
+        idx,
+        param,
+        value,
+        is_editing,
+        selected_param,
+        theme,
+    ) {
+        return input;
+    }
+
     match param.param_type {
         ParamType::Float { min, max, .. } => {
             let display_min = min * param.display_scale;
@@ -1120,6 +1294,19 @@ fn render_param_as_slider(
     interactive: bool,
     theme: &Theme,
 ) -> AnyElement {
+    if let Some(input) = render_param_as_number_input(
+        entity.clone(),
+        plugin_idx,
+        idx,
+        param,
+        value,
+        is_editing,
+        selected_param,
+        theme,
+    ) {
+        return input;
+    }
+
     match param.param_type {
         ParamType::Float { min, max, .. } => {
             let display_min = min * param.display_scale;
@@ -1173,6 +1360,67 @@ fn render_param_as_slider(
             theme,
         ),
     }
+}
+
+/// Replace a selected generic knob/slider with a bounded text editor.
+///
+/// The audio controls remain the fastest way to browse values, but a selected
+/// control must also support exact entry for frequencies, gains, and timing
+/// values. `set_plugin_param` accepts display-space values and applies the
+/// parameter's display scale, so the editor follows the same contract as the
+/// existing potentiometer and slider callbacks.
+fn render_param_as_number_input(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    idx: usize,
+    param: &ParamSpec,
+    value: f64,
+    is_editing: bool,
+    selected_param: usize,
+    _theme: &Theme,
+) -> Option<AnyElement> {
+    if !is_editing || selected_param != idx {
+        return None;
+    }
+
+    let (min, max, step) = match param.param_type {
+        ParamType::Float { min, max, step, .. } => (min, max, step),
+        ParamType::Int { min, max, step, .. } => (min as f64, max as f64, step as f64),
+        _ => return None,
+    };
+
+    let display_scale = if param.display_scale.is_finite() && param.display_scale != 0.0 {
+        param.display_scale
+    } else {
+        1.0
+    };
+    let display_min = min * display_scale;
+    let display_max = max * display_scale;
+    let display_value = value * display_scale;
+    let display_step = (step * display_scale.abs()).max(0.0001);
+    let decimals = param.precision();
+    let entity_for_change = entity;
+
+    Some(
+        NumberInput::new(SharedString::from(format!(
+            "plugin-number-input-{plugin_idx}-{idx}"
+        )))
+        .value(display_value)
+        .min(display_min.min(display_max))
+        .max(display_min.max(display_max))
+        .step(display_step)
+        .decimals(decimals)
+        .unit(param.unit)
+        .label(param.name)
+        .size(NumberInputSize::Xs)
+        .aria_label(format!("{} value", param.name))
+        .on_change(move |new_value, _window, cx| {
+            entity_for_change.update(cx, |state, _| {
+                state.app.set_plugin_param(plugin_idx, idx, new_value);
+            });
+        })
+        .into_any_element(),
+    )
 }
 
 /// Render a param as a toggle (for Bool and Choice types).
@@ -1644,6 +1892,7 @@ fn render_transfer_curve_for_layout(
     params: &[ParamSpec],
     values: &[f64],
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
+    width: f32,
     theme: &Theme,
 ) -> AnyElement {
     // Look up dynamics params by engine_key
@@ -1691,7 +1940,7 @@ fn render_transfer_curve_for_layout(
         ratio,
         knee_db,
         is_limiter,
-        200.0,
+        width,
         input_level_db,
         theme,
     )

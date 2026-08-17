@@ -27,10 +27,10 @@ pub fn extract_file_paths(
     let mut file_paths = HashMap::new();
     for (i, spec) in params.iter().enumerate() {
         if matches!(spec.param_type, ParamType::FilePath) {
-            // Keep the shared accessor as the source of truth. XTC's optional
-            // room IR is the sole legacy gap; fixing that engine accessor is
-            // intentionally deferred because engine changes require a
-            // dedicated PR in this repository.
+            // Keep the shared accessor as the source of truth. These optional
+            // or directory-valued paths are legacy gaps; fixing their engine
+            // accessor is intentionally deferred because engine changes
+            // require a dedicated PR in this repository.
             let path = settings
                 .param_value_string(i)
                 .or_else(|| match settings {
@@ -39,6 +39,9 @@ pub fn extract_file_paths(
                     {
                         room_ir_file.clone()
                     }
+                    PluginSettings::BinauralDecoder {
+                        hrtf_database_dir, ..
+                    } if spec.engine_key == "hrtf_database_dir" => Some(hrtf_database_dir.clone()),
                     _ => None,
                 })
                 .unwrap_or_default();

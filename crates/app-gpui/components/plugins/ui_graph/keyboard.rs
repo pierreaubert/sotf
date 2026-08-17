@@ -1,3 +1,4 @@
+use super::consts::convert_plugin_graph;
 use crate::app::types::PluginUpdateType;
 use crate::app::{InputMode, ToastMessage};
 use crate::components::design::Ds;
@@ -68,17 +69,30 @@ macro_rules! graph_action_handler {
 }
 
 impl PlayerView {
-    /// Rebuild after keyboard graph edits so stale canvas history cannot apply
-    /// commands to a graph that was replaced outside the canvas command model.
+    /// Synchronize the canvas after keyboard graph edits without replacing the
+    /// entity. `convert_plugin_graph` preserves the stable graph-node IDs, so
+    /// updating only the graph keeps the canvas viewport and selection intact.
     fn refresh_workflow_canvas(&self, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            if matches!(
+        let (canvas, workflow_graph) = {
+            let state = self.state.read(cx);
+            if !matches!(
                 state.app.plugin_state.update_state.pending_plugin_update,
                 Some(PluginUpdateType::Structural)
             ) {
-                state.app.plugin_state.graph_state.workflow_canvas = None;
+                return;
             }
-        });
+
+            let plugin_graph = state.app.plugin_state.graph.clone();
+            let canvas = state.app.plugin_state.graph_state.workflow_canvas.clone();
+            (canvas, convert_plugin_graph(&plugin_graph))
+        };
+
+        if let Some(canvas) = canvas {
+            canvas.update(cx, |canvas, cx| {
+                *canvas.graph_mut() = workflow_graph;
+                cx.notify();
+            });
+        }
     }
 
     fn dispatch_plugin_graph_key(&self, key_spec: &str, cx: &mut Context<Self>) {

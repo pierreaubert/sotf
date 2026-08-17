@@ -306,13 +306,31 @@ pub fn render_plugin_shell(
                         .items_end()
                         .gap(d.grid)
                         .child(bypass)
-                        .child(
-                            div()
-                                .text_size(d.text_xs)
-                                .text_color(theme.text_muted)
-                                .child(text.reset_hint),
-                        )
                 })),
+        )
+        // Keep interaction guidance in a dedicated, scannable row instead of
+        // attaching it to the bypass control. This remains visible for both
+        // native and custom plugin views and leaves the header for identity
+        // and primary actions.
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(d.gap)
+                .px(d.card)
+                .py(d.half_grid)
+                .bg(theme.background_secondary)
+                .border_y_1()
+                .border_color(theme.border)
+                .text_size(d.text_xs)
+                .text_color(theme.text_muted)
+                .child(
+                    div()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_secondary)
+                        .child(text.label("EDIT HINTS")),
+                )
+                .child(text.reset_hint),
         )
         // Content area with padding
         .child(div().w_full().min_w_0().p(d.card).child(content))

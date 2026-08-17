@@ -26,6 +26,32 @@ use sotf_audio_player_midi::layout::{ControllerLayout, PhysicalControl, Physical
 use sotf_audio_player_midi::mapping::{ControlBinding, MidiMapping};
 use sotf_plugins::param_specs::{ParamSpec, ParamType};
 
+#[derive(Clone, Copy)]
+struct ControllerGeometry {
+    cell_width: f32,
+    cell_height: f32,
+    fader_cell_height: f32,
+}
+
+fn controller_geometry(
+    available_width: f32,
+    layout_scale: f32,
+    columns: usize,
+) -> ControllerGeometry {
+    let scale = layout_scale.max(0.01);
+    let columns = columns.max(1) as f32;
+    let logical_width = available_width.max(CELL_W * scale) / scale;
+    let logical_gap = 8.0;
+    let logical_cell_width =
+        ((logical_width - logical_gap * (columns - 1.0)) / columns).clamp(72.0, CELL_W);
+
+    ControllerGeometry {
+        cell_width: logical_cell_width * scale,
+        cell_height: CELL_H * scale,
+        fader_cell_height: FADER_CELL_H * scale,
+    }
+}
+
 /// Render the interactive hardware view for a specific controller.
 pub fn render_controller_view(
     d: &Ds,
@@ -36,6 +62,8 @@ pub fn render_controller_view(
     entity: Entity<AppState>,
     is_editing: bool,
     selected_param: usize,
+    available_width: f32,
+    layout_scale: f32,
     theme: &Theme,
 ) -> AnyElement {
     let Some(layout) = layout_for_controller_id(controller_id) else {
@@ -70,6 +98,8 @@ pub fn render_controller_view(
         plugin_index,
         is_editing,
         selected_param,
+        available_width,
+        layout_scale,
         theme,
     );
     let legend = render_legend(d, theme);
@@ -111,8 +141,8 @@ fn render_legend(d: &Ds, theme: &Theme) -> impl IntoElement {
             .gap(d.gap)
             .child(
                 div()
-                    .w(px(10.0))
-                    .h(px(10.0))
+                    .w(rems(0.625))
+                    .h(rems(0.625))
                     .rounded_full()
                     .bg(color)
                     .border_1()
@@ -148,10 +178,13 @@ fn render_grid(
     plugin_index: usize,
     is_editing: bool,
     selected_param: usize,
+    available_width: f32,
+    layout_scale: f32,
     theme: &Theme,
 ) -> impl IntoElement {
     let rows = layout.grid_rows.max(1);
     let cols = layout.grid_columns.max(1);
+    let geometry = controller_geometry(available_width, layout_scale, cols as usize);
 
     let mut row_elements: Vec<AnyElement> = Vec::with_capacity(rows as usize);
     for row in 0..rows {
@@ -161,9 +194,9 @@ fn render_grid(
             .iter()
             .any(|c| c.row == row && c.kind == PhysicalControlKind::Fader);
         let row_height = if has_fader_in_row {
-            FADER_CELL_H
+            geometry.fader_cell_height
         } else {
-            CELL_H
+            geometry.cell_height
         };
 
         let mut cells: Vec<AnyElement> = Vec::with_capacity(cols as usize);
@@ -187,8 +220,9 @@ fn render_grid(
                     selected_param,
                     theme,
                     row_height,
+                    geometry.cell_width,
                 ),
-                None => empty_cell(row_height).into_any_element(),
+                None => empty_cell(geometry.cell_width, row_height).into_any_element(),
             };
             cells.push(cell);
         }
@@ -197,6 +231,7 @@ fn render_grid(
                 .flex()
                 .gap(d.gap_md)
                 .h(px(row_height))
+                .flex_shrink_0()
                 .children(cells)
                 .into_any_element(),
         );
@@ -219,6 +254,7 @@ fn render_cell(
     selected_param: usize,
     theme: &Theme,
     row_height: f32,
+    cell_width: f32,
 ) -> AnyElement {
     let is_reserved = layout.reserved_control_ids.contains(&ctrl.id);
     let binding = if is_reserved {
@@ -230,13 +266,14 @@ fn render_cell(
     // Inner widgets render with `LABEL_UNDERLINED` so the cell's outer card
     // is the only chassis (no double-border).
     let inner_theme = cell_inner_theme(theme);
+    let widget_scale = (cell_width / CELL_W).clamp(0.75, 1.5);
 
     let (widget, header_text, header_color): (AnyElement, String, Rgba) =
         match (binding, is_reserved, ctrl.kind) {
             // Reserved nav button: show a non-interactive marker, keep the
             // physical id as the label so the user can find it on the device.
             (_, true, _) => (
-                static_button(theme, theme.error).into_any_element(),
+                static_button(theme, theme.error, widget_scale).into_any_element(),
                 ctrl.label.clone(),
                 theme.error,
             ),
@@ -251,12 +288,13 @@ fn render_cell(
                 is_editing,
                 selected_param,
                 &inner_theme,
+                widget_scale,
                 ContinuousKind::Fader,
             )
             .map(|(el, label)| (el, label, theme.text_primary))
             .unwrap_or_else(|| {
                 (
-                    static_fader(theme).into_any_element(),
+                    static_fader(theme, widget_scale).into_any_element(),
                     ctrl.label.clone(),
                     theme.text_muted,
                 )
@@ -274,12 +312,13 @@ fn render_cell(
                 is_editing,
                 selected_param,
                 &inner_theme,
+                widget_scale,
                 ContinuousKind::Knob,
             )
             .map(|(el, label)| (el, label, theme.text_primary))
             .unwrap_or_else(|| {
                 (
-                    static_knob(theme, theme.accent).into_any_element(),
+                    static_knob(theme, theme.accent, widget_scale).into_any_element(),
                     ctrl.label.clone(),
                     theme.text_muted,
                 )
@@ -296,34 +335,35 @@ fn render_cell(
                 is_editing,
                 selected_param,
                 theme,
+                widget_scale,
             )
             .map(|(el, label)| (el, label, theme.text_primary))
             .unwrap_or_else(|| {
                 (
-                    static_button(theme, theme.text_secondary).into_any_element(),
+                    static_button(theme, theme.text_secondary, widget_scale).into_any_element(),
                     ctrl.label.clone(),
                     theme.text_muted,
                 )
             }),
             // Unmapped controls: static placeholder + physical id label.
             (None, false, PhysicalControlKind::Fader) => (
-                static_fader(theme).into_any_element(),
+                static_fader(theme, widget_scale).into_any_element(),
                 ctrl.label.clone(),
                 theme.text_muted,
             ),
             (None, false, PhysicalControlKind::Pot) => (
-                static_knob(theme, theme.accent).into_any_element(),
+                static_knob(theme, theme.accent, widget_scale).into_any_element(),
                 ctrl.label.clone(),
                 theme.text_muted,
             ),
             (None, false, PhysicalControlKind::Encoder)
             | (None, false, PhysicalControlKind::EncoderWithButton) => (
-                static_knob(theme, theme.warning).into_any_element(),
+                static_knob(theme, theme.warning, widget_scale).into_any_element(),
                 ctrl.label.clone(),
                 theme.text_muted,
             ),
             (None, false, PhysicalControlKind::Button) => (
-                static_button(theme, theme.text_secondary).into_any_element(),
+                static_button(theme, theme.text_secondary, widget_scale).into_any_element(),
                 ctrl.label.clone(),
                 theme.text_muted,
             ),
@@ -342,17 +382,25 @@ fn render_cell(
         theme.background_secondary
     };
 
+    let is_unmapped = binding.is_none() && !is_reserved;
+
     div()
-        .w(px(CELL_W))
+        .w(px(cell_width))
         .h(px(row_height))
+        .flex_shrink_0()
         .flex()
         .flex_col()
         .items_center()
         .gap(d.gap)
-        .opacity(if binding.is_none() && !is_reserved {
-            0.5
-        } else {
-            1.0
+        .opacity(if is_unmapped { 0.5 } else { 1.0 })
+        // Keep unassigned physical controls discoverable without making them
+        // look interactive: the dashed boundary and muted surface distinguish
+        // them from mapped controls while preserving the device geometry.
+        .when(is_unmapped, |el| {
+            el.bg(Theme::opacity_20pct(theme.text_muted))
+                .border_1()
+                .border_dashed()
+                .border_color(Theme::opacity_50pct(theme.text_muted))
         })
         // Header row: param name + thin underline rule sitting flush below.
         .child(
@@ -368,11 +416,11 @@ fn render_cell(
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(header_color)
                         .text_ellipsis()
-                        .max_w(px(CELL_W - 8.0))
+                        .max_w(px((cell_width - 8.0).max(24.0)))
                         .child(header_text),
                 )
                 // intentional: 1px hairline rule (visual element, not spacing)
-                .child(div().h(px(1.0)).w(px(CELL_W * 0.85)).bg(rule_color)),
+                .child(div().h(px(1.0)).w(px(cell_width * 0.85)).bg(rule_color)),
         )
         .child(
             div()
@@ -396,6 +444,7 @@ fn render_continuous_widget(
     is_editing: bool,
     selected_param: usize,
     theme: &Theme,
+    widget_scale: f32,
     kind: ContinuousKind,
 ) -> Option<(AnyElement, String)> {
     let spec = params.get(binding.param_index)?;
@@ -418,7 +467,11 @@ fn render_continuous_widget(
             selected_param,
             is_editing,
             None,
-            PotentiometerSize::Xs,
+            match widget_scale {
+                scale if scale >= 1.35 => PotentiometerSize::Md,
+                scale if scale >= 1.1 => PotentiometerSize::Sm,
+                _ => PotentiometerSize::Xs,
+            },
             theme,
         )
         .into_any_element(),
@@ -433,6 +486,7 @@ fn render_continuous_widget(
             selected_param,
             is_editing,
             theme,
+            widget_scale,
         )
         .into_any_element(),
     };
@@ -452,6 +506,7 @@ fn render_compact_fader(
     selected_param: usize,
     is_editing: bool,
     theme: &Theme,
+    widget_scale: f32,
 ) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
     VerticalSlider::new(("hw-fader", plugin_idx * 1000 + idx))
@@ -460,7 +515,11 @@ fn render_compact_fader(
         .max(max)
         .unit(spec.unit.to_string())
         .label("".to_string())
-        .size(VerticalSliderSize::Sm)
+        .size(if widget_scale >= 1.35 {
+            VerticalSliderSize::Md
+        } else {
+            VerticalSliderSize::Sm
+        })
         .selected(is_selected)
         .theme(super::super::common::theme_to_vertical_slider_theme(theme))
         .design_tokens(theme.layout.design_tokens.clone())
@@ -486,6 +545,7 @@ fn render_button_widget(
     is_editing: bool,
     selected_param: usize,
     theme: &Theme,
+    widget_scale: f32,
 ) -> Option<(AnyElement, String)> {
     let spec = params.get(binding.param_index)?;
     let value = settings.param_value(binding.param_index).unwrap_or(0.0);
@@ -513,8 +573,8 @@ fn render_button_widget(
                     }
                 });
             div()
-                .w(px(BUTTON_SIZE * 1.6))
-                .h(px(BUTTON_SIZE))
+                .w(px(BUTTON_SIZE * 1.6 * widget_scale))
+                .h(px(BUTTON_SIZE * widget_scale))
                 .child(toggle)
                 .into_any_element()
         }
@@ -527,8 +587,8 @@ fn render_button_widget(
             let display = format!("{} → {}", label_for_cell, next_label);
             let element = div()
                 .id(("hw-choice-btn", plugin_index * 1000 + binding.param_index))
-                .w(px(BUTTON_SIZE * 1.6))
-                .h(px(BUTTON_SIZE))
+                .w(px(BUTTON_SIZE * 1.6 * widget_scale))
+                .h(px(BUTTON_SIZE * widget_scale))
                 .rounded(px(4.0))
                 .bg(theme.background_secondary)
                 .border_1()
@@ -562,8 +622,8 @@ fn render_button_widget(
             let next = if cur >= max { min } else { cur + 1 };
             let element = div()
                 .id(("hw-int-btn", plugin_index * 1000 + binding.param_index))
-                .w(px(BUTTON_SIZE * 1.6))
-                .h(px(BUTTON_SIZE))
+                .w(px(BUTTON_SIZE * 1.6 * widget_scale))
+                .h(px(BUTTON_SIZE * widget_scale))
                 .rounded(px(4.0))
                 .bg(theme.background_secondary)
                 .border_1()
@@ -590,11 +650,33 @@ fn render_button_widget(
         // Float / FilePath bound to a button: render as a static placeholder.
         ParamType::Float { .. } | ParamType::FilePath => {
             return Some((
-                static_button(theme, theme.text_secondary).into_any_element(),
+                static_button(theme, theme.text_secondary, widget_scale).into_any_element(),
                 spec.name.to_string(),
             ));
         }
     };
 
     Some((element, spec.name.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn controller_cells_shrink_before_the_grid_scrolls() {
+        let geometry = controller_geometry(700.0, 1.0, 8);
+
+        assert!(geometry.cell_width < CELL_W);
+        assert!(geometry.cell_width >= 72.0);
+    }
+
+    #[test]
+    fn controller_geometry_scales_with_zoom() {
+        let geometry = controller_geometry(1200.0, 1.5, 8);
+
+        assert_eq!(geometry.cell_width, CELL_W * 1.5);
+        assert_eq!(geometry.cell_height, CELL_H * 1.5);
+        assert_eq!(geometry.fader_cell_height, FADER_CELL_H * 1.5);
+    }
 }

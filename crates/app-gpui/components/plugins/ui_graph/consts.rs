@@ -155,6 +155,7 @@ pub(super) fn dispatch_plugin_node_action(
                 .editing_original_settings_json = original_settings;
             state.app.plugin_state.graph_state.editing_original_enabled = original_enabled;
             state.app.plugin_state.graph_state.confirm_close_dirty = false;
+            state.app.plugin_state.graph_state.graph_config_open = false;
             state.app.ui_state.input_mode = crate::app::InputMode::EditingPluginNode;
         });
         return;

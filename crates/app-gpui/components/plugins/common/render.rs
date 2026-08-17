@@ -11,7 +11,7 @@ use gpui::*;
 use gpui_audio_kit::{
     Potentiometer, PotentiometerScale, PotentiometerSize, VerticalSlider, VerticalSliderSize,
 };
-use gpui_ui_kit::{Toggle, ToggleStyle};
+use gpui_ui_kit::{NumberInput, NumberInputSize, Toggle, ToggleStyle};
 use sotf_audio_player_midi::PhysicalControlKind;
 use sotf_audio_player_midi::mapping::{MidiOverlay, ParamAssignment};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -529,12 +529,36 @@ pub fn render_vertical_slider_sized(
     shortcut_key: Option<char>,
     height: Option<f32>,
     theme: &Theme,
-) -> impl IntoElement {
+) -> AnyElement {
     let is_selected = selected_param == idx && is_editing;
     let control_range = sanitize_audio_control_range(label, value, min, max);
     let value = control_range.value;
     let min = control_range.min;
     let max = control_range.max;
+
+    if is_selected {
+        return NumberInput::new(SharedString::from(format!(
+            "plugin-number-input-{plugin_idx}-{idx}"
+        )))
+        .value(value)
+        .min(min)
+        .max(max)
+        .step(((max - min) / 1000.0).max(0.0001))
+        .decimals(3)
+        .unit(unit)
+        .label(label)
+        .size(NumberInputSize::Xs)
+        .aria_label(format!("{label} value"))
+        .on_change({
+            let entity = entity.clone();
+            move |new_value, _window, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.set_plugin_param(plugin_idx, idx, new_value);
+                });
+            }
+        })
+        .into_any_element();
+    }
 
     let mut slider = VerticalSlider::new(("slider", plugin_idx * 1000 + idx))
         .value(value)
@@ -593,7 +617,10 @@ pub fn render_vertical_slider_sized(
         slider = slider.shortcut_key(key);
     }
 
-    div().key_context("plugin-control").child(slider)
+    div()
+        .key_context("plugin-control")
+        .child(slider)
+        .into_any_element()
 }
 
 /// Render a vertical slider with tick marks, custom height, and enhanced visual feedback
@@ -649,12 +676,36 @@ pub fn render_vertical_slider_with_ticks_enabled(
     height: f32,
     interactive: bool,
     theme: &Theme,
-) -> impl IntoElement {
+) -> AnyElement {
     let is_selected = selected_param == idx && is_editing;
     let control_range = sanitize_audio_control_range(label, value, min, max);
     let value = control_range.value;
     let min = control_range.min;
     let max = control_range.max;
+
+    if interactive && is_selected {
+        return NumberInput::new(SharedString::from(format!(
+            "plugin-number-input-{plugin_idx}-{idx}"
+        )))
+        .value(value)
+        .min(min)
+        .max(max)
+        .step(((max - min) / 1000.0).max(0.0001))
+        .decimals(3)
+        .unit(unit)
+        .label(label)
+        .size(NumberInputSize::Xs)
+        .aria_label(format!("{label} value"))
+        .on_change({
+            let entity = entity.clone();
+            move |new_value, _window, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.set_plugin_param(plugin_idx, idx, new_value);
+                });
+            }
+        })
+        .into_any_element();
+    }
 
     let mut slider = VerticalSlider::new(("slider-ticks", plugin_idx * 1000 + idx))
         .value(value)
@@ -714,7 +765,10 @@ pub fn render_vertical_slider_with_ticks_enabled(
         slider = slider.shortcut_key(key);
     }
 
-    div().key_context("plugin-control").child(slider)
+    div()
+        .key_context("plugin-control")
+        .child(slider)
+        .into_any_element()
 }
 
 /// Render a simple transfer curve visualization (input vs output)
@@ -768,7 +822,9 @@ pub fn render_transfer_curve_with_level(
     theme: &Theme,
 ) -> impl IntoElement {
     let curve_width = width.max(200.0);
-    let curve_height: f32 = 140.0;
+    // Preserve the baseline 200x140 aspect ratio as callers scale the width
+    // for zoom and available layout space.
+    let curve_height = (curve_width * 0.7).clamp(120.0, 240.0);
 
     div()
         .flex()
@@ -837,7 +893,7 @@ pub fn render_interactive_transfer_curve(
     theme: &Theme,
 ) -> impl IntoElement {
     let curve_width = width.max(200.0);
-    let curve_height: f32 = 140.0;
+    let curve_height = (curve_width * 0.7).clamp(120.0, 240.0);
 
     // Capture for drag closures
     let entity_drag = entity.clone();
@@ -1133,12 +1189,39 @@ pub fn render_knob_sized_enabled(
     size: PotentiometerSize,
     interactive: bool,
     theme: &Theme,
-) -> impl IntoElement {
+) -> AnyElement {
     let is_selected = selected_param == idx && is_editing;
     let control_range = sanitize_audio_control_range(label, value, min, max);
     let value = control_range.value;
     let min = control_range.min;
     let max = control_range.max;
+
+    // Selected knobs support exact entry as well as drag adjustment. Keep the
+    // editor in the shared renderer so custom views and the declarative
+    // fallback expose the same interaction contract.
+    if interactive && is_selected {
+        return NumberInput::new(SharedString::from(format!(
+            "plugin-number-input-{plugin_idx}-{idx}"
+        )))
+        .value(value)
+        .min(min)
+        .max(max)
+        .step(((max - min) / 1000.0).max(0.0001))
+        .decimals(3)
+        .unit(unit)
+        .label(label)
+        .size(NumberInputSize::Xs)
+        .aria_label(format!("{label} value"))
+        .on_change({
+            let entity = entity.clone();
+            move |new_value, _window, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.set_plugin_param(plugin_idx, idx, new_value);
+                });
+            }
+        })
+        .into_any_element();
+    }
 
     // Determine scale type based on unit (Hz parameters use logarithmic scale)
     let scale = if unit == "Hz" {
@@ -1209,5 +1292,8 @@ pub fn render_knob_sized_enabled(
         knob = knob.shortcut_key(key);
     }
 
-    div().key_context("plugin-control").child(knob)
+    div()
+        .key_context("plugin-control")
+        .child(knob)
+        .into_any_element()
 }

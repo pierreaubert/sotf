@@ -64,9 +64,10 @@ pub struct UpmixerRenderState<'a> {
     pub is_editing: bool,
     pub selected_param: usize,
     pub config_open: bool,
-    /// 0=none, 1=LFE, 2=Dialogue, 3=Ambient, 4=Height, 5=HR Direct,
-    /// 6=Decorrelation, 7=Analysis, 8=Diagnostic, 9=Spatial
+    /// 0=none, 10=Bass & Output, 11=Spatial, 12=Analysis, 13=Diagnostics.
     pub upmixer_tab: usize,
+    /// IDs of configuration sections currently expanded in the wide view.
+    pub expanded_sections: Vec<String>,
     /// Live per-channel loudness. Drives both spider modes — the SPL view
     /// reads `true_peaks_dbtp`, the Correlation view reads
     /// `correlation_matrix`. Both are populated by the same LoudnessMonitor

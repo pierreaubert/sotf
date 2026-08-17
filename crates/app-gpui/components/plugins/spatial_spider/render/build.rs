@@ -1,4 +1,4 @@
-use super::super::data::ChannelMetric;
+use super::super::data::{ChannelMetric, correlation_row};
 use super::super::{SpatialSpiderSnapshot, SpiderMode, SpiderViewMode};
 #[cfg(feature = "gpu-3d")]
 use super::misc::attach_orbit_handlers;
@@ -350,8 +350,36 @@ pub(super) fn build_body(
             .child(text.spatial_waiting_data)
             .into_any_element();
     }
+    // A live LoudnessData object can exist before its first peak query has
+    // completed. Feeding an empty/invalid true-peak vector into the geometry
+    // mapper produces a convincing-looking zero-radius polygon, which reads
+    // as measured silence rather than "waiting for data". Keep the empty
+    // state explicit for SPL mode; valid silence still renders normally
+    // because `true_peak_valid` is true in that case.
+    if matches!(spider_mode, SpiderMode::Spl)
+        && loudness.is_some_and(|data| !data.true_peak_valid || data.true_peaks_dbtp.is_empty())
+    {
+        return div()
+            .h(rems(17.5))
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_size(d.text_xs)
+            .text_color(theme.text_muted)
+            .child(text.spatial_waiting_data)
+            .into_any_element();
+    }
     if matches!(spider_mode, SpiderMode::CorrelationFromRef { .. })
-        && loudness.is_some_and(|data| data.correlation_samples_seen == 0)
+        && loudness.is_some_and(|data| {
+            data.correlation_samples_seen == 0
+                || match spider_mode {
+                    SpiderMode::CorrelationFromRef { ref_channel } => {
+                        correlation_row(data.correlation_matrix.as_ref(), n, ref_channel).is_none()
+                    }
+                    SpiderMode::Spl => false,
+                }
+        })
     {
         return div()
             .h(rems(17.5))
@@ -373,29 +401,15 @@ pub(super) fn build_body(
         SpiderMode::CorrelationFromRef { .. } => Vec::new(),
     };
     // Correlation row.
-    let corr_row: Vec<f32> = match (spider_mode, loudness) {
-        (SpiderMode::CorrelationFromRef { ref_channel: rc }, Some(li))
-            if !li.correlation_matrix.is_empty() && li.correlation_samples_seen > 0 =>
-        {
-            let mc = li.correlation_matrix.len();
-            let n_ch = (mc as f64).sqrt() as usize;
-            if n_ch * n_ch == mc && rc < n_ch {
-                let row_start = rc * n_ch;
-                let row_end = row_start + n_ch;
-                li.correlation_matrix
-                    .get(row_start..row_end)
-                    .map(|s| s.to_vec())
-                    .unwrap_or_else(|| vec![0.0; n])
-            } else {
-                vec![0.0; n]
-            }
+    let corr_row: &[f32] = match (spider_mode, loudness) {
+        (SpiderMode::CorrelationFromRef { ref_channel: rc }, Some(li)) => {
+            correlation_row(li.correlation_matrix.as_ref(), n, rc).unwrap_or(&[])
         }
-        (SpiderMode::CorrelationFromRef { .. }, _) => vec![0.0; n],
-        _ => Vec::new(),
+        _ => &[],
     };
     let metric = match spider_mode {
         SpiderMode::Spl => ChannelMetric::Spl(&metric_buf),
-        SpiderMode::CorrelationFromRef { .. } => ChannelMetric::Correlation(&corr_row),
+        SpiderMode::CorrelationFromRef { .. } => ChannelMetric::Correlation(corr_row),
     };
 
     let palette = SpiderColors::from_theme(theme);

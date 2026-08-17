@@ -99,6 +99,22 @@ impl ChannelMetric<'_> {
     }
 }
 
+/// Return one row from a square channel-correlation matrix when its shape
+/// matches the speaker layout. Invalid or incomplete matrices are not useful
+/// to the visualizer: treating them as an all-zero row would make the spider
+/// look like a valid silent measurement.
+pub fn correlation_row(matrix: &[f32], channel_count: usize, ref_channel: usize) -> Option<&[f32]> {
+    if channel_count == 0 || ref_channel >= channel_count {
+        return None;
+    }
+    let matrix_len = channel_count.checked_mul(channel_count)?;
+    if matrix.len() != matrix_len {
+        return None;
+    }
+    let row_start = ref_channel * channel_count;
+    matrix.get(row_start..row_start + channel_count)
+}
+
 /// Threshold (degrees of elevation) above which a speaker is treated as
 /// "height" and routed to the vertical plane. The standard layouts in
 /// `speaker_config.rs` use either 0° (floor) or 45° (height), so any
@@ -287,6 +303,23 @@ mod tests {
         assert_eq!(v0.signed_value, 1.0);
         assert_eq!(v1.radius, 0.0); // NaN → 0
         assert_eq!(v1.signed_value, 0.0);
+    }
+
+    #[test]
+    fn correlation_row_returns_the_selected_square_matrix_row() {
+        let matrix = [1.0, 0.1, 0.1, 1.0, 0.2, 0.3, 0.2, 0.3, 1.0];
+
+        assert_eq!(correlation_row(&matrix, 3, 1), Some(&matrix[3..6]));
+    }
+
+    #[test]
+    fn correlation_row_rejects_incomplete_or_mismatched_data() {
+        let matrix = [1.0, 0.1, 0.1, 1.0];
+
+        assert_eq!(correlation_row(&[], 2, 0), None);
+        assert_eq!(correlation_row(&matrix[..3], 2, 0), None);
+        assert_eq!(correlation_row(&matrix, 2, 2), None);
+        assert_eq!(correlation_row(&matrix, 0, 0), None);
     }
 
     #[test]

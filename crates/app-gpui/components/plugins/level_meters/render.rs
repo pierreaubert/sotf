@@ -6,8 +6,10 @@ use super::misc::should_use_peak_spread;
 use crate::app::ChannelGroup;
 use crate::app::i18n::LevelMeterTranslations;
 use crate::components::design::Ds;
+use crate::components::themed_tooltip;
 use crate::level_meter_render::{
-    ChannelMeterData, GroupMeterData, build_channel_meter_data, db_tick_label, format_width_percent,
+    ChannelMeterData, GroupMeterData, build_channel_meter_data, db_tick_label,
+    format_width_percent, sample_peak_db,
 };
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -19,6 +21,16 @@ use gpui_audio_kit::{
 };
 
 const FALLBACK_TRUE_PEAKS: [f64; 2] = [-60.0, -60.0];
+
+/// Keep unavailable analyzer values on the silent end of the meter scale.
+///
+/// Loudness snapshots can legitimately contain `NaN`/infinite values while
+/// their gating window is warming up. Passing those values to a fractional
+/// layout calculation can produce an invalid fill width, so sanitize them at
+/// the UI boundary.
+fn finite_meter_value(value: f64, fallback: f64) -> f64 {
+    if value.is_finite() { value } else { fallback }
+}
 
 /// Render a horizontal gain reduction meter
 /// Uses render_gradient_meter for consistent styling
@@ -233,32 +245,52 @@ pub fn render_lufs_with_true_peak(
     text: LevelMeterTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
+    // Older snapshots and analyzers that do not expose oversampled peaks can
+    // still provide per-channel sample peaks. Keep that fallback channel
+    // aware instead of silently substituting a fake stereo L/R pair. The
+    // section heading also says what is actually being displayed.
     let (
         integrated_lufs,
         shortterm_lufs,
         momentary_lufs,
         true_peaks,
+        peak_label,
         stereo_width,
         peak_spread,
         channel_count,
     ) = if let Some(l) = loudness {
-        let true_peaks: &[f64] = if l.true_peaks_dbtp.is_empty() {
-            &FALLBACK_TRUE_PEAKS
-        } else {
-            l.true_peaks_dbtp.as_slice()
-        };
-        // Stereo width derived from correlation: +1 = mono (0), 0 = uncorrelated (0.5), -1 = out of phase (1)
+        let (true_peaks, peak_label): (Vec<f64>, &'static str) =
+            if l.true_peak_valid && !l.true_peaks_dbtp.is_empty() {
+                (
+                    l.true_peaks_dbtp
+                        .iter()
+                        .map(|peak| finite_meter_value(*peak, -60.0))
+                        .collect(),
+                    text.true_peak,
+                )
+            } else if !l.channel_peaks.is_empty() {
+                (
+                    l.channel_peaks
+                        .iter()
+                        .map(|peak| sample_peak_db(*peak))
+                        .collect(),
+                    text.peak,
+                )
+            } else {
+                (Vec::new(), text.true_peak)
+            };
         let width = l
             .correlation_lr
-            .map(|c| ((1.0 - c) / 2.0).clamp(0.0, 1.0))
-            .unwrap_or(0.5);
-        let peak_spread = peak_spread_db(&l.true_peaks_dbtp);
-        let channel_count = l.true_peaks_dbtp.len();
+            .filter(|correlation| correlation.is_finite())
+            .map(|correlation| ((1.0 - correlation) / 2.0).clamp(0.0, 1.0));
+        let channel_count = true_peaks.len();
+        let peak_spread = peak_spread_db(&true_peaks);
         (
-            l.integrated_lufs,
-            l.shortterm_lufs,
-            l.momentary_lufs,
+            finite_meter_value(l.integrated_lufs, -60.0),
+            finite_meter_value(l.shortterm_lufs, -60.0),
+            finite_meter_value(l.momentary_lufs, -60.0),
             true_peaks,
+            peak_label,
             width,
             peak_spread,
             channel_count,
@@ -268,8 +300,9 @@ pub fn render_lufs_with_true_peak(
             -60.0,
             -60.0,
             -60.0,
-            FALLBACK_TRUE_PEAKS.as_slice(),
-            0.5,
+            FALLBACK_TRUE_PEAKS.to_vec(),
+            text.true_peak,
+            None,
             0.0,
             0,
         )
@@ -303,7 +336,7 @@ pub fn render_lufs_with_true_peak(
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
                         .mb(d.grid)
-                        .child(text.true_peak),
+                        .child(peak_label),
                 )
                 .children(true_peaks.iter().enumerate().map(|(index, true_peak)| {
                     PlayerView::render_meter_bar(
@@ -468,7 +501,7 @@ pub fn render_lufs_with_true_peak(
                             .child(div().w(px(meter_theme.value_width))),
                     )
                     .into_any_element()
-            } else if channel_count >= 2 {
+            } else if channel_count >= 2 && stereo_width.is_some() {
                 let tick_config = TickConfig::stereo_width();
 
                 div()
@@ -485,7 +518,7 @@ pub fn render_lufs_with_true_peak(
                     )
                     .child(PlayerView::render_width_bar(
                         d,
-                        stereo_width,
+                        stereo_width.unwrap_or(0.0),
                         &tick_config,
                         &meter_theme,
                     ))
@@ -778,13 +811,35 @@ impl PlayerView {
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let theme_c = theme.clone();
+        let action_name = match button_type {
+            "mute" => "Mute",
+            "solo" => "Solo",
+            "dim" => "Dim",
+            _ => "Meter",
+        };
+        let shortcut = match button_type {
+            "mute" => "Alt+M",
+            "solo" => "Alt+Shift+M",
+            "dim" => "Ctrl+Alt+M",
+            _ => "",
+        };
+        let tooltip = if shortcut.is_empty() {
+            format!("{action_name} group {}", group_idx + 1)
+        } else {
+            format!("{action_name} group {} ({shortcut})", group_idx + 1)
+        };
+        let tooltip_theme = theme.clone();
         div()
             .id((button_type, group_idx))
+            .min_w(rems(2.0))
+            .min_h(rems(2.0))
             .px(d.half_grid)
             .py(d.half_grid)
             .rounded(d.r_sm)
-            .text_size(d.text_xs)
+            .text_size(d.text_sm)
             .cursor_pointer()
+            .aria_label(format!("{action_name} group {}", group_idx + 1))
+            .tooltip(move |_window, cx| themed_tooltip(tooltip.clone(), &tooltip_theme, cx))
             .when(active, |d| {
                 d.bg(active_color).text_color(theme_c.text_primary)
             })

@@ -3,7 +3,7 @@
 //! Renders two side-by-side sub-rack columns (Path A and Path B), each with
 //! a scrollable plugin strip, an "add plugin" picker, and remove/move controls.
 
-use crate::app::i18n::ABCompareTranslations;
+use crate::app::i18n::{ABCompareTranslations, PluginCommonTranslations};
 use crate::app::state::plugin::ABPathTarget;
 use crate::components::design::Ds;
 use crate::components::plugins::actions::{
@@ -85,6 +85,7 @@ pub fn render_ab_compare(
     let rack_text =
         crate::app::i18n::PluginRackTranslations::for_language(state.app.ui_state.language);
     let text = ABCompareTranslations::for_language(state.app.ui_state.language);
+    let common_text = PluginCommonTranslations::for_language(state.app.ui_state.language);
     let stack_paths = ctx.available_width / ctx.layout_scale.max(0.01) < 600.0;
 
     div()
@@ -115,6 +116,7 @@ pub fn render_ab_compare(
             ctx.plugin_data.as_ref(),
             ctx.available_width,
             ctx.layout_scale,
+            common_text,
             ctx.theme,
         ))
         .child(

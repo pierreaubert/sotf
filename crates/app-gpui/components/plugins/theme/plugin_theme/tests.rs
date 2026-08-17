@@ -138,6 +138,25 @@ fn apply_to_overrides_chassis_fields_only() {
 }
 
 #[test]
+fn accessibility_palettes_use_the_high_contrast_chassis() {
+    use crate::theme::ThemeId;
+
+    let app_theme = Theme::from_id(ThemeId::Protanopia);
+    assert_eq!(
+        plugin_theme_id_for_app_theme(PluginThemeId::Graphite, &app_theme, ThemeId::Protanopia,),
+        PluginThemeId::Brutalist
+    );
+    assert_eq!(
+        plugin_theme_id_for_app_theme(
+            PluginThemeId::StudioCream,
+            &Theme::from_id(ThemeId::BlackAndWhite),
+            ThemeId::BlackAndWhite,
+        ),
+        PluginThemeId::Brutalist
+    );
+}
+
+#[test]
 fn set_override_does_not_silently_validate_index() {
     // The state object itself does not know how many plugins exist —
     // bounds checking is the caller's responsibility. This test pins

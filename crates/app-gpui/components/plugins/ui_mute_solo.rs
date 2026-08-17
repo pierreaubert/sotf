@@ -14,6 +14,7 @@ use crate::app::AppState;
 use crate::app::i18n::PluginCommonTranslations;
 use crate::app::types::PluginUpdateType;
 use crate::components::design::Ds;
+use crate::components::themed_tooltip;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -113,6 +114,12 @@ pub fn render_mute_solo_plugin(
                 let is_muted = s.muted;
                 let is_soloed = s.soloed;
                 let is_dimmed = s.dimmed;
+                let mute_hint = format!("Mute {name}");
+                let solo_hint = format!("Solo {name}");
+                let dim_hint = format!("Dim {name}");
+                let mute_theme = theme.clone();
+                let solo_theme = theme.clone();
+                let dim_theme = theme.clone();
                 div()
                     .flex()
                     .flex_col()
@@ -140,6 +147,9 @@ pub fn render_mute_solo_plugin(
                     // Mute button
                     .child(
                         div()
+                            .id(ElementId::Name(
+                                format!("mute-channel-{plugin_idx}-{i}").into(),
+                            ))
                             .w(rems(1.75))
                             .h(rems(1.5))
                             .rounded(d.r_sm)
@@ -162,6 +172,9 @@ pub fn render_mute_solo_plugin(
                             })
                             .cursor_pointer()
                             .hover(|s| s.opacity(0.85))
+                            .tooltip(move |_window, cx| {
+                                themed_tooltip(mute_hint.clone(), &mute_theme, cx)
+                            })
                             .on_mouse_down(MouseButton::Left, {
                                 let entity = entity.clone();
                                 move |_, _, cx| {
@@ -173,6 +186,9 @@ pub fn render_mute_solo_plugin(
                     // Solo button
                     .child(
                         div()
+                            .id(ElementId::Name(
+                                format!("solo-channel-{plugin_idx}-{i}").into(),
+                            ))
                             .w(rems(1.75))
                             .h(rems(1.5))
                             .rounded(d.r_sm)
@@ -199,6 +215,9 @@ pub fn render_mute_solo_plugin(
                             })
                             .cursor_pointer()
                             .hover(|s| s.opacity(0.85))
+                            .tooltip(move |_window, cx| {
+                                themed_tooltip(solo_hint.clone(), &solo_theme, cx)
+                            })
                             .on_mouse_down(MouseButton::Left, {
                                 let entity = entity.clone();
                                 move |_, _, cx| {
@@ -210,6 +229,9 @@ pub fn render_mute_solo_plugin(
                     // Dim button
                     .child(
                         div()
+                            .id(ElementId::Name(
+                                format!("dim-channel-{plugin_idx}-{i}").into(),
+                            ))
                             .w(rems(1.75))
                             .h(rems(1.5))
                             .rounded(d.r_sm)
@@ -236,6 +258,9 @@ pub fn render_mute_solo_plugin(
                             })
                             .cursor_pointer()
                             .hover(|s| s.opacity(0.85))
+                            .tooltip(move |_window, cx| {
+                                themed_tooltip(dim_hint.clone(), &dim_theme, cx)
+                            })
                             .on_mouse_down(MouseButton::Left, {
                                 let entity = entity.clone();
                                 move |_, _, cx| {

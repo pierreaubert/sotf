@@ -113,9 +113,11 @@ impl PlayerView {
                 if let Some(drag) = knob_drag {
                     let mouse_y: f32 = event.position.y.into();
                     let delta_y = drag.start_y - mouse_y; // Inverted: up = positive (increase)
-                    // Scale: 150px drag = full range
+                    // Scale: 150px drag = full range. Shift provides a
+                    // predictable fine-adjust mode for precise edits.
                     let range = drag.max - drag.min;
-                    let value_delta = (delta_y as f64 / 150.0) * range;
+                    let drag_distance = if event.modifiers.shift { 1500.0 } else { 150.0 };
+                    let value_delta = (delta_y as f64 / drag_distance) * range;
                     let new_value = (drag.start_value + value_delta).clamp(drag.min, drag.max);
 
                     // Update the parameter value via the plugin editing system
@@ -255,9 +257,15 @@ impl PlayerView {
                         .when(!is_collapsed, |d| {
                             d.child(
                                 div()
+                                    .id("plugin-rack-viewport")
                                     .h(relative(rack_detail_ratio))
                                     .flex_shrink_0()
-                                    .overflow_hidden()
+                                    // The rack cards keep a stable touch target, but the
+                                    // user can drag the divider low enough that the strip is
+                                    // shorter than one card row. Keep that state usable by
+                                    // allowing the strip itself to scroll vertically instead
+                                    // of clipping its controls behind the detail divider.
+                                    .overflow_scroll()
                                     .child(self.render_plugin_rack(cx)),
                             )
                         })
@@ -643,6 +651,20 @@ impl PlayerView {
                                     let active_theme = theme_c.clone();
                                     let solo_theme = theme_c.clone();
                                     let preset_theme = theme_c.clone();
+                                    let active_tooltip_theme = theme_c.clone();
+                                    let solo_tooltip_theme = theme_c.clone();
+                                    let preset_tooltip_theme = theme_c.clone();
+                                    let active_tooltip = if enabled {
+                                        "Bypass plugin"
+                                    } else {
+                                        "Activate plugin"
+                                    };
+                                    let solo_tooltip = if is_soloed {
+                                        "Disable plugin solo"
+                                    } else {
+                                        "Solo plugin"
+                                    };
+                                    let preset_tooltip = text.plugin_presets;
 
                                     div()
                                         .flex()
@@ -657,79 +679,103 @@ impl PlayerView {
                                         .border_color(theme_c.border)
                                         // A (Active/Bypass) button
                                         .child(
-                                            IconButton::with_child(
-                                                ("plugin-active", idx),
-                                                div()
-                                                    .text_size(rems(0.625))
-                                                    .font_weight(FontWeight::BOLD)
-                                                    .child(if enabled { "A" } else { "B" }),
-                                            )
-                                            .variant(if enabled {
-                                                IconButtonVariant::Filled
-                                            } else {
-                                                IconButtonVariant::Outline
-                                            })
-                                            .size(IconButtonSize::Sm)
-                                            .theme(active_theme.to_icon_button_theme())
-                                            .aria_label(if enabled {
-                                                "Bypass plugin"
-                                            } else {
-                                                "Activate plugin"
-                                            })
-                                            .on_click_event(move |_event, _window, cx| {
-                                                state_for_active.update(cx, |state, _| {
-                                                    state.app.toggle_plugin(idx);
-                                                    state.app.update_level_meter_groups();
-                                                });
-                                            }),
+                                            div()
+                                                .id(("plugin-active-tooltip", idx))
+                                                .tooltip(move |_window, cx| {
+                                                    make_tooltip(
+                                                        active_tooltip,
+                                                        &active_tooltip_theme,
+                                                        cx,
+                                                    )
+                                                })
+                                                .child(
+                                                    IconButton::with_child(
+                                                        ("plugin-active", idx),
+                                                        div()
+                                                            .text_size(d.text_xs)
+                                                            .font_weight(FontWeight::BOLD)
+                                                            .child(if enabled { "A" } else { "B" }),
+                                                    )
+                                                    .variant(if enabled {
+                                                        IconButtonVariant::Filled
+                                                    } else {
+                                                        IconButtonVariant::Outline
+                                                    })
+                                                    .size(IconButtonSize::Sm)
+                                                    .theme(active_theme.to_icon_button_theme())
+                                                    .aria_label(active_tooltip)
+                                                    .on_click_event(move |_event, _window, cx| {
+                                                        state_for_active.update(cx, |state, _| {
+                                                            state.app.toggle_plugin(idx);
+                                                            state.app.update_level_meter_groups();
+                                                        });
+                                                    }),
+                                                ),
                                         )
                                         // S (Solo) button — functional
                                         .child(
-                                            IconButton::with_child(
-                                                ("plugin-solo", idx),
-                                                div()
-                                                    .text_size(d.text_xs)
-                                                    .font_weight(FontWeight::BOLD)
-                                                    .child("S"),
-                                            )
-                                            .variant(if is_soloed {
-                                                IconButtonVariant::Filled
-                                            } else {
-                                                IconButtonVariant::Outline
-                                            })
-                                            .size(IconButtonSize::Sm)
-                                            .theme(solo_theme.to_icon_button_theme())
-                                            .aria_label(if is_soloed {
-                                                "Disable plugin solo"
-                                            } else {
-                                                "Solo plugin"
-                                            })
-                                            .on_click_event(move |_event, _window, cx| {
-                                                state_for_solo.update(cx, |state, _| {
-                                                    state.app.toggle_plugin_solo(idx);
-                                                    state.app.update_level_meter_groups();
-                                                });
-                                            }),
+                                            div()
+                                                .id(("plugin-solo-tooltip", idx))
+                                                .tooltip(move |_window, cx| {
+                                                    make_tooltip(
+                                                        solo_tooltip,
+                                                        &solo_tooltip_theme,
+                                                        cx,
+                                                    )
+                                                })
+                                                .child(
+                                                    IconButton::with_child(
+                                                        ("plugin-solo", idx),
+                                                        div()
+                                                            .text_size(d.text_xs)
+                                                            .font_weight(FontWeight::BOLD)
+                                                            .child("S"),
+                                                    )
+                                                    .variant(if is_soloed {
+                                                        IconButtonVariant::Filled
+                                                    } else {
+                                                        IconButtonVariant::Outline
+                                                    })
+                                                    .size(IconButtonSize::Sm)
+                                                    .theme(solo_theme.to_icon_button_theme())
+                                                    .aria_label(solo_tooltip)
+                                                    .on_click_event(move |_event, _window, cx| {
+                                                        state_for_solo.update(cx, |state, _| {
+                                                            state.app.toggle_plugin_solo(idx);
+                                                            state.app.update_level_meter_groups();
+                                                        });
+                                                    }),
+                                                ),
                                         )
                                         // P (Presets) button
                                         .child(
-                                            IconButton::with_child(
-                                                ("plugin-presets", idx),
-                                                div()
-                                                    .text_size(d.text_xs)
-                                                    .font_weight(FontWeight::BOLD)
-                                                    .child("P"),
-                                            )
-                                            .variant(if preset_open == Some(idx) {
-                                                IconButtonVariant::Filled
-                                            } else {
-                                                IconButtonVariant::Outline
-                                            })
-                                            .size(IconButtonSize::Sm)
-                                            .theme(preset_theme.to_icon_button_theme())
-                                            .aria_label(text.plugin_presets)
-                                            .on_click_event(move |_event, _window, cx| {
-                                                state_for_presets.update(cx, |state, _| {
+                                            div()
+                                                .id(("plugin-presets-tooltip", idx))
+                                                .tooltip(move |_window, cx| {
+                                                    make_tooltip(
+                                                        preset_tooltip,
+                                                        &preset_tooltip_theme,
+                                                        cx,
+                                                    )
+                                                })
+                                                .child(
+                                                    IconButton::with_child(
+                                                        ("plugin-presets", idx),
+                                                        div()
+                                                            .text_size(d.text_xs)
+                                                            .font_weight(FontWeight::BOLD)
+                                                            .child("P"),
+                                                    )
+                                                    .variant(if preset_open == Some(idx) {
+                                                        IconButtonVariant::Filled
+                                                    } else {
+                                                        IconButtonVariant::Outline
+                                                    })
+                                                    .size(IconButtonSize::Sm)
+                                                    .theme(preset_theme.to_icon_button_theme())
+                                                    .aria_label(preset_tooltip)
+                                                    .on_click_event(move |_event, _window, cx| {
+                                                        state_for_presets.update(cx, |state, _| {
                                                                 let ps = &mut state.app.plugin_state;
                                                                 if ps.preset_state.plugin_preset_open == Some(idx) {
                                                                     // Close
@@ -747,45 +793,59 @@ impl PlayerView {
                                                                     ps.preset_state.plugin_preset_save_mode = false;
                                                                     ps.preset_state.plugin_preset_input.clear();
                                                                 }
-                                                });
-                                            }),
+                                                        });
+                                                    }),
+                                                ),
                                         )
                                         // X (Remove) or lock icon for permanent
-                                        .when(!is_permanent, |d| {
+                                        .when(!is_permanent, |el| {
                                             let confirming = self.state.read(cx).app.plugin_state.preset_state.confirm_remove_plugin == Some(idx);
                                             let remove_state = state_for_remove.clone();
                                             let remove_theme = theme_c.clone();
-                                            d.child(
-                                                IconButton::with_child(
-                                                    ("plugin-close", idx),
-                                                    div()
-                                                        .text_size(rems(0.625))
-                                                        .font_weight(FontWeight::BOLD)
-                                                        .child(if confirming { "?" } else { "X" }),
-                                                )
-                                                .variant(if confirming {
-                                                    IconButtonVariant::Filled
-                                                } else {
-                                                    IconButtonVariant::Outline
-                                                })
-                                                .size(IconButtonSize::Sm)
-                                                .theme(remove_theme.to_icon_button_theme())
-                                                .aria_label(if confirming {
-                                                    "Confirm plugin removal"
-                                                } else {
-                                                    "Remove plugin"
-                                                })
-                                                .on_click_event(move |_event, _window, cx| {
-                                                    remove_state.update(cx, |state, _| {
-                                                        if state.app.plugin_state.preset_state.confirm_remove_plugin == Some(idx) {
-                                                            state.app.plugin_state.preset_state.confirm_remove_plugin = None;
-                                                            state.app.remove_plugin(idx);
-                                                            state.app.update_level_meter_groups();
+                                            let remove_tooltip_theme = theme_c.clone();
+                                            let remove_tooltip = if confirming {
+                                                "Confirm plugin removal"
+                                            } else {
+                                                text.remove_plugin
+                                            };
+                                            el.child(
+                                                div()
+                                                    .id(("plugin-close-tooltip", idx))
+                                                    .tooltip(move |_window, cx| {
+                                                        make_tooltip(
+                                                            remove_tooltip,
+                                                            &remove_tooltip_theme,
+                                                            cx,
+                                                        )
+                                                    })
+                                                    .child(
+                                                        IconButton::with_child(
+                                                            ("plugin-close", idx),
+                                                            div()
+                                                                .text_size(d.text_xs)
+                                                                .font_weight(FontWeight::BOLD)
+                                                                .child(if confirming { "?" } else { "X" }),
+                                                        )
+                                                        .variant(if confirming {
+                                                            IconButtonVariant::Filled
                                                         } else {
-                                                            state.app.plugin_state.preset_state.confirm_remove_plugin = Some(idx);
-                                                        }
-                                                    });
-                                                }),
+                                                            IconButtonVariant::Outline
+                                                        })
+                                                        .size(IconButtonSize::Sm)
+                                                        .theme(remove_theme.to_icon_button_theme())
+                                                        .aria_label(remove_tooltip)
+                                                        .on_click_event(move |_event, _window, cx| {
+                                                            remove_state.update(cx, |state, _| {
+                                                                if state.app.plugin_state.preset_state.confirm_remove_plugin == Some(idx) {
+                                                                    state.app.plugin_state.preset_state.confirm_remove_plugin = None;
+                                                                    state.app.remove_plugin(idx);
+                                                                    state.app.update_level_meter_groups();
+                                                                } else {
+                                                                    state.app.plugin_state.preset_state.confirm_remove_plugin = Some(idx);
+                                                                }
+                                                            });
+                                                        }),
+                                                    ),
                                             )
                                         })
                                         // Lock icon for permanent plugins
@@ -1256,7 +1316,7 @@ impl PlayerView {
                                                 .justify_center()
                                                 .cursor_pointer()
                                                 .bg(if is_on { color } else { theme_c.surface })
-                                                .text_size(rems(0.625))
+                                                .text_size(d.text_xs)
                                                 .text_color(if is_on { theme_c.text_on_accent } else { theme_c.text_muted })
                                                 .on_mouse_up(
                                                     MouseButton::Left,
@@ -1273,10 +1333,10 @@ impl PlayerView {
                                                 .child(if is_on { "ON" } else { "OFF" })
                                         })
                                         // X (Remove) or lock icon
-                                        .when(!is_permanent, |d| {
+                                        .when(!is_permanent, |el| {
                                             let theme_tt = theme_c.clone();
                                             let confirming = self.state.read(cx).app.plugin_state.preset_state.confirm_remove_plugin == Some(idx);
-                                            d.child(
+                                            el.child(
                                                 div()
                                                     .id(("plugin-close-tail", idx))
                                                     .w(rems(1.125))
@@ -1288,7 +1348,7 @@ impl PlayerView {
                                                     .cursor_pointer()
                                                     .when(confirming, |d| d.bg(theme_c.error).text_color(theme_c.text_on_accent))
                                                     .when(!confirming, |d| d.hover(|s| s.bg(theme_c.error).text_color(theme_c.text_on_accent)))
-                                                    .text_size(rems(0.625))
+                                                    .text_size(d.text_xs)
                                                     .when(!confirming, |d| d.text_color(theme_c.text_muted))
                                                     .font_weight(FontWeight::BOLD)
                                                     .on_mouse_up(
@@ -1668,7 +1728,10 @@ impl PlayerView {
                 div()
                     .relative()
                     .flex_1()
-                    .w(px(24.0))
+                    // Keep the legend width and edge offsets tied to the
+                    // design scale so labels do not drift into the meter at
+                    // large font zooms.
+                    .w(rems(1.5))
                     .overflow_hidden()
                     .children(ticks.into_iter().map(move |db| {
                         let pos = db_to_position(db as f64);
@@ -1680,11 +1743,11 @@ impl PlayerView {
                         // - Bottom label (-60 dB): move label up
                         // - Other labels: no additional offset
                         let label_offset = if db == 0 {
-                            px(6.0) // Top: move label down
+                            d.grid // Top: move label down
                         } else if db == -60 {
-                            px(-6.0) // Bottom: move label up
+                            rems(-d.grid.0) // Bottom: move label up
                         } else {
-                            px(0.0) // No additional offset
+                            rems(0.0) // No additional offset
                         };
 
                         let label = div()
@@ -1693,7 +1756,7 @@ impl PlayerView {
                             .mt(label_offset)
                             .child(format!("{}", db));
 
-                        let tick = div().w(px(4.0)).h(px(1.0)).bg(theme.border);
+                        let tick = div().w(d.grid).h(d.half_grid).bg(theme.border);
 
                         let container = div()
                             .absolute()
@@ -1703,7 +1766,7 @@ impl PlayerView {
                                 top_fraction,
                             )))
                             // Offset by half line height (~6px for 9px text) to center tick on position
-                            .mt(px(-6.0))
+                            .mt(rems(-d.grid.0))
                             .flex()
                             .items_center()
                             .justify_between();
@@ -2138,6 +2201,14 @@ impl PlayerView {
                                                             self.state.clone(),
                                                             is_editing,
                                                             param_selection,
+                                                            app_st.app.ui_state.window_width,
+                                                            crate::ui::compute_combined_scale(
+                                                                app_st.app.ui_state.window_width,
+                                                                app_st.app.ui_state.window_height,
+                                                                app_st.app.ui_state.font_scale,
+                                                                app_st.app.ui_state.min_font_size_px,
+                                                                app_st.app.ui_state.max_font_size_px,
+                                                            ),
                                                             &chassis,
                                                         ),
                                                     )
@@ -2256,6 +2327,8 @@ impl PlayerView {
     pub(super) fn render_rack_config_overlay(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let text = PluginRackTranslations::for_language(self.state.read(cx).app.ui_state.language);
+        let common_text =
+            PluginCommonTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let (
             plugin_data,
             selected_idx,
@@ -2380,6 +2453,7 @@ impl PlayerView {
             config_content_width,
             layout_scale,
             live_plugin_data.as_ref(),
+            common_text,
             &theme,
             &plugin_theme,
         );

@@ -57,6 +57,8 @@ pub fn render_mb_expander_plugin(
     theme: &Theme,
 ) -> impl IntoElement {
     let compact = available_width / layout_scale.max(0.01) < 720.0;
+    let slider_height = (SLIDER_HEIGHT * layout_scale).clamp(120.0, 240.0);
+    let transfer_curve_size = (TRANSFER_CURVE_SIZE * layout_scale).clamp(120.0, 260.0);
     let get_param_idx = |base_idx: usize| -> usize {
         if state.selected_band_idx > 0 {
             state.selected_band_idx * 100 + base_idx
@@ -262,7 +264,7 @@ pub fn render_mb_expander_plugin(
         state.ratio,
         state.knee_db,
         false,
-        TRANSFER_CURVE_SIZE,
+        transfer_curve_size,
         None,
         theme,
     );
@@ -300,7 +302,7 @@ pub fn render_mb_expander_plugin(
                             state.selected_param,
                             state.is_editing,
                             Some('t'),
-                            SLIDER_HEIGHT,
+                            slider_height,
                             theme,
                         ))
                         .child(render_vertical_slider_with_ticks(
@@ -315,7 +317,7 @@ pub fn render_mb_expander_plugin(
                             state.selected_param,
                             state.is_editing,
                             Some('r'),
-                            SLIDER_HEIGHT,
+                            slider_height,
                             theme,
                         ))
                         .child(render_vertical_slider_with_ticks(
@@ -330,7 +332,7 @@ pub fn render_mb_expander_plugin(
                             state.selected_param,
                             state.is_editing,
                             Some('k'),
-                            SLIDER_HEIGHT,
+                            slider_height,
                             theme,
                         ))
                         .child(render_vertical_slider_with_ticks(
@@ -345,7 +347,7 @@ pub fn render_mb_expander_plugin(
                             state.selected_param,
                             state.is_editing,
                             Some('g'),
-                            SLIDER_HEIGHT,
+                            slider_height,
                             theme,
                         ))
                         .child(render_vertical_slider_with_ticks(
@@ -360,7 +362,7 @@ pub fn render_mb_expander_plugin(
                             state.selected_param,
                             state.is_editing,
                             Some('y'),
-                            SLIDER_HEIGHT,
+                            slider_height,
                             theme,
                         )),
                 )
@@ -391,7 +393,7 @@ pub fn render_mb_expander_plugin(
                             state.selected_param,
                             state.is_editing,
                             Some('a'),
-                            SLIDER_HEIGHT,
+                            slider_height,
                             theme,
                         ))
                         .child(render_vertical_slider_with_ticks(
@@ -406,7 +408,7 @@ pub fn render_mb_expander_plugin(
                             state.selected_param,
                             state.is_editing,
                             Some('e'),
-                            SLIDER_HEIGHT,
+                            slider_height,
                             theme,
                         ))
                         .child(render_vertical_slider_with_ticks(
@@ -421,7 +423,7 @@ pub fn render_mb_expander_plugin(
                             state.selected_param,
                             state.is_editing,
                             Some('h'),
-                            SLIDER_HEIGHT,
+                            slider_height,
                             theme,
                         )),
                 ),

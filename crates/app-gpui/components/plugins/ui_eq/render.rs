@@ -288,14 +288,32 @@ fn eq_curve_signature(filters: &[EQFilter], freq_count: usize) -> String {
 
 fn render_band_frequency_guide(
     freq: f64,
+    gain_db: f64,
+    q: f64,
     x: f32,
     color: Rgba,
     selected: bool,
     chart_height: f32,
+    chart_width: f32,
     geometry: EqChartGeometry,
     theme: &Theme,
 ) -> Vec<AnyElement> {
-    let label = format_eq_frequency_label(freq);
+    let label = if selected {
+        format!(
+            "{}  {:+.1} dB  Q {:.2}",
+            format_eq_frequency_label(freq),
+            gain_db,
+            q
+        )
+    } else {
+        format_eq_frequency_label(freq)
+    };
+    let label_width = if selected {
+        geometry.guide_label_width * 2.75
+    } else {
+        geometry.guide_label_width
+    };
+    let label_left = (x - label_width / 2.0).clamp(0.0, (chart_width - label_width).max(0.0));
     let guide_height = chart_height - CHART_BOTTOM_MARGIN - geometry.guide_top;
     let dash_count = (guide_height / (geometry.guide_dash_height + geometry.guide_dash_gap))
         .floor()
@@ -311,9 +329,9 @@ fn render_band_frequency_guide(
 
     let label = div()
         .absolute()
-        .left(px(x - geometry.guide_label_width / 2.0))
+        .left(px(label_left))
         .top(px(geometry.guide_label_top))
-        .w(px(geometry.guide_label_width))
+        .w(px(label_width))
         .text_center()
         .px(px(geometry.guide_label_padding_x))
         .py(px(geometry.guide_label_padding_y))
@@ -378,7 +396,7 @@ pub(crate) fn render_eq_channel_toolbar(
             text.all,
             !per_channel_mode,
             theme,
-            move |_, _, cx| {
+            move |cx| {
                 all_entity.update(cx, |state, cx| {
                     state.app.set_eq_per_channel_mode(plugin_idx, false);
                     cx.notify();
@@ -390,7 +408,7 @@ pub(crate) fn render_eq_channel_toolbar(
             text.per_channel_short,
             per_channel_mode,
             theme,
-            move |_, _, cx| {
+            move |cx| {
                 per_entity.update(cx, |state, cx| {
                     state.app.set_eq_per_channel_mode(plugin_idx, true);
                     cx.notify();
@@ -413,7 +431,7 @@ pub(crate) fn render_eq_channel_toolbar(
                             get_channel_name(ch, channels),
                             selected_channel == ch,
                             theme,
-                            move |_, _, cx| {
+                            move |cx| {
                                 entity.update(cx, |state, cx| {
                                     state.app.plugin_state.selected_eq_channel = ch;
                                     cx.notify();
@@ -427,7 +445,7 @@ pub(crate) fn render_eq_channel_toolbar(
                 text.copy_all_to_selected,
                 false,
                 theme,
-                move |_, _, cx| {
+                move |cx| {
                     copy_from_global.update(cx, |state, cx| {
                         let key = (plugin_idx, selected_channel);
                         if state.app.plugin_state.preset_state.confirm_eq_copy_from_all == Some(key)
@@ -453,7 +471,7 @@ pub(crate) fn render_eq_channel_toolbar(
                 text.copy_selected_to_all,
                 false,
                 theme,
-                move |_, _, cx| {
+                move |cx| {
                     copy_to_all.update(cx, |state, cx| {
                         let key = (plugin_idx, selected_channel);
                         if state.app.plugin_state.preset_state.confirm_eq_copy_to_all == Some(key) {
@@ -502,7 +520,7 @@ fn render_eq_channel_segment(
             text.all,
             !per_channel_mode,
             theme,
-            move |_, _, cx| {
+            move |cx| {
                 all_entity.update(cx, |state, cx| {
                     state.app.set_eq_per_channel_mode(plugin_idx, false);
                     cx.notify();
@@ -514,7 +532,7 @@ fn render_eq_channel_segment(
             text.per_channel_short,
             per_channel_mode,
             theme,
-            move |_, _, cx| {
+            move |cx| {
                 per_entity.update(cx, |state, cx| {
                     state.app.set_eq_per_channel_mode(plugin_idx, true);
                     cx.notify();
@@ -529,7 +547,7 @@ fn render_eq_channel_segment(
                     get_channel_name(ch, channels),
                     selected_channel == ch,
                     theme,
-                    move |_, _, cx| {
+                    move |cx| {
                         entity.update(cx, |state, cx| {
                             state.app.plugin_state.selected_eq_channel = ch;
                             cx.notify();
@@ -542,7 +560,7 @@ fn render_eq_channel_segment(
                 text.copy_all_to_selected,
                 false,
                 theme,
-                move |_, _, cx| {
+                move |cx| {
                     copy_from_global.update(cx, |state, cx| {
                         let key = (plugin_idx, selected_channel);
                         if state.app.plugin_state.preset_state.confirm_eq_copy_from_all == Some(key)
@@ -567,7 +585,7 @@ fn render_eq_channel_segment(
                 text.copy_selected_to_all,
                 false,
                 theme,
-                move |_, _, cx| {
+                move |cx| {
                     copy_to_all.update(cx, |state, cx| {
                         let key = (plugin_idx, selected_channel);
                         if state.app.plugin_state.preset_state.confirm_eq_copy_to_all == Some(key) {
@@ -597,9 +615,14 @@ fn render_eq_mode_button<F>(
     on_click: F,
 ) -> impl IntoElement
 where
-    F: Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
+    F: Fn(&mut App) + Clone + 'static,
 {
+    let label = label.into();
+    let focus_color = theme.border_focused;
+    let keyboard_on_click = on_click.clone();
+
     div()
+        .id(ElementId::Name(format!("eq-mode-button-{label}").into()))
         .px(d.pad_y)
         .py(d.pad_y_half)
         .text_size(d.text_xs)
@@ -614,8 +637,16 @@ where
                 .text_color(theme.text_secondary)
                 .hover(|s| s.bg(theme.surface_hover))
         })
-        .on_mouse_down(MouseButton::Left, on_click)
-        .child(label.into())
+        .focusable()
+        .focus_visible(move |s| s.border_1().border_color(focus_color))
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| on_click(cx))
+        .on_key_down(move |event, _, cx| {
+            if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                keyboard_on_click(cx);
+                cx.stop_propagation();
+            }
+        })
+        .child(label)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1115,10 +1146,13 @@ pub(crate) fn render_eq_visualization_sized(
 
         control_points.extend(render_band_frequency_guide(
             filter.frequency,
+            filter.gain_db,
+            filter.q,
             x,
             rgba_color,
             is_selected,
             chart_height,
+            width,
             geometry,
             theme,
         ));
@@ -1157,26 +1191,35 @@ pub(crate) fn render_eq_visualization_sized(
             let current_q = filter.q;
             let (q_min, q_max) = eq_q_bounds(filter.filter_type);
             let bounds_ref = bounds_ref.clone();
+            let hit_radius = geometry.q_handle_hit_radius;
             div()
                 .id(("eq-q-left", i))
                 .absolute()
-                .left(px(x - bar_half_width - geometry.q_handle_radius))
-                .top(px(y - geometry.q_handle_radius))
-                .w(px(geometry.q_handle_radius * 2.0))
-                .h(px(geometry.q_handle_radius * 2.0))
-                .rounded_full()
-                .bg(rgba_color)
-                .border(px(1.0))
-                .border_color(if is_selected {
-                    theme.text_primary
-                } else {
-                    Rgba {
-                        a: 0.4,
-                        ..theme.text_primary
-                    }
-                })
+                .left(px(x - bar_half_width - hit_radius))
+                .top(px(y - hit_radius))
+                .w(px(hit_radius * 2.0))
+                .h(px(hit_radius * 2.0))
+                .flex()
+                .items_center()
+                .justify_center()
                 .cursor(gpui::CursorStyle::ResizeLeftRight)
                 .hover(|s| s.shadow_lg())
+                .child(
+                    div()
+                        .w(px(geometry.q_handle_radius * 2.0))
+                        .h(px(geometry.q_handle_radius * 2.0))
+                        .rounded_full()
+                        .bg(rgba_color)
+                        .border(px(1.0))
+                        .border_color(if is_selected {
+                            theme.text_primary
+                        } else {
+                            Rgba {
+                                a: 0.4,
+                                ..theme.text_primary
+                            }
+                        }),
+                )
                 .on_drag(
                     EqQHandleDrag {
                         band_idx,
@@ -1237,26 +1280,35 @@ pub(crate) fn render_eq_visualization_sized(
             let current_q = filter.q;
             let (q_min, q_max) = eq_q_bounds(filter.filter_type);
             let bounds_ref = bounds_ref.clone();
+            let hit_radius = geometry.q_handle_hit_radius;
             div()
                 .id(("eq-q-right", i))
                 .absolute()
-                .left(px(x + bar_half_width - geometry.q_handle_radius))
-                .top(px(y - geometry.q_handle_radius))
-                .w(px(geometry.q_handle_radius * 2.0))
-                .h(px(geometry.q_handle_radius * 2.0))
-                .rounded_full()
-                .bg(rgba_color)
-                .border(px(1.0))
-                .border_color(if is_selected {
-                    theme.text_primary
-                } else {
-                    Rgba {
-                        a: 0.4,
-                        ..theme.text_primary
-                    }
-                })
+                .left(px(x + bar_half_width - hit_radius))
+                .top(px(y - hit_radius))
+                .w(px(hit_radius * 2.0))
+                .h(px(hit_radius * 2.0))
+                .flex()
+                .items_center()
+                .justify_center()
                 .cursor(gpui::CursorStyle::ResizeLeftRight)
                 .hover(|s| s.shadow_lg())
+                .child(
+                    div()
+                        .w(px(geometry.q_handle_radius * 2.0))
+                        .h(px(geometry.q_handle_radius * 2.0))
+                        .rounded_full()
+                        .bg(rgba_color)
+                        .border(px(1.0))
+                        .border_color(if is_selected {
+                            theme.text_primary
+                        } else {
+                            Rgba {
+                                a: 0.4,
+                                ..theme.text_primary
+                            }
+                        }),
+                )
                 .on_drag(
                     EqQHandleDrag {
                         band_idx,
@@ -1311,20 +1363,29 @@ pub(crate) fn render_eq_visualization_sized(
         control_points.push(right_handle);
 
         // Main control point circle (rendered on top)
+        let hit_radius = geometry.control_point_hit_radius;
         let control_point = div()
             .id(("eq-control-point", i))
             .absolute()
-            .left(px(x - geometry.control_point_radius))
-            .top(px(y - geometry.control_point_radius))
-            .w(px(geometry.control_point_radius * 2.0))
-            .h(px(geometry.control_point_radius * 2.0))
-            .rounded_full()
-            .bg(rgba_color)
-            .border(px(2.0))
-            .border_color(border_color)
-            .shadow_md()
+            .left(px(x - hit_radius))
+            .top(px(y - hit_radius))
+            .w(px(hit_radius * 2.0))
+            .h(px(hit_radius * 2.0))
+            .flex()
+            .items_center()
+            .justify_center()
             .cursor(gpui::CursorStyle::PointingHand)
             .hover(|s| s.shadow_lg())
+            .child(
+                div()
+                    .w(px(geometry.control_point_radius * 2.0))
+                    .h(px(geometry.control_point_radius * 2.0))
+                    .rounded_full()
+                    .bg(rgba_color)
+                    .border(px(2.0))
+                    .border_color(border_color)
+                    .shadow_md(),
+            )
             .on_mouse_down(MouseButton::Left, {
                 let entity_click = entity.clone();
                 move |event, _window, cx| {
@@ -1389,6 +1450,10 @@ pub(crate) fn render_eq_visualization_sized(
             .get(band_idx)
             .map(|filter| (band_idx, filter.frequency, filter.gain_db))
     });
+    let selected_q =
+        selected_band.and_then(|band_idx| filters.get(band_idx).map(|filter| filter.q));
+    let selected_filter_type =
+        selected_band.and_then(|band_idx| filters.get(band_idx).map(|filter| filter.filter_type));
     let focus_ring_color: Hsla = theme.accent.into();
     let container = div()
         .id("eq-chart-container")
@@ -1437,6 +1502,51 @@ pub(crate) fn render_eq_visualization_sized(
                     );
                     cx.notify();
                 });
+            }
+        })
+        .on_scroll_wheel({
+            let entity = entity.clone();
+            move |event, _window, cx| {
+                let Some(band_idx) = selected_point.map(|(band_idx, _, _)| band_idx) else {
+                    return;
+                };
+                let delta = match event.delta {
+                    ScrollDelta::Pixels(pixels) => {
+                        let y: f32 = pixels.y.into();
+                        f64::from(y) * 0.01
+                    }
+                    ScrollDelta::Lines(lines) => f64::from(lines.y) * 0.05,
+                };
+                let gain_scroll = event.modifiers.shift;
+                entity.update(cx, |state, cx| {
+                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                    if gain_scroll {
+                        let Some((_, _, current_gain)) = selected_point else {
+                            return;
+                        };
+                        state.app.set_plugin_param(
+                            plugin_idx,
+                            indexing.param(band_idx, indexing.gain),
+                            (current_gain + delta)
+                                .clamp(pk(EQ, "gain").min_f64(), pk(EQ, "gain").max_f64()),
+                        );
+                    } else {
+                        let Some(current_q) = selected_q else {
+                            return;
+                        };
+                        let Some(filter_type) = selected_filter_type else {
+                            return;
+                        };
+                        let (q_min, q_max) = eq_q_bounds(filter_type);
+                        state.app.set_plugin_param(
+                            plugin_idx,
+                            indexing.param(band_idx, indexing.q),
+                            (current_q + delta).clamp(q_min, q_max),
+                        );
+                    }
+                    cx.notify();
+                });
+                cx.stop_propagation();
             }
         })
         .on_action({
@@ -1579,8 +1689,8 @@ pub(crate) fn render_eq_visualization_sized(
                 // Convert directly to freq/gain (no delta calculation needed)
                 // Use wider range for dragging to allow extending beyond current view
                 let new_freq = x_to_freq(x_px, plot_width).clamp(MIN_FREQ, MAX_FREQ);
-                let new_gain =
-                    y_to_gain_with_height(y_px, min_db, max_db, chart_height).clamp(-24.0, 24.0);
+                let new_gain = y_to_gain_with_height(y_px, min_db, max_db, chart_height)
+                    .clamp(pk(EQ, "gain").min_f64(), pk(EQ, "gain").max_f64());
 
                 let plugin_idx = drag_data.plugin_idx;
                 let band_idx = drag_data.band_idx;

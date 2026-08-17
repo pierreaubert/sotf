@@ -84,6 +84,15 @@ fn corrected_spectrum_magnitudes(
         .into()
 }
 
+fn spectral_tilt_option_label(correction: SpectralTiltCorrection, custom: &str) -> String {
+    match correction {
+        SpectralTiltCorrection::Custom(slope) if slope.is_finite() => {
+            format!("{custom} ({slope:+.1} dB/oct)")
+        }
+        _ => custom.to_string(),
+    }
+}
+
 // ============================================================================
 // Plugin UI
 // ============================================================================
@@ -287,7 +296,11 @@ pub fn render_spectrum_analyzer_plugin(
                                 SelectOption::new("3db".to_string(), "+3dB/oct"),
                                 SelectOption::new("6db".to_string(), "+6dB/oct"),
                                 SelectOption::new("pink".to_string(), "Pink (+3dB/oct)"),
-                                SelectOption::new("custom".to_string(), text.custom).disabled(true),
+                                SelectOption::new(
+                                    "custom".to_string(),
+                                    spectral_tilt_option_label(state.tilt_correction, text.custom),
+                                )
+                                .disabled(true),
                             ])
                             .selected(match state.tilt_correction {
                                 SpectralTiltCorrection::None => "none".to_string(),
@@ -458,6 +471,22 @@ mod spectrum_tilt_tests {
         );
         assert_eq!(corrected.as_ref(), &[-30.0, -27.0, -24.0]);
     }
+
+    #[test]
+    fn custom_tilt_option_includes_the_actual_slope() {
+        assert_eq!(
+            spectral_tilt_option_label(SpectralTiltCorrection::Custom(4.25), "Custom"),
+            "Custom (+4.3 dB/oct)"
+        );
+        assert_eq!(
+            spectral_tilt_option_label(SpectralTiltCorrection::Custom(-2.0), "Custom"),
+            "Custom (-2.0 dB/oct)"
+        );
+        assert_eq!(
+            spectral_tilt_option_label(SpectralTiltCorrection::Custom(f32::NAN), "Custom"),
+            "Custom"
+        );
+    }
 }
 
 impl PlayerView {
@@ -485,6 +514,12 @@ impl PlayerView {
         );
         let chart_height =
             (state.app.ui_state.window_height - 160.0 * combined_scale).max(200.0 * combined_scale);
+        let max_frequency = state
+            .app
+            .playback
+            .sample_rate
+            .map(|sample_rate| (sample_rate as f32 * 0.5).max(20.0))
+            .unwrap_or(20_000.0);
 
         let content = if let Some(info) = &state.app.playback.spectrum_info {
             // Convert magnitudes to Arc for the GPU element
@@ -511,7 +546,7 @@ impl PlayerView {
                             div().flex_1().child(
                                 SpectrumElement::new(magnitudes)
                                     .height(px(chart_height))
-                                    .frequency_range(20.0, 20000.0)
+                                    .frequency_range(20.0, max_frequency)
                                     .smoothing(phone_smoothing)
                                     .colors(spectrum_colors_from_theme(
                                         &theme.plugin_palette.spectrum_colors,
@@ -526,7 +561,7 @@ impl PlayerView {
                         .child(spectrum_db_axis_spacer(&d, &theme))
                         .child(render_spectrum_frequency_axis(
                             20.0,
-                            20000.0,
+                            max_frequency,
                             spectrum_axis_theme(&d, &theme),
                         )),
                 )

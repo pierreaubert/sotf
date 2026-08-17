@@ -1,8 +1,11 @@
 use super::super::data::SpeakerVertex;
 use super::consts::GRID_RING_FRACTIONS;
+use super::consts::LABEL_FONT_PX;
 use super::consts::LABEL_RADIUS_FACTOR;
+use super::consts::LFE_LABEL_FONT_PX;
 use super::consts::RAY_STEP_DEG;
 use super::consts::SPEAKER_DOT_PX;
+use super::consts::viewport_visual_scale;
 use super::misc::blend;
 use super::misc::with_alpha;
 use super::paint::paint_circle;
@@ -88,7 +91,22 @@ impl Element for SpiderDisc2DInner {
         }
         let cx = f32::from(bounds.origin.x) + w * 0.5;
         let cy = f32::from(bounds.origin.y) + h * 0.5;
-        let unit = (w.min(h) * 0.5) - SPEAKER_DOT_PX * 3.0; // leave margin for dots/labels
+        let visual_scale = viewport_visual_scale(w.min(h));
+        let dot_radius = SPEAKER_DOT_PX * visual_scale;
+        let label_font_size = LABEL_FONT_PX * visual_scale;
+        let label_extent = self
+            .labels
+            .iter()
+            .map(|(label, _)| {
+                measure_glyph_text_width(label, label_font_size) * 0.5 + label_font_size * 0.5
+            })
+            .fold(0.0_f32, f32::max);
+        // Keep the label's full half-width and half-height inside the rim.
+        // This margin scales with the actual rem-sized viewport rather than
+        // assuming the default 320px graph height.
+        let rim_margin = dot_radius * 3.0 + label_extent + 2.0 * visual_scale;
+        let unit = ((w.min(h) * 0.5 - rim_margin) / LABEL_RADIUS_FACTOR).max(1.0);
+        let line_width = visual_scale.clamp(0.75, 1.5);
 
         // Background.
         paint_filled_rect(window, bounds, self.colors.background);
@@ -96,14 +114,14 @@ impl Element for SpiderDisc2DInner {
         // Concentric rings — approximated as N-gons (64 segments).
         for &frac in GRID_RING_FRACTIONS {
             let r = unit * frac;
-            paint_circle(window, cx, cy, r, 1.0, self.colors.grid, 64);
+            paint_circle(window, cx, cy, r, line_width, self.colors.grid, 64);
         }
 
         // Radial rays at every RAY_STEP_DEG (universal grid).
         let mut deg = -180.0;
         while deg < 180.0 {
             let (sx, sy) = SpiderDisc2D::polar_to_screen(cx, cy, unit, deg);
-            paint_line(window, cx, cy, sx, sy, 1.0, self.colors.grid);
+            paint_line(window, cx, cy, sx, sy, line_width, self.colors.grid);
             deg += RAY_STEP_DEG;
         }
 
@@ -116,7 +134,7 @@ impl Element for SpiderDisc2DInner {
         for (_, az_deg) in &self.labels {
             let (sx, sy) =
                 SpiderDisc2D::polar_to_screen(cx, cy, unit * LABEL_RADIUS_FACTOR, *az_deg);
-            paint_line(window, cx, cy, sx, sy, 1.0, guide_color);
+            paint_line(window, cx, cy, sx, sy, line_width, guide_color);
         }
 
         // Spider polygon (fill + stroke). Skip if fewer than 3 vertices to
@@ -131,7 +149,7 @@ impl Element for SpiderDisc2DInner {
                 window,
                 &pts,
                 Some(self.colors.polygon_fill),
-                Some((self.colors.polygon_stroke, 1.5)),
+                Some((self.colors.polygon_stroke, 1.5 * visual_scale)),
             );
         }
 
@@ -146,7 +164,7 @@ impl Element for SpiderDisc2DInner {
             } else {
                 self.colors.speaker_dot
             };
-            paint_filled_disc(window, sx, sy, SPEAKER_DOT_PX, dot_color, 16);
+            paint_filled_disc(window, sx, sy, dot_radius, dot_color, 16);
 
             // Outline ring marking this dot as the highlighted (reference)
             // channel. Drawn AFTER the fill so it sits cleanly on top.
@@ -155,8 +173,8 @@ impl Element for SpiderDisc2DInner {
                     window,
                     sx,
                     sy,
-                    SPEAKER_DOT_PX * 2.0,
-                    1.5,
+                    dot_radius * 2.0,
+                    line_width,
                     self.colors.polygon_stroke,
                     24,
                 );
@@ -167,7 +185,7 @@ impl Element for SpiderDisc2DInner {
         for (label, az_deg) in &self.labels {
             let label_r = unit * LABEL_RADIUS_FACTOR;
             let (lx, ly) = SpiderDisc2D::polar_to_screen(cx, cy, label_r, *az_deg);
-            let font_size = 10.0;
+            let font_size = label_font_size;
             let text_w = measure_glyph_text_width(label, font_size);
             let x = lx - text_w * 0.5;
             let y = ly - font_size * 0.5;
@@ -180,7 +198,7 @@ impl Element for SpiderDisc2DInner {
         // accent colour the polygon outline uses) so it stands out
         // unambiguously from the regular speaker dots.
         if self.has_lfe {
-            let lfe_r = SPEAKER_DOT_PX * 1.4;
+            let lfe_r = dot_radius * 1.4;
             // Filled translucent core + opaque outline ring.
             paint_filled_disc(
                 window,
@@ -190,16 +208,24 @@ impl Element for SpiderDisc2DInner {
                 with_alpha(self.colors.polygon_stroke, 0.25),
                 24,
             );
-            paint_circle(window, cx, cy, lfe_r, 1.5, self.colors.polygon_stroke, 24);
+            paint_circle(
+                window,
+                cx,
+                cy,
+                lfe_r,
+                line_width,
+                self.colors.polygon_stroke,
+                24,
+            );
             if self.show_labels {
-                let font_size = 9.0;
+                let font_size = LFE_LABEL_FONT_PX * visual_scale;
                 let text = "LFE";
                 let text_w = measure_glyph_text_width(text, font_size);
                 paint_glyph_text_at(
                     window,
                     text,
                     cx - text_w * 0.5,
-                    cy + lfe_r + 4.0,
+                    cy + lfe_r + 4.0 * visual_scale,
                     font_size,
                     self.colors.label,
                     0.0,
