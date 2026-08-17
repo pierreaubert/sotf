@@ -15,7 +15,7 @@ Runs as a background service providing audio processing through the macOS HAL dr
 - `plugins` - Audio plugin system
 - `engine` - Audio processing engine
 - `cpal` - Audio I/O
-- `tokio` - Async runtime
+- `std::thread` - Client handlers and the driver configuration watcher
 - `parking_lot` - Synchronization
 
 ## Platform

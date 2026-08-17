@@ -1,8 +1,10 @@
 use super::consts::pre_alloc_capacity_samples;
 use super::encrypted::encrypted_record_slots;
 use super::encrypted::encrypted_record_total_bytes;
+use super::misc::fingerprints_equal;
 use super::shared_audio_buffer::SharedAudioBuffer;
 use super::shared_audio_buffer::load_initial_cipher;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Writer adapter for HAL output.
 ///
@@ -14,6 +16,7 @@ pub struct HalOutputWriter {
     pub(super) cipher: Option<crate::encryption::AudioCipher>,
     pub(super) ciphertext_buf: Vec<u8>,
     pub(super) encrypted_buf: Vec<f32>,
+    key_mismatch_count: AtomicU64,
 }
 
 impl HalOutputWriter {
@@ -31,6 +34,7 @@ impl HalOutputWriter {
                     cipher,
                     ciphertext_buf: Vec::with_capacity(ciphertext_bytes),
                     encrypted_buf: Vec::with_capacity(encrypted_slots),
+                    key_mismatch_count: AtomicU64::new(0),
                 })
             }
             Err(_) => None,
@@ -59,9 +63,9 @@ impl HalOutputWriter {
         if !buffer.is_encrypted() {
             return true;
         }
-        self.cipher
-            .as_ref()
-            .is_some_and(|cipher| cipher.fingerprint() == &buffer.key_fingerprint())
+        self.cipher.as_ref().is_some_and(|cipher| {
+            fingerprints_equal(cipher.fingerprint(), &buffer.key_fingerprint())
+        })
     }
 
     /// Re-load the session key from disk and replace the cached cipher.
@@ -73,10 +77,16 @@ impl HalOutputWriter {
             }
             let key = crate::encryption::load_session_key()?;
             let cipher = crate::encryption::AudioCipher::new(&key);
-            if cipher.fingerprint() == &buf.key_fingerprint() {
+            let expected = buf.key_fingerprint();
+            if fingerprints_equal(cipher.fingerprint(), &expected) {
                 self.cipher = Some(cipher);
                 Ok(())
             } else {
+                log::warn!(
+                    "[HAL OUTPUT] Session-key reload mismatch: header={}, loaded={}",
+                    crate::fingerprint_to_hex(&expected),
+                    crate::fingerprint_to_hex(cipher.fingerprint())
+                );
                 Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "Loaded session key fingerprint does not match shared memory header",
@@ -106,10 +116,11 @@ impl HalOutputWriter {
             let header_fingerprint = self.buffer.as_ref().map(|b| b.key_fingerprint());
             let fingerprint_ok = matches!(
                 (&self.cipher, header_fingerprint),
-                (Some(c), Some(fp)) if c.fingerprint() == &fp
+                (Some(c), Some(fp)) if fingerprints_equal(c.fingerprint(), &fp)
             );
 
             if !fingerprint_ok {
+                self.key_mismatch_count.fetch_add(1, Ordering::Relaxed);
                 return 0;
             }
 
@@ -131,6 +142,13 @@ impl HalOutputWriter {
         } else {
             0
         }
+    }
+
+    /// Number of writes suppressed because the cached session key did not
+    /// match the shared-memory fingerprint. Inspect from a control/diagnostic
+    /// thread; the audio path only performs a relaxed atomic increment.
+    pub fn key_mismatch_count(&self) -> u64 {
+        self.key_mismatch_count.load(Ordering::Relaxed)
     }
 
     /// Number of complete plaintext frames currently queued for HAL playback.

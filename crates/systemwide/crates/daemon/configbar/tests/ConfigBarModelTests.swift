@@ -151,4 +151,93 @@ final class ConfigBarModelTests: XCTestCase {
         XCTAssertEqual(category.id, category.name)
         XCTAssertEqual(category.id, "Dynamics")
     }
+
+    // MARK: - Graph topology
+
+    private func graphNode(_ id: Int) -> PluginGraphNodeModel {
+        PluginGraphNodeModel(
+            id: id,
+            pluginType: "gain",
+            parameters: [:],
+            inputChannels: 2,
+            bypassed: false
+        )
+    }
+
+    private func graph(_ nodeIDs: [Int], edges: [(Int, Int)]) -> PluginGraphModel {
+        PluginGraphModel(
+            nodes: nodeIDs.map(graphNode),
+            edges: edges.map { PluginGraphEdgeModel(fromNode: $0.0, toNode: $0.1) }
+        )
+    }
+
+    func testGraphTopologyAcceptsLinearChainAndReturnsOrder() {
+        let model = graph([10, 20, 30], edges: [(10, 20), (20, 30)])
+
+        XCTAssertEqual(model.linearNodeIDs, [10, 20, 30])
+        XCTAssertTrue(model.isLinear)
+    }
+
+    func testGraphTopologyRejectsCycle() {
+        let model = graph([1, 2, 3], edges: [(1, 2), (2, 3), (3, 1)])
+
+        XCTAssertNil(model.linearNodeIDs)
+        XCTAssertFalse(model.isLinear)
+    }
+
+    func testGraphTopologyRejectsMultipleRoots() {
+        let model = graph([1, 2, 3], edges: [(1, 3)])
+
+        XCTAssertNil(model.linearNodeIDs)
+        XCTAssertFalse(model.isLinear)
+    }
+
+    func testGraphTopologyRejectsMalformedEdges() {
+        let unknownNode = graph([1, 2], edges: [(1, 99)])
+        let duplicateNodeIDs = PluginGraphModel(
+            nodes: [graphNode(1), graphNode(1)],
+            edges: [PluginGraphEdgeModel(fromNode: 1, toNode: 1)]
+        )
+
+        XCTAssertNil(unknownNode.linearNodeIDs)
+        XCTAssertNil(duplicateNodeIDs.linearNodeIDs)
+    }
+
+    // MARK: - Configbar pure behavior
+
+    func testVirtualDeviceDetectionRejectsKnownLoopbackDevicesOnly() {
+        XCTAssertTrue(isConfigBarVirtualDevice("SotF Virtual Audio"))
+        XCTAssertTrue(isConfigBarVirtualDevice("BLACKHOLE 2ch"))
+        XCTAssertFalse(isConfigBarVirtualDevice("Built-in Output"))
+    }
+
+    func testMeterPeakSanitizationClampsInvalidAndOversizedValues() {
+        let values = sanitizeConfigBarPeaks([.nan, -1.0, 0.0, 0.75, 4.0])
+
+        XCTAssertEqual(values, [0.0, 0.0, 0.0, 0.75, 2.0])
+    }
+
+    func testMeterPeakHoldsDecayWithoutDroppingBelowCurrentPeak() {
+        let values = updateConfigBarPeakHolds(
+            previous: [1.0, 0.25],
+            current: [0.5, 0.5]
+        )
+
+        XCTAssertEqual(values[0], 0.96, accuracy: 0.0001)
+        XCTAssertEqual(values[1], 0.5, accuracy: 0.0001)
+        XCTAssertEqual(decayConfigBarPeaks([1.0]), [0.85])
+    }
+
+    func testEncryptionToggleGuardConsumesOnlyTheProgrammaticRollback() {
+        var guardState = EncryptionToggleGuard()
+        var daemonRequests = 0
+
+        XCTAssertFalse(guardState.consumeProgrammaticChange())
+        daemonRequests += 1 // the user's original failed request
+
+        guardState.markProgrammaticChange()
+        XCTAssertTrue(guardState.consumeProgrammaticChange())
+        XCTAssertFalse(guardState.consumeProgrammaticChange())
+        XCTAssertEqual(daemonRequests, 1)
+    }
 }

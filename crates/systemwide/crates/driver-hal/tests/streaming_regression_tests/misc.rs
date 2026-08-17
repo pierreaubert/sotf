@@ -92,8 +92,8 @@ fn daemon_reconfiguration_uses_negotiated_hal_format() {
         "reconfiguration must accept the negotiated HAL buffer size by name"
     );
     assert!(
-        body.contains("start_hal_playback_with_driver_config("),
-        "reconfiguration must use the explicit driver-format startup path"
+        body.contains("AudioDaemon::start_pipeline_plan("),
+        "reconfiguration must use the shared driver-format startup path"
     );
     assert!(
         body.contains("hal_sample_rate,"),
@@ -444,18 +444,20 @@ fn swift_shared_memory_is_open_only_for_restricted_hal_process() {
 }
 
 #[test]
-fn swift_shared_memory_protocol_matches_rust_v5_configuring_handshake() {
+fn swift_shared_memory_protocol_matches_rust_v6_configuring_handshake() {
     let source =
         read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SharedMemory.swift");
 
     assert!(
-        source.contains("private let kSharedMemoryVersion: UInt32 = 5"),
-        "Swift shared-memory protocol version must match Rust v5"
+        source.contains("private let kSharedMemoryVersion: UInt32 = 6"),
+        "Swift shared-memory protocol version must match Rust v6"
     );
     assert!(
         source.contains("var configuring: UInt32"),
         "Swift SharedAudioHeader must include the Rust v5 configuring field"
     );
+    assert!(source.contains("var configuringAck: UInt32"));
+    assert!(source.contains("var requestedChannelCount: UInt32"));
     assert!(
         source.contains("var keyFingerprint: UInt64"),
         "Swift SharedAudioHeader must mirror Rust's aligned AtomicU64 key_fingerprint field"
@@ -674,8 +676,9 @@ fn swift_hal_supports_daemon_requested_channel_counts_up_to_32() {
     );
     assert!(
         shm_source.contains("func getRequestedChannelCount()")
-            && shm_source.contains("atomicStore(&header.pointee.channelCount, channelCount)"),
-        "shared-memory config negotiation should carry the requested channel count"
+            && shm_source
+                .contains("atomicStore(&header.pointee.requestedChannelCount, channelCount)"),
+        "shared-memory config negotiation should carry pending channel geometry"
     );
     assert!(
         initialize.contains("memorySize = Int(statBuf.st_size)")

@@ -10,6 +10,7 @@ use std::fmt;
 
 /// Status information from the audio driver.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct DriverStatus {
     /// Whether the current platform has a supported driver implementation.
     pub platform_supported: bool,
@@ -24,14 +25,43 @@ pub struct DriverStatus {
     /// Current buffer size in frames.
     pub buffer_frames: u32,
     /// Human-readable driver name (e.g. "macOS CoreAudio HAL", "PipeWire", "Windows APO").
-    pub driver_name: String,
+    /// Static platform label. Keeping this borrowed avoids allocating on
+    /// every status poll; platform drivers use compile-time names.
+    pub driver_name: &'static str,
     /// Whether the platform driver itself reports it is ready (kernel/HAL side initialised).
     /// On platforms with no driver concept this mirrors `driver_installed`.
     pub driver_ready: bool,
 }
 
+impl DriverStatus {
+    /// Construct a status snapshot without exposing the struct's full field
+    /// set to downstream driver implementations.
+    pub const fn new(
+        platform_supported: bool,
+        driver_installed: bool,
+        capture_active: bool,
+        sample_rate: u32,
+        channel_count: u32,
+        buffer_frames: u32,
+        driver_name: &'static str,
+        driver_ready: bool,
+    ) -> Self {
+        Self {
+            platform_supported,
+            driver_installed,
+            capture_active,
+            sample_rate,
+            channel_count,
+            buffer_frames,
+            driver_name,
+            driver_ready,
+        }
+    }
+}
+
 /// Configuration request for the audio driver.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct DriverConfig {
     /// Requested sample rate in Hz.
     ///
@@ -223,12 +253,18 @@ impl From<&str> for DriverError {
 
 impl From<std::io::Error> for DriverError {
     fn from(error: std::io::Error) -> Self {
-        Self::io(error.to_string())
+        let message = error.to_string();
+        match error.kind() {
+            std::io::ErrorKind::PermissionDenied => Self::permission_denied(message),
+            std::io::ErrorKind::TimedOut => Self::timeout(message),
+            _ => Self::io(message),
+        }
     }
 }
 
 /// Result of a configuration request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum ConfigResult {
     /// The exact requested configuration was accepted.
     Accepted,
@@ -287,25 +323,16 @@ pub trait AudioDriver: Send + 'static {
 
     /// Read interleaved audio samples into `buffer`.
     ///
-    /// Returns the number of *samples* (not frames) actually read.
-    /// The caller provides a buffer of `frame_count * channel_count` floats.
-    /// Implementors should return a multiple of `channel_count()` when
-    /// `channel_count() > 0`.
+    /// Returns the number of complete *frames* actually read. The caller
+    /// provides a buffer of `frame_count * channel_count()` floats, and an
+    /// implementation must never consume a partial interleaved frame.
     fn read_audio(&mut self, buffer: &mut [f32]) -> usize;
 
     /// Read interleaved audio and return complete frames.
     ///
-    /// This preserves the legacy `read_audio` sample-count contract while
-    /// giving new callers a frame-count API that matches `available_frames`.
+    /// This is an explicit alias for the frame-based `read_audio` contract.
     fn read_frames(&mut self, buffer: &mut [f32]) -> usize {
-        let samples = self.read_audio(buffer);
-        let channels = self.channel_count().max(1) as usize;
-        debug_assert_eq!(
-            samples % channels,
-            0,
-            "AudioDriver::read_audio must return complete frames"
-        );
-        samples / channels
+        self.read_audio(buffer)
     }
 
     /// Number of complete frames available for reading without blocking.
@@ -330,7 +357,58 @@ pub trait AudioDriver: Send + 'static {
     fn acknowledge_config_change(&mut self, actual: DriverConfig, result: ConfigResult);
 
     /// Signal to the driver whether the engine is ready to process audio.
+    ///
+    /// Calls are idempotent. Implementations must publish the ready state
+    /// before audio is considered live and must clear it during shutdown;
+    /// repeated calls with the same value must not create duplicate worker
+    /// threads or otherwise accumulate resources.
     fn set_engine_ready(&mut self, ready: bool);
+}
+
+/// Test helpers shared by each platform driver's conformance tests.
+///
+/// Keeping the behavioral assertions next to the trait prevents platform
+/// tests from quietly drifting apart as new implementations are added.
+#[doc(hidden)]
+pub mod test_support {
+    use super::AudioDriver;
+
+    /// Check the driver invariants that do not require a real audio device.
+    pub fn assert_audio_driver_contract<D: AudioDriver>(mut driver: D) -> Result<(), String> {
+        driver
+            .initialize()
+            .map_err(|error| format!("audio driver contract fixture must initialize: {error}"))?;
+        driver.set_engine_ready(true);
+        driver.set_engine_ready(true);
+
+        let channels = driver.channel_count() as usize;
+        let sample_count = channels.saturating_mul(3).saturating_add(1).max(1);
+        let max_frames = sample_count / channels.max(1);
+
+        let mut buffer = vec![f32::NAN; sample_count];
+        let frames = driver.read_audio(&mut buffer);
+        if frames > max_frames {
+            return Err(format!(
+                "read_audio returned {frames} frames for {sample_count} samples and {channels} channels"
+            ));
+        }
+
+        let frames = driver.read_frames(&mut buffer);
+        if frames > max_frames {
+            return Err(format!(
+                "read_frames returned {frames} frames for {sample_count} samples and {channels} channels"
+            ));
+        }
+
+        let _ = driver.available_frames();
+        let _ = driver.sample_rate();
+        let _ = driver.status();
+        assert!(driver.poll_config_change().is_none());
+        driver.set_engine_ready(false);
+        driver.set_engine_ready(false);
+        driver.shutdown();
+        Ok(())
+    }
 }
 
 /// Fallback driver when no platform driver is available.
@@ -355,23 +433,14 @@ impl Default for NullDriver {
 
 impl AudioDriver for NullDriver {
     fn initialize(&mut self) -> Result<(), DriverError> {
-        log::info!("[NullDriver] No platform audio driver available");
+        log::debug!("[NullDriver] No platform audio driver available");
         Ok(())
     }
 
     fn shutdown(&mut self) {}
 
     fn status(&self) -> DriverStatus {
-        DriverStatus {
-            platform_supported: false,
-            driver_installed: false,
-            capture_active: false,
-            sample_rate: 0,
-            channel_count: 0,
-            buffer_frames: 0,
-            driver_name: "None".to_string(),
-            driver_ready: false,
-        }
+        DriverStatus::new(false, false, false, 0, 0, 0, "None", false)
     }
 
     fn read_audio(&mut self, _buffer: &mut [f32]) -> usize {
@@ -391,7 +460,10 @@ impl AudioDriver for NullDriver {
     }
 
     fn request_config(&mut self, _config: DriverConfig) -> ConfigResult {
-        ConfigResult::error(DriverError::not_available("No driver available"))
+        // Unsupported platforms intentionally degrade to a silent no-op. The
+        // null driver has no transport to negotiate, but rejecting a benign
+        // configuration request would make the fallback unusable.
+        ConfigResult::Accepted
     }
 
     fn poll_config_change(&mut self) -> Option<DriverConfig> {
@@ -414,7 +486,7 @@ mod tests {
         assert!(!status.platform_supported);
         assert!(!status.driver_installed);
         assert!(!status.capture_active);
-        assert_eq!(&status.driver_name, "None");
+        assert_eq!(status.driver_name, "None");
     }
 
     #[test]
@@ -439,10 +511,10 @@ mod tests {
     }
 
     #[test]
-    fn test_null_driver_request_config_fails() {
+    fn test_null_driver_request_config_is_a_noop() {
         let mut driver = NullDriver::new();
         let result = driver.request_config(DriverConfig::new(48000, 1024, 0));
-        assert!(matches!(result, ConfigResult::Error(_)));
+        assert_eq!(result, ConfigResult::Accepted);
     }
 
     #[test]
@@ -515,6 +587,12 @@ mod tests {
         let io = std::io::Error::new(std::io::ErrorKind::NotFound, "gone");
         let from_io: DriverError = io.into();
         assert_eq!(from_io.to_string(), "gone");
+
+        let permission = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "blocked");
+        assert!(matches!(
+            DriverError::from(permission),
+            DriverError::PermissionDenied { .. }
+        ));
     }
 
     #[test]
@@ -587,5 +665,10 @@ mod tests {
         let mut driver = NullDriver::new();
         let mut buf = vec![1.0f32; 10];
         assert_eq!(driver.read_frames(&mut buf), 0);
+    }
+
+    #[test]
+    fn test_null_driver_conforms_to_audio_driver_contract() {
+        test_support::assert_audio_driver_contract(NullDriver::new()).expect("NullDriver contract");
     }
 }

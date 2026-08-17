@@ -1,10 +1,12 @@
 use super::consts::pre_alloc_capacity_samples;
 use super::encrypted::encrypted_record_slots;
 use super::encrypted::encrypted_record_total_bytes;
+use super::misc::fingerprints_equal;
 use super::misc::get_shared_memory_path;
 use super::shared_audio_buffer::SharedAudioBuffer;
 use super::shared_audio_buffer::load_initial_cipher;
 use super::types::read_encrypted_with_staging;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Reader adapter for HAL input.
 ///
@@ -21,6 +23,7 @@ pub struct HalInputReader {
     pub(super) decrypted_record_buf: Vec<f32>,
     pub(super) pending_decrypted_samples: Vec<f32>,
     pub(super) pending_sample_offset: usize,
+    pub(super) key_mismatch_count: AtomicU64,
 }
 
 impl HalInputReader {
@@ -60,6 +63,7 @@ impl HalInputReader {
                     decrypted_record_buf: Vec::with_capacity(pre_alloc),
                     pending_decrypted_samples: Vec::with_capacity(pre_alloc),
                     pending_sample_offset: 0,
+                    key_mismatch_count: AtomicU64::new(0),
                 })
             }
             Err(e) => {
@@ -78,10 +82,16 @@ impl HalInputReader {
         if let Some(buf) = self.buffer.as_ref() {
             let key = crate::encryption::load_session_key()?;
             let cipher = crate::encryption::AudioCipher::new(&key);
-            if cipher.fingerprint() == &buf.key_fingerprint() {
+            let expected = buf.key_fingerprint();
+            if fingerprints_equal(cipher.fingerprint(), &expected) {
                 self.cipher = Some(cipher);
                 Ok(())
             } else {
+                log::warn!(
+                    "[HAL INPUT] Session-key reload mismatch: header={}, loaded={}",
+                    crate::fingerprint_to_hex(&expected),
+                    crate::fingerprint_to_hex(cipher.fingerprint())
+                );
                 Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "Loaded session key fingerprint does not match shared memory header",
@@ -108,7 +118,7 @@ impl HalInputReader {
         !self
             .cipher
             .as_ref()
-            .map(|cipher| cipher.fingerprint() == &header_fingerprint)
+            .map(|cipher| fingerprints_equal(cipher.fingerprint(), &header_fingerprint))
             .unwrap_or(false)
     }
 
@@ -132,10 +142,11 @@ impl HalInputReader {
                 let fingerprint_ok = self
                     .cipher
                     .as_ref()
-                    .map(|c| c.fingerprint() == &header_fingerprint)
+                    .map(|c| fingerprints_equal(c.fingerprint(), &header_fingerprint))
                     .unwrap_or(false);
 
                 if !fingerprint_ok {
+                    self.key_mismatch_count.fetch_add(1, Ordering::Relaxed);
                     // RT-safe: silence until a control thread calls
                     // `reload_cipher`. No disk I/O on the audio path.
                     buffer.fill(0.0);
@@ -162,6 +173,13 @@ impl HalInputReader {
         } else {
             0
         }
+    }
+
+    /// Number of audio reads suppressed because the cached session key did
+    /// not match the shared-memory fingerprint. This is an RT-safe counter;
+    /// callers should inspect it from a control/diagnostic thread.
+    pub fn key_mismatch_count(&self) -> u64 {
+        self.key_mismatch_count.load(Ordering::Relaxed)
     }
 
     /// Get the current HAL format as `(sample_rate, channel_count, buffer_frames)`.

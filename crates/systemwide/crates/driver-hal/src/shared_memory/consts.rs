@@ -10,7 +10,9 @@ pub(super) const SHARED_MEMORY_MAGIC: u32 = 0x534F5446;
 /// Version 4: Added daemon heartbeat for stale-engine detection in the HAL driver
 /// Version 5: Promoted all cross-process geometry/config fields to atomics and
 ///            added the `configuring` quiesce handshake flag.
-pub(super) const SHARED_MEMORY_VERSION: u32 = 5;
+/// Version 6: Added `configuring_ack` and a separate requested channel count
+///            so pending requests never mutate live ring geometry.
+pub(super) const SHARED_MEMORY_VERSION: u32 = 6;
 
 pub const DEFAULT_HAL_CHANNEL_COUNT: u32 = 2;
 
@@ -99,7 +101,7 @@ pub(super) fn parse_encrypted_record_header(
     })
 }
 
-const _: () = assert!(std::mem::size_of::<SharedAudioHeader>() == 136);
+const _: () = assert!(std::mem::size_of::<SharedAudioHeader>() == 144);
 
 const _: () = assert!(std::mem::align_of::<SharedAudioHeader>() == 8);
 

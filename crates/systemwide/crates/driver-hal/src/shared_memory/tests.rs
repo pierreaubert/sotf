@@ -7,7 +7,9 @@ use super::misc::shared_memory_path_from_env;
 use super::shared_audio_buffer::SharedAudioBuffer;
 use std::ffi::OsString;
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Barrier};
+use std::thread;
 
 use std::io::Write;
 use tempfile::{NamedTempFile, tempdir};
@@ -16,7 +18,7 @@ mod misc;
 
 #[test]
 fn test_header_size() {
-    assert_eq!(std::mem::size_of::<SharedAudioHeader>(), 136);
+    assert_eq!(std::mem::size_of::<SharedAudioHeader>(), 144);
     assert_eq!(std::mem::align_of::<SharedAudioHeader>(), 8);
 }
 
@@ -46,6 +48,14 @@ fn test_header_offsets_match_swift_layout_contract() {
         120
     );
     assert_eq!(std::mem::offset_of!(SharedAudioHeader, configuring), 128);
+    assert_eq!(
+        std::mem::offset_of!(SharedAudioHeader, configuring_ack),
+        132
+    );
+    assert_eq!(
+        std::mem::offset_of!(SharedAudioHeader, requested_channel_count),
+        136
+    );
 }
 
 #[test]
@@ -102,6 +112,27 @@ fn open_mapping_derives_capacity_after_cross_process_geometry_change() {
 }
 
 #[test]
+fn pending_channel_request_does_not_change_live_ring_geometry() {
+    let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    let mut buffer =
+        SharedAudioBuffer::create_or_open_with_capacity(temp_file.path(), 48_000, 16, 2, 8)
+            .expect("Failed to create shared memory");
+
+    let input: Vec<f32> = (0..8).map(|sample| sample as f32).collect();
+    assert_eq!(buffer.write_audio(&input), 4);
+
+    buffer.request_config_change(96_000, 16, 8, 1);
+
+    assert_eq!(buffer.channel_count(), 2);
+    assert_eq!(buffer.requested_channel_count(), 8);
+    assert_eq!(buffer.available_read_frames(), 4);
+
+    let mut output = vec![0.0; 8];
+    assert_eq!(buffer.read_audio(&mut output), 4);
+    assert_eq!(output, input);
+}
+
+#[test]
 fn encrypted_write_refuses_to_grow_rt_staging_buffers() {
     let temp_file = NamedTempFile::new().expect("Failed to create temp file");
     let mut buffer = SharedAudioBuffer::create_or_open(temp_file.path(), 48_000, 512, 2)
@@ -135,6 +166,21 @@ fn test_create_or_open_rejects_symlink_shared_memory_file() {
     assert!(
         SharedAudioBuffer::create_or_open(&link, 48_000, 512, 2).is_err(),
         "symlink shared-memory path must be rejected"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn test_open_rejects_symlink_shared_memory_file() {
+    let dir = tempdir().expect("Failed to create temp dir");
+    let target = dir.path().join("target.shm");
+    SharedAudioBuffer::create_or_open(&target, 48_000, 512, 2).expect("create target");
+    let link = dir.path().join("audio.shm");
+    std::os::unix::fs::symlink(&target, &link).expect("Failed to create symlink");
+
+    assert!(
+        SharedAudioBuffer::open(&link).is_err(),
+        "opening a symlink shared-memory path must be rejected"
     );
 }
 
@@ -280,6 +326,153 @@ fn test_reconfigure_quiesced_sets_and_clears_configuring_flag() {
     assert_eq!(buffer.actual_buffer_frames(), 1024);
     assert_eq!(buffer.header().write_position.load(Ordering::Acquire), 0);
     assert_eq!(buffer.header().read_position.load(Ordering::Acquire), 0);
+}
+
+#[test]
+fn io_acknowledges_a_preexisting_quiesce_request() {
+    let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    let buffer =
+        SharedAudioBuffer::create_or_open_with_capacity(temp_file.path(), 48_000, 16, 2, 2)
+            .expect("Failed to create shared memory");
+    let reader = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open reader");
+    buffer.header().configuring.store(1, Ordering::Release);
+
+    let mut output = [1.0_f32, 1.0_f32];
+    assert_eq!(reader.read_audio(&mut output), 0);
+    assert_eq!(output, [0.0, 0.0]);
+    assert_eq!(buffer.header().configuring_ack.load(Ordering::Acquire), 1);
+}
+
+#[test]
+fn concurrent_spsc_io_keeps_geometry_consistent_during_reconfigure() {
+    let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    let controller =
+        SharedAudioBuffer::create_or_open_with_max_geometry(temp_file.path(), 48_000, 16, 2, 32, 8)
+            .expect("Failed to create shared memory");
+    let writer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open writer");
+    let reader = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open reader");
+
+    let started = Arc::new(Barrier::new(2));
+    let stop = Arc::new(AtomicBool::new(false));
+
+    let writer_stop = Arc::clone(&stop);
+    let writer_thread = thread::spawn(move || {
+        let mut writer = writer;
+        let samples = [0.25_f32; 64];
+        while !writer_stop.load(Ordering::Acquire) {
+            // Leave the acknowledgment to the reader below. This models the
+            // two independent SPSC endpoints and makes the test verify that
+            // the read-side IO path also observes the quiesce request.
+            if writer.header().configuring.load(Ordering::Acquire) != 0 {
+                thread::yield_now();
+                continue;
+            }
+            let _ = writer.write_audio(&samples);
+            thread::yield_now();
+        }
+    });
+
+    let reader_started = Arc::clone(&started);
+    let reader_stop = Arc::clone(&stop);
+    let reader_thread = thread::spawn(move || {
+        let reader = reader;
+        let mut output = vec![0.0_f32; 64];
+        reader_started.wait();
+        while !reader_stop.load(Ordering::Acquire) {
+            if reader.header().configuring.load(Ordering::Acquire) != 0 {
+                let _ = reader.read_audio(&mut output);
+                break;
+            }
+            let _ = reader.read_audio(&mut output);
+            thread::yield_now();
+        }
+    });
+
+    started.wait();
+    let mut controller = controller;
+    controller.reconfigure_quiesced(Some(96_000), Some(32), Some(8));
+
+    stop.store(true, Ordering::Release);
+    writer_thread.join().expect("writer thread must not panic");
+    reader_thread.join().expect("reader thread must not panic");
+
+    assert_eq!(controller.sample_rate(), 96_000);
+    assert_eq!(controller.buffer_frames(), 32);
+    assert_eq!(controller.channel_count(), 8);
+    assert_eq!(controller.header().configuring.load(Ordering::Acquire), 0);
+    assert_eq!(
+        controller.header().configuring_ack.load(Ordering::Acquire),
+        0
+    );
+
+    // Once the quiesce flag is cleared, a writer may legitimately publish a
+    // fresh batch using the new geometry before the test stops it. The
+    // invariant is therefore frame alignment and bounded occupancy, not an
+    // exact zero position after the controller returns.
+    let write_position = controller.header().write_position.load(Ordering::Acquire);
+    let read_position = controller.header().read_position.load(Ordering::Acquire);
+    let capacity = controller.current_audio_capacity() as u64;
+    assert_eq!(write_position % 8, 0);
+    assert_eq!(read_position % 8, 0);
+    assert!(
+        write_position.saturating_sub(read_position) <= capacity,
+        "post-reconfigure ring occupancy must stay bounded"
+    );
+}
+
+#[test]
+fn concurrent_spsc_io_preserves_frame_order_in_ci() {
+    let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    let controller =
+        SharedAudioBuffer::create_or_open_with_capacity(temp_file.path(), 48_000, 16, 2, 2)
+            .expect("Failed to create shared memory");
+    let writer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open writer");
+    let reader = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open reader");
+
+    let total_frames = 2_000_u32;
+    let writer_done = Arc::new(AtomicBool::new(false));
+    let writer_done_for_thread = Arc::clone(&writer_done);
+    let writer_thread = thread::spawn(move || {
+        let mut writer = writer;
+        for frame in 0..total_frames {
+            let samples = [frame as f32, frame as f32 + 0.25];
+            while writer.write_audio(&samples) == 0 {
+                thread::yield_now();
+            }
+        }
+        writer_done_for_thread.store(true, Ordering::Release);
+    });
+
+    let reader_done = Arc::clone(&writer_done);
+    let reader_thread = thread::spawn(move || {
+        let mut reader = reader;
+        let mut output = [0.0_f32; 2];
+        let mut next_frame = 0_u32;
+        loop {
+            let frames_read = reader.read_audio(&mut output);
+            if frames_read == 0 {
+                if reader_done.load(Ordering::Acquire)
+                    && reader.header().read_position.load(Ordering::Acquire)
+                        >= reader.header().write_position.load(Ordering::Acquire)
+                {
+                    break;
+                }
+                thread::yield_now();
+                continue;
+            }
+
+            assert_eq!(frames_read, 1);
+            assert_eq!(output[0].to_bits(), (next_frame as f32).to_bits());
+            assert_eq!(output[1].to_bits(), (next_frame as f32 + 0.25).to_bits());
+            next_frame += frames_read as u32;
+        }
+        next_frame
+    });
+
+    writer_thread.join().expect("writer thread must not panic");
+    let frames_read = reader_thread.join().expect("reader thread must not panic");
+    assert_eq!(frames_read, total_frames);
+    assert_eq!(controller.header().configuring.load(Ordering::Acquire), 0);
 }
 
 #[test]
@@ -497,13 +690,13 @@ fn test_daemon_restart_with_geometry_change_resets_runtime_state() {
 /// QA-SYS-001 daemon-restart / reconnection behavior.
 #[test]
 fn test_load_initial_cipher_rejects_fingerprint_mismatch() {
-    use crate::encryption::{AudioCipher, generate_key};
+    use crate::encryption::AudioCipher;
 
     let temp_file = NamedTempFile::new().expect("Failed to create temp file");
     let buffer =
         SharedAudioBuffer::create_or_open(temp_file.path(), 48_000, 512, 2).expect("create");
 
-    let stale_key = generate_key();
+    let stale_key = [0x42; 32];
     let stale_cipher = AudioCipher::new(&stale_key);
 
     // Simulate a header that advertises encryption with a fingerprint that

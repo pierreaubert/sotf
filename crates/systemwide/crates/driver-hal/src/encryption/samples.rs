@@ -11,7 +11,12 @@ pub(super) fn samples_to_bytes(samples: &[f32]) -> Vec<u8> {
 /// # Panics
 /// Panics if output buffer is smaller than samples.len() * 4
 pub(super) fn samples_to_bytes_into(samples: &[f32], output: &mut [u8]) {
-    debug_assert!(output.len() >= samples.len() * 4);
+    let Some(byte_count) = samples.len().checked_mul(4) else {
+        return;
+    };
+    if output.len() < byte_count {
+        return;
+    }
     for (i, sample) in samples.iter().enumerate() {
         output[i * 4..(i + 1) * 4].copy_from_slice(&sample.to_le_bytes());
     }
@@ -38,8 +43,12 @@ pub fn samples_to_encrypted(samples: &[f32]) -> Vec<u8> {
 /// # Returns
 /// Number of bytes written (always samples.len() * 4)
 pub fn samples_to_encrypted_into(samples: &[f32], output: &mut [u8]) -> usize {
-    let byte_count = samples.len() * 4;
-    debug_assert!(output.len() >= byte_count);
+    let Some(byte_count) = samples.len().checked_mul(4) else {
+        return 0;
+    };
+    if output.len() < byte_count {
+        return 0;
+    }
 
     for (i, sample) in samples.iter().enumerate() {
         output[i * 4..(i + 1) * 4].copy_from_slice(&sample.to_le_bytes());

@@ -11,6 +11,7 @@ const DRIVER_OVERRIDE_ENV: &str = "SOTF_SYSTEMWIDE_DRIVER";
 /// Driver Manager - handles platform driver lifecycle
 pub struct DriverManager {
     driver: Box<dyn AudioDriver>,
+    engine_ready: bool,
 }
 
 impl DriverManager {
@@ -18,12 +19,16 @@ impl DriverManager {
     pub fn new() -> Self {
         Self {
             driver: create_platform_driver(),
+            engine_ready: false,
         }
     }
 
     #[cfg(test)]
     pub fn from_driver(driver: Box<dyn AudioDriver>) -> Self {
-        Self { driver }
+        Self {
+            driver,
+            engine_ready: false,
+        }
     }
 
     /// Initialize the driver and verify connectivity.
@@ -33,6 +38,10 @@ impl DriverManager {
 
     /// Shut down the driver.
     pub fn shutdown(&mut self) {
+        if self.engine_ready {
+            self.driver.set_engine_ready(false);
+            self.engine_ready = false;
+        }
         self.driver.shutdown();
     }
 
@@ -55,7 +64,11 @@ impl DriverManager {
 
     /// Set engine_ready flag on the driver.
     pub fn set_engine_ready(&mut self, ready: bool) {
+        if self.engine_ready == ready {
+            return;
+        }
         self.driver.set_engine_ready(ready);
+        self.engine_ready = ready;
     }
 
     /// Poll for driver-initiated config changes.
@@ -133,16 +146,16 @@ struct LabDriver {
 impl LabDriver {
     fn new() -> Self {
         Self {
-            status: DriverStatus {
-                platform_supported: true,
-                driver_installed: true,
-                capture_active: false,
-                sample_rate: 48_000,
-                channel_count: 2,
-                buffer_frames: 512,
-                driver_name: "Systemwide Lab Driver".to_string(),
-                driver_ready: true,
-            },
+            status: DriverStatus::new(
+                true,
+                true,
+                false,
+                48_000,
+                2,
+                512,
+                "Systemwide Lab Driver",
+                true,
+            ),
             phase: 0.0,
             engine_ready: false,
         }
@@ -173,7 +186,8 @@ impl AudioDriver for LabDriver {
         let sample_rate = self.status.sample_rate as f32;
         let step = 440.0 / sample_rate;
 
-        for frame in buffer.chunks_mut(channels) {
+        let complete_samples = buffer.len() - (buffer.len() % channels);
+        for frame in buffer[..complete_samples].chunks_exact_mut(channels) {
             let sample = (self.phase * std::f32::consts::TAU).sin() * 0.1;
             self.phase = (self.phase + step) % 1.0;
             for out in frame {
@@ -181,7 +195,7 @@ impl AudioDriver for LabDriver {
             }
         }
 
-        buffer.len()
+        complete_samples / channels
     }
 
     fn available_frames(&self) -> usize {
@@ -232,6 +246,69 @@ pub fn get_driver_status(manager: &DriverManager) -> DriverStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    struct CountingDriver {
+        ready_calls: Arc<AtomicUsize>,
+        ready: bool,
+    }
+
+    impl AudioDriver for CountingDriver {
+        fn initialize(&mut self) -> Result<(), DriverError> {
+            Ok(())
+        }
+        fn shutdown(&mut self) {}
+        fn status(&self) -> DriverStatus {
+            DriverStatus::new(true, true, false, 48_000, 2, 512, "counting", self.ready)
+        }
+        fn read_audio(&mut self, buffer: &mut [f32]) -> usize {
+            buffer.fill(0.0);
+            0
+        }
+        fn available_frames(&self) -> usize {
+            0
+        }
+        fn sample_rate(&self) -> u32 {
+            48_000
+        }
+        fn channel_count(&self) -> u32 {
+            2
+        }
+        fn request_config(&mut self, _config: DriverConfig) -> ConfigResult {
+            ConfigResult::Accepted
+        }
+        fn poll_config_change(&mut self) -> Option<DriverConfig> {
+            None
+        }
+        fn acknowledge_config_change(&mut self, _actual: DriverConfig, _result: ConfigResult) {}
+        fn set_engine_ready(&mut self, ready: bool) {
+            self.ready_calls.fetch_add(1, Ordering::Relaxed);
+            self.ready = ready;
+        }
+    }
+
+    #[test]
+    fn set_engine_ready_is_idempotent_and_shutdown_clears_state() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let driver = CountingDriver {
+            ready_calls: Arc::clone(&calls),
+            ready: false,
+        };
+        let mut manager = DriverManager::from_driver(Box::new(driver));
+
+        manager.set_engine_ready(true);
+        manager.set_engine_ready(true);
+        manager.set_engine_ready(false);
+        manager.set_engine_ready(false);
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
+
+        manager.set_engine_ready(true);
+        manager.shutdown();
+        assert_eq!(calls.load(Ordering::Relaxed), 4);
+    }
 
     #[test]
     fn test_driver_manager_creation() {
@@ -259,10 +336,31 @@ mod tests {
         assert!(status.capture_active);
 
         let mut buffer = vec![0.0; (status.buffer_frames * status.channel_count) as usize];
-        let expected_samples = buffer.len();
+        let expected_frames = buffer.len() / status.channel_count as usize;
         assert_eq!(driver.available_frames(), status.buffer_frames as usize);
-        assert_eq!(driver.read_audio(&mut buffer), expected_samples);
+        assert_eq!(driver.read_audio(&mut buffer), expected_frames);
         assert!(buffer.iter().any(|sample| *sample != 0.0));
+    }
+
+    #[test]
+    fn lab_driver_never_writes_or_reports_a_partial_frame() {
+        let mut driver = create_platform_driver_for_choice(Some("lab"));
+        driver.initialize().expect("lab driver initializes");
+        driver.set_engine_ready(true);
+
+        let mut buffer = vec![f32::NAN; 7];
+        assert_eq!(driver.read_audio(&mut buffer), 3);
+        assert!(buffer[..6].iter().all(|sample| sample.is_finite()));
+        assert!(
+            buffer[6].is_nan(),
+            "partial-frame tail must remain untouched"
+        );
+    }
+
+    #[test]
+    fn lab_driver_conforms_to_audio_driver_contract() {
+        driver_common::test_support::assert_audio_driver_contract(LabDriver::new())
+            .expect("LabDriver contract");
     }
 
     #[test]

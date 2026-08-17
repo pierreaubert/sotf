@@ -14,6 +14,11 @@ pub(super) const MAX_IPC_COMMAND_BYTES: usize = 64 * 1024;
 
 pub(super) const IPC_CLIENT_IDLE_TIMEOUT_SECS: u64 = 5;
 
+/// Bound the number of blocking client handlers created by the accept loop.
+/// A client can remain connected for the idle timeout, so unbounded thread
+/// creation would otherwise let local connection churn exhaust resources.
+pub(super) const MAX_IPC_CLIENTS: usize = 64;
+
 /// Get the socket path to use
 /// Uses secure per-user path, with fallback to legacy path if SOTF_LEGACY_SOCKET is set
 pub(super) fn get_socket_path() -> PathBuf {

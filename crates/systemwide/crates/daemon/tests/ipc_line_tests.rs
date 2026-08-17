@@ -6,6 +6,7 @@
 
 #![cfg(unix)]
 
+use serial_test::serial;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
@@ -96,6 +97,7 @@ impl DaemonFixture {
 }
 
 #[test]
+#[serial]
 fn daemon_status_roundtrip_over_unix_socket() {
     let daemon = DaemonFixture::start();
 
@@ -111,6 +113,7 @@ fn daemon_status_roundtrip_over_unix_socket() {
 }
 
 #[test]
+#[serial]
 fn daemon_get_metering_roundtrip_over_unix_socket() {
     let daemon = DaemonFixture::start();
 
@@ -126,6 +129,7 @@ fn daemon_get_metering_roundtrip_over_unix_socket() {
 }
 
 #[test]
+#[serial]
 fn daemon_set_volume_roundtrip_over_unix_socket() {
     let daemon = DaemonFixture::start();
 
@@ -137,6 +141,7 @@ fn daemon_set_volume_roundtrip_over_unix_socket() {
 }
 
 #[test]
+#[serial]
 fn daemon_shutdown_over_unix_socket_stops_process() {
     let mut daemon = DaemonFixture::start();
 
@@ -157,6 +162,35 @@ fn daemon_shutdown_over_unix_socket_stops_process() {
 }
 
 #[test]
+#[serial]
+fn daemon_sigterm_clears_runtime_socket_and_reaps_process() {
+    let mut daemon = DaemonFixture::start();
+    let pid = daemon.child.id().to_string();
+
+    let status = Command::new("/bin/kill")
+        .args(["-TERM", &pid])
+        .status()
+        .expect("send SIGTERM to daemon");
+    assert!(status.success(), "kill should deliver SIGTERM: {status}");
+
+    for _ in 0..100 {
+        if daemon.child.try_wait().ok().flatten().is_some() {
+            assert!(
+                !daemon.socket_path.exists(),
+                "SIGTERM shutdown must remove the daemon-owned socket"
+            );
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    let _ = daemon.child.kill();
+    let _ = daemon.child.wait();
+    panic!("daemon did not exit after SIGTERM");
+}
+
+#[test]
+#[serial]
 fn systemwide_lab_scenario_matrix_over_unix_socket() {
     let daemon = DaemonFixture::start_with_driver("lab");
 
@@ -186,6 +220,11 @@ fn systemwide_lab_scenario_matrix_over_unix_socket() {
     assert_eq!(initial_driver_config["success"], true);
     assert_eq!(initial_driver_config["data"]["sample_rate"], 48_000);
     assert_eq!(initial_driver_config["data"]["buffer_frames"], 512);
+
+    // Live timing changes are intentionally rejected while the engine is
+    // active; stop first, then verify the idle configuration path.
+    let stopped = daemon.send(r#"{"command":"stop"}"#);
+    assert_eq!(stopped["success"], true, "{stopped}");
 
     let sample_rate = daemon.send(r#"{"command":"set_sample_rate","rate":96000}"#);
     assert_eq!(sample_rate["success"], true, "{sample_rate}");
@@ -319,6 +358,7 @@ fn systemwide_lab_scenario_matrix_over_unix_socket() {
 }
 
 #[test]
+#[serial]
 fn systemwide_lab_restarts_with_a_fresh_coherent_snapshot() {
     let first = DaemonFixture::start_with_driver("lab");
     let changed =

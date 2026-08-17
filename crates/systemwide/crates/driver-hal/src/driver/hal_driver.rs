@@ -143,32 +143,27 @@ impl AudioDriver for HalDriver {
         // The daemon owns shared-memory creation. The HAL plugin runs inside
         // coreaudiod, so it should only have to open an already-sized file from
         // its realtime paths.
-        match SharedAudioBuffer::create_or_open_default(48_000, 512, DEFAULT_HAL_CHANNEL_COUNT) {
-            Ok(buffer) => {
-                log::info!(
-                    "[HalDriver] Prepared shared memory: {}Hz, {}ch, {} frames",
-                    buffer.sample_rate(),
-                    buffer.channel_count(),
-                    buffer.buffer_frames()
-                );
-                self.config_buffer = Some(buffer);
-            }
-            Err(_) => {
-                log::warn!(
-                    "[HalDriver] Shared memory not available yet (normal if no audio playing)"
-                );
-            }
-        }
+        let buffer =
+            SharedAudioBuffer::create_or_open_default(48_000, 512, DEFAULT_HAL_CHANNEL_COUNT)
+                .map_err(|error| {
+                    DriverError::io(format!("failed to initialize HAL shared memory: {error}"))
+                })?;
+        log::info!(
+            "[HalDriver] Prepared shared memory: {}Hz, {}ch, {} frames",
+            buffer.sample_rate(),
+            buffer.channel_count(),
+            buffer.buffer_frames()
+        );
+        self.config_buffer = Some(buffer);
 
         // Initialize the reader
         self.reader = HalInputReader::new();
-        if self.reader.is_some() {
-            log::info!("[HalDriver] HAL input reader initialized");
-        } else {
-            log::warn!(
-                "[HalDriver] HAL input reader not available (shared memory may not exist yet)"
-            );
+        if self.reader.is_none() {
+            return Err(DriverError::io(
+                "failed to open HAL shared memory for audio input",
+            ));
         }
+        log::info!("[HalDriver] HAL input reader initialized");
 
         Ok(())
     }
@@ -201,16 +196,16 @@ impl AudioDriver for HalDriver {
                 (0, 0, 0, false, false)
             };
 
-        DriverStatus {
-            platform_supported: true,
-            driver_installed: self.driver_installed,
+        DriverStatus::new(
+            true,
+            self.driver_installed,
             capture_active,
             sample_rate,
             channel_count,
             buffer_frames,
-            driver_name: "macOS CoreAudio HAL".to_string(),
+            "macOS CoreAudio HAL",
             driver_ready,
-        }
+        )
     }
 
     fn read_audio(&mut self, buffer: &mut [f32]) -> usize {
@@ -305,11 +300,11 @@ impl AudioDriver for HalDriver {
             buf.clear_config_changed();
 
             // HAL-initiated change
-            let config = DriverConfig {
-                sample_rate: buf.requested_sample_rate(),
-                buffer_frames: buf.requested_buffer_frames(),
-                channel_count: buf.channel_count(),
-            };
+            let config = DriverConfig::new(
+                buf.requested_sample_rate(),
+                buf.requested_buffer_frames(),
+                buf.requested_channel_count(),
+            );
             log::info!(
                 "[HalDriver] HAL config change detected: {}Hz, {} frames, {} channels",
                 config.sample_rate,
@@ -328,6 +323,7 @@ impl AudioDriver for HalDriver {
                 ConfigResult::Accepted => (1, 0),
                 ConfigResult::Negotiated { .. } => (2, 0),
                 ConfigResult::Error(_) => (3, 1),
+                _ => (3, 1),
             };
             buf.acknowledge_config_change(
                 actual.sample_rate,

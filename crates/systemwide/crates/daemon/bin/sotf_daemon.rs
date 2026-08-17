@@ -64,7 +64,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Serialize startup before touching the session key or stale socket. A
     // losing second daemon must not rotate the active daemon's audio key.
     let secure_socket_path = get_secure_socket_path();
-    ensure_secure_socket_dir(&secure_socket_path)?;
+    ensure_secure_socket_dir(&secure_socket_path).map_err(|error| {
+        format!(
+            "failed to prepare secure socket directory {}: {error}",
+            secure_socket_path.display()
+        )
+    })?;
     let _instance_lock = acquire_daemon_instance_lock(&secure_socket_path)?;
 
     let daemon = AudioDaemon::new();
@@ -75,7 +80,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // must still start for the null/lab driver instead of treating the
     // deliberately unsupported manual rotation API as a startup failure.
     #[cfg(all(target_os = "macos", feature = "hal"))]
-    daemon.key_manager.lock().force_rotate()?;
+    daemon
+        .key_manager
+        .lock()
+        .force_rotate()
+        .map_err(|error| {
+            format!(
+                "cannot initialize the systemwide runtime/key directory; verify it is owned by the current user and accessible: {error}"
+            )
+        })?;
 
     // Setup signal handling for graceful shutdown — use the daemon's own
     // running flag so Ctrl-C actually stops the accept loop.
@@ -155,7 +168,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Starting daemon...");
     println!("===============================================================================");
 
-    daemon.run()?;
+    // Always stop the engine before releasing the driver, including bind or
+    // accept-loop failures. This clears engine_ready and lets the shared
+    // memory transport observe a clean owner shutdown after SIGTERM/SIGINT.
+    let run_result = daemon.run();
+
+    if let Err(error) = daemon.manager.lock().stop() {
+        log::warn!(
+            "Failed to stop audio engine during daemon shutdown: {}",
+            error
+        );
+    }
 
     // Explicit driver cleanup
     {
@@ -165,5 +188,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     println!("Daemon stopped cleanly");
-    Ok(())
+    run_result
 }

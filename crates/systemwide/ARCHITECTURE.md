@@ -55,9 +55,20 @@ capture drivers:
   fresh AEAD key before shared-memory audio begins, which makes resetting the
   frame counter safe; the mmap layer no longer rotates keys behind
   `KeyManager`'s cached state.
-- IPC command handlers are synchronous because they call synchronous engine
-  and driver APIs. The unused Tokio runtime was removed, and immutable
-  available-plugin metadata is cached once per process.
+- The daemon's per-client handlers remain synchronous because they call
+  synchronous engine and driver APIs, but Configbar dispatches all mutations
+  through a serial background queue so UI actions never block the main thread.
+  Status and metering polls share one reconnecting JSON-line connection rather
+  than creating a daemon thread for every poll. The unused Tokio runtime was
+  removed, and immutable available-plugin metadata is cached once per process.
+- The shared-memory protocol is version 6. Geometry changes use a requested
+  channel count plus a quiesce/ack handshake; Rust and Swift IO paths honor the
+  configuring gate before publishing ring positions. Reads and writes are
+  frame-aligned and never expose a partially published interleaved frame.
+- Pipeline mutations are serialized across IPC clients and apply failures roll
+  back to the last applied plan when possible. A failed transition leaves an
+  explicit recovery diagnostic instead of silently claiming that the old audio
+  stream is still live.
 - Every shared header field used across Rust and Swift is accessed atomically.
   Swift uses C11 acquire loads and release stores exposed by
   `BridgingHeader.h`; Rust uses matching atomic types and orderings. Contract
@@ -273,8 +284,9 @@ flowchart TB
 
 The daemon exposes one JSON object per line on a Unix domain socket. The secure
 path is per-user, with a legacy `/tmp/autoeq_audio.sock` opt-in path still
-supported for compatibility. The daemon verifies peer credentials and classifies
-callers:
+supported for compatibility. The legacy mode binds that path directly; it is
+never represented by a daemon-created symlink. The daemon verifies peer
+credentials and classifies callers:
 
 | Peer class | Access |
 | --- | --- |
@@ -285,13 +297,14 @@ The command enum currently covers:
 
 - Playback: `load`, `play`, `pause`, `stop`, `seek`, `set_volume`.
 - Device and driver config: `list_devices`, `set_device`, `driver_status`,
+  `set_input_channels`, `set_output_channels`, `set_pipeline_channels`,
   `set_sample_rate`, `set_buffer_frames`, `get_driver_config`.
 - Plugin chain: `load_plugins`, `get_plugins`, `get_available_plugins`,
   `add_plugin`, `remove_plugin`, `update_plugin`, `reorder_plugins`.
 - Metering: `get_loudness`, `get_metering`.
 - Encryption: `set_encryption`, `encryption_status`,
   `rotate_encryption_key`.
-- Lifecycle: `status`, `shutdown`.
+- Lifecycle/diagnostics: `status`, `get_snapshot`, `dump_state`, `shutdown`.
 
 ## Current State Ownership Review
 
@@ -321,12 +334,13 @@ This removes the previous independent daemon mutexes for `selected_device`,
 | Input/output channel counts | `PipelineSupervisor.desired`, shared-memory header, toolbar `@State` | Daemon desired channel counts now have one owner; shared memory reports negotiated transport state. |
 | Metering indices | `AppliedPipeline.input_loudness_index`, `AppliedPipeline.output_loudness_index`, `AudioEngineManager` plugin cache | Derived from the applied plugin chain and no longer independently mutable. |
 | Encryption enabled/fingerprint | `KeyManager`, shared-memory header, Swift toolbar cache, HAL reader/writer cached cipher | `KeyManager` owns the desired key state; shared memory publishes the active transport state. |
-| Daemon process lifecycle | Toolbar `DaemonManager`, daemon `running` flag | Toolbar owns the child process it started; daemon owns its accept-loop shutdown flag. |
+| Daemon process lifecycle | Toolbar `DaemonManager`, daemon `running` flag | The toolbar owns only a child it spawned; it probes and adopts launchd/debug daemons. The daemon owns its accept-loop shutdown flag and handles SIGINT/SIGTERM by clearing readiness, stopping the engine, joining the watcher, and removing its socket. |
 
-The remaining architectural smell is that command handlers still directly
-orchestrate several effects: driver config, engine restart/hot update, shared
-memory encryption sync, and response building. `PipelineSupervisor` is a first
-state-owner step, not yet the full controller/reducer boundary.
+Command handlers still orchestrate several effects—driver config, engine
+restart/hot update, shared-memory encryption sync, and response building—but
+the cross-client pipeline mutation mutex now keeps read-modify-apply sequences
+atomic. This is still a candidate for a future controller/reducer extraction,
+not a reason for clients to replay cached state.
 
 ### State Mutation Audit
 
@@ -347,16 +361,16 @@ Recent live failures were all state-control failures, not isolated DSP bugs:
   controlled as a hardware-only selection distinct from the virtual system
   output.
 
-The current controls are better than the original code, but still incomplete:
+The current controls are:
 
 | Area | Current mutation path | Missing control |
 | --- | --- | --- |
-| Desired audio graph | `PipelineSupervisor.prepare_plan()` and `commit_applied()` own normal plugin/channel/device changes | `spawn_initial_driver_playback()` and idle driver reconfigure still reach into `desired` directly. Add explicit reducer methods such as `set_desired_output_device()` and `commit_idle_reconfigure()` so all desired mutations pass through one API. |
-| Toolbar configuration | Swift `@State` mirrors daemon selected device, input channels, output channels, encryption, and device lists | The UI can still initiate commands from local caches. Move configuration commands to patch-style intents: "set output channels to N", "load this plugin artifact", "set selected device to X"; daemon fills omitted canonical fields from `SystemwideState`. |
+| Desired audio graph | `PipelineSupervisor.prepare_plan()`, reducer-style setters, and `commit_applied()` own normal plugin/channel/device changes | Driver startup and idle reconfigure use explicit supervisor methods; the mutation mutex spans concurrent IPC read-modify-apply sequences. |
+| Toolbar configuration | Swift `@State` mirrors daemon snapshots and sends patch-style channel/device intents or complete plugin artifacts | Configbar synchronizes programmatic state without echoing commands and serializes mutations off the main thread. Remaining UI caches are presentation state, not daemon authority. |
 | Driver/HAL transport | `DriverManager` and `SharedAudioBuffer` publish active format, config handshake, readiness, heartbeat, and encryption fingerprint | Shared memory remains both transport and tempting state source. Only `DriverManager`/`HalDriver` should write protocol fields; higher layers should read them through typed status snapshots. |
 | Runtime engine | `AudioEngineManager` owns playback state, stream counters, plugin runtime, volume, mute, and cached plugin data | Command handlers still stop/restart the engine while holding or acquiring other state locks. Move multi-step transitions into one controller with one lock-order policy and rollback/diagnostic output. |
 | Metering | Loudness monitor indices are derived from `AppliedPipeline`; data comes from engine plugin cache | `get_metering` can return correctly shaped zeros without saying whether this is "no audio", "no analyzer data yet", "stale plugin index", or "engine not receiving frames". Add metering provenance/status fields. |
-| Encryption | `KeyManager` owns desired key state; shared memory publishes active fingerprint; readers/writers cache ciphers | Key rotation must be treated as a protocol transition with observable state: requested fingerprint, published fingerprint, reader/writer reload status, and last reload error. |
+| Encryption | `KeyManager` owns desired key state; shared memory publishes active fingerprint; readers/writers cache ciphers | Key rotation is observable through fingerprints, reload mismatch diagnostics, and RT-safe reader/writer mismatch counters. Reload happens on control paths; audio callbacks only suppress unsafe frames. |
 | Device discovery | Daemon lists CPAL devices; toolbar also queries CoreAudio directly for UI details | Two enumerators can disagree after CoreAudio churn. Daemon should publish the authoritative device snapshot and a timestamp/error; toolbar-only enumeration should be advisory UI metadata. |
 
 The control rule for future changes:
@@ -411,15 +425,20 @@ sequenceDiagram
     Status->>Status: create NSStatusItem icon
     Status->>Dm: startDaemon()
     Dm->>Dm: resolve daemon path
-    Dm->>Dm: kill existing daemons and remove stale sockets
-    Dm->>Daemon: spawn process
+    Dm->>Daemon: probe secure/legacy socket
+    alt live daemon responds
+        Dm->>Dm: adopt existing launchd/debug daemon
+    else no live daemon responds
+        Dm->>Dm: remove only a verified stale Unix socket
+        Dm->>Daemon: spawn process
+    end
     Daemon->>Driver: initialize()
     Driver->>Shm: create_or_open_default(48000, 512, 2)
     Daemon->>Daemon: bind secure Unix socket
     Daemon->>Daemon: spawn config watcher
     Daemon->>Engine: start initial driver playback
     Status->>Status: start status monitor timer
-    Status->>Daemon: status
+    Status->>Daemon: status over shared polling connection
     Daemon-->>Status: engine state, volume, selected device
     Status->>Daemon: list_devices
     alt CoreAudio reports no physical outputs yet
@@ -432,14 +451,34 @@ sequenceDiagram
 
 Key observations:
 
-- Toolbar startup owns process supervision today.
+- Toolbar startup owns only processes it spawned; a live daemon found on the
+  socket is adopted and left running.
 - Daemon startup owns driver initialization and initial playback.
-- The toolbar can only infer readiness by polling IPC responses.
+- Configbar status and metering polling run off the main thread through one
+  serialized, reconnecting client connection. Mutations use a separate serial
+  queue and roll back optimistic UI state on failure.
 - If CoreAudio is still recovering after install/restart, the toolbar treats an
   empty physical-output list as a transient recovery state and polls until
   hardware devices reappear.
 - The menu bar icon is a status signal: startup/idle is explicitly dark,
   active playback is white, and errors are red.
+
+### Runtime ownership and recovery
+
+The daemon creates or adopts a user-owned runtime directory, tightens existing
+directory permissions to `0700`, and rejects foreign-owned non-sticky parents.
+The explicit legacy socket exception is the system sticky directory only; the
+legacy path is never unlinked as part of normal daemon cleanup. Startup is
+serialized by the sibling lock and `bind_unix_socket` still re-checks stale
+entries, so Configbar does not need to kill unrelated daemons or race a second
+bind.
+
+SIGINT and SIGTERM clear the daemon running flag. The shutdown path clears HAL
+`engine_ready`, stops the engine, joins the config watcher, and removes the
+daemon-owned socket after revalidating that the entry is still a Unix socket.
+When a pipeline transition fails after stopping the engine, the supervisor
+restores the last applied plan where possible and exposes a recovery diagnostic
+in the next status/snapshot response.
 
 ## Use Case: User Plays Music
 
@@ -459,7 +498,7 @@ sequenceDiagram
     User->>Toolbar: Press play
     Toolbar->>Client: play()
     Client->>Daemon: {"command":"play"}
-    Daemon->>Engine: start_playback(selected_device, [], 2)
+    Daemon->>Engine: apply_pipeline_plan(current desired spec)
     Engine->>Cpal: create or restart output stream
     Cpal-->>User: Audio on physical device
     Daemon-->>Client: success or error

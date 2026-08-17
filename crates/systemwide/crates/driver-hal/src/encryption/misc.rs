@@ -5,27 +5,24 @@ pub const AUTH_TAG_SIZE: usize = 16;
 
 /// Convert bytes back to f32 samples (native endian) - allocating version
 pub(super) fn bytes_to_samples(bytes: &[u8]) -> Vec<f32> {
-    let sample_count = bytes.len() / std::mem::size_of::<f32>();
-    let mut samples = Vec::with_capacity(sample_count);
+    let mut samples = Vec::with_capacity(bytes.len() / std::mem::size_of::<f32>());
 
-    for i in 0..sample_count {
-        let sample_bytes: [u8; 4] = bytes[i * 4..(i + 1) * 4]
-            .try_into()
-            .expect("slice should be exactly 4 bytes");
+    for chunk in bytes.chunks_exact(std::mem::size_of::<f32>()) {
+        let sample_bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
         samples.push(f32::from_le_bytes(sample_bytes));
     }
 
     samples
 }
 
-/// Generate a new random 256-bit encryption key
-pub fn generate_key() -> [u8; 32] {
+/// Generate a new random 256-bit encryption key for fallible runtime paths.
+pub fn try_generate_key() -> std::io::Result<[u8; 32]> {
     use rand::TryRng;
     let mut key = [0u8; 32];
     rand::rngs::SysRng
         .try_fill_bytes(&mut key)
-        .expect("OS RNG must succeed");
-    key
+        .map_err(|_| std::io::Error::other("OS RNG failed"))?;
+    Ok(key)
 }
 
 /// Compute the fingerprint (first 8 bytes of SHA256) for a key

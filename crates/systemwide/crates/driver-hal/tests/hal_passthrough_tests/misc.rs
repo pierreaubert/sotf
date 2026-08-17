@@ -5,8 +5,8 @@ use sotf_plugins::{
 /// Magic number for shared memory header validation: 'SOTF'
 pub(super) const SHARED_MEMORY_MAGIC: u32 = 0x534F5446;
 
-/// Version 5: Added atomic geometry/config fields and configuring handshake.
-pub(super) const SHARED_MEMORY_VERSION: u32 = 5;
+/// Version 6: Added the quiesce acknowledgment and pending channel geometry.
+pub(super) const SHARED_MEMORY_VERSION: u32 = 6;
 
 /// Generate test audio with a known pattern (sine waves)
 pub(super) fn generate_test_audio(

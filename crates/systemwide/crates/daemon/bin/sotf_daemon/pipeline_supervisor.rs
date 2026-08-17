@@ -187,6 +187,33 @@ impl PipelineSupervisor {
         }
     }
 
+    pub(super) fn prepare_from_spec(
+        &self,
+        spec: PipelineSpec,
+        driver_input_fallback_channels: usize,
+    ) -> Result<PipelinePlan, String> {
+        let supervisor = Self {
+            desired: spec.clone(),
+            applied: self.applied.clone(),
+            generation: self.generation,
+        };
+        if let Some(graph) = spec.user_graph {
+            supervisor.prepare_graph_plan(
+                graph,
+                spec.input_channels,
+                spec.output_channels,
+                driver_input_fallback_channels,
+            )
+        } else {
+            supervisor.prepare_plan(
+                spec.user_plugins,
+                spec.input_channels,
+                spec.output_channels,
+                driver_input_fallback_channels,
+            )
+        }
+    }
+
     pub(super) fn commit_applied(&mut self, plan: &PipelinePlan) {
         self.generation = self.generation.saturating_add(1);
         self.desired = plan.spec.clone();

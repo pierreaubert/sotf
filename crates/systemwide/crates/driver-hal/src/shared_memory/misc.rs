@@ -47,3 +47,15 @@ pub(super) fn fingerprint_to_u64(fingerprint: [u8; 8]) -> u64 {
 pub(super) fn u64_to_fingerprint(value: u64) -> [u8; 8] {
     value.to_be_bytes()
 }
+
+/// Compare public key fingerprints without an early-exit byte comparison.
+/// The fingerprint is not secret, but using one helper keeps all transport
+/// key-state checks uniform and avoids making the comparison timing-dependent
+/// if the protocol is reused for a less-public token later.
+pub(super) fn fingerprints_equal(left: &[u8; 8], right: &[u8; 8]) -> bool {
+    let mut difference = 0u8;
+    for (a, b) in left.iter().zip(right.iter()) {
+        difference |= a ^ b;
+    }
+    difference == 0
+}

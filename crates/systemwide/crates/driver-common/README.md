@@ -31,7 +31,7 @@ if !status.platform_supported {
 
 // Read audio (returns 0 samples for NullDriver)
 let mut buffer = vec![0.0f32; 1024];
-let samples_read = driver.read_audio(&mut buffer);
+let frames_read = driver.read_audio(&mut buffer);
 let frames_read = driver.read_frames(&mut buffer);
 ```
 

@@ -56,8 +56,8 @@
 - Added focused non-device tests for daemon security boundaries:
   - `KeyManager::force_rotate` produces a new session fingerprint and keeps the
     HAL key copy at mode `0600`.
-  - `KeyManager::check_and_reload` detects an externally modified session key
-    file (daemon-restart / driver-reconnection scenario).
+  - Session-key rotation remains daemon-owned across daemon restart and
+    driver reconnection, preventing a stale HAL copy from being reused.
   - Peer classification falls back to the restricted `CoreAudioD` class for any
     UID that is not the daemon owner, root, or the macOS `_coreaudiod` user.
   - Socket path construction is deterministic, honors explicit absolute lab

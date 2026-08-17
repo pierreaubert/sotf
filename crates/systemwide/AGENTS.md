@@ -47,7 +47,7 @@ Clients: Swift menubar app (`configbar/`), GPUI configbar, CLI tools.
 - `sotf-plugins`, `sotf-engine` -- audio processing
 - `cpal` -- audio output
 - `memmap2`, `chacha20poly1305` -- shared memory + encryption (driver-hal)
-- `tokio` -- async runtime (daemon)
+- `std::thread`, `parking_lot` -- daemon client handlers, polling, and state synchronization
 
 ## Testing
 

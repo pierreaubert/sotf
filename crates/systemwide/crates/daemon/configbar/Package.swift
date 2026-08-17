@@ -21,13 +21,13 @@ let package = Package(
                 "PluginEditorViews.swift",
                 "PluginRackView.swift",
             ],
-            sources: ["PluginModels.swift"]
+            sources: ["PluginModels.swift", "ConfigBarIPC.swift", "ConfigBarPure.swift"]
         ),
         .testTarget(
             name: "ConfigBarModelTests",
             dependencies: ["ConfigBarModels"],
             path: "tests",
-            sources: ["ConfigBarModelTests.swift"]
+            sources: ["ConfigBarModelTests.swift", "ConfigBarIPCTests.swift"]
         ),
     ]
 )

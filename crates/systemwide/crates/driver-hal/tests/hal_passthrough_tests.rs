@@ -45,4 +45,6 @@ struct SharedAudioHeader {
     encryption_overflow_count: AtomicU64,
     daemon_heartbeat_ms: AtomicU64,
     configuring: AtomicU32,
+    configuring_ack: AtomicU32,
+    requested_channel_count: AtomicU32,
 }

@@ -9,7 +9,6 @@
 
 import SwiftUI
 import Cocoa
-import UserNotifications
 import CoreAudio
 
 // MARK: - Audio Source Selection
@@ -54,8 +53,20 @@ enum AudioSource: String, CaseIterable, Identifiable {
 
 /// Client for communicating with the sotf-daemon via Unix socket
 class AudioEngineClient {
+    private static let mutationQueue = DispatchQueue(
+        label: "org.spinorama.sotf.configbar.daemon-mutations",
+        qos: .userInitiated
+    )
+    // Status and metering share one serialized client. The daemon protocol
+    // permits multiple JSON lines per connection; keeping this connection
+    // alive avoids spawning a daemon thread for every 100 ms meter tick.
+    private static let pollingQueue = DispatchQueue(
+        label: "org.spinorama.sotf.configbar.daemon-polling",
+        qos: .utility
+    )
+    private static let pollingClient = AudioEngineClient()
     /// Get the secure socket path (per-user directory)
-    private static func getSecureSocketPath() -> String {
+    static func getSecureSocketPath() -> String {
         let environment = ProcessInfo.processInfo.environment
         if let overridePath = environment["SOTF_DAEMON_SOCKET_PATH"], !overridePath.isEmpty {
             return overridePath
@@ -72,28 +83,14 @@ class AudioEngineClient {
         return "/tmp/sotf-\(getuid())/daemon.sock"
     }
 
-    /// Legacy socket path for backwards compatibility
-    private static let legacySocketPath = "/tmp/autoeq_audio.sock"
-
-    static func socketPaths() -> [String] {
-        let securePath = getSecureSocketPath()
-        if securePath == legacySocketPath {
-            return [securePath]
-        }
-        return [securePath, legacySocketPath]
-    }
-
-    /// Try secure path first, then legacy path
+    /// The daemon owns one per-user socket. Do not fall back to the removed
+    /// world-writable legacy path.
     private var socketPath: String {
-        for path in Self.socketPaths() {
-            if FileManager.default.fileExists(atPath: path) {
-                return path
-            }
-        }
-        return Self.legacySocketPath
+        Self.getSecureSocketPath()
     }
 
     private var socketFD: Int32 = -1
+    private(set) var lastCommandSucceeded = false
 
     enum AudioState: String {
         case idle = "Idle"
@@ -175,7 +172,9 @@ class AudioEngineClient {
     }
 
     func connect() -> Bool {
-        guard FileManager.default.fileExists(atPath: socketPath) else {
+        var metadata = stat()
+        guard Darwin.lstat(socketPath, &metadata) == 0,
+              (metadata.st_mode & S_IFMT) == S_IFSOCK else {
             print("Socket not found at \(socketPath)")
             return false
         }
@@ -196,12 +195,28 @@ class AudioEngineClient {
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
 
-        withUnsafeMutableBytes(of: &addr.sun_path) { pathBuffer in
-            _ = socketPath.withCString { pathCString in
-                strlcpy(pathBuffer.baseAddress!.assumingMemoryBound(to: CChar.self),
-                       pathCString,
-                       pathBuffer.count)
+        let maxSocketPathBytes = MemoryLayout.size(ofValue: addr.sun_path)
+        guard !socketPath.utf8.contains(0),
+              socketPath.utf8.count < maxSocketPathBytes else {
+            print("Daemon socket path is too long or contains an embedded NUL: \(socketPath)")
+            closeConnection()
+            return false
+        }
+
+        let copiedPathLength = withUnsafeMutableBytes(of: &addr.sun_path) { pathBuffer -> Int in
+            guard let baseAddress = pathBuffer.baseAddress else { return -1 }
+            return socketPath.withCString { pathCString in
+                Int(strlcpy(
+                    baseAddress.assumingMemoryBound(to: CChar.self),
+                    pathCString,
+                    pathBuffer.count
+                ))
             }
+        }
+        guard copiedPathLength == socketPath.utf8.count else {
+            print("Failed to copy daemon socket path without truncation")
+            closeConnection()
+            return false
         }
 
         let connectResult = withUnsafePointer(to: &addr) { ptr in
@@ -220,37 +235,59 @@ class AudioEngineClient {
         return true
     }
 
-    deinit {
+    private func ensureConnected() -> Bool {
+        socketFD >= 0 || connect()
+    }
+
+    private func closeConnection() {
         if socketFD >= 0 {
             close(socketFD)
+            socketFD = -1
         }
     }
 
+    deinit {
+        closeConnection()
+    }
+
     func sendCommand(_ command: [String: Any]) -> Response? {
-        // Reconnect for each command to ensure clean state
-        guard connect() else {
+        sendCommand(command, keepConnection: false)
+    }
+
+    private func sendCommand(
+        _ command: [String: Any],
+        keepConnection: Bool
+    ) -> Response? {
+        lastCommandSucceeded = false
+        let connected = keepConnection ? ensureConnected() : connect()
+        guard connected else {
             return nil
         }
 
+        var persistentConnectionHealthy = false
         defer {
-            // Close connection after command
-            if socketFD >= 0 {
-                close(socketFD)
-                socketFD = -1
+            // A persistent connection is retained only after a complete,
+            // successfully decoded response. Any framing/IO failure forces a
+            // reconnect for the next poll.
+            if !keepConnection || !persistentConnectionHealthy {
+                closeConnection()
             }
         }
 
         do {
             // Send command
             let jsonData = try JSONSerialization.data(withJSONObject: command)
-            let jsonString = String(data: jsonData, encoding: .utf8)! + "\n"
-            let commandBytes = [UInt8](jsonString.utf8)
-
-            let sendResult = commandBytes.withUnsafeBufferPointer { bufferPtr in
-                Darwin.send(socketFD, bufferPtr.baseAddress, commandBytes.count, 0)
+            guard let jsonString = String(data: jsonData, encoding: .utf8) else {
+                print("Failed to encode daemon command as UTF-8")
+                return nil
             }
+            let jsonLine = jsonString + "\n"
+            let commandBytes = [UInt8](jsonLine.utf8)
 
-            guard sendResult > 0 else {
+            guard ConfigBarIPC.writeAll(
+                fd: socketFD,
+                data: Data(commandBytes)
+            ) else {
                 print("Failed to send command: \(String(cString: strerror(errno)))")
                 return nil
             }
@@ -261,7 +298,7 @@ class AudioEngineClient {
             var buffer = [UInt8](repeating: 0, count: 4096)
             let bufferCount = buffer.count
             let maxResponseSize = 1024 * 1024 // Plugin metadata can exceed 64KB
-            let timeoutMs: useconds_t = 1000000 // Keep UI-facing calls from hanging the app
+            let responseTimeoutMicros: useconds_t = 1000000 // Keep UI-facing calls from hanging the app
 
             // Set socket to non-blocking for timeout handling
             let flags = fcntl(socketFD, F_GETFL, 0)
@@ -270,16 +307,22 @@ class AudioEngineClient {
             var totalWaitTime: useconds_t = 0
             let pollInterval: useconds_t = 5000 // 5ms poll interval
 
-            while responseData.count < maxResponseSize && totalWaitTime < timeoutMs {
+            var lineFramer = ConfigBarLineFramer(maxLineBytes: maxResponseSize)
+
+            while totalWaitTime < responseTimeoutMicros {
                 let bytesRead = buffer.withUnsafeMutableBufferPointer { bufferPtr in
                     Darwin.recv(socketFD, bufferPtr.baseAddress, bufferCount, 0)
                 }
 
                 if bytesRead > 0 {
-                    responseData.append(contentsOf: buffer[0..<bytesRead])
-
-                    // Check if we have a complete line
-                    if responseData.contains(UInt8(ascii: "\n")) {
+                    do {
+                        try lineFramer.append(Data(buffer[0..<bytesRead]))
+                    } catch ConfigBarIPCError.lineTooLong {
+                        print("Daemon response exceeded \(maxResponseSize) bytes without a complete JSON line")
+                        return nil
+                    }
+                    if let line = lineFramer.nextLine() {
+                        responseData = line
                         break
                     }
                 } else if bytesRead == 0 {
@@ -299,35 +342,50 @@ class AudioEngineClient {
                 }
             }
 
-            if responseData.count >= maxResponseSize,
-               !responseData.contains(UInt8(ascii: "\n")) {
-                print("Daemon response exceeded \(maxResponseSize) bytes without a complete JSON line")
-                return nil
-            }
-
             // Restore blocking mode
             _ = fcntl(socketFD, F_SETFL, flags)
+
+            // The daemon uses newline framing, but accepting a complete JSON
+            // response on an orderly EOF keeps the client tolerant of simple
+            // test doubles and older daemon builds.
+            if responseData.isEmpty {
+                responseData = lineFramer.bufferedData
+            }
 
             guard !responseData.isEmpty else {
                 print("Empty response from daemon (timeout or connection closed)")
                 return nil
             }
 
-            // Parse response (find JSON line)
-            if let newlineIndex = responseData.firstIndex(of: UInt8(ascii: "\n")) {
-                let jsonData = responseData[0..<newlineIndex]
-                let response = try JSONDecoder().decode(Response.self, from: jsonData)
-                return response
-            } else {
-                // No newline found, try parsing the whole response
-                let response = try JSONDecoder().decode(Response.self, from: responseData)
-                return response
-            }
+            let response = try JSONDecoder().decode(Response.self, from: responseData)
+            lastCommandSucceeded = true
+            persistentConnectionHealthy = true
+            return response
         } catch {
             print("Failed to send command: \(error)")
         }
 
         return nil
+    }
+
+    private func sendPersistentCommand(_ command: [String: Any]) -> Response? {
+        sendCommand(command, keepConnection: true)
+    }
+
+    /// Execute a mutating command off the UI thread and deliver its response
+    /// on the main queue. Each operation gets its own client so the existing
+    /// short-lived socket framing remains isolated while mutations are
+    /// serialized in order.
+    func sendCommandAsync(
+        _ command: [String: Any],
+        completion: @escaping (Response?) -> Void
+    ) {
+        let operationClient = AudioEngineClient()
+        ConfigBarAsyncOperation.perform(on: Self.mutationQueue, work: {
+            operationClient.sendCommand(command)
+        }, completion: { response in
+            completion(response)
+        })
     }
 
     struct Status {
@@ -366,10 +424,13 @@ class AudioEngineClient {
         )
     }
 
-    func getStatus() -> Status {
+    func getStatus(reuseConnection: Bool = false) -> Status {
         let command = ["command": "status"]
 
-        guard let response = sendCommand(command),
+        let response = reuseConnection
+            ? sendPersistentCommand(command)
+            : sendCommand(command)
+        guard let response,
               response.success,
               let data = response.data else {
             return .fallback
@@ -409,6 +470,13 @@ class AudioEngineClient {
             playbackFramesDropped: playbackFramesDropped,
             playbackEffectiveSampleRate: playbackEffectiveSampleRate
         )
+    }
+
+    /// Probe the daemon without assuming ownership of its process. A live
+    /// launchd/debug daemon is adopted by the toolbar instead of being
+    /// terminated and replaced.
+    func isDaemonReachable() -> Bool {
+        ConfigBarIPC.probeDaemon(socketPath: socketPath)
     }
 
     struct AudioDevice: Codable {
@@ -512,10 +580,13 @@ class AudioEngineClient {
         var output: LoudnessData?
     }
 
-    func getMetering() -> MeteringData? {
+    func getMetering(reuseConnection: Bool = false) -> MeteringData? {
         let command: [String: Any] = ["command": "get_metering"]
 
-        guard let response = sendCommand(command),
+        let response = reuseConnection
+            ? sendPersistentCommand(command)
+            : sendCommand(command)
+        guard let response,
               response.success,
               let data = response.data else {
             return nil
@@ -531,6 +602,25 @@ class AudioEngineClient {
         }
 
         return metering
+    }
+
+    static func pollStatus(completion: @escaping (Status, Bool) -> Void) {
+        pollingQueue.async {
+            let status = pollingClient.getStatus(reuseConnection: true)
+            let reachable = pollingClient.lastCommandSucceeded
+            DispatchQueue.main.async {
+                completion(status, reachable)
+            }
+        }
+    }
+
+    static func pollMetering(completion: @escaping (MeteringData?) -> Void) {
+        pollingQueue.async {
+            let metering = pollingClient.getMetering(reuseConnection: true)
+            DispatchQueue.main.async {
+                completion(metering)
+            }
+        }
     }
 
     private func parseLoudnessDict(_ dict: [String: Any]) -> LoudnessData {
@@ -708,6 +798,24 @@ class AudioEngineClient {
         return nil
     }
 
+    private func uint64Value(_ raw: Any?) -> UInt64? {
+        if let value = raw as? UInt64 {
+            return value
+        }
+        if let value = raw as? Int, value >= 0 {
+            return UInt64(value)
+        }
+        if let value = raw as? NSNumber {
+            let double = value.doubleValue
+            guard double.isFinite, double >= 0, double.rounded() == double,
+                  double <= Double(UInt64.max) else {
+                return nil
+            }
+            return UInt64(double)
+        }
+        return nil
+    }
+
     private func numberArrayValue(_ raw: Any?) -> [Double] {
         guard let values = raw as? [Any] else {
             return []
@@ -780,7 +888,7 @@ class AudioEngineClient {
         status.enabled = data["enabled"]?.value as? Bool ?? false
         status.fingerprint = data["fingerprint"]?.value as? String ?? ""
         status.keyPath = data["key_path"]?.value as? String ?? ""
-        status.frameCount = (data["frame_count"]?.value as? Int).map { UInt64($0) } ?? 0
+        status.frameCount = uint64Value(data["frame_count"]?.value) ?? 0
 
         return status
     }
@@ -850,9 +958,21 @@ class DaemonManager {
     private var watchdogTimer: Timer?
     private let daemonPath: String
     private var isShuttingDown = false
+    private var startupProbeInFlight = false
+    private var restartRequested = false
 
     /// Callback when daemon status changes
     var onStatusChange: ((Bool) -> Void)?
+
+    private var daemonLogURL: URL {
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        return appSupport
+            .appendingPathComponent("org.spinorama.sotf")
+            .appendingPathComponent("sotf-daemon.log")
+    }
 
     init() {
         if let overridePath = ProcessInfo.processInfo.environment["SOTF_DAEMON_PATH"],
@@ -880,39 +1000,6 @@ class DaemonManager {
         print("DaemonManager: Using daemon path: \(daemonPath)")
     }
 
-    /// Ask any existing sotf-daemon processes not managed by this toolbar to exit.
-    private func terminateExistingDaemons() {
-        // Match exact binary names only; fuzzy process matching can terminate
-        // unrelated commands that happen to mention sotf-daemon in arguments.
-        let processNames = ["sotf-daemon", "sotf_daemon"]
-
-        for processName in processNames {
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-            task.arguments = ["-TERM", "-x", processName]
-
-            do {
-                try task.run()
-                task.waitUntilExit()
-                if task.terminationStatus == 0 {
-                    print("DaemonManager: Requested existing \(processName) process(es) to exit")
-                    // Give the OS a moment to clean up
-                    usleep(100000) // 100ms
-                }
-            } catch {
-                // pkill failing is fine - means no matching processes
-            }
-        }
-    }
-
-    private func removeStaleSockets() {
-        for path in AudioEngineClient.socketPaths() {
-            if FileManager.default.fileExists(atPath: path) {
-                try? FileManager.default.removeItem(atPath: path)
-            }
-        }
-    }
-
     /// Start the daemon if not already running
     func startDaemon() {
         guard !isShuttingDown else { return }
@@ -923,9 +1010,43 @@ class DaemonManager {
             return
         }
 
-        // Ask any existing daemon processes not managed by us to exit.
-        terminateExistingDaemons()
-        removeStaleSockets()
+        guard !startupProbeInFlight else { return }
+        startupProbeInFlight = true
+
+        // The probe is a bounded IPC operation. Keep it off the main thread
+        // so startup and reconnect remain responsive while the daemon is
+        // down or a stale socket is present.
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let reachable = AudioEngineClient().isDaemonReachable()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.startupProbeInFlight = false
+                guard !self.isShuttingDown else { return }
+
+                // Adopt any live daemon, including one launched by launchd or
+                // a developer. The toolbar must not kill processes it did not
+                // start.
+                if ConfigBarDaemonAdoption.shouldAdopt(
+                    reachable: reachable,
+                    managedProcessRunning: self.daemonProcess?.isRunning ?? false
+                ) {
+                    print("DaemonManager: Adopting existing live daemon")
+                    self.onStatusChange?(true)
+                    self.startWatchdog()
+                    return
+                }
+
+                // A managed process may have become visible while the probe
+                // was in flight. Do not launch a second daemon in that race.
+                guard self.daemonProcess?.isRunning != true else { return }
+
+                self.launchDaemon()
+            }
+        }
+    }
+
+    private func launchDaemon() {
+        guard !isShuttingDown else { return }
 
         // Check if daemon exists
         guard FileManager.default.isExecutableFile(atPath: daemonPath) else {
@@ -941,10 +1062,9 @@ class DaemonManager {
         process.arguments = []
 
         // Redirect output to log file
-        let appSupportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("org.spinorama.sotf")
+        let appSupportDir = daemonLogURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
-        let logPath = appSupportDir.appendingPathComponent("sotf-daemon.log").path
+        let logPath = daemonLogURL.path
         FileManager.default.createFile(atPath: logPath, contents: nil)
         let logHandle = FileHandle(forWritingAtPath: logPath)
         logHandle?.seekToEndOfFile()
@@ -959,8 +1079,10 @@ class DaemonManager {
                 self?.daemonProcess = nil
                 self?.onStatusChange?(false)
 
-                // Restart if not shutting down and terminated unexpectedly
-                if !(self?.isShuttingDown ?? true) && proc.terminationStatus != 0 {
+                let shouldRestart = self?.restartRequested == true
+                    || (!(self?.isShuttingDown ?? true) && proc.terminationStatus != 0)
+                self?.restartRequested = false
+                if shouldRestart && !(self?.isShuttingDown ?? true) {
                     print("DaemonManager: Restarting daemon in 2 seconds...")
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                         self?.startDaemon()
@@ -983,6 +1105,33 @@ class DaemonManager {
         }
     }
 
+    /// Restart the managed daemon after an outage without killing or
+    /// disturbing a live daemon adopted from launchd or another owner.
+    func restartDaemon() {
+        isShuttingDown = false
+        restartRequested = true
+        stopWatchdog()
+
+        guard let process = daemonProcess, process.isRunning else {
+            restartRequested = false
+            startDaemon()
+            return
+        }
+
+        process.terminate()
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
+            if process.isRunning {
+                print("DaemonManager: Restart did not exit after SIGTERM; sending SIGINT fallback...")
+                process.interrupt()
+            }
+        }
+    }
+
+    /// Open the daemon log in the user's configured application.
+    func openDaemonLog() {
+        NSWorkspace.shared.open(daemonLogURL)
+    }
+
     /// Stop the daemon
     func stopDaemon() {
         isShuttingDown = true
@@ -995,7 +1144,7 @@ class DaemonManager {
             // Give it a moment to clean up
             DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
                 if process.isRunning {
-                    print("DaemonManager: Force killing daemon...")
+                    print("DaemonManager: Daemon did not exit after SIGTERM; sending SIGINT fallback...")
                     process.interrupt()
                 }
             }
@@ -1101,10 +1250,7 @@ class StatusBarController: NSObject, ObservableObject {
             self?.daemonRunning = running
             self?.updateDaemonStatus()
             if running {
-                // Give daemon a moment to start, then connect
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    _ = self?.client.connect()
-                }
+                // The shared polling client reconnects lazily after startup.
             }
         }
 
@@ -1219,22 +1365,19 @@ class StatusBarController: NSObject, ObservableObject {
         guard !statusRequestInFlight else { return }
         statusRequestInFlight = true
 
-        DispatchQueue.global(qos: .utility).async {
-            let status = AudioEngineClient().getStatus()
+        AudioEngineClient.pollStatus { [weak self] status, reachable in
+            guard let self = self else { return }
+            self.statusRequestInFlight = false
+            self.daemonRunning = reachable
 
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.statusRequestInFlight = false
+            let state = status.state
+            if self.currentState != state {
+                self.currentState = state
+                self.updateIcon()
 
-                let state = status.state
-                if self.currentState != state {
-                    self.currentState = state
-                    self.updateIcon()
-
-                    // Update menu item
-                    if let menu = self.statusItem.menu, let statusItem = menu.item(withTag: 100) {
-                        statusItem.title = "Status: \(state.rawValue)"
-                    }
+                // Update menu item
+                if let menu = self.statusItem.menu, let statusItem = menu.item(withTag: 100) {
+                    statusItem.title = "Status: \(state.rawValue)"
                 }
             }
         }
@@ -1246,7 +1389,8 @@ class StatusBarController: NSObject, ObservableObject {
         let issue = !daemonRunning || currentState == .error
         let streaming = currentState.isStreaming && !issue
 
-        button.contentTintColor = issue ? .black : .white
+        // Let AppKit apply the menu-bar appearance tint to the template image;
+        // forcing black made the error icon disappear in dark appearance.
         button.wantsLayer = true
         if let layer = button.layer {
             layer.cornerRadius = 5
@@ -1301,7 +1445,11 @@ class StatusBarController: NSObject, ObservableObject {
         )
 
         window.title = "SotF Systemwide Configuration"
-        window.center()
+        window.setFrameAutosaveName("SotFSystemwideConfiguration")
+        window.isRestorable = true
+        if !window.setFrameUsingName("SotFSystemwideConfiguration") {
+            window.center()
+        }
         window.minSize = NSSize(width: 800, height: 500)
 
         // IMPORTANT: Don't release window when closed, just hide it
@@ -1312,6 +1460,12 @@ class StatusBarController: NSObject, ObservableObject {
             client: client,
             onClose: { [weak window] in
                 window?.close()
+            },
+            onRestartDaemon: { [weak self] in
+                self?.daemonManager.restartDaemon()
+            },
+            onViewDaemonLog: { [weak self] in
+                self?.daemonManager.openDaemonLog()
             }
         )
 
@@ -1501,6 +1655,9 @@ struct LevelMeterView: View {
     let channelLabels: [String]
     let momentaryLufs: Double
     let shortTermLufs: Double
+    let truePeakDbtp: Double
+    let clipLatched: Bool
+    let onClearClip: () -> Void
 
     private let scaleWidth: CGFloat = 24
     private let barWidth: CGFloat = 16
@@ -1549,6 +1706,24 @@ struct LevelMeterView: View {
                 LufsMiniMeterRow(label: "S", value: shortTermLufs)
             }
             .padding(.horizontal, 5)
+
+            HStack(spacing: 4) {
+                Text("TP")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(.secondary)
+                Text(formatTruePeak(truePeakDbtp))
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(clipLatched ? .red : .primary)
+                if clipLatched {
+                    Button("CLIP", action: onClearClip)
+                        .font(.system(size: 8, weight: .bold))
+                        .buttonStyle(.borderless)
+                        .foregroundColor(.red)
+                        .help("Clear latched clip indicator")
+                }
+            }
+            .padding(.horizontal, 5)
+            .padding(.bottom, 4)
             .padding(.bottom, 6)
         }
         .frame(maxHeight: .infinity)
@@ -1560,6 +1735,11 @@ struct LevelMeterView: View {
     private func peakHoldValue(for index: Int) -> Double? {
         index < peakHolds.count ? peakHolds[index] : nil
     }
+
+    private func formatTruePeak(_ value: Double) -> String {
+        guard value.isFinite, value > -60 else { return "-∞" }
+        return String(format: "%.1f", value)
+    }
 }
 
 // MARK: - Configuration View (SwiftUI)
@@ -1567,6 +1747,8 @@ struct LevelMeterView: View {
 struct ConfigurationView: View {
     let client: AudioEngineClient
     let onClose: () -> Void
+    let onRestartDaemon: () -> Void
+    let onViewDaemonLog: () -> Void
 
     @State private var devices: [AudioEngineClient.AudioDevice] = []
     @State private var selectedDevice: String = ""
@@ -1579,6 +1761,8 @@ struct ConfigurationView: View {
     // HAL Configuration
     @State private var halInputChannels: Int = 2
     @State private var halOutputChannels: Int = 2
+    @State private var programmaticInputChannelSync = false
+    @State private var programmaticOutputChannelSync = false
 
     // Error handling
     @State private var showingError = false
@@ -1589,28 +1773,43 @@ struct ConfigurationView: View {
     @State private var outputPeaks: [Double] = [0.0, 0.0]
     @State private var inputPeakHolds: [Double] = [0.0, 0.0]
     @State private var outputPeakHolds: [Double] = [0.0, 0.0]
-    @State private var momentaryLufs: Double = -60.0
-    @State private var shortTermLufs: Double = -60.0
+    @State private var inputMomentaryLufs: Double = -60.0
+    @State private var inputShortTermLufs: Double = -60.0
+    @State private var outputMomentaryLufs: Double = -60.0
+    @State private var outputShortTermLufs: Double = -60.0
+    @State private var inputTruePeakDbtp: Double = -60.0
+    @State private var outputTruePeakDbtp: Double = -60.0
+    @State private var inputClipLatched = false
+    @State private var outputClipLatched = false
     @State private var meteringTimer: Timer? = nil
     @State private var meteringRequestInFlight = false
     @State private var loadingDevices = false
     @State private var deviceRecoveryTimer: Timer? = nil
     @State private var daemonStatusTimer: Timer? = nil
     @State private var daemonStatusRequestInFlight = false
+    @State private var reconnectDelay: TimeInterval = 1
+    @State private var nextReconnectAttempt = Date.distantPast
+    @State private var volumeUpdateWorkItem: DispatchWorkItem?
     @State private var lastDaemonSelectedDevice: String? = nil
     @State private var programmaticDeviceSelection: String? = nil
+    @State private var encryptionToggleGuard = EncryptionToggleGuard()
+    @State private var daemonReachable = false
 
     // Encryption state
     @State private var encryptionEnabled: Bool = true
     @State private var encryptionFingerprint: String = ""
     @State private var encryptionError: String? = nil
     @State private var pluginRackRefreshToken = 0
+    @State private var loadingPluginConfiguration = false
+    @State private var savingPluginConfiguration = false
 
     // HAL Configuration state
     @State private var halConfig: AudioEngineClient.HalConfigData = AudioEngineClient.HalConfigData()
     @State private var selectedSampleRate: UInt32 = 48000
     @State private var selectedBufferFrames: UInt32 = 512
     @State private var halConfigError: String? = nil
+    @State private var programmaticSampleRateSync = false
+    @State private var programmaticBufferFramesSync = false
 
     let channelOptions = Array(1...32)
     let sampleRateOptions: [UInt32] = [44100, 48000, 96000]
@@ -1639,14 +1838,41 @@ struct ConfigurationView: View {
                 channelPeaks: inputPeaks,
                 peakHolds: inputPeakHolds,
                 channelLabels: channelLabels(for: inputPeaks.count),
-                momentaryLufs: momentaryLufs,
-                shortTermLufs: shortTermLufs
+                momentaryLufs: inputMomentaryLufs,
+                shortTermLufs: inputShortTermLufs,
+                truePeakDbtp: inputTruePeakDbtp,
+                clipLatched: inputClipLatched,
+                onClearClip: { inputClipLatched = false }
             )
             .frame(width: meterWidth(for: inputPeaks.count))
             .padding(.leading, 8)
 
             // Main content with scroll
             VStack(spacing: 0) {
+                if !daemonReachable {
+                    HStack(spacing: 8) {
+                        Image(systemName: "wifi.exclamationmark")
+                            .foregroundColor(.orange)
+                        Text("Daemon not running — controls are disabled while reconnecting")
+                            .font(.callout.weight(.medium))
+                        Spacer()
+                        Button("Restart") {
+                            onRestartDaemon()
+                            updateDaemonStatus()
+                        }
+                        .buttonStyle(.borderless)
+                        Button("View Log") {
+                            onViewDaemonLog()
+                        }
+                        .buttonStyle(.borderless)
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.orange.opacity(0.12))
+                }
+
                 // Scrollable configuration content
                 ScrollView(.vertical, showsIndicators: true) {
                     VStack(spacing: 20) {
@@ -1741,6 +1967,10 @@ struct ConfigurationView: View {
                         .frame(width: 150)
                         .onChange(of: halInputChannels) { _, newValue in
                             syncMeterArrays(inputChannels: newValue)
+                            if programmaticInputChannelSync {
+                                programmaticInputChannelSync = false
+                                return
+                            }
                             applyHALConfiguration()
                         }
 
@@ -1801,12 +2031,18 @@ struct ConfigurationView: View {
                                 loadDevices()
                                 return
                             }
-                            if client.setDevice(newDevice) {
-                                syncOutputChannelsToSelectedDevice(applyChange: true)
-                            } else {
-                                errorMessage = "Failed to set output device: \(newDevice)"
-                                showingError = true
-                                loadDevices()
+                            client.sendCommandAsync(["command": "set_device", "device": newDevice]) { response in
+                                if response?.success == true {
+                                    syncOutputChannelsToSelectedDevice(applyChange: true)
+                                } else {
+                                    errorMessage = response?.error ?? "Failed to set output device: \(newDevice)"
+                                    showingError = true
+                                    if let previous = lastDaemonSelectedDevice {
+                                        programmaticDeviceSelection = previous
+                                        selectedDevice = previous
+                                    }
+                                    loadDevices()
+                                }
                             }
                         }
 
@@ -1838,6 +2074,10 @@ struct ConfigurationView: View {
                         .frame(width: 150)
                         .onChange(of: halOutputChannels) { _, newValue in
                             syncMeterArrays(outputChannels: min(max(newValue, 1), 32))
+                            if programmaticOutputChannelSync {
+                                programmaticOutputChannelSync = false
+                                return
+                            }
                             applyHALConfiguration()
                         }
 
@@ -1858,7 +2098,17 @@ struct ConfigurationView: View {
                         Text("Volume:")
                         Slider(value: $volume, in: 0...1)
                             .onChange(of: volume) { _, newVolume in
-                                _ = client.setVolume(newVolume)
+                                volumeUpdateWorkItem?.cancel()
+                                let work = DispatchWorkItem {
+                                    client.sendCommandAsync(["command": "set_volume", "volume": newVolume]) { response in
+                                        if response?.success != true {
+                                            errorMessage = response?.error ?? "Failed to set volume"
+                                            showingError = true
+                                        }
+                                    }
+                                }
+                                volumeUpdateWorkItem = work
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
                             }
                         Text("\(Int(volume * 100))%")
                             .frame(width: 50)
@@ -1871,13 +2121,35 @@ struct ConfigurationView: View {
             GroupBox(label: Label("Audio Processing Plugins", systemImage: "slider.horizontal.3")) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Button("Load Configuration...") {
+                        Button {
                             loadPluginConfig()
+                        } label: {
+                            if loadingPluginConfiguration {
+                                HStack(spacing: 6) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("Loading…")
+                                }
+                            } else {
+                                Text("Load Configuration...")
+                            }
                         }
+                        .disabled(loadingPluginConfiguration || savingPluginConfiguration)
 
-                        Button("Save Configuration...") {
+                        Button {
                             savePluginConfig()
+                        } label: {
+                            if savingPluginConfiguration {
+                                HStack(spacing: 6) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("Saving…")
+                                }
+                            } else {
+                                Text("Save Configuration...")
+                            }
                         }
+                        .disabled(loadingPluginConfiguration || savingPluginConfiguration)
 
                         Spacer()
                     }
@@ -1900,6 +2172,9 @@ struct ConfigurationView: View {
                     HStack {
                         Toggle("Encrypt audio data", isOn: $encryptionEnabled)
                             .onChange(of: encryptionEnabled) { _, newValue in
+                                if encryptionToggleGuard.consumeProgrammaticChange() {
+                                    return
+                                }
                                 setEncryption(enabled: newValue)
                             }
 
@@ -2001,6 +2276,10 @@ struct ConfigurationView: View {
                         .pickerStyle(.segmented)
                         .frame(width: 250)
                         .onChange(of: selectedSampleRate) { _, newRate in
+                            if programmaticSampleRateSync {
+                                programmaticSampleRateSync = false
+                                return
+                            }
                             setSampleRate(newRate)
                         }
 
@@ -2031,6 +2310,10 @@ struct ConfigurationView: View {
                         .pickerStyle(.menu)
                         .frame(width: 150)
                         .onChange(of: selectedBufferFrames) { _, newFrames in
+                            if programmaticBufferFramesSync {
+                                programmaticBufferFramesSync = false
+                                return
+                            }
                             setBufferFrames(newFrames)
                         }
 
@@ -2102,14 +2385,17 @@ struct ConfigurationView: View {
                     .padding(.horizontal)
                     .padding(.top)
                     .padding(.bottom)
+                    .disabled(!daemonReachable)
                 }  // End of ScrollView
 
                 // Status bar (fixed at bottom, not scrollable)
                 Divider()
                 HStack {
                     Image(systemName: "circle.fill")
-                        .foregroundColor(.green)
-                    Text("Connected to audio engine | Source: \(selectedSource.rawValue) | \(halInputChannels)ch in → \(halOutputChannels)ch out")
+                        .foregroundColor(daemonReachable ? .green : .secondary)
+                    Text(daemonReachable
+                        ? "Connected to audio engine | Source: \(selectedSource.rawValue) | \(halInputChannels)ch in → \(halOutputChannels)ch out"
+                        : "Daemon not running — retrying… | Source: \(selectedSource.rawValue)")
                         .foregroundColor(.secondary)
                 }
                 .padding()
@@ -2121,8 +2407,11 @@ struct ConfigurationView: View {
                 channelPeaks: outputPeaks,
                 peakHolds: outputPeakHolds,
                 channelLabels: channelLabels(for: outputPeaks.count),
-                momentaryLufs: momentaryLufs,
-                shortTermLufs: shortTermLufs
+                momentaryLufs: outputMomentaryLufs,
+                shortTermLufs: outputShortTermLufs,
+                truePeakDbtp: outputTruePeakDbtp,
+                clipLatched: outputClipLatched,
+                onClearClip: { outputClipLatched = false }
             )
             .frame(width: meterWidth(for: outputPeaks.count))
             .padding(.trailing, 8)
@@ -2138,6 +2427,7 @@ struct ConfigurationView: View {
             stopDaemonStatusTimer()
             stopMeteringTimer()
             stopDeviceRecoveryPolling()
+            volumeUpdateWorkItem?.cancel()
         }
         .alert("Configuration Error", isPresented: $showingError) {
             Button("OK", role: .cancel) { }
@@ -2194,27 +2484,34 @@ struct ConfigurationView: View {
     }
 
     private func updateDaemonStatus() {
+        guard daemonReachable || Date() >= nextReconnectAttempt else { return }
         guard !daemonStatusRequestInFlight else { return }
         daemonStatusRequestInFlight = true
 
-        DispatchQueue.global(qos: .utility).async {
-            let status = AudioEngineClient().getStatus()
-
-            DispatchQueue.main.async {
-                daemonStatusRequestInFlight = false
-                applyDaemonStatus(status)
+        AudioEngineClient.pollStatus { status, reachable in
+            daemonStatusRequestInFlight = false
+            daemonReachable = reachable
+            if reachable {
+                reconnectDelay = 1
+                nextReconnectAttempt = .distantPast
+            } else {
+                nextReconnectAttempt = Date().addingTimeInterval(reconnectDelay)
+                reconnectDelay = min(reconnectDelay * 2, 16)
             }
+            applyDaemonStatus(status)
         }
     }
 
     private func applyDaemonStatus(_ status: AudioEngineClient.Status) {
         if let inputChannels = status.inputChannels, inputChannels > 0, inputChannels != halInputChannels {
+            programmaticInputChannelSync = true
             halInputChannels = min(max(inputChannels, 1), 32)
             syncMeterArrays(inputChannels: halInputChannels)
         }
 
         let daemonOutputChannels = status.outputChannels ?? status.channels
         if let channels = daemonOutputChannels, channels > 0, channels != halOutputChannels {
+            programmaticOutputChannelSync = true
             halOutputChannels = min(max(channels, 1), 32)
             syncMeterArrays(outputChannels: halOutputChannels)
         }
@@ -2235,6 +2532,12 @@ struct ConfigurationView: View {
     }
 
     private func updateMetering() {
+        guard daemonReachable else {
+            inputPeaks = decayedPeaks(inputPeaks)
+            outputPeaks = decayedPeaks(outputPeaks)
+            return
+        }
+
         guard !meteringRequestInFlight else {
             let nextInputPeaks = decayedPeaks(inputPeaks)
             let nextOutputPeaks = decayedPeaks(outputPeaks)
@@ -2246,13 +2549,9 @@ struct ConfigurationView: View {
         }
 
         meteringRequestInFlight = true
-        DispatchQueue.global(qos: .userInteractive).async {
-            let metering = AudioEngineClient().getMetering()
-
-            DispatchQueue.main.async {
-                meteringRequestInFlight = false
-                applyMetering(metering)
-            }
+        AudioEngineClient.pollMetering { metering in
+            meteringRequestInFlight = false
+            applyMetering(metering)
         }
     }
 
@@ -2272,6 +2571,17 @@ struct ConfigurationView: View {
                 nextInputPeaks = decayedPeaks(inputPeaks)
             }
 
+            if let input = metering.input {
+                inputMomentaryLufs = input.momentary
+                inputShortTermLufs = input.shortTerm
+                if let truePeak = input.truePeaksDbtp.filter(\.isFinite).max() {
+                    inputTruePeakDbtp = truePeak
+                    if truePeak >= 0 {
+                        inputClipLatched = true
+                    }
+                }
+            }
+
             // Output peaks from post-processing monitor
             if let output = metering.output {
                 if !output.channelPeaks.isEmpty {
@@ -2279,8 +2589,14 @@ struct ConfigurationView: View {
                 } else {
                     nextOutputPeaks = sanitizedPeaks(Array(repeating: output.peak, count: max(outputPeaks.count, 1)))
                 }
-                momentaryLufs = output.momentary
-                shortTermLufs = output.shortTerm
+                outputMomentaryLufs = output.momentary
+                outputShortTermLufs = output.shortTerm
+                if let truePeak = output.truePeaksDbtp.filter(\.isFinite).max() {
+                    outputTruePeakDbtp = truePeak
+                    if truePeak >= 0 {
+                        outputClipLatched = true
+                    }
+                }
             } else {
                 nextOutputPeaks = decayedPeaks(outputPeaks)
             }
@@ -2318,49 +2634,21 @@ struct ConfigurationView: View {
     }
 
     private func sanitizedPeaks(_ peaks: [Double]) -> [Double] {
-        peaks.prefix(32).map { peak in
-            guard peak.isFinite, peak > 0 else {
-                return 0.0
-            }
-            return min(peak, 2.0)
-        }
+        sanitizeConfigBarPeaks(peaks)
     }
 
     private func decayedPeaks(_ peaks: [Double]) -> [Double] {
-        peaks.map { peak in
-            let next = peak * 0.85
-            return next < 0.00001 ? 0.0 : next
-        }
+        decayConfigBarPeaks(peaks)
     }
 
     private func updatedPeakHolds(previous: [Double], current: [Double]) -> [Double] {
-        current.enumerated().map { index, peak in
-            let oldValue = index < previous.count ? previous[index] : 0.0
-            if peak >= oldValue {
-                return peak
-            }
-            let decayed = oldValue * 0.96
-            return max(peak, decayed < 0.00001 ? 0.0 : decayed)
-        }
+        updateConfigBarPeakHolds(previous: previous, current: current)
     }
 
     /// Virtual device patterns that should not be used as speaker output.
-    private let virtualDevicePatterns = [
-        "SotF",
-        "BlackHole",
-        "Loopback",
-        "Virtual",
-        "Soundflower",
-        "Background Music",
-        "Audio Bridge",
-        "ZoomAudio",
-    ]
-
     /// Check if a device name matches a virtual device pattern
     private func isVirtualDevice(_ name: String) -> Bool {
-        return virtualDevicePatterns.contains { pattern in
-            name.range(of: pattern, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-        }
+        isConfigBarVirtualDevice(name)
     }
 
     private var physicalOutputDevices: [AudioEngineClient.AudioDevice] {
@@ -2466,6 +2754,9 @@ struct ConfigurationView: View {
         guard let limit = selectedOutputDeviceChannelLimit else { return }
         guard halOutputChannels > limit else { return }
 
+        if !applyChange {
+            programmaticOutputChannelSync = true
+        }
         halOutputChannels = limit
         if applyChange {
             applyHALConfiguration()
@@ -2491,57 +2782,6 @@ struct ConfigurationView: View {
         if let firstAvailable = availableSources.first,
            sourceDetectionStatus[selectedSource] != true {
             selectedSource = firstAvailable
-        }
-    }
-
-    /// Use Core Audio API to detect audio devices directly
-    private func detectAudioDevicesViaCoreAudio() {
-        var propertyAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDevices,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-
-        var dataSize: UInt32 = 0
-        var status = AudioObjectGetPropertyDataSize(
-            AudioObjectID(kAudioObjectSystemObject),
-            &propertyAddress,
-            0,
-            nil,
-            &dataSize
-        )
-
-        guard status == noErr else {
-            print("Failed to get audio devices data size: \(status)")
-            return
-        }
-
-        let deviceCount = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
-        var deviceIDs = [AudioDeviceID](repeating: 0, count: deviceCount)
-
-        status = AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &propertyAddress,
-            0,
-            nil,
-            &dataSize,
-            &deviceIDs
-        )
-
-        guard status == noErr else {
-            print("Failed to get audio devices: \(status)")
-            return
-        }
-
-        // Check each device name
-        for deviceID in deviceIDs {
-            if let deviceName = getDeviceName(deviceID: deviceID) {
-                for source in AudioSource.allCases {
-                    if deviceName.contains(source.devicePattern) {
-                        sourceDetectionStatus[source] = true
-                    }
-                }
-            }
         }
     }
 
@@ -2742,17 +2982,13 @@ struct ConfigurationView: View {
             "output_channels": halOutputChannels
         ]
 
-        guard let response = client.sendCommand(command) else {
-            errorMessage = "Failed to communicate with daemon. Please ensure the daemon is running."
-            showingError = true
-            return
-        }
-
-        if response.success {
-            print("✅ HAL configuration applied: \(halOutputChannels)ch out")
-        } else {
-            errorMessage = response.error ?? "Unknown error occurred while applying HAL configuration."
-            showingError = true
+        client.sendCommandAsync(command) { response in
+            if response?.success == true {
+                print("✅ HAL configuration applied: \(halOutputChannels)ch out")
+            } else {
+                errorMessage = response?.error ?? "Failed to communicate with daemon. Please ensure the daemon is running."
+                showingError = true
+            }
         }
     }
 
@@ -2763,6 +2999,7 @@ struct ConfigurationView: View {
         panel.message = "Select plugin configuration file"
 
         if panel.runModal() == .OK, let url = panel.url {
+            loadingPluginConfiguration = true
             do {
                 let data = try Data(contentsOf: url)
                 let json = try JSONSerialization.jsonObject(with: data)
@@ -2772,15 +3009,18 @@ struct ConfigurationView: View {
                     "artifact": json
                 ]
 
-                let response = client.sendCommand(command)
-                if let resp = response, resp.success {
-                    print("✅ Plugin configuration loaded from: \(url.path)")
-                    pluginRackRefreshToken += 1
-                } else {
-                    errorMessage = response?.error ?? "Failed to apply plugin configuration"
-                    showingError = true
+                client.sendCommandAsync(command) { response in
+                    loadingPluginConfiguration = false
+                    if response?.success == true {
+                        print("✅ Plugin configuration loaded from: \(url.path)")
+                        pluginRackRefreshToken += 1
+                    } else {
+                        errorMessage = response?.error ?? "Failed to apply plugin configuration"
+                        showingError = true
+                    }
                 }
             } catch {
+                loadingPluginConfiguration = false
                 errorMessage = "Failed to read configuration: \(error.localizedDescription)"
                 showingError = true
             }
@@ -2794,35 +3034,72 @@ struct ConfigurationView: View {
         panel.message = "Save plugin configuration"
 
         if panel.runModal() == .OK, let url = panel.url {
-            // Query daemon for the current active plugin list
-            if let pipeline = client.getPluginPipeline() {
-                do {
-                    let artifact: Any
-                    if let graph = pipeline.graph {
-                        artifact = ["graph": graph.artifact]
-                    } else {
-                        artifact = appGpuiPreset(from: pipeline.plugins)
+            savingPluginConfiguration = true
+            DispatchQueue.global(qos: .utility).async {
+                let saveClient = AudioEngineClient()
+                let pipeline = saveClient.getPluginPipeline()
+                let available = pipeline?.graph == nil
+                    ? (saveClient.getAvailablePlugins() ?? [])
+                    : []
+                DispatchQueue.main.async {
+                    guard let pipeline else {
+                        savingPluginConfiguration = false
+                        errorMessage = "Failed to retrieve current plugin list from daemon"
+                        showingError = true
+                        return
                     }
-                    let data = try JSONSerialization.data(
-                        withJSONObject: artifact,
-                        options: .prettyPrinted
-                    )
-                    try data.write(to: url)
-                    print("✅ Plugin configuration saved to: \(url.path)")
-                } catch {
-                    errorMessage = "Failed to save configuration: \(error.localizedDescription)"
-                    showingError = true
+                    do {
+                        let artifact: Any
+                        if let graph = pipeline.graph {
+                            artifact = ["graph": graph.artifact]
+                        } else {
+                            guard let preset = appGpuiPreset(
+                                from: pipeline.plugins,
+                                available: available
+                            ) else {
+                                throw NSError(
+                                    domain: "SotFConfigBar",
+                                    code: 1,
+                                    userInfo: [NSLocalizedDescriptionKey: "The current chain contains a plugin type this configuration format cannot represent."]
+                                )
+                            }
+                            artifact = preset
+                        }
+                        let data = try JSONSerialization.data(
+                            withJSONObject: artifact,
+                            options: .prettyPrinted
+                        )
+                        try data.write(to: url)
+                        print("✅ Plugin configuration saved to: \(url.path)")
+                    } catch {
+                        errorMessage = "Failed to save configuration: \(error.localizedDescription)"
+                        showingError = true
+                    }
+                    savingPluginConfiguration = false
                 }
-            } else {
-                errorMessage = "Failed to retrieve current plugin list from daemon"
-                showingError = true
             }
         }
     }
 
-    private func appGpuiPreset(from plugins: [[String: Any]]) -> [String: Any] {
-        let available = client.getAvailablePlugins() ?? []
+    private func appGpuiPreset(
+        from plugins: [[String: Any]],
+        available: [AvailablePlugin]
+    ) -> [String: Any]? {
         let defaultsByType = Dictionary(uniqueKeysWithValues: available.map { ($0.type_, $0.defaultParameters) })
+
+        let unsupportedTypes = plugins.compactMap { plugin -> String? in
+            guard let type = plugin["plugin_type"] as? String else {
+                return "<missing plugin_type>"
+            }
+            guard isSystemPluginType(type) || engineTypeToAppGpuiSettingsVariant[type] != nil else {
+                return type
+            }
+            return nil
+        }
+        guard unsupportedTypes.isEmpty else {
+            print("Cannot save unsupported plugin types: \(unsupportedTypes.joined(separator: ", "))")
+            return nil
+        }
 
         let records = plugins.enumerated().compactMap { index, plugin in
             appGpuiPluginRecord(from: plugin, id: index, defaultsByType: defaultsByType)
@@ -2879,25 +3156,30 @@ struct ConfigurationView: View {
 
     private func setEncryption(enabled: Bool) {
         encryptionError = nil
-
-        if client.setEncryption(enabled: enabled) {
-            print("✅ Encryption \(enabled ? "enabled" : "disabled")")
-            refreshEncryptionStatus()
-        } else {
-            encryptionError = "Failed to \(enabled ? "enable" : "disable") encryption"
-            // Revert the toggle state
-            encryptionEnabled = !enabled
+        client.sendCommandAsync(["command": "set_encryption", "enabled": enabled]) { response in
+            if response?.success == true {
+                print("✅ Encryption \(enabled ? "enabled" : "disabled")")
+                refreshEncryptionStatus()
+            } else {
+                encryptionError = response?.error ?? "Failed to \(enabled ? "enable" : "disable") encryption"
+                // Revert the toggle state without feeding the failure back
+                // through the Toggle's onChange handler.
+                encryptionToggleGuard.markProgrammaticChange()
+                encryptionEnabled = !enabled
+            }
         }
     }
 
     private func rotateEncryptionKey() {
         encryptionError = nil
 
-        if client.rotateEncryptionKey() {
-            print("✅ Encryption key rotated")
-            refreshEncryptionStatus()
-        } else {
-            encryptionError = "Failed to rotate encryption key"
+        client.sendCommandAsync(["command": "rotate_encryption_key"]) { response in
+            if response?.success == true {
+                print("✅ Encryption key rotated")
+                refreshEncryptionStatus()
+            } else {
+                encryptionError = response?.error ?? "Failed to rotate encryption key"
+            }
         }
     }
 
@@ -2907,7 +3189,10 @@ struct ConfigurationView: View {
 
             DispatchQueue.main.async {
                 if let status = status {
-                    encryptionEnabled = status.enabled
+                    if encryptionEnabled != status.enabled {
+                        encryptionToggleGuard.markProgrammaticChange()
+                        encryptionEnabled = status.enabled
+                    }
                     encryptionFingerprint = status.fingerprint
                     encryptionError = nil
                 } else {
@@ -2930,13 +3215,16 @@ struct ConfigurationView: View {
                 if let config = config {
                     halConfig = config
                     // Update UI to match actual values
-                    if config.actualSampleRate != 0 {
+                    if config.actualSampleRate != 0 && selectedSampleRate != config.actualSampleRate {
+                        programmaticSampleRateSync = true
                         selectedSampleRate = config.actualSampleRate
                     }
-                    if config.actualBufferFrames != 0 {
+                    if config.actualBufferFrames != 0 && selectedBufferFrames != config.actualBufferFrames {
+                        programmaticBufferFramesSync = true
                         selectedBufferFrames = config.actualBufferFrames
                     }
-                    if config.channelCount != 0 {
+                    if config.channelCount != 0 && halInputChannels != Int(config.channelCount) {
+                        programmaticInputChannelSync = true
                         halInputChannels = Int(config.channelCount)
                         syncMeterArrays(inputChannels: Int(config.channelCount))
                     }
@@ -2949,33 +3237,33 @@ struct ConfigurationView: View {
 
     private func setSampleRate(_ rate: UInt32) {
         halConfigError = nil
-
-        if client.setSampleRate(rate) {
-            print("Sample rate set to \(rate) Hz")
-            // Refresh to get actual values after negotiation
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                refreshHalConfig()
+        client.sendCommandAsync(["command": "set_sample_rate", "rate": rate]) { response in
+            if response?.success == true {
+                print("Sample rate set to \(rate) Hz")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    refreshHalConfig()
+                }
+            } else {
+                halConfigError = response?.error ?? "Failed to set sample rate"
+                programmaticSampleRateSync = true
+                selectedSampleRate = halConfig.actualSampleRate != 0 ? halConfig.actualSampleRate : 48000
             }
-        } else {
-            halConfigError = "Failed to set sample rate"
-            // Revert to previous value
-            selectedSampleRate = halConfig.actualSampleRate != 0 ? halConfig.actualSampleRate : 48000
         }
     }
 
     private func setBufferFrames(_ frames: UInt32) {
         halConfigError = nil
-
-        if client.setBufferFrames(frames) {
-            print("Buffer frames set to \(frames)")
-            // Refresh to get actual values after negotiation
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                refreshHalConfig()
+        client.sendCommandAsync(["command": "set_buffer_frames", "frames": frames]) { response in
+            if response?.success == true {
+                print("Buffer frames set to \(frames)")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    refreshHalConfig()
+                }
+            } else {
+                halConfigError = response?.error ?? "Failed to set buffer frames"
+                programmaticBufferFramesSync = true
+                selectedBufferFrames = halConfig.actualBufferFrames != 0 ? halConfig.actualBufferFrames : 512
             }
-        } else {
-            halConfigError = "Failed to set buffer frames"
-            // Revert to previous value
-            selectedBufferFrames = halConfig.actualBufferFrames != 0 ? halConfig.actualBufferFrames : 512
         }
     }
 
@@ -3002,26 +3290,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusBarController: StatusBarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Write debug file FIRST before anything else
-        do {
-            let debugPath = NSHomeDirectory() + "/sotf-configbar-debug.log"
-            try "applicationDidFinishLaunching called at \(Date())\n".write(toFile: debugPath, atomically: true, encoding: .utf8)
-        } catch {
-            // Can't even write file
-        }
-
         // Hide dock icon (menu bar only app)
         NSApp.setActivationPolicy(.accessory)
 
         // Create status bar controller (which starts the daemon automatically)
         statusBarController = StatusBarController()
-        print("Created statusBarController: \(String(describing: statusBarController))")
-
-        // Show startup notification
-        NotificationManager.shared.showNotification(
-            title: "SotF Started",
-            body: "Audio engine control ready"
-        )
 
         print("SotF Systemwide menu bar app started")
     }
@@ -3030,76 +3303,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController?.stopMonitoring()
         statusBarController?.stopDaemon()
         print("SotF Systemwide menu bar app terminated")
-    }
-}
-
-// MARK: - Notification Manager
-
-class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
-    static let shared = NotificationManager()
-    private var notificationsAvailable = false
-
-    private override init() {
-        super.init()
-        setupNotifications()
-    }
-
-    private func setupNotifications() {
-        // UNUserNotificationCenter requires a proper app bundle
-        // Check if we're running from a valid bundle before trying to use it
-        guard Bundle.main.bundleIdentifier != nil else {
-            print("Notifications not available (not running from app bundle)")
-            return
-        }
-
-        // Try to access UNUserNotificationCenter, which may fail without a proper bundle
-        do {
-            let center = UNUserNotificationCenter.current()
-            center.delegate = self
-            notificationsAvailable = true
-
-            center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-                if granted {
-                    print("Notification permission granted")
-                } else if let error = error {
-                    print("Notification permission error: \(error)")
-                }
-            }
-        }
-    }
-
-    func showNotification(title: String, body: String, sound: Bool = true) {
-        guard notificationsAvailable else {
-            print("Notification (disabled): \(title) - \(body)")
-            return
-        }
-
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        if sound {
-            content.sound = .default
-        }
-
-        let request = UNNotificationRequest(
-            identifier: UUID().uuidString,
-            content: content,
-            trigger: nil
-        )
-
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                print("Error showing notification: \(error)")
-            }
-        }
-    }
-
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        completionHandler([.banner, .sound])
     }
 }
 

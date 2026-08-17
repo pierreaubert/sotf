@@ -1,5 +1,6 @@
 use super::super::hal_input_reader::HalInputReader;
 use super::super::shared_audio_buffer::SharedAudioBuffer;
+use proptest::prelude::*;
 use std::sync::atomic::Ordering;
 
 use tempfile::NamedTempFile;
@@ -85,6 +86,149 @@ fn plain_writer_never_commits_a_partial_interleaved_frame() {
         buffer.header().write_position.load(Ordering::Acquire),
         capacity - 1
     );
+}
+
+#[test]
+fn deterministic_ring_sequence_preserves_interleaved_frame_order_across_wraps() {
+    let temp_file = create_mock_shared_memory(48_000, 8, 2);
+    let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("open shared memory");
+    let mut expected = std::collections::VecDeque::new();
+    let mut next_sample = 0.0_f32;
+
+    for step in 0..256 {
+        let requested_frames = (step % 3) + 1;
+        let capacity = buffer.current_audio_capacity() as usize / 2;
+        let free_frames = capacity.saturating_sub(expected.len());
+        let frames_to_write = requested_frames.min(free_frames);
+        if frames_to_write > 0 {
+            let input: Vec<f32> = (0..frames_to_write * 2)
+                .map(|_| {
+                    let sample = next_sample;
+                    next_sample += 1.0;
+                    sample
+                })
+                .collect();
+            assert_eq!(buffer.write_audio(&input), frames_to_write);
+            expected.extend(input);
+        }
+
+        if step % 2 == 0 {
+            let mut output = vec![0.0_f32; 6];
+            let frames_read = buffer.read_audio(&mut output);
+            let sample_count = frames_read * 2;
+            for sample in output.iter().take(sample_count) {
+                assert_eq!(
+                    Some(sample.to_bits()),
+                    expected.pop_front().map(|v| v.to_bits())
+                );
+            }
+        }
+    }
+
+    while !expected.is_empty() {
+        let mut output = [0.0_f32; 6];
+        let frames_read = buffer.read_audio(&mut output);
+        assert!(frames_read > 0, "pending frames must remain readable");
+        for sample in output.iter().take(frames_read * 2) {
+            assert_eq!(
+                Some(sample.to_bits()),
+                expected.pop_front().map(|v| v.to_bits())
+            );
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn property_ring_preserves_order_for_random_io_sequences(
+        buffer_frames in 2_u32..16,
+        channel_count in 1_u32..5,
+        encrypted in any::<bool>(),
+        operations in prop::collection::vec((1_usize..9, 1_usize..9), 1..128),
+    ) {
+        let temp_file = create_mock_shared_memory(48_000, buffer_frames, channel_count);
+        let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("open shared memory");
+        let cipher = test_audio_cipher();
+        if encrypted {
+            buffer.set_key_fingerprint(*cipher.fingerprint());
+            buffer.set_encrypted(true);
+        }
+
+        let mut expected = std::collections::VecDeque::new();
+        let mut next_sample = 0.0_f32;
+
+        for (write_frames, read_frames) in operations {
+            let input: Vec<f32> = (0..write_frames * channel_count as usize)
+                .map(|_| {
+                    let sample = next_sample;
+                    next_sample += 1.0;
+                    sample
+                })
+                .collect();
+            let frames_written = if encrypted {
+                buffer.write_audio_encrypted(&input, &cipher)
+            } else {
+                buffer.write_audio(&input)
+            };
+            expected.extend(input.into_iter().take(
+                frames_written * channel_count as usize
+            ));
+
+            // Exercise the read-side frame rounding with an occasional extra
+            // sample. The extra slot must never advance the channel cursor.
+            let extra_sample = if channel_count > 1 { 1 } else { 0 };
+            let mut output = vec![0.0_f32; read_frames * channel_count as usize + extra_sample];
+            let frames_read = if encrypted {
+                buffer.read_audio_encrypted(&mut output, &cipher)
+            } else {
+                buffer.read_audio(&mut output)
+            };
+            for sample in output
+                .iter()
+                .take(frames_read * channel_count as usize)
+            {
+                prop_assert_eq!(
+                    Some(sample.to_bits()),
+                    expected.pop_front().map(|value| value.to_bits())
+                );
+            }
+        }
+
+        while !expected.is_empty() {
+            let mut output = vec![0.0_f32; 8 * channel_count as usize];
+            let frames_read = if encrypted {
+                buffer.read_audio_encrypted(&mut output, &cipher)
+            } else {
+                buffer.read_audio(&mut output)
+            };
+            prop_assert!(frames_read > 0, "pending frames must remain readable");
+            for sample in output
+                .iter()
+                .take(frames_read * channel_count as usize)
+            {
+                prop_assert_eq!(
+                    Some(sample.to_bits()),
+                    expected.pop_front().map(|value| value.to_bits())
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn plain_reader_never_consumes_a_partial_interleaved_frame() {
+    let temp_file = create_mock_shared_memory(48_000, 4, 2);
+    let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("open shared memory");
+    let input = [1.0, 2.0, 3.0, 4.0];
+    assert_eq!(buffer.write_audio(&input), 2);
+
+    let mut odd = [0.0; 3];
+    assert_eq!(buffer.read_audio(&mut odd), 1);
+    assert_eq!(odd, [1.0, 2.0, 0.0]);
+
+    let mut next = [0.0; 2];
+    assert_eq!(buffer.read_audio(&mut next), 1);
+    assert_eq!(next, [3.0, 4.0]);
 }
 
 #[test]
@@ -329,6 +473,7 @@ fn test_hal_input_reader_stages_partial_encrypted_record() {
         decrypted_record_buf: Vec::with_capacity(sample_capacity),
         pending_decrypted_samples: Vec::with_capacity(sample_capacity),
         pending_sample_offset: 0,
+        key_mismatch_count: std::sync::atomic::AtomicU64::new(0),
     };
 
     let mut output = vec![0.0; 1024 * 2];
@@ -356,6 +501,26 @@ fn test_hal_input_reader_stages_partial_encrypted_record() {
 }
 
 #[test]
+fn encrypted_reader_never_consumes_a_partial_interleaved_frame() {
+    let temp_file = create_mock_shared_memory(48_000, 512, 2);
+    let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("open shared memory");
+    let cipher = test_audio_cipher();
+    buffer.set_key_fingerprint(*cipher.fingerprint());
+    buffer.set_encrypted(true);
+
+    assert_eq!(buffer.write_audio_encrypted(&[1.0, 2.0], &cipher), 1);
+    assert_eq!(buffer.write_audio_encrypted(&[3.0, 4.0], &cipher), 1);
+
+    let mut odd = [0.0; 3];
+    assert_eq!(buffer.read_audio_encrypted(&mut odd, &cipher), 1);
+    assert_eq!(odd, [1.0, 2.0, 0.0]);
+
+    let mut next = [0.0; 2];
+    assert_eq!(buffer.read_audio_encrypted(&mut next, &cipher), 1);
+    assert_eq!(next, [3.0, 4.0]);
+}
+
+#[test]
 fn test_hal_input_reader_reports_cipher_reload_need() {
     let temp_file = create_mock_shared_memory(48_000, 512, 2);
     let buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
@@ -373,6 +538,7 @@ fn test_hal_input_reader_reports_cipher_reload_need() {
         decrypted_record_buf: Vec::new(),
         pending_decrypted_samples: Vec::new(),
         pending_sample_offset: 0,
+        key_mismatch_count: std::sync::atomic::AtomicU64::new(0),
     };
 
     assert!(

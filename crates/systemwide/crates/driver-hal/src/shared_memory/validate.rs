@@ -20,6 +20,21 @@ pub(super) fn open_shared_memory_file(path: &Path) -> io::Result<std::fs::File> 
     Ok(file)
 }
 
+pub(super) fn open_existing_shared_memory_file(path: &Path) -> io::Result<std::fs::File> {
+    let mut options = OpenOptions::new();
+    options.read(true).write(true);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+
+    let file = options.open(path)?;
+    validate_shared_memory_file(&file, path)?;
+    Ok(file)
+}
+
 #[cfg(unix)]
 pub(super) fn validate_shared_memory_file(file: &std::fs::File, path: &Path) -> io::Result<()> {
     use std::os::unix::fs::MetadataExt;

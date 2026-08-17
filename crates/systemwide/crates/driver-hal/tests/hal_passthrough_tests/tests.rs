@@ -57,7 +57,7 @@ fn test_hal_encrypted_shared_memory_passthrough_bit_exact() {
 
     let temp_file = create_mock_shared_memory(sample_rate, buffer_frames, channel_count);
     let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
-    let key = driver_hal::generate_key();
+    let key = [0x42; 32];
     let cipher = driver_hal::AudioCipher::new(&key);
     buffer.set_key_fingerprint(*cipher.fingerprint());
     buffer.set_encrypted(true);

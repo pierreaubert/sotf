@@ -61,7 +61,7 @@ pub use driver::HalDriver;
 #[cfg(target_os = "macos")]
 pub use encryption::{
     AUTH_TAG_SIZE, AudioCipher, compute_fingerprint, encrypted_to_samples, fingerprint_to_hex,
-    generate_key, samples_to_encrypted,
+    samples_to_encrypted, try_generate_key,
 };
 #[cfg(target_os = "macos")]
 pub use shared_memory::{

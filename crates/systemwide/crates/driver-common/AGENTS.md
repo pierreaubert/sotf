@@ -34,7 +34,7 @@ cargo test -p driver-common
 ## Important Notes
 
 - `AudioDriver` is `Send + 'static` for single-owner use as `Box<dyn AudioDriver>` in the daemon; it is intentionally not `Sync`
-- `read_audio()` returns number of *samples* (not frames) -- caller provides buffer of `frame_count * channel_count` floats
+- `read_audio()` returns the number of complete *frames* -- caller provides a buffer of `frame_count * channel_count` floats
 - `read_frames()` is the frame-count convenience wrapper for new callers
 - `DriverConfig::default()` / `keep_current()` preserve current settings; `0` remains the wire-level sentinel for compatibility
 - Driver-initiated config changes use the `poll_config_change()` / `acknowledge_config_change()` handshake

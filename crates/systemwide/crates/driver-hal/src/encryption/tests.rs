@@ -4,10 +4,13 @@ use super::encrypted::encrypted_to_samples;
 use super::encrypted::encrypted_to_samples_into;
 use super::misc::AUTH_TAG_SIZE;
 use super::misc::compute_fingerprint;
-use super::misc::generate_key;
 use super::misc::session_key_path_from_env;
 use super::samples::samples_to_encrypted;
 use super::samples::samples_to_encrypted_into;
+
+fn generate_test_key() -> [u8; 32] {
+    [0x42; 32]
+}
 
 #[test]
 fn test_session_key_path_prefers_explicit_and_lab_overrides() {
@@ -38,7 +41,7 @@ fn test_session_key_path_prefers_explicit_and_lab_overrides() {
 
 #[test]
 fn test_encrypt_decrypt_roundtrip() {
-    let key = generate_key();
+    let key = generate_test_key();
     let cipher = AudioCipher::new(&key);
 
     // Test with various audio patterns
@@ -66,7 +69,7 @@ fn test_encrypt_decrypt_roundtrip() {
 
 #[test]
 fn test_tamper_detection() {
-    let key = generate_key();
+    let key = generate_test_key();
     let cipher = AudioCipher::new(&key);
 
     let samples: Vec<f32> = vec![0.5, -0.5, 0.25, -0.25];
@@ -83,7 +86,7 @@ fn test_tamper_detection() {
 
 #[test]
 fn test_wrong_frame_counter() {
-    let key = generate_key();
+    let key = generate_test_key();
     let cipher = AudioCipher::new(&key);
 
     let samples: Vec<f32> = vec![0.5, -0.5, 0.25, -0.25];
@@ -95,8 +98,8 @@ fn test_wrong_frame_counter() {
 
 #[test]
 fn test_different_keys() {
-    let key1 = generate_key();
-    let key2 = generate_key();
+    let key1 = generate_test_key();
+    let key2 = [0x24; 32];
     let cipher1 = AudioCipher::new(&key1);
     let cipher2 = AudioCipher::new(&key2);
 
@@ -109,7 +112,7 @@ fn test_different_keys() {
 
 #[test]
 fn test_fingerprint_consistency() {
-    let key = generate_key();
+    let key = generate_test_key();
     let cipher = AudioCipher::new(&key);
     let computed = compute_fingerprint(&key);
 
@@ -118,7 +121,7 @@ fn test_fingerprint_consistency() {
 
 #[test]
 fn test_special_float_values() {
-    let key = generate_key();
+    let key = generate_test_key();
     let cipher = AudioCipher::new(&key);
 
     // Test special float values
@@ -144,7 +147,7 @@ fn test_special_float_values() {
 
 #[test]
 fn test_empty_samples() {
-    let key = generate_key();
+    let key = generate_test_key();
     let cipher = AudioCipher::new(&key);
 
     let samples: Vec<f32> = vec![];
@@ -165,7 +168,7 @@ fn test_ciphertext_size() {
 
 #[test]
 fn test_encrypt_into_decrypt_into_roundtrip() {
-    let key = generate_key();
+    let key = generate_test_key();
     let cipher = AudioCipher::new(&key);
 
     // Test with various audio patterns
@@ -197,7 +200,7 @@ fn test_encrypt_into_decrypt_into_roundtrip() {
 
 #[test]
 fn test_encrypt_into_buffer_too_small() {
-    let key = generate_key();
+    let key = generate_test_key();
     let cipher = AudioCipher::new(&key);
     let samples = vec![0.5f32; 100];
 
@@ -207,7 +210,7 @@ fn test_encrypt_into_buffer_too_small() {
 
 #[test]
 fn test_decrypt_into_buffer_too_small() {
-    let key = generate_key();
+    let key = generate_test_key();
     let cipher = AudioCipher::new(&key);
     let samples = vec![0.5f32; 100];
 

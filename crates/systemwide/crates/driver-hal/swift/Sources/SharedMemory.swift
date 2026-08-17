@@ -19,7 +19,8 @@ private let kSharedMemoryMagic: UInt32 = 0x534F5446
 /// Version 3: Added config negotiation fields for bidirectional HAL-Daemon sync
 /// Version 4: Added daemon heartbeat for stale-engine detection in the HAL driver
 /// Version 5: Added configuring handshake for daemon-side reconfiguration
-private let kSharedMemoryVersion: UInt32 = 5
+/// Version 6: Added a quiesce acknowledgment and pending channel geometry.
+private let kSharedMemoryVersion: UInt32 = 6
 private let kDaemonHeartbeatTimeoutMs: UInt64 = 3_000
 
 /// Encrypted audio record magic: 'SEA1' (SotF Encrypted Audio v1)
@@ -124,6 +125,8 @@ struct SharedAudioHeader {
 
     // Reconfiguration handshake (version 5+)
     var configuring: UInt32             // Daemon is mutating geometry/ring positions
+    var configuringAck: UInt32          // IO participant observed configuring=1
+    var requestedChannelCount: UInt32   // Pending channel geometry request
 }
 
 private struct EncryptedRecordMetadata {
@@ -312,7 +315,7 @@ final class SharedAudioBuffer {
         atomicStore(&header.pointee.version, kSharedMemoryVersion)
         atomicStore(&header.pointee.sampleRate, sampleRate)
         atomicStore(&header.pointee.bufferFrames, bufferFrames)
-        atomicStore(&header.pointee.channelCount, channelCount)
+        atomicStore(&header.pointee.requestedChannelCount, channelCount)
         atomicStore(&header.pointee.actualSampleRate, sampleRate)
         atomicStore(&header.pointee.actualBufferFrames, bufferFrames)
         atomicStore(&header.pointee.driverReady, 1)
@@ -490,6 +493,7 @@ final class SharedAudioBuffer {
         guard let header = header, let audioData = audioData else { return 0 }
         guard frameCount > 0, channelCount > 0, audioCapacity > 0 else { return 0 }
         if atomicLoad(&header.pointee.configuring) != 0 {
+            atomicStore(&header.pointee.configuringAck, 1)
             return 0
         }
 
@@ -582,6 +586,7 @@ final class SharedAudioBuffer {
         // Do not publish a position computed from stale geometry if a daemon
         // reconfiguration began while this IO cycle was copying samples.
         if atomicLoad(&header.pointee.configuring) != 0 {
+            atomicStore(&header.pointee.configuringAck, 1)
             return 0
         }
         if atomicLoad(&header.pointee.active) == 0 {
@@ -605,6 +610,7 @@ final class SharedAudioBuffer {
     private func writeRawBytes(_ bytes: [UInt8], byteCount: Int, originalFrameCount: Int) -> Int {
         guard let header = header, let audioData = audioData else { return 0 }
         if atomicLoad(&header.pointee.configuring) != 0 {
+            atomicStore(&header.pointee.configuringAck, 1)
             return 0
         }
         
@@ -655,6 +661,7 @@ final class SharedAudioBuffer {
         }
         
         if atomicLoad(&header.pointee.configuring) != 0 {
+            atomicStore(&header.pointee.configuringAck, 1)
             return 0
         }
         if atomicLoad(&header.pointee.active) == 0 {
@@ -674,6 +681,7 @@ final class SharedAudioBuffer {
             return 0
         }
         if atomicLoad(&header.pointee.configuring) != 0 {
+            atomicStore(&header.pointee.configuringAck, 1)
             memset(buffer, 0, frameCount * channelCount * MemoryLayout<Float>.size)
             return 0
         }
@@ -727,6 +735,7 @@ final class SharedAudioBuffer {
                         }
 
                         if atomicLoad(&header.pointee.configuring) != 0 {
+                            atomicStore(&header.pointee.configuringAck, 1)
                             memset(buffer, 0, requestedSampleCount * MemoryLayout<Float>.size)
                             return 0
                         }
@@ -760,7 +769,11 @@ final class SharedAudioBuffer {
 
         // Calculate available data
         let available = writePos >= readPos ? Int(writePos - readPos) : 0
-        let toRead = min(sampleCount, available)
+        // The ring stores interleaved frames. Never publish a read cursor
+        // between channels when CoreAudio asks for fewer samples than are
+        // currently available.
+        let readableSamples = min(sampleCount, available)
+        let toRead = readableSamples - (readableSamples % channelCount)
 
         if toRead <= 0 {
             // Fill with silence
@@ -784,6 +797,7 @@ final class SharedAudioBuffer {
         }
 
         if atomicLoad(&header.pointee.configuring) != 0 {
+            atomicStore(&header.pointee.configuringAck, 1)
             memset(buffer, 0, frameCount * channelCount * MemoryLayout<Float>.size)
             return 0
         }
@@ -893,14 +907,10 @@ final class SharedAudioBuffer {
         return atomicLoad(&header.pointee.requestedBufferFrames)
     }
 
-    /// Get requested/current channel count.
-    ///
-    /// Protocol v4 does not have a separate requested-channel field; daemon
-    /// initiated channel changes publish the desired count in `channelCount`
-    /// before setting `configChanged`.
+    /// Get the pending channel count without changing live ring geometry.
     func getRequestedChannelCount() -> UInt32 {
         guard let header = header else { return 0 }
-        return atomicLoad(&header.pointee.channelCount)
+        return atomicLoad(&header.pointee.requestedChannelCount)
     }
 
     /// Request a configuration change (called by HAL when client changes sample rate)
@@ -915,7 +925,7 @@ final class SharedAudioBuffer {
         }
         atomicStore(&header.pointee.requestedSampleRate, sampleRate)
         atomicStore(&header.pointee.requestedBufferFrames, bufferFrames)
-        atomicStore(&header.pointee.channelCount, channelCount)
+        atomicStore(&header.pointee.requestedChannelCount, channelCount)
         atomicStore(&header.pointee.configStatus, 0)  // pending
         atomicStore(&header.pointee.configSource, 1)  // HAL initiated
         atomicStore(&header.pointee.configChanged, 1)

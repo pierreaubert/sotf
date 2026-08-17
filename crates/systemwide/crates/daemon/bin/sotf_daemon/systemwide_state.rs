@@ -96,6 +96,15 @@ impl SystemwideState {
         self.pipeline.prepare_with_selected_device(output_device)
     }
 
+    pub(super) fn prepare_from_spec(
+        &self,
+        spec: PipelineSpec,
+        driver_input_fallback_channels: usize,
+    ) -> Result<PipelinePlan, String> {
+        self.pipeline
+            .prepare_from_spec(spec, driver_input_fallback_channels)
+    }
+
     pub(super) fn commit_applied(&mut self, plan: &PipelinePlan) {
         self.pipeline.commit_applied(plan);
     }
@@ -118,11 +127,15 @@ pub(super) fn spawn_driver_config_watcher(
     audio_manager: Arc<Mutex<AudioEngineManager>>,
     running: Arc<Mutex<bool>>,
     system_state: Arc<Mutex<SystemwideState>>,
+    pipeline_mutation: Arc<Mutex<()>>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         use std::time::Duration;
 
-        let poll_interval = Duration::from_millis(50);
+        // Driver polling is a control-plane concern; 100 ms keeps negotiated
+        // changes responsive without waking a dedicated thread twenty times
+        // per second while the system is idle.
+        let poll_interval = Duration::from_millis(100);
 
         log::info!("Driver config watcher thread started");
 
@@ -134,6 +147,9 @@ pub(super) fn spawn_driver_config_watcher(
             // Poll driver for config changes
             let config_change = driver_manager.lock().poll_config_change();
             if let Some(config) = config_change {
+                // Serialize driver-initiated restarts with IPC mutations so
+                // neither path applies a stale desired pipeline.
+                let _mutation = pipeline_mutation.lock();
                 handle_driver_config_change(&driver_manager, &audio_manager, config, &system_state);
             }
 

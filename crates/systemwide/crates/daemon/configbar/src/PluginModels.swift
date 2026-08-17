@@ -156,7 +156,8 @@ struct PluginGraphModel {
     var linearNodeIDs: [Int]? {
         guard !nodes.isEmpty else { return [] }
         let nodeIDs = Set(nodes.map(\.id))
-        guard edges.count == nodes.count - 1,
+        guard nodeIDs.count == nodes.count,
+              edges.count == nodes.count - 1,
               edges.allSatisfy({ nodeIDs.contains($0.fromNode) && nodeIDs.contains($0.toNode) })
         else {
             return nil

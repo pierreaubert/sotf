@@ -38,11 +38,22 @@ pub(super) fn read_encrypted_with_staging(
         return 0;
     }
 
+    // The AudioDriver contract is frame-based. Never consume a partial
+    // interleaved frame when a caller supplies an odd-sized sample buffer.
+    let requested_samples = output.len() / channel_count * channel_count;
+    if requested_samples < output.len() {
+        output[requested_samples..].fill(0.0);
+    }
+
     let mut copied_samples = 0;
 
     if *pending_sample_offset < pending_decrypted_samples.len() {
         let pending_available = pending_decrypted_samples.len() - *pending_sample_offset;
-        let to_copy = pending_available.min(output.len());
+        let to_copy = pending_available
+            .min(requested_samples)
+            .checked_div(channel_count)
+            .unwrap_or(0)
+            * channel_count;
         output[..to_copy].copy_from_slice(
             &pending_decrypted_samples[*pending_sample_offset..*pending_sample_offset + to_copy],
         );
@@ -55,7 +66,7 @@ pub(super) fn read_encrypted_with_staging(
         }
     }
 
-    while copied_samples < output.len() {
+    while copied_samples < requested_samples {
         match shared.read_next_encrypted_record_into(
             decrypted_record_buf,
             cipher,
@@ -63,8 +74,15 @@ pub(super) fn read_encrypted_with_staging(
             ciphertext_buf,
         ) {
             EncryptedRecordRead::Read { sample_count } => {
-                let remaining = output.len() - copied_samples;
-                let to_copy = sample_count.min(remaining);
+                let remaining = requested_samples - copied_samples;
+                let to_copy = sample_count
+                    .min(remaining)
+                    .checked_div(channel_count)
+                    .unwrap_or(0)
+                    * channel_count;
+                if to_copy == 0 {
+                    break;
+                }
                 output[copied_samples..copied_samples + to_copy]
                     .copy_from_slice(&decrypted_record_buf[..to_copy]);
                 copied_samples += to_copy;
@@ -88,11 +106,7 @@ pub(super) fn read_encrypted_with_staging(
                 // undersized reader must fail silent instead of allocating on
                 // the audio thread.
                 if decrypted_record_buf.capacity() < sample_count {
-                    if copied_samples == 0 {
-                        output.fill(0.0);
-                    } else {
-                        output[copied_samples..].fill(0.0);
-                    }
+                    output[copied_samples..].fill(0.0);
                     return copied_samples / channel_count;
                 }
                 decrypted_record_buf.resize(sample_count, 0.0);
@@ -108,7 +122,7 @@ pub(super) fn read_encrypted_with_staging(
         }
     }
 
-    if copied_samples < output.len() {
+    if copied_samples < requested_samples {
         output[copied_samples..].fill(0.0);
     }
 

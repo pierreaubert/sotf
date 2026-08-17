@@ -24,9 +24,8 @@ use super::misc::get_shared_memory_path;
 use super::misc::u64_to_fingerprint;
 use super::types::EncryptedRecordHeader;
 use super::types::EncryptedRecordRead;
-use super::validate::open_shared_memory_file;
+use super::validate::{open_existing_shared_memory_file, open_shared_memory_file};
 use memmap2::MmapMut;
-use std::fs::OpenOptions;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{Ordering, fence};
@@ -123,6 +122,9 @@ impl SharedAudioBuffer {
         header.sample_rate.store(sample_rate, Ordering::Release);
         header.buffer_frames.store(buffer_frames, Ordering::Release);
         header.channel_count.store(channel_count, Ordering::Release);
+        header
+            .requested_channel_count
+            .store(channel_count, Ordering::Release);
         header.write_position.store(0, Ordering::Release);
         header.read_position.store(0, Ordering::Release);
         header.active.store(0, Ordering::Release);
@@ -146,6 +148,7 @@ impl SharedAudioBuffer {
         header.encryption_overflow_count.store(0, Ordering::Release);
         header.daemon_heartbeat_ms.store(0, Ordering::Release);
         header.configuring.store(0, Ordering::Release);
+        header.configuring_ack.store(0, Ordering::Release);
     }
 
     /// Create or open the shared memory file and initialize it when needed.
@@ -276,7 +279,11 @@ impl SharedAudioBuffer {
     /// Open an existing shared memory region created by the Swift HAL driver
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
         let path = path.as_ref();
-        let file = OpenOptions::new().read(true).write(true).open(path)?;
+        // Use the same no-follow and owner/type validation as the create
+        // path. The HAL mapping is a cross-process trust boundary; opening an
+        // attacker-controlled symlink here would otherwise bypass the
+        // validation performed during creation.
+        let file = open_existing_shared_memory_file(path)?;
 
         // SAFETY: see `create_or_open_with_max_geometry`. The file is sized
         // by the daemon; we map it read/write and validate the magic/version
@@ -532,13 +539,43 @@ impl SharedAudioBuffer {
         buffer_frames: Option<u32>,
         channel_count: Option<u32>,
     ) {
+        let current_frames = self.header().buffer_frames.load(Ordering::Acquire) as usize;
+        let current_channels = self.header().channel_count.load(Ordering::Acquire) as usize;
+        let next_frames = buffer_frames.map_or(current_frames, |frames| frames as usize);
+        let next_channels = channel_count.map_or(current_channels, |channels| channels as usize);
+        let Some(next_capacity) = next_frames
+            .checked_mul(next_channels)
+            .and_then(|value| value.checked_mul(8))
+        else {
+            log::warn!(
+                "Rejecting shared-memory reconfiguration with overflowing geometry: {} frames, {} channels",
+                next_frames,
+                next_channels
+            );
+            return;
+        };
+        if next_frames == 0 || next_channels == 0 || next_capacity > self.max_audio_capacity {
+            log::warn!(
+                "Rejecting shared-memory reconfiguration outside the mapped capacity: {} frames, {} channels (max {} samples)",
+                next_frames,
+                next_channels,
+                self.max_audio_capacity
+            );
+            return;
+        }
+
         {
             let header = self.header();
             header.configuring.store(1, Ordering::Release);
+            header.configuring_ack.store(0, Ordering::Release);
             let start = std::time::Instant::now();
             let timeout = std::time::Duration::from_nanos(RECONFIG_QUIESCE_TIMEOUT_NS);
-            while start.elapsed() < timeout {
+            while header.configuring_ack.load(Ordering::Acquire) == 0 && start.elapsed() < timeout {
                 std::hint::spin_loop();
+            }
+
+            if header.configuring_ack.load(Ordering::Acquire) == 0 {
+                log::debug!("Timed out waiting for shared-memory IO quiesce acknowledgment");
             }
 
             if let Some(rate) = sample_rate {
@@ -557,20 +594,12 @@ impl SharedAudioBuffer {
         // Validate the new derived capacity against the mmap bound. Every IO
         // operation derives its capacity from the atomic header instead of
         // caching geometry that another process can change.
-        let frames = self.header().buffer_frames.load(Ordering::Acquire) as usize;
-        let channels = self.header().channel_count.load(Ordering::Acquire) as usize;
-        debug_assert!(
-            frames
-                .checked_mul(channels)
-                .and_then(|value| value.checked_mul(8))
-                .is_some_and(|capacity| capacity <= self.max_audio_capacity)
-        );
-
         let header = self.header();
         header.write_position.store(0, Ordering::Release);
         header.read_position.store(0, Ordering::Release);
         header.config_changed.store(1, Ordering::Release);
         header.configuring.store(0, Ordering::Release);
+        header.configuring_ack.store(0, Ordering::Release);
     }
 
     // =========================================================================
@@ -657,6 +686,13 @@ impl SharedAudioBuffer {
             .load(Ordering::Acquire)
     }
 
+    /// Get the requested channel count without changing live ring geometry.
+    pub fn requested_channel_count(&self) -> u32 {
+        self.header()
+            .requested_channel_count
+            .load(Ordering::Acquire)
+    }
+
     /// Set the actual sample rate (response from the handler).
     pub fn set_actual_sample_rate(&self, rate: u32) {
         self.header()
@@ -729,7 +765,9 @@ impl SharedAudioBuffer {
             .requested_buffer_frames
             .store(buffer_frames, Ordering::Release);
         if channel_count > 0 {
-            header.channel_count.store(channel_count, Ordering::Release);
+            header
+                .requested_channel_count
+                .store(channel_count, Ordering::Release);
         }
         // Release fence so the requested fields are visible before we
         // publish the source/status/config_changed flags.
@@ -796,13 +834,11 @@ impl SharedAudioBuffer {
     }
 
     pub(super) fn copy_audio_slots_to(&self, position: u64, slot_count: usize, output: &mut [f32]) {
-        debug_assert!(output.len() >= slot_count);
-        if slot_count == 0 {
+        if slot_count == 0 || output.len() < slot_count {
             return;
         }
 
         let audio_capacity = self.current_audio_capacity();
-        debug_assert!(audio_capacity > 0 && slot_count <= audio_capacity);
         if audio_capacity == 0 || slot_count > audio_capacity {
             return;
         }
@@ -838,7 +874,6 @@ impl SharedAudioBuffer {
         }
 
         let audio_capacity = self.current_audio_capacity();
-        debug_assert!(audio_capacity > 0 && input.len() <= audio_capacity);
         if audio_capacity == 0 || input.len() > audio_capacity {
             return;
         }
@@ -901,14 +936,27 @@ impl SharedAudioBuffer {
     /// Returns the number of frames actually read.
     pub fn read_audio(&self, buffer: &mut [f32]) -> usize {
         let header = self.header();
+        if header.configuring.load(Ordering::Acquire) != 0 {
+            header.configuring_ack.store(1, Ordering::Release);
+            buffer.fill(0.0);
+            return 0;
+        }
         let channel_count = header.channel_count.load(Ordering::Acquire) as usize;
+        if channel_count == 0 {
+            buffer.fill(0.0);
+            return 0;
+        }
         let sample_count = buffer.len();
 
         let write_pos = header.write_position.load(Ordering::Acquire);
         let read_pos = header.read_position.load(Ordering::Acquire);
 
         let (read_pos, available) = self.compute_repair(write_pos, read_pos);
-        let to_read = sample_count.min(available);
+        let to_read = sample_count
+            .min(available)
+            .checked_div(channel_count)
+            .unwrap_or(0)
+            * channel_count;
 
         if to_read == 0 {
             buffer.fill(0.0);
@@ -973,6 +1021,10 @@ impl SharedAudioBuffer {
     /// Returns the number of frames actually written.
     pub fn write_audio(&mut self, buffer: &[f32]) -> usize {
         let header = self.header();
+        if header.configuring.load(Ordering::Acquire) != 0 {
+            header.configuring_ack.store(1, Ordering::Release);
+            return 0;
+        }
         let channel_count = header.channel_count.load(Ordering::Acquire) as usize;
         let sample_count = buffer.len();
 
@@ -1040,6 +1092,10 @@ impl SharedAudioBuffer {
     /// Get available frames to read.
     pub fn available_read_frames(&self) -> usize {
         let header = self.header();
+        if header.configuring.load(Ordering::Acquire) != 0 {
+            header.configuring_ack.store(1, Ordering::Release);
+            return 0;
+        }
         let write_pos = header.write_position.load(Ordering::Acquire);
         let read_pos = header.read_position.load(Ordering::Acquire);
         let channel_count = header.channel_count.load(Ordering::Acquire) as usize;
@@ -1223,6 +1279,17 @@ impl SharedAudioBuffer {
             return EncryptedRecordRead::Empty;
         };
 
+        let channel_count = header.channel_count.load(Ordering::Acquire) as usize;
+        if channel_count == 0 || record.sample_count % channel_count != 0 {
+            log::warn!(
+                "Invalid encrypted record frame alignment: {} samples for {} channels",
+                record.sample_count,
+                channel_count
+            );
+            self.commit_read_position(write_pos);
+            return EncryptedRecordRead::InvalidHeader;
+        }
+
         if record.slot_count > available_slots {
             return EncryptedRecordRead::Empty;
         }
@@ -1292,6 +1359,11 @@ impl SharedAudioBuffer {
         encrypted_buf: &mut Vec<f32>,
         ciphertext_buf: &mut Vec<u8>,
     ) -> usize {
+        if self.header().configuring.load(Ordering::Acquire) != 0 {
+            self.header().configuring_ack.store(1, Ordering::Release);
+            buffer.fill(0.0);
+            return 0;
+        }
         if !self.is_encrypted() {
             return self.read_audio(buffer);
         }
@@ -1302,9 +1374,13 @@ impl SharedAudioBuffer {
             return 0;
         }
 
+        let target_samples = buffer.len() / channel_count * channel_count;
+        if target_samples < buffer.len() {
+            buffer[target_samples..].fill(0.0);
+        }
         let mut copied_samples = 0;
 
-        while copied_samples < buffer.len() {
+        while copied_samples < target_samples {
             match self.read_next_encrypted_record_into(
                 &mut buffer[copied_samples..],
                 cipher,
@@ -1327,7 +1403,7 @@ impl SharedAudioBuffer {
             }
         }
 
-        if copied_samples < buffer.len() {
+        if copied_samples < target_samples {
             buffer[copied_samples..].fill(0.0);
         }
 
@@ -1342,18 +1418,23 @@ impl SharedAudioBuffer {
         ciphertext_buf: &mut Vec<u8>,
         encrypted_buf: &mut Vec<f32>,
     ) -> usize {
+        if self.header().configuring.load(Ordering::Acquire) != 0 {
+            self.header().configuring_ack.store(1, Ordering::Release);
+            return 0;
+        }
         if !self.is_encrypted() {
             return self.write_audio(samples);
         }
 
         let header = self.header();
         let channel_count = header.channel_count.load(Ordering::Acquire) as usize;
-        let sample_count = samples.len();
+        let sample_count = samples.len() / channel_count * channel_count;
 
         let max_samples = MAX_HAL_BUFFER_FRAMES as usize * MAX_HAL_CHANNEL_COUNT as usize;
         if channel_count == 0 || sample_count == 0 || sample_count > max_samples {
             return 0;
         }
+        let samples = &samples[..sample_count];
 
         let Some(ciphertext_size) = crate::encryption::encrypted_byte_size_checked(sample_count)
         else {
@@ -1447,7 +1528,7 @@ pub(super) fn load_initial_cipher(
     match crate::encryption::load_session_key() {
         Ok(key) => {
             let cipher = crate::encryption::AudioCipher::new(&key);
-            if cipher.fingerprint() == &buffer.key_fingerprint() {
+            if super::misc::fingerprints_equal(cipher.fingerprint(), &buffer.key_fingerprint()) {
                 log::info!("[HAL] Loaded session key, fingerprint matches header");
                 Some(cipher)
             } else {

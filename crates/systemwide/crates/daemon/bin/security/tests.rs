@@ -2,11 +2,10 @@
 use super::get::encryption_impl;
 use super::get::get_current_uid;
 use super::get::get_hal_key_path;
-#[cfg(all(target_os = "macos", feature = "hal"))]
-use super::get::get_key_path;
 use super::get::get_secure_socket_path;
 use super::misc::{
-    daemon_session_key_path_from_env, hal_session_key_path_from_env, secure_socket_path_from_env,
+    daemon_session_key_path_from_env, ensure_secure_socket_dir, hal_session_key_path_from_env,
+    secure_socket_path_from_env, validate_user_load_path,
 };
 use super::peer_class::classify_peer;
 use super::peer_class::peer_allows_command;
@@ -18,10 +17,32 @@ use serial_test::serial;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 #[test]
 fn test_socket_path_is_user_specific() {
     let path = get_secure_socket_path();
     assert!(path.to_string_lossy().contains("sotf"));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_existing_socket_directory_is_hardened() {
+    let root = tempfile::tempdir().expect("temp runtime");
+    let runtime = root.path().join("runtime");
+    std::fs::create_dir(&runtime).expect("create runtime");
+    std::fs::set_permissions(&runtime, std::fs::Permissions::from_mode(0o755))
+        .expect("make runtime lax");
+
+    ensure_secure_socket_dir(&runtime.join("daemon.sock")).expect("harden runtime");
+
+    let mode = std::fs::metadata(&runtime)
+        .expect("runtime metadata")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o700);
 }
 
 #[test]
@@ -62,6 +83,25 @@ fn test_session_key_paths_support_lab_runtime_overrides() {
 fn test_current_uid() {
     let uid = get_current_uid();
     assert!(uid <= 65534);
+}
+
+#[test]
+fn test_user_load_path_rejects_symlinks_and_non_files() {
+    let root = tempfile::tempdir().expect("temp runtime");
+    let file = root.path().join("audio.wav");
+    std::fs::write(&file, b"fixture").expect("write fixture");
+    assert!(validate_user_load_path(&file).is_ok());
+
+    let directory = root.path().join("directory");
+    std::fs::create_dir(&directory).expect("create directory");
+    assert!(validate_user_load_path(&directory).is_err());
+
+    #[cfg(unix)]
+    {
+        let link = root.path().join("audio-link.wav");
+        std::os::unix::fs::symlink(&file, &link).expect("create symlink");
+        assert!(validate_user_load_path(&link).is_err());
+    }
 }
 
 #[test]
@@ -378,66 +418,6 @@ fn test_key_manager_force_rotate_changes_fingerprint() {
         md.permissions().mode() & 0o777,
         0o600,
         "rotated HAL key copy must remain mode 0o600"
-    );
-}
-
-/// Verify that check_and_reload detects an externally modified key file.
-/// This covers daemon restart / driver reconnection scenarios where the
-/// session key may have been rotated by another daemon instance.
-#[cfg(all(target_os = "macos", feature = "hal"))]
-#[test]
-#[serial]
-fn test_key_manager_check_and_reload_detects_modification() {
-    use std::io::Write;
-    use std::os::unix::fs::PermissionsExt;
-
-    let mut manager = KeyManager::default();
-    if !manager.is_enabled() {
-        eprintln!(
-            "skipping test_key_manager_check_and_reload_detects_modification: \
-             KeyManager::default() returned disabled fallback"
-        );
-        return;
-    }
-
-    let path = get_key_path();
-    let original_fp = manager.fingerprint_hex();
-
-    // Simulate an external key rotation by rewriting the key file directly.
-    let new_key = driver_hal::generate_key();
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-
-        let parent = path.parent().expect("key path has parent");
-        if !parent.exists() {
-            std::fs::create_dir_all(parent).expect("create parent");
-            std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
-                .expect("set parent perms");
-        }
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&path)
-            .expect("open key file");
-        file.write_all(&new_key).expect("write new key");
-        file.sync_all().expect("sync key file");
-    }
-
-    // check_and_reload has a 5-second cooldown between checks; wait that
-    // out so the modified mtime is actually inspected.
-    std::thread::sleep(std::time::Duration::from_millis(5100));
-
-    let reloaded = manager
-        .check_and_reload()
-        .expect("check_and_reload should not error");
-    assert!(reloaded, "check_and_reload should detect modified key file");
-
-    let new_fp = manager.fingerprint_hex();
-    assert_ne!(
-        original_fp, new_fp,
-        "fingerprint should change after detecting external key modification"
     );
 }
 

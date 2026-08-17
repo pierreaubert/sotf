@@ -43,3 +43,4 @@ tempfile = { workspace = true }
 sotf-plugins = { path = "../../../sotf-plugins", default-features = false }
 serde_json = { workspace = true }
 libc = { workspace = true }
+proptest = { workspace = true }

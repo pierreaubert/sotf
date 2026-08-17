@@ -26,6 +26,9 @@ macOS Audio Apps (Safari, Spotify, ...)
 ```
 
 External processes (Swift menubar app, GPUI configbar) control the daemon over a Unix domain socket with a JSON line protocol.
+Configbar mutations are serialized off the main thread; its status and
+metering polls reuse a reconnecting client connection. A live daemon started by
+launchd or a developer is adopted rather than killed and replaced.
 
 ## Crates
 
@@ -104,6 +107,15 @@ is still planned and does not yet have a `just systemwide-lab` recipe.
 
 - Only one daemon may own a runtime socket. A sibling `.lock` file serializes
   startup before key rotation and stale-socket cleanup.
+- Runtime parents are checked for ownership and tightened to `0700` when they
+  are user-owned; the explicit legacy `/tmp/autoeq_audio.sock` mode is the
+  only shared-sticky-directory exception and never uses a symlink.
+- SIGINT/SIGTERM performs the same shutdown path as an IPC shutdown: clear HAL
+  readiness, stop the engine, join the watcher, and remove only the daemon's
+  verified Unix socket.
+- Shared-memory protocol version 6 uses requested geometry plus a quiesce/ack
+  handshake. Rust and Swift IO paths honor the configuring gate and preserve
+  interleaved frame alignment.
 - The daemon rotates the shared-audio key once per process lifetime before
   opening the transport.
 - Rust and Swift access the shared-memory header with matching acquire/release

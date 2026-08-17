@@ -111,13 +111,37 @@ pub fn current_uid() -> u32 {
 pub(super) mod encryption_impl {
     use super::super::*;
     use super::*;
-    use driver_hal::{AudioCipher, compute_fingerprint, fingerprint_to_hex, generate_key};
+    use driver_hal::{AudioCipher, compute_fingerprint, fingerprint_to_hex, try_generate_key};
     use std::fs::{self, File, OpenOptions};
     use std::io::{self, Read, Write};
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
     use std::path::{Path, PathBuf};
     use std::process::Command;
-    use std::time::{Instant, SystemTime};
+
+    fn ensure_owned_secure_dir(path: &Path) -> io::Result<()> {
+        if path.exists() {
+            let metadata = fs::symlink_metadata(path)?;
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!("runtime path {} is not a directory", path.display()),
+                ));
+            }
+            if metadata.uid() != get_current_uid() {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!(
+                        "runtime directory {} is owned by another user",
+                        path.display()
+                    ),
+                ));
+            }
+        } else {
+            fs::create_dir_all(path)?;
+        }
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+        Ok(())
+    }
 
     #[cfg(target_os = "macos")]
     pub(in super::super) fn coreaudiod_acl_targets(
@@ -170,8 +194,6 @@ pub(super) mod encryption_impl {
         key: [u8; 32],
         fingerprint: [u8; 8],
         cipher: Option<AudioCipher>,
-        last_check: Instant,
-        last_mtime: Option<SystemTime>,
         enabled: bool,
     }
 
@@ -183,22 +205,16 @@ pub(super) mod encryption_impl {
                 key,
                 fingerprint: compute_fingerprint(&key),
                 cipher: Some(AudioCipher::new(&key)),
-                last_check: Instant::now(),
-                last_mtime: None,
                 enabled: true,
             }
         }
 
         pub fn new() -> io::Result<Self> {
             let key_path = get_key_path();
-            let (key, mtime) = if key_path.exists() {
-                (
-                    Self::load_key_from_file(&key_path)?,
-                    Self::get_mtime(&key_path),
-                )
+            let key = if key_path.exists() {
+                Self::load_key_from_file(&key_path)?
             } else {
-                let key = Self::create_new_key(&key_path)?;
-                (key, Self::get_mtime(&key_path))
+                Self::create_new_key(&key_path)?
             };
             grant_coreaudiod_key_access(&key_path);
             Self::publish_hal_key_copy(&key)?;
@@ -210,13 +226,21 @@ pub(super) mod encryption_impl {
                 key,
                 fingerprint,
                 cipher,
-                last_check: Instant::now(),
-                last_mtime: mtime,
                 enabled: true,
             })
         }
 
         fn load_key_from_file(path: &std::path::Path) -> io::Result<[u8; 32]> {
+            let metadata = fs::symlink_metadata(path)?;
+            if metadata.file_type().is_symlink() || metadata.uid() != get_current_uid() {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!(
+                        "encryption key {} is not owned by this user",
+                        path.display()
+                    ),
+                ));
+            }
             let mut file = File::open(path)?;
             let mut key = [0u8; 32];
             file.read_exact(&mut key)?;
@@ -226,11 +250,10 @@ pub(super) mod encryption_impl {
 
         fn create_new_key(path: &std::path::Path) -> io::Result<[u8; 32]> {
             if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent)?;
-                fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
+                ensure_owned_secure_dir(parent)?;
             }
 
-            let key = generate_key();
+            let key = try_generate_key()?;
 
             let mut file = OpenOptions::new()
                 .create(true)
@@ -248,14 +271,11 @@ pub(super) mod encryption_impl {
         fn publish_hal_key_copy(key: &[u8; 32]) -> io::Result<()> {
             let path = get_hal_key_path();
             if let Some(parent) = path.parent() {
-                if !parent.exists() {
-                    fs::create_dir_all(parent)?;
-                }
-                // Always clamp the parent dir to 0o700 (owner only). Other
-                // users must not be able to enumerate the directory; the
-                // _coreaudiod (UID 202) process is granted access by the
-                // explicit ACL applied via grant_coreaudiod_key_access().
-                fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
+                // Reject a pre-created foreign-owned runtime directory before
+                // touching permissions or key material. Otherwise another
+                // local user can squat the first-run path and force the
+                // daemon into its disabled-key fallback.
+                ensure_owned_secure_dir(parent)?;
             }
 
             // Create with mode 0o600 (owner read/write only). The
@@ -288,48 +308,6 @@ pub(super) mod encryption_impl {
             Ok(())
         }
 
-        fn get_mtime(path: &std::path::Path) -> Option<SystemTime> {
-            fs::metadata(path).ok()?.modified().ok()
-        }
-
-        #[allow(dead_code)]
-        pub fn check_and_reload(&mut self) -> io::Result<bool> {
-            let key_path = get_key_path();
-            let now = Instant::now();
-
-            if now.duration_since(self.last_check).as_secs() < 5 {
-                return Ok(false);
-            }
-            self.last_check = now;
-
-            if !key_path.exists() {
-                log::warn!("Key file deleted, regenerating...");
-                let key = Self::create_new_key(&key_path)?;
-                grant_coreaudiod_key_access(&key_path);
-                Self::publish_hal_key_copy(&key)?;
-                self.key = key;
-                self.fingerprint = compute_fingerprint(&key);
-                self.cipher = Some(AudioCipher::new(&key));
-                self.last_mtime = Self::get_mtime(&key_path);
-                return Ok(true);
-            }
-
-            let current_mtime = Self::get_mtime(&key_path);
-            if current_mtime != self.last_mtime {
-                log::info!("Key file modified, reloading...");
-                let key = Self::load_key_from_file(&key_path)?;
-                grant_coreaudiod_key_access(&key_path);
-                Self::publish_hal_key_copy(&key)?;
-                self.key = key;
-                self.fingerprint = compute_fingerprint(&key);
-                self.cipher = Some(AudioCipher::new(&key));
-                self.last_mtime = current_mtime;
-                return Ok(true);
-            }
-
-            Ok(false)
-        }
-
         pub fn force_rotate(&mut self) -> io::Result<()> {
             let key_path = get_key_path();
             log::info!("Force rotating encryption key...");
@@ -340,12 +318,9 @@ pub(super) mod encryption_impl {
 
             let fingerprint = compute_fingerprint(&key);
             let cipher = AudioCipher::new(&key);
-            let mtime = Self::get_mtime(&key_path);
-
             self.key = key;
             self.fingerprint = fingerprint;
             self.cipher = Some(cipher);
-            self.last_mtime = mtime;
 
             log::info!(
                 "Encryption key rotated successfully, fingerprint: {}",
@@ -360,11 +335,6 @@ pub(super) mod encryption_impl {
 
         pub fn fingerprint_hex(&self) -> String {
             fingerprint_to_hex(&self.fingerprint)
-        }
-
-        #[allow(dead_code)]
-        pub fn cipher(&self) -> Option<&AudioCipher> {
-            self.cipher.as_ref()
         }
 
         pub fn is_enabled(&self) -> bool {
@@ -402,8 +372,6 @@ pub(super) mod encryption_impl {
                     key: [0u8; 32],
                     fingerprint: [0u8; 8],
                     cipher: None,
-                    last_check: Instant::now(),
-                    last_mtime: None,
                     enabled: false,
                 }
             })

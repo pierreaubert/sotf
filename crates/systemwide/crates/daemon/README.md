@@ -4,7 +4,10 @@ An audio player and recorder that supports audio plugins.
 
 Background daemon for audio processing with plugin chain support. Includes an optional HAL feature for macOS system-wide audio integration.
 
-The Unix daemon accepts synchronous JSON-line commands over a per-user socket.
+The Unix daemon accepts JSON-line commands over a per-user socket. Each client
+handler performs its engine/driver operation synchronously, while Configbar
+dispatches mutations on a serial background queue and uses one reconnecting
+connection for status and metering polls so the UI thread never waits on IPC.
 A process-lifetime sibling lock serializes startup before stale-socket cleanup
 and session-key rotation. Available-plugin metadata is initialized once and
 reused across clients.

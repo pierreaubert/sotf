@@ -127,4 +127,9 @@ pub struct SharedAudioHeader {
     /// Swift HAL plugin must drop any pending write and refrain from
     /// publishing new `write_position` values while this is set.
     pub configuring: AtomicU32,
+    /// Set by an IO participant after it observes `configuring = 1`.
+    pub configuring_ack: AtomicU32,
+    /// Channel count requested by the initiator. The live `channel_count`
+    /// field changes only inside `reconfigure_quiesced`.
+    pub requested_channel_count: AtomicU32,
 }

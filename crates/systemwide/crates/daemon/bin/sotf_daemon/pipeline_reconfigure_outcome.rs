@@ -1,7 +1,7 @@
+use super::audio_daemon::AudioDaemon;
 use super::consts::MAX_HAL_CHANNELS;
 use super::consts::SUPPORTED_SAMPLE_RATES;
 use super::driver_manager::DriverManager;
-use super::misc::build_driver_plugin_chain;
 use super::systemwide_state::SystemwideState;
 use super::types::PipelineReconfigureOutcome;
 use driver_common::DriverConfig;
@@ -31,11 +31,7 @@ pub(super) fn handle_driver_config_change(
     if requested_rate == 0 {
         log::warn!("Invalid config request: sample_rate=0, ignoring");
         driver_manager.lock().acknowledge_config_change(
-            DriverConfig {
-                sample_rate: 48000,
-                buffer_frames: requested_frames,
-                channel_count: config.channel_count,
-            },
+            DriverConfig::new(48000, requested_frames, config.channel_count),
             driver_common::ConfigResult::error(driver_common::DriverError::invalid_config(
                 "sample_rate",
                 "Invalid sample rate",
@@ -49,11 +45,7 @@ pub(super) fn handle_driver_config_change(
             requested_frames
         );
         driver_manager.lock().acknowledge_config_change(
-            DriverConfig {
-                sample_rate: requested_rate,
-                buffer_frames: 512,
-                channel_count: config.channel_count,
-            },
+            DriverConfig::new(requested_rate, 512, config.channel_count),
             driver_common::ConfigResult::error(driver_common::DriverError::invalid_config(
                 "buffer_frames",
                 "Invalid buffer frames",
@@ -67,11 +59,7 @@ pub(super) fn handle_driver_config_change(
             requested_channels
         );
         driver_manager.lock().acknowledge_config_change(
-            DriverConfig {
-                sample_rate: requested_rate,
-                buffer_frames: requested_frames,
-                channel_count: 2,
-            },
+            DriverConfig::new(requested_rate, requested_frames, 2),
             driver_common::ConfigResult::error(driver_common::DriverError::invalid_config(
                 "channel_count",
                 "Invalid channel count",
@@ -102,7 +90,10 @@ pub(super) fn handle_driver_config_change(
         requested_channels as usize,
     ) {
         Ok(outcome) => {
-            if outcome == PipelineReconfigureOutcome::Restarted {
+            if matches!(
+                outcome,
+                PipelineReconfigureOutcome::Restarted | PipelineReconfigureOutcome::Restored
+            ) {
                 // Set engine_ready so driver continues sending audio.
                 driver_manager.lock().set_engine_ready(true);
             }
@@ -123,11 +114,7 @@ pub(super) fn handle_driver_config_change(
             };
 
             driver_manager.lock().acknowledge_config_change(
-                DriverConfig {
-                    sample_rate: actual_rate,
-                    buffer_frames: requested_frames,
-                    channel_count: config.channel_count,
-                },
+                DriverConfig::new(actual_rate, requested_frames, config.channel_count),
                 result,
             );
             log::info!(
@@ -141,11 +128,7 @@ pub(super) fn handle_driver_config_change(
         Err(e) => {
             log::error!("Pipeline reconfiguration failed: {}", e);
             driver_manager.lock().acknowledge_config_change(
-                DriverConfig {
-                    sample_rate: actual_rate,
-                    buffer_frames: requested_frames,
-                    channel_count: config.channel_count,
-                },
+                DriverConfig::new(actual_rate, requested_frames, config.channel_count),
                 driver_common::ConfigResult::error(e),
             );
         }
@@ -179,6 +162,16 @@ pub(super) fn reconfigure_audio_pipeline(
         }
     };
 
+    // Keep a fully prepared copy of the last applied pipeline before
+    // stopping the engine. If the new driver timing or graph cannot start,
+    // the daemon can restore audio instead of leaving the process silent.
+    let previous_plan = {
+        let state = system_state.lock();
+        state
+            .applied_spec()
+            .and_then(|spec| state.prepare_from_spec(spec, input_channels).ok())
+    };
+
     let mut manager = audio_manager.lock();
 
     let state = manager.get_state();
@@ -201,32 +194,8 @@ pub(super) fn reconfigure_audio_pipeline(
         plan.spec.output_device
     );
 
-    let bootstrap_plugins = if plan.runtime_graph.is_some() {
-        build_driver_plugin_chain(Vec::new()).0
-    } else {
-        plan.runtime_plugins.clone()
-    };
-    let mut result = manager
-        .start_hal_playback_with_driver_config(
-            plan.spec.output_device.clone(),
-            bootstrap_plugins,
-            plan.spec.output_channels,
-            hal_sample_rate,
-            hal_buffer_frames,
-            plan.spec.input_channels,
-        )
-        .map_err(|error| error.to_string());
-    if result.is_ok()
-        && let Some(graph) = plan.runtime_graph.clone()
-    {
-        result = manager.update_plugin_graph(graph);
-        if result.is_err() {
-            let _ = manager.stop();
-        }
-    }
-    if result.is_ok() {
-        manager.set_loudness_plugin_index(plan.output_loudness_index);
-    }
+    let result =
+        AudioDaemon::start_pipeline_plan(&mut manager, &plan, hal_sample_rate, hal_buffer_frames);
 
     match result {
         Ok(_) => {
@@ -236,7 +205,32 @@ pub(super) fn reconfigure_audio_pipeline(
         }
         Err(e) => {
             log::error!("Failed to restart driver playback: {}", e);
-            Err(format!("Failed to restart driver playback: {}", e))
+
+            let Some(previous_plan) = previous_plan else {
+                return Err(format!("Failed to restart driver playback: {}", e));
+            };
+
+            log::warn!("Attempting to restore the last working driver pipeline");
+            let restore = AudioDaemon::start_pipeline_plan(
+                &mut manager,
+                &previous_plan,
+                hal_sample_rate,
+                hal_buffer_frames,
+            );
+            if restore.is_ok() {
+                log::warn!(
+                    "Restored the last working driver pipeline after reconfiguration failure"
+                );
+                return Ok(PipelineReconfigureOutcome::Restored);
+            }
+
+            Err(format!(
+                "Failed to restart driver playback: {}; pipeline recovery also failed: {}",
+                e,
+                restore
+                    .err()
+                    .unwrap_or_else(|| "unknown recovery error".to_string())
+            ))
         }
     }
 }

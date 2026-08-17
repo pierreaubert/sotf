@@ -16,7 +16,7 @@ struct PluginRackView: View {
     @State private var graphGeneration: Int? = nil
     @State private var availablePlugins: [AvailablePlugin] = []
     @State private var showingAddSheet = false
-    @State private var editingIndex: Int? = nil
+    @State private var editingPluginID: UUID? = nil
     @State private var errorMessage: String? = nil
     @State private var loadingAvailablePlugins = false
     @State private var refreshingPlugins = false
@@ -37,19 +37,32 @@ struct PluginRackView: View {
                 Spacer()
 
                 Button(action: { refreshPlugins() }) {
-                    Image(systemName: "arrow.clockwise")
+                    if refreshingPlugins {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
                 }
                 .buttonStyle(.borderless)
+                .disabled(refreshingPlugins)
                 .help("Refresh plugin list")
 
                 if graph == nil {
                     Button(action: {
-                        loadAvailablePlugins()
                         showingAddSheet = true
+                        loadAvailablePlugins()
                     }) {
-                        Label("Add Plugin", systemImage: "plus.circle")
+                        if loadingAvailablePlugins {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Loading Plugins…")
+                        } else {
+                            Label("Add Plugin", systemImage: "plus.circle")
+                        }
                     }
                     .buttonStyle(.borderless)
+                    .disabled(loadingAvailablePlugins)
                 }
             }
 
@@ -90,6 +103,19 @@ struct PluginRackView: View {
                     )
                     .id(graphGeneration)
                 }
+            } else if refreshingPlugins && plugins.isEmpty {
+                HStack {
+                    Spacer()
+                    VStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Loading signal chain…")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 24)
+                    Spacer()
+                }
             } else if plugins.isEmpty {
                 HStack {
                     Spacer()
@@ -111,8 +137,9 @@ struct PluginRackView: View {
                     ForEach(Array(plugins.enumerated()), id: \.element.id) { index, plugin in
                         PluginRowView(
                             plugin: plugin,
+                            requiredOutputChannels: requiredOutputChannels(for: plugin),
                             onEdit: {
-                                editingIndex = index
+                                editingPluginID = plugin.id
                             },
                             onRemove: {
                                 removePlugin(at: index)
@@ -137,6 +164,7 @@ struct PluginRackView: View {
         .sheet(isPresented: $showingAddSheet) {
             AddPluginSheet(
                 availablePlugins: availablePlugins,
+                isLoading: loadingAvailablePlugins,
                 onAdd: { pluginType, parameters in
                     addPlugin(type: pluginType, parameters: parameters)
                     showingAddSheet = false
@@ -148,27 +176,28 @@ struct PluginRackView: View {
         }
         .sheet(
             isPresented: Binding(
-                get: { editingIndex != nil },
+                get: { editingPluginID != nil },
                 set: { isPresented in
                     if !isPresented {
-                        editingIndex = nil
+                        editingPluginID = nil
                     }
                 }
             )
         ) {
-            if let index = editingIndex, plugins.indices.contains(index) {
+            if let pluginID = editingPluginID,
+               let index = plugins.firstIndex(where: { $0.id == pluginID }) {
                 let plugin = plugins[index]
                 PluginEditSheet(
                     plugin: plugin,
                     descriptors: descriptors(for: plugin.pluginType),
                     onApply: { newParams in
-                        applyPluginUpdate(at: index, parameters: newParams)
+                        applyPluginUpdate(for: pluginID, parameters: newParams)
                     },
                     onCancel: {
-                        editingIndex = nil
+                        editingPluginID = nil
                     },
                     onClose: {
-                        editingIndex = nil
+                        editingPluginID = nil
                     }
                 )
             } else {
@@ -300,12 +329,25 @@ struct PluginRackView: View {
 
     private func applyGraphMutation(_ candidate: PluginGraphModel) -> Bool {
         errorMessage = nil
-        guard client.loadPluginGraph(candidate, baseGeneration: graphGeneration) else {
-            errorMessage = "Graph validation, generation, or engine apply failed; refresh before retrying. The previous graph remains active."
-            return false
+        var command: [String: Any] = [
+            "command": "load_plugin_artifact",
+            "artifact": ["graph": candidate.artifact],
+        ]
+        if let graphGeneration {
+            command["base_generation"] = graphGeneration
         }
+        client.sendCommandAsync(command) { response in
+            guard response?.success == true else {
+                errorMessage = response?.error ?? "Graph validation or engine apply failed; refresh before retrying."
+                refreshPlugins()
+                return
+            }
+            graph = candidate
+            refreshPlugins()
+        }
+        // Keep the editor responsive while the serialized mutation is in
+        // flight; the completion above reconciles the authoritative graph.
         graph = candidate
-        graphGeneration = client.getPluginPipeline()?.generation
         return true
     }
 
@@ -328,10 +370,15 @@ struct PluginRackView: View {
     private func addPlugin(type: String, parameters: [String: Any]? = nil) {
         errorMessage = nil
         let pluginParameters = parameters ?? availablePlugins.first { $0.type_ == type }?.defaultParameters ?? [:]
-        if client.addPlugin(type: type, parameters: pluginParameters, index: nil) {
-            refreshPlugins()
-        } else {
-            errorMessage = "Failed to add plugin"
+        client.sendCommandAsync([
+            "command": "add_plugin",
+            "plugin": ["plugin_type": type, "parameters": pluginParameters],
+        ]) { response in
+            if response?.success == true {
+                refreshPlugins()
+            } else {
+                errorMessage = response?.error ?? "Failed to add plugin"
+            }
         }
     }
 
@@ -341,29 +388,37 @@ struct PluginRackView: View {
 
     private func removePlugin(at index: Int) {
         errorMessage = nil
-        if editingIndex == index {
-            editingIndex = nil
+        if plugins.indices.contains(index),
+           editingPluginID == plugins[index].id {
+            editingPluginID = nil
         }
-        if client.removePlugin(at: index) {
-            refreshPlugins()
-        } else {
-            errorMessage = "Failed to remove plugin"
+        client.sendCommandAsync(["command": "remove_plugin", "index": index]) { response in
+            if response?.success == true {
+                refreshPlugins()
+            } else {
+                errorMessage = response?.error ?? "Failed to remove plugin"
+            }
         }
     }
 
-    private func applyPluginUpdate(at index: Int, parameters: [String: Any]) -> Bool {
+    private func applyPluginUpdate(for pluginID: UUID, parameters: [String: Any]) -> Bool {
         errorMessage = nil
-        guard plugins.indices.contains(index) else {
+        guard let index = plugins.firstIndex(where: { $0.id == pluginID }) else {
             errorMessage = "Plugin is no longer in the chain"
             return false
         }
 
-        guard client.updatePlugin(at: index, parameters: parameters) else {
-            errorMessage = "Failed to update plugin"
-            return false
-        }
-
         plugins[index].parameters = parameters
+        client.sendCommandAsync([
+            "command": "update_plugin",
+            "index": index,
+            "parameters": parameters,
+        ]) { response in
+            if response?.success != true {
+                errorMessage = response?.error ?? "Failed to update plugin"
+                refreshPlugins()
+            }
+        }
         return true
     }
 
@@ -371,10 +426,12 @@ struct PluginRackView: View {
         errorMessage = nil
         var indices = Array(0..<plugins.count)
         indices.move(fromOffsets: source, toOffset: destination)
-        if client.reorderPlugins(order: indices) {
-            refreshPlugins()
-        } else {
-            errorMessage = "Failed to reorder plugins"
+        client.sendCommandAsync(["command": "reorder_plugins", "order": indices]) { response in
+            if response?.success == true {
+                refreshPlugins()
+            } else {
+                errorMessage = response?.error ?? "Failed to reorder plugins"
+            }
         }
     }
 }
@@ -812,6 +869,7 @@ struct PluginGraphEditorView: View {
 
 struct PluginRowView: View {
     let plugin: PluginInstance
+    let requiredOutputChannels: Int
     let onEdit: () -> Void
     let onRemove: () -> Void
 
@@ -829,6 +887,9 @@ struct PluginRowView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
+                    Text("Requires \(requiredOutputChannels) output channel\(requiredOutputChannels == 1 ? "" : "s")")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
 
                 Spacer()
@@ -909,7 +970,9 @@ struct PluginEditSheet: View {
     let onClose: () -> Void
 
     @State private var draftParameters: [String: Any]
+    @State private var baselineParameters: [String: Any]
     @State private var editorRevision = 0
+    @State private var liveApplyRevision = 0
     @State private var sheetError: String? = nil
 
     init(
@@ -925,6 +988,7 @@ struct PluginEditSheet: View {
         self.onCancel = onCancel
         self.onClose = onClose
         _draftParameters = State(initialValue: plugin.parameters)
+        _baselineParameters = State(initialValue: plugin.parameters)
     }
 
     var body: some View {
@@ -950,8 +1014,7 @@ struct PluginEditSheet: View {
                     parameters: draftParameters,
                     descriptors: descriptors,
                     onUpdate: { newParameters in
-                        draftParameters = newParameters
-                        sheetError = nil
+                        updateDraftParameters(newParameters)
                     }
                 )
                 .id(editorRevision)
@@ -982,16 +1045,24 @@ struct PluginEditSheet: View {
                     Button("Apply") {
                         applyDraft(closeAfterApply: false)
                     }
+                    .keyboardShortcut(.defaultAction)
+
+                    Button("Revert") {
+                        revertDraft()
+                    }
 
                     Button("Cancel") {
-                        onCancel()
+                        revertAndClose()
                     }
                     .keyboardShortcut(.cancelAction)
 
                     Button("Close") {
-                        applyDraft(closeAfterApply: true)
+                        // Edits are applied after the debounce interval. Close
+                        // leaves the current live state; Revert or Cancel
+                        // restores the parameters captured when editing began.
+                        liveApplyRevision &+= 1
+                        onClose()
                     }
-                    .keyboardShortcut(.defaultAction)
                 }
             }
             .padding()
@@ -1005,6 +1076,7 @@ struct PluginEditSheet: View {
     }
 
     private func applyDraft(closeAfterApply: Bool) {
+        liveApplyRevision &+= 1
         if onApply(draftParameters) {
             sheetError = nil
             if closeAfterApply {
@@ -1013,6 +1085,40 @@ struct PluginEditSheet: View {
         } else {
             sheetError = "Failed to apply parameters to the plugin chain"
         }
+    }
+
+    private func updateDraftParameters(_ newParameters: [String: Any]) {
+        draftParameters = newParameters
+        sheetError = nil
+        liveApplyRevision &+= 1
+        let revision = liveApplyRevision
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            guard liveApplyRevision == revision else { return }
+            if !onApply(newParameters) {
+                sheetError = "Failed to apply parameters to the plugin chain"
+            }
+        }
+    }
+
+    private func revertDraft() {
+        liveApplyRevision &+= 1
+        guard onApply(baselineParameters) else {
+            sheetError = "Failed to revert parameters on the plugin chain"
+            return
+        }
+        draftParameters = baselineParameters
+        sheetError = nil
+        editorRevision += 1
+    }
+
+    private func revertAndClose() {
+        liveApplyRevision &+= 1
+        guard onApply(baselineParameters) else {
+            sheetError = "Failed to revert parameters on the plugin chain"
+            return
+        }
+        draftParameters = baselineParameters
+        onCancel()
     }
 
     private func loadParameters() {
@@ -1224,12 +1330,15 @@ struct PluginEditSheet: View {
 
 struct AddPluginSheet: View {
     let availablePlugins: [AvailablePlugin]
+    let isLoading: Bool
     let onAdd: (String, [String: Any]) -> Void
     let onCancel: () -> Void
 
-    @State private var searchText = ""
+    @AppStorage("configbar.pluginPicker.search") private var searchText = ""
+    @AppStorage("configbar.pluginPicker.selection") private var rememberedPluginID = ""
     @State private var selectedPluginID: String? = nil
     @State private var draftParameters: [String: Any] = [:]
+    @FocusState private var focusedPluginID: String?
 
     private var visiblePlugins: [AvailablePlugin] {
         availablePlugins.filter { $0.type_ != "fletcher_munson" }
@@ -1276,36 +1385,51 @@ struct AddPluginSheet: View {
             HStack(spacing: 0) {
                 // Plugin list by category
                 List {
-                    ForEach(categories) { category in
-                        Section(header: Text(category.name)) {
-                            ForEach(category.plugins) { plugin in
-                                Button(action: { selectPlugin(plugin) }) {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        HStack {
-                                            Text(plugin.name)
-                                                .font(.body.weight(.medium))
-                                            if plugin.maturity != "Prod" {
-                                                Text(plugin.maturity)
-                                                    .font(.caption2)
-                                                    .padding(.horizontal, 4)
-                                                    .padding(.vertical, 1)
-                                                    .background(plugin.maturity == "Beta" ? Color.blue.opacity(0.2) : Color.orange.opacity(0.2))
-                                                    .cornerRadius(3)
+                    if isLoading && categories.isEmpty {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Loading plugins…")
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        ForEach(categories) { category in
+                            Section(header: Text(category.name)) {
+                                ForEach(category.plugins) { plugin in
+                                    Button(action: { selectPlugin(plugin) }) {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            HStack {
+                                                Text(plugin.name)
+                                                    .font(.body.weight(.medium))
+                                                if plugin.maturity != "Prod" {
+                                                    Text(plugin.maturity)
+                                                        .font(.caption2)
+                                                        .padding(.horizontal, 4)
+                                                        .padding(.vertical, 1)
+                                                        .background(plugin.maturity == "Beta" ? Color.blue.opacity(0.2) : Color.orange.opacity(0.2))
+                                                        .cornerRadius(3)
+                                                }
                                             }
+                                            Text(plugin.description)
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
                                         }
-                                        Text(plugin.description)
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .contentShape(Rectangle())
                                     }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
+                                    .buttonStyle(.plain)
+                                    .focused($focusedPluginID, equals: plugin.type_)
+                                    .listRowBackground(
+                                        selectedPluginID == plugin.type_
+                                            ? Color.accentColor.opacity(0.16)
+                                            : Color.clear
+                                    )
+                                    .simultaneousGesture(
+                                        TapGesture(count: 2).onEnded {
+                                            onAdd(plugin.type_, plugin.defaultParameters)
+                                        }
+                                    )
                                 }
-                                .buttonStyle(.plain)
-                                .listRowBackground(
-                                    selectedPluginID == plugin.type_
-                                        ? Color.accentColor.opacity(0.16)
-                                        : Color.clear
-                                )
                             }
                         }
                     }
@@ -1371,17 +1495,47 @@ struct AddPluginSheet: View {
         .onChange(of: availablePlugins.count) { _, _ in
             selectInitialPluginIfNeeded()
         }
+        .onMoveCommand { direction in
+            movePluginSelection(direction)
+        }
     }
 
     private func selectInitialPluginIfNeeded() {
-        guard selectedPluginID == nil, let first = categories.first?.plugins.first else {
+        guard selectedPluginID == nil else {
             return
         }
-        selectPlugin(first)
+        let remembered = visiblePlugins.first { $0.type_ == rememberedPluginID }
+        let first = remembered ?? categories.first?.plugins.first
+        if let first {
+            selectPlugin(first)
+        }
     }
 
     private func selectPlugin(_ plugin: AvailablePlugin) {
         selectedPluginID = plugin.type_
+        rememberedPluginID = plugin.type_
         draftParameters = plugin.defaultParameters
+    }
+
+    private func movePluginSelection(_ direction: MoveCommandDirection) {
+        let options = categories.flatMap(\.plugins)
+        guard !options.isEmpty else { return }
+
+        let currentIndex = focusedPluginID.flatMap { id in
+            options.firstIndex { $0.type_ == id }
+        }
+        let nextIndex: Int
+        switch direction {
+        case .up:
+            nextIndex = max((currentIndex ?? options.count) - 1, 0)
+        case .down:
+            nextIndex = min((currentIndex ?? -1) + 1, options.count - 1)
+        default:
+            return
+        }
+
+        let plugin = options[nextIndex]
+        selectPlugin(plugin)
+        focusedPluginID = plugin.type_
     }
 }

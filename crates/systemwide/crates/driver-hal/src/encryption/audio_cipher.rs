@@ -23,8 +23,11 @@ impl AudioCipher {
     /// # Returns
     /// A new AudioCipher instance with the computed key fingerprint
     pub fn new(key: &[u8; 32]) -> Self {
-        let cipher = ChaCha20Poly1305::new_from_slice(key)
-            .expect("32-byte key is always valid for ChaCha20Poly1305");
+        // The fixed-size input already satisfies ChaCha20-Poly1305's key
+        // length requirement, so construct the typed key without a fallible
+        // conversion (and without a panic path in initialization).
+        let typed_key = chacha20poly1305::Key::from(*key);
+        let cipher = ChaCha20Poly1305::new(&typed_key);
 
         // Compute fingerprint as first 8 bytes of SHA256(key)
         let mut hasher = Sha256::new();
@@ -64,6 +67,12 @@ impl AudioCipher {
     /// is implemented in the AEAD layer); the previous doc comment was
     /// misleading and has been corrected.
     pub fn encrypt(&self, samples: &[f32], frame_counter: u64) -> Vec<u8> {
+        self.try_encrypt(samples, frame_counter).unwrap_or_default()
+    }
+
+    /// Fallible allocation-based encryption variant for callers that need to
+    /// surface an AEAD failure instead of returning an empty payload.
+    pub fn try_encrypt(&self, samples: &[f32], frame_counter: u64) -> Option<Vec<u8>> {
         // Convert samples to bytes
         let plaintext = samples_to_bytes(samples);
 
@@ -74,9 +83,7 @@ impl AudioCipher {
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         // Encrypt with authentication
-        self.cipher
-            .encrypt(nonce, plaintext.as_ref())
-            .expect("encryption should not fail")
+        self.cipher.encrypt(nonce, plaintext.as_ref()).ok()
     }
 
     /// Decrypt audio samples
@@ -135,10 +142,12 @@ impl AudioCipher {
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         // Encrypt in place and get auth tag
-        let tag = self
-            .cipher
-            .encrypt_in_place_detached(nonce, &[], &mut output[..sample_bytes])
-            .expect("encryption should not fail");
+        let Ok(tag) =
+            self.cipher
+                .encrypt_in_place_detached(nonce, &[], &mut output[..sample_bytes])
+        else {
+            return None;
+        };
 
         // Append auth tag
         output[sample_bytes..sample_bytes + AUTH_TAG_SIZE].copy_from_slice(&tag);

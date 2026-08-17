@@ -1,8 +1,9 @@
 #![allow(clippy::field_reassign_with_default)]
+use super::audio_daemon::try_acquire_client_slot;
 use super::audio_daemon::{AudioDaemon, pipeline_timing_after_config_request};
 use super::command::Command;
 use super::configured::configured_output_device_from_value;
-use super::consts::{MAX_HAL_CHANNELS, MAX_IPC_COMMAND_BYTES};
+use super::consts::{MAX_HAL_CHANNELS, MAX_IPC_CLIENTS, MAX_IPC_COMMAND_BYTES};
 use super::driver_manager::DriverManager;
 use super::loudness::{loudness_data_to_json, loudness_info_to_json};
 use super::misc::push_metering_faults;
@@ -25,6 +26,7 @@ use super::security::{KeyManager, PeerClass};
 use super::systemwide_state::SystemwideState;
 use super::types::IpcLine;
 use super::types::read_ipc_line_bounded;
+use crate::plugin_artifact::{PluginArtifactPlan, plan_plugin_artifact};
 use driver_common::DriverConfig;
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -34,7 +36,7 @@ use sotf_audio::manager::AudioEngineManager;
 use sotf_audio::plugins::PluginType;
 use std::io::{BufRead, BufReader, Cursor, Write};
 use std::os::unix::net::UnixStream;
-use std::sync::Arc;
+use std::sync::{Arc, Barrier};
 
 fn test_plugin(plugin_type: &str) -> PluginConfig {
     PluginConfig {
@@ -568,6 +570,21 @@ mod ipc_safety_tests {
     }
 
     #[test]
+    fn ipc_client_admission_is_bounded() {
+        let active = std::sync::atomic::AtomicUsize::new(MAX_IPC_CLIENTS - 1);
+        assert!(try_acquire_client_slot(&active));
+        assert_eq!(
+            active.load(std::sync::atomic::Ordering::Acquire),
+            MAX_IPC_CLIENTS
+        );
+        assert!(!try_acquire_client_slot(&active));
+
+        active.store(0, std::sync::atomic::Ordering::Release);
+        assert!(try_acquire_client_slot(&active));
+        assert_eq!(active.load(std::sync::atomic::Ordering::Acquire), 1);
+    }
+
+    #[test]
     fn daemon_ipc_client_path_sets_idle_timeout() {
         let source = include_str!("audio_daemon.rs");
         assert!(source.contains("set_read_timeout(Some(std::time::Duration::from_secs("));
@@ -633,6 +650,7 @@ mod ipc_safety_tests {
         last_requested_config: Option<DriverConfig>,
         last_ack: Option<(DriverConfig, ConfigResult)>,
         pending_config_change: Option<DriverConfig>,
+        fail_next_config: Option<String>,
     }
 
     #[derive(Debug, Clone)]
@@ -675,8 +693,12 @@ mod ipc_safety_tests {
         }
 
         fn request_config(&mut self, config: DriverConfig) -> ConfigResult {
-            self.state.lock().last_requested_config = Some(config);
-            ConfigResult::Accepted
+            let mut state = self.state.lock();
+            state.last_requested_config = Some(config);
+            state
+                .fail_next_config
+                .take()
+                .map_or(ConfigResult::Accepted, ConfigResult::error)
         }
 
         fn poll_config_change(&mut self) -> Option<DriverConfig> {
@@ -694,34 +716,17 @@ mod ipc_safety_tests {
 
     fn fake_driver_state() -> Arc<Mutex<FakeDriverState>> {
         Arc::new(Mutex::new(FakeDriverState {
-            status: DriverStatus {
-                platform_supported: true,
-                driver_installed: true,
-                capture_active: true,
-                sample_rate: 48_000,
-                channel_count: 2,
-                buffer_frames: 512,
-                driver_name: "Fake HAL".to_string(),
-                driver_ready: true,
-            },
+            status: DriverStatus::new(true, true, true, 48_000, 2, 512, "Fake HAL", true),
             engine_ready: false,
             last_requested_config: None,
             last_ack: None,
             pending_config_change: None,
+            fail_next_config: None,
         }))
     }
 
     fn healthy_driver_status() -> DriverStatus {
-        DriverStatus {
-            platform_supported: true,
-            driver_installed: true,
-            capture_active: true,
-            sample_rate: 48_000,
-            channel_count: 2,
-            buffer_frames: 512,
-            driver_name: "Fake HAL".to_string(),
-            driver_ready: true,
-        }
+        DriverStatus::new(true, true, true, 48_000, 2, 512, "Fake HAL", true)
     }
 
     fn fault_codes(faults: &[Value]) -> Vec<&str> {
@@ -740,6 +745,7 @@ mod ipc_safety_tests {
             )))),
             system_state: Arc::new(Mutex::new(SystemwideState::default())),
             key_manager: Arc::new(Mutex::new(KeyManager::for_test())),
+            pipeline_mutation: Arc::new(Mutex::new(())),
         }
     }
 
@@ -822,15 +828,10 @@ mod ipc_safety_tests {
     #[test]
     fn apply_pipeline_plan_starts_engine_with_negotiated_timing() {
         let source = include_str!("audio_daemon.rs");
-        let call = source
-            .split("start_hal_playback_with_driver_config(")
-            .nth(1)
-            .and_then(|tail| tail.split(");").next())
-            .expect("HAL playback start call");
         assert!(
-            call.contains("effective_driver_sample_rate")
-                && call.contains("effective_driver_buffer_frames"),
-            "HAL playback restart must use negotiated driver timing"
+            source.contains("Self::start_pipeline_plan(")
+                && source.contains("sample_rate,\n                buffer_frames,"),
+            "HAL playback restart must route negotiated timing through the shared starter"
         );
     }
 
@@ -1078,34 +1079,51 @@ mod ipc_safety_tests {
     }
 
     #[test]
-    fn testkit_load_plugin_artifact_applies_engine_graph_without_flattening() {
-        let state = fake_driver_state();
-        let daemon = test_daemon_with_driver(state);
+    fn testkit_load_plugin_artifact_graph_plan_preserves_topology() {
+        // Applying a graph starts the real cpal output thread, which is not
+        // available on headless CI hosts. Exercise the same artifact parser
+        // and graph-aware pipeline planner without requiring physical audio.
+        let artifact: Value = serde_json::from_str(
+            r#"{"graph":{"nodes":[{"id":7,"plugin_type":"gain","parameters":{"gain_db":-3.0},"input_channels":2}],"edges":[]}}"#,
+        )
+        .expect("valid graph artifact");
+        let PluginArtifactPlan::Graph { graph } = plan_plugin_artifact(artifact).unwrap() else {
+            panic!("graph artifact must remain graph-shaped");
+        };
 
-        let response = send_owner_ipc_command(
-            &daemon,
-            r#"{"command":"load_plugin_artifact","artifact":{"graph":{"nodes":[{"id":7,"plugin_type":"gain","parameters":{"gain_db":-3.0},"input_channels":2}],"edges":[]}}}"#,
-        );
-
-        assert_eq!(response["success"], true, "{response}");
-        let state = daemon.system_state.lock();
-        assert!(state.user_plugins().is_empty());
-        let graph = state.user_graph().expect("graph desired state");
+        let state = SystemwideState::default();
+        let plan = state
+            .prepare_graph_plan(graph, 2, 2, 2)
+            .expect("graph plan");
+        assert!(plan.spec.user_plugins.is_empty());
+        let graph = plan.spec.user_graph.expect("graph desired state");
         assert_eq!(graph.nodes.len(), 1);
         assert_eq!(graph.nodes[0].id, 7);
         assert_eq!(graph.nodes[0].parameters["gain_db"], -3.0);
-        assert!(state.applied_generation().is_some());
+        assert!(plan.runtime_graph.is_some());
     }
 
     #[test]
     fn testkit_stale_graph_generation_is_rejected_without_overwrite() {
         let state = fake_driver_state();
         let daemon = test_daemon_with_driver(state);
-        let first = send_owner_ipc_command(
-            &daemon,
-            r#"{"command":"load_plugin_artifact","artifact":{"graph":{"nodes":[{"id":7,"plugin_type":"gain","parameters":{"gain_db":-3.0},"input_channels":2}],"edges":[]}}}"#,
-        );
-        assert_eq!(first["success"], true, "{first}");
+
+        // Seed the applied generation directly so this test only exercises
+        // the optimistic-concurrency guard, not a physical cpal device.
+        let graph = PluginGraphConfig::try_new(
+            vec![
+                PluginGraphNodeConfig::try_new(7, "gain", serde_json::json!({"gain_db": -3.0}), 2)
+                    .unwrap(),
+            ],
+            vec![],
+        )
+        .unwrap();
+        let plan = daemon
+            .system_state
+            .lock()
+            .prepare_graph_plan(graph, 2, 2, 2)
+            .unwrap();
+        daemon.system_state.lock().commit_applied(&plan);
 
         let stale = send_owner_ipc_command(
             &daemon,
@@ -1215,11 +1233,7 @@ mod ipc_safety_tests {
         handle_driver_config_change(
             &daemon.driver_manager,
             &daemon.manager,
-            DriverConfig {
-                sample_rate: 48_000,
-                buffer_frames: 512,
-                channel_count: 10,
-            },
+            DriverConfig::new(48_000, 512, 10),
             &daemon.system_state,
         );
 
@@ -1318,6 +1332,14 @@ mod ipc_safety_tests {
     }
 
     #[test]
+    fn fake_driver_conforms_to_audio_driver_contract() {
+        driver_common::test_support::assert_audio_driver_contract(FakeDriver::new(
+            fake_driver_state(),
+        ))
+        .expect("FakeDriver contract");
+    }
+
+    #[test]
     fn testkit_unix_ipc_set_encryption_roundtrip() {
         let state = fake_driver_state();
         let daemon = test_daemon_with_driver(state);
@@ -1348,6 +1370,97 @@ mod ipc_safety_tests {
 
         assert_eq!(response["success"], true);
         assert!(!*daemon.running.lock());
+    }
+
+    #[test]
+    fn testkit_failed_pipeline_apply_restores_last_working_plan() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(Arc::clone(&state));
+
+        let seed = daemon.handle_command(Command::LoadPlugins {
+            plugins: vec![test_plugin("eq")],
+            input_channels: 2,
+            output_channels: 2,
+        });
+        assert!(seed.success, "failed to seed pipeline: {seed:?}");
+
+        state.lock().fail_next_config = Some("injected config failure".to_string());
+        let response = daemon.handle_command(Command::SetInputChannels { channels: 4 });
+
+        assert!(!response.success);
+        assert!(
+            response
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("restored the last working pipeline"))
+        );
+
+        let state = daemon.system_state.lock();
+        assert_eq!(state.input_channels(), 2);
+        assert_eq!(state.output_channels(), 2);
+        assert_eq!(state.user_plugins().len(), 1);
+        assert_eq!(state.applied_generation(), Some(2));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn testkit_concurrent_add_plugin_preserves_both_mutations() {
+        let state = fake_driver_state();
+        let daemon = Arc::new(test_daemon_with_driver(state));
+        let seed = daemon.handle_command(Command::LoadPlugins {
+            plugins: Vec::new(),
+            input_channels: 2,
+            output_channels: 2,
+        });
+        assert!(seed.success, "failed to seed pipeline: {seed:?}");
+
+        let start = Arc::new(Barrier::new(3));
+        let first_daemon = Arc::clone(&daemon);
+        let first_start = Arc::clone(&start);
+        let first = std::thread::spawn(move || {
+            first_start.wait();
+            first_daemon.handle_command(Command::AddPlugin {
+                plugin: PluginConfig {
+                    plugin_type: "gain".to_string(),
+                    parameters: serde_json::json!({"gain_db": 0.0}),
+                },
+                index: None,
+            })
+        });
+
+        let second_daemon = Arc::clone(&daemon);
+        let second_start = Arc::clone(&start);
+        let second = std::thread::spawn(move || {
+            second_start.wait();
+            second_daemon.handle_command(Command::AddPlugin {
+                plugin: PluginConfig {
+                    plugin_type: "gain".to_string(),
+                    parameters: serde_json::json!({"gain_db": 0.0}),
+                },
+                index: None,
+            })
+        });
+
+        start.wait();
+        let first_response = first.join().expect("first mutation thread must not panic");
+        let second_response = second
+            .join()
+            .expect("second mutation thread must not panic");
+        assert!(
+            first_response.success,
+            "first mutation failed: {first_response:?}"
+        );
+        assert!(
+            second_response.success,
+            "second mutation failed: {second_response:?}"
+        );
+
+        let state = daemon.system_state.lock();
+        assert_eq!(state.user_plugins().len(), 2);
+        assert_eq!(state.applied_generation(), Some(3));
+        drop(state);
+        let stopped = daemon.handle_command(Command::Stop);
+        assert!(stopped.success, "failed to stop test engine: {stopped:?}");
     }
 }
 
@@ -1903,6 +2016,7 @@ mod command_roundtrip_tests {
             )))),
             system_state: Arc::new(Mutex::new(SystemwideState::default())),
             key_manager: Arc::new(Mutex::new(KeyManager::default())),
+            pipeline_mutation: Arc::new(Mutex::new(())),
         };
         let resp = daemon.handle_command(Command::Status);
         assert!(resp.success, "{:?}", resp.error);

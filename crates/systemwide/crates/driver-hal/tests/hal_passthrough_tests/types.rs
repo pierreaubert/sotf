@@ -48,6 +48,8 @@ pub(super) fn create_mock_shared_memory(
         encryption_overflow_count: AtomicU64::new(0),
         daemon_heartbeat_ms: AtomicU64::new(0),
         configuring: AtomicU32::new(0),
+        configuring_ack: AtomicU32::new(0),
+        requested_channel_count: AtomicU32::new(channel_count),
     };
 
     let header_bytes: &[u8] =

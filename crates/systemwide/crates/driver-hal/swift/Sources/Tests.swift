@@ -62,10 +62,12 @@ final class HALDriverTests {
             ("encryptionOverflowCount", MemoryLayout<SharedAudioHeader>.offset(of: \.encryptionOverflowCount), 112),
             ("daemonHeartbeatMs", MemoryLayout<SharedAudioHeader>.offset(of: \.daemonHeartbeatMs), 120),
             ("configuring", MemoryLayout<SharedAudioHeader>.offset(of: \.configuring), 128),
+            ("configuringAck", MemoryLayout<SharedAudioHeader>.offset(of: \.configuringAck), 132),
+            ("requestedChannelCount", MemoryLayout<SharedAudioHeader>.offset(of: \.requestedChannelCount), 136),
         ]
 
-        guard MemoryLayout<SharedAudioHeader>.size == 136,
-              MemoryLayout<SharedAudioHeader>.stride == 136,
+        guard MemoryLayout<SharedAudioHeader>.size == 144,
+              MemoryLayout<SharedAudioHeader>.stride == 144,
               MemoryLayout<SharedAudioHeader>.alignment == 8 else {
             halLog(
                 "    FAIL: size=\(MemoryLayout<SharedAudioHeader>.size), " +
@@ -409,7 +411,7 @@ final class HALDriverTests {
 
         var header = SharedAudioHeader(
             magic: 0x534F5446,
-            version: 5,
+            version: 6,
             sampleRate: sampleRate,
             bufferFrames: bufferFrames,
             channelCount: channelCount,
@@ -431,7 +433,9 @@ final class HALDriverTests {
             configErrorCode: 0,
             encryptionOverflowCount: 0,
             daemonHeartbeatMs: 0,
-            configuring: 0
+            configuring: 0,
+            configuringAck: 0,
+            requestedChannelCount: channelCount
         )
 
         let fd = Darwin.open(shmPath, O_RDWR)

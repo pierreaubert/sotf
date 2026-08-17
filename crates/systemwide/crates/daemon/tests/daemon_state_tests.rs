@@ -47,23 +47,19 @@ fn test_audio_engine_manager_state_reporting() {
 #[test]
 fn configbar_daemon_cleanup_is_not_forceful_or_fuzzy() {
     let source = configbar_source();
-    let cleanup_start = source
-        .find("private func terminateExistingDaemons")
-        .or_else(|| source.find("private func killExistingDaemons"))
-        .expect("ConfigBar should have daemon cleanup helper");
-    let cleanup_body = &source[cleanup_start..];
-    let cleanup_body = cleanup_body
-        .split("private func removeStaleSockets")
-        .next()
-        .unwrap_or(cleanup_body);
-
     assert!(
-        !cleanup_body.contains("\"-9\"") && !cleanup_body.contains("\"-f\""),
-        "ConfigBar daemon cleanup must not use destructive fuzzy pkill -9 -f"
+        !source.contains("terminateExistingDaemons")
+            && !source.contains("killExistingDaemons")
+            && !source.contains("removeStaleSockets"),
+        "ConfigBar must not kill unrelated daemons or unlink unverified sockets"
     );
     assert!(
-        cleanup_body.contains("\"-TERM\"") && cleanup_body.contains("\"-x\""),
-        "ConfigBar daemon cleanup should request exact-name TERM shutdown"
+        source.contains("isDaemonReachable()") && source.contains("Adopting existing live daemon"),
+        "ConfigBar should adopt a live daemon instead of restarting it"
+    );
+    assert!(
+        source.contains("process.terminate()"),
+        "ConfigBar should use graceful termination for daemons it owns"
     );
 }
 
@@ -117,7 +113,7 @@ fn daemon_serializes_startup_before_rotating_the_audio_key() {
         .find("let daemon = AudioDaemon::new()")
         .expect("daemon should be constructed after locking");
     let rotate = source
-        .find("daemon.key_manager.lock().force_rotate()")
+        .find("force_rotate()")
         .expect("daemon startup should rotate the AEAD session key");
 
     assert!(
@@ -137,7 +133,8 @@ fn daemon_load_plugins_carries_hal_input_channels() {
     assert!(
         source.contains("input_channels: usize")
             && source.contains("PipelineSupervisor")
-            && source.contains("channel_count: plan.spec.input_channels as u32"),
+            && source.contains("DriverConfig::new(")
+            && source.contains("plan.spec.input_channels as u32"),
         "load_plugins should carry requested HAL input channels into driver config"
     );
     assert!(
@@ -322,6 +319,7 @@ fn systemwide_app_icon_uses_configbar_svg_source() {
 #[test]
 fn configbar_output_device_refresh_tracks_channel_limits() {
     let configbar = include_str!("../configbar/src/ConfigBar.swift");
+    let configbar_pure = include_str!("../configbar/src/ConfigBarPure.swift");
     let rack = include_str!("../configbar/src/PluginRackView.swift");
 
     assert!(
@@ -371,7 +369,7 @@ fn configbar_output_device_refresh_tracks_channel_limits() {
     assert!(
         configbar.contains("syncMeterArrays(inputChannels: newValue)")
             && configbar.contains("private func resizedPeaks")
-            && configbar.contains("peaks.prefix(32)"),
+            && configbar_pure.contains("sanitizeConfigBarPeaks"),
         "toolbar meters should resize and clamp to the current N-channel layout"
     );
 }
@@ -406,8 +404,9 @@ fn configbar_menu_bar_icon_uses_health_tint_streaming_background_and_recording_d
 
     assert!(
         configbar.contains("let issue = !daemonRunning || currentState == .error")
-            && configbar.contains("button.contentTintColor = issue ? .black : .white"),
-        "healthy toolbar icon should be white and daemon/error issues should be black"
+            && configbar.contains("image.isTemplate = true")
+            && !configbar.contains("button.contentTintColor"),
+        "menu bar should let AppKit tint the template icon for the active appearance"
     );
     assert!(
         configbar.contains(
@@ -485,9 +484,10 @@ fn configbar_plugin_edit_sheet_batches_parameter_edits_until_apply_or_close() {
         "per-control edits should no longer debounce daemon update_plugin calls"
     );
     assert!(
-        source.contains("applyPluginUpdate(at: index, parameters: newParams)")
-            && source.contains("client.updatePlugin(at: index, parameters: parameters)"),
-        "only Apply/Close should send parameters to the daemon"
+        source.contains("applyPluginUpdate(for: pluginID, parameters: newParams)")
+            && source.contains("\"command\": \"update_plugin\"")
+            && source.contains("client.sendCommandAsync("),
+        "only Apply/Close should send parameters asynchronously to the daemon"
     );
 }
 

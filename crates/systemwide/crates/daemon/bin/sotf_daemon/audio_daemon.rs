@@ -23,7 +23,8 @@ use super::response::Response;
 use super::response::serialize_response_safely;
 use super::security::{
     KeyManager, PeerClass, classify_peer, current_uid as security_current_uid,
-    ensure_secure_socket_dir, peer_allows_command, verify_peer_credentials,
+    ensure_secure_socket_dir, peer_allows_command, validate_user_load_path,
+    verify_peer_credentials,
 };
 use super::systemwide_state::SystemwideState;
 use super::systemwide_state::spawn_driver_config_watcher;
@@ -38,7 +39,10 @@ use sotf_audio::manager::AudioEngineManager;
 use sotf_audio::plugins::PluginType;
 use std::io::{BufReader, Write};
 use std::os::unix::net::UnixStream;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
+
+use super::consts::MAX_IPC_CLIENTS;
 
 pub(super) fn pipeline_timing_after_config_request(
     result: &driver_common::ConfigResult,
@@ -54,6 +58,7 @@ pub(super) fn pipeline_timing_after_config_request(
         driver_common::ConfigResult::Accepted | driver_common::ConfigResult::Error(_) => {
             (requested_sample_rate, requested_buffer_frames)
         }
+        _ => (requested_sample_rate, requested_buffer_frames),
     }
 }
 
@@ -66,6 +71,33 @@ pub(super) struct AudioDaemon {
     pub(super) system_state: Arc<Mutex<SystemwideState>>,
     /// Encryption key manager
     pub(super) key_manager: Arc<Mutex<KeyManager>>,
+    /// Serializes read-modify-apply pipeline mutations across IPC clients.
+    pub(super) pipeline_mutation: Arc<Mutex<()>>,
+}
+
+/// Try to reserve one bounded client-handler slot without taking a mutex in
+/// the accept loop. The matching permit releases it when the handler exits.
+pub(super) fn try_acquire_client_slot(active: &AtomicUsize) -> bool {
+    loop {
+        let current = active.load(Ordering::Acquire);
+        if current >= MAX_IPC_CLIENTS {
+            return false;
+        }
+        if active
+            .compare_exchange_weak(current, current + 1, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            return true;
+        }
+    }
+}
+
+struct ClientSlot(Arc<AtomicUsize>);
+
+impl Drop for ClientSlot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 impl AudioDaemon {
@@ -76,6 +108,7 @@ impl AudioDaemon {
             driver_manager: Arc::new(Mutex::new(DriverManager::new())),
             system_state: Arc::new(Mutex::new(SystemwideState::default())),
             key_manager: Arc::new(Mutex::new(KeyManager::default())),
+            pipeline_mutation: Arc::new(Mutex::new(())),
         }
     }
 
@@ -122,36 +155,60 @@ impl AudioDaemon {
             Command::Seek { position } => self.handle_seek(position),
             Command::SetVolume { volume } => self.handle_set_volume(volume),
             Command::ListDevices => self.handle_list_devices(),
-            Command::SetDevice { device } => self.handle_set_device(&device),
+            Command::SetDevice { device } => {
+                let _mutation = self.pipeline_mutation.lock();
+                self.handle_set_device(&device)
+            }
             Command::LoadPlugins {
                 plugins,
                 input_channels,
                 output_channels,
-            } => self.handle_load_plugins_with_channels(plugins, input_channels, output_channels),
+            } => {
+                let _mutation = self.pipeline_mutation.lock();
+                self.handle_load_plugins_with_channels(plugins, input_channels, output_channels)
+            }
             Command::LoadPluginArtifact {
                 artifact,
                 base_generation,
-            } => self.handle_load_plugin_artifact(artifact, base_generation),
+            } => {
+                let _mutation = self.pipeline_mutation.lock();
+                self.handle_load_plugin_artifact(artifact, base_generation)
+            }
             Command::SetInputChannels { channels } => {
+                let _mutation = self.pipeline_mutation.lock();
                 self.handle_set_pipeline_channels(Some(channels), None)
             }
             Command::SetOutputChannels { channels } => {
+                let _mutation = self.pipeline_mutation.lock();
                 self.handle_set_pipeline_channels(None, Some(channels))
             }
             Command::SetPipelineChannels {
                 input_channels,
                 output_channels,
-            } => self.handle_set_pipeline_channels(input_channels, output_channels),
+            } => {
+                let _mutation = self.pipeline_mutation.lock();
+                self.handle_set_pipeline_channels(input_channels, output_channels)
+            }
             Command::GetLoudness => self.handle_get_loudness(),
             Command::GetMetering => self.handle_get_metering(),
             Command::GetPlugins => self.handle_get_plugins(),
             Command::GetAvailablePlugins => self.handle_get_available_plugins(),
-            Command::AddPlugin { plugin, index } => self.handle_add_plugin(plugin, index),
-            Command::RemovePlugin { index } => self.handle_remove_plugin(index),
+            Command::AddPlugin { plugin, index } => {
+                let _mutation = self.pipeline_mutation.lock();
+                self.handle_add_plugin(plugin, index)
+            }
+            Command::RemovePlugin { index } => {
+                let _mutation = self.pipeline_mutation.lock();
+                self.handle_remove_plugin(index)
+            }
             Command::UpdatePlugin { index, parameters } => {
+                let _mutation = self.pipeline_mutation.lock();
                 self.handle_update_plugin(index, parameters)
             }
-            Command::ReorderPlugins { order } => self.handle_reorder_plugins(order),
+            Command::ReorderPlugins { order } => {
+                let _mutation = self.pipeline_mutation.lock();
+                self.handle_reorder_plugins(order)
+            }
             Command::DriverStatus => self.handle_driver_status(),
             Command::Shutdown => {
                 *self.running.lock() = false;
@@ -169,25 +226,38 @@ impl AudioDaemon {
     }
 
     pub(super) fn metering_snapshot(&self) -> Value {
-        let manager = self.manager.lock();
-        let pipeline = self.system_state.lock();
-        let input_idx = pipeline.input_loudness_index();
-        let output_idx = pipeline.output_loudness_index();
-        let fallback_input_channels = pipeline.input_channels();
-        let fallback_output_channels = manager.get_engine_state().num_channels;
-        drop(pipeline);
+        let (input_idx, output_idx, fallback_input_channels) = {
+            let pipeline = self.system_state.lock();
+            (
+                pipeline.input_loudness_index(),
+                pipeline.output_loudness_index(),
+                pipeline.input_channels(),
+            )
+        };
 
-        let input_data = input_idx.and_then(|idx| {
-            manager
-                .get_cached_plugin_data(idx)
-                .and_then(|data| data.downcast_ref::<sotf_audio::LoudnessData>().cloned())
-        });
+        // Snapshot the manager-owned values only after releasing the daemon
+        // state lock. This keeps the lock order one-way and prevents the UI's
+        // polling path from extending a cross-component lock hold while it
+        // clones analyzer payloads.
+        let fallback_output_channels = {
+            let manager = self.manager.lock();
+            manager.get_engine_state().num_channels
+        };
 
-        let output_data = output_idx.and_then(|idx| {
-            manager
-                .get_cached_plugin_data(idx)
-                .and_then(|data| data.downcast_ref::<sotf_audio::LoudnessData>().cloned())
-        });
+        // `get_cached_plugin_data` returns an Arc-backed snapshot from the
+        // engine's lock-free cache. Clone that Arc while the manager mutex is
+        // held, then downcast/clone the analyzer payload after releasing the
+        // mutex. Meter polling must never hold the daemon's manager lock while
+        // copying the (potentially large) loudness vectors.
+        let snapshot_loudness = |index: Option<usize>| {
+            let data = index.and_then(|idx| {
+                let manager = self.manager.lock();
+                manager.get_cached_plugin_data(idx)
+            });
+            data.and_then(|data| data.downcast_ref::<sotf_audio::LoudnessData>().cloned())
+        };
+        let input_data = snapshot_loudness(input_idx);
+        let output_data = snapshot_loudness(output_idx);
 
         let input_json = input_data
             .as_ref()
@@ -430,6 +500,11 @@ impl AudioDaemon {
     }
 
     pub(super) fn handle_load(&self, path: &str) -> Response {
+        let path = std::path::Path::new(path);
+        if let Err(error) = validate_user_load_path(path) {
+            return Response::err(format!("Refusing to load audio file: {error}"));
+        }
+
         let mut manager = self.manager.lock();
         match manager.load_file(path) {
             Ok(_) => Response::ok_empty(),
@@ -438,11 +513,36 @@ impl AudioDaemon {
     }
 
     pub(super) fn handle_play(&self) -> Response {
-        let mut manager = self.manager.lock();
-        let output_device = self.system_state.lock().selected_output_device();
-        match manager.start_playback(output_device, vec![], 2) {
-            Ok(_) => Response::ok_empty(),
-            Err(e) => Response::err(format!("Failed to start playback: {}", e)),
+        let _mutation = self.pipeline_mutation.lock();
+        let driver_status = self.driver_manager.lock().status();
+        let driver_sample_rate = if driver_status.sample_rate > 0 {
+            driver_status.sample_rate
+        } else {
+            48_000
+        };
+        let driver_buffer_frames = if driver_status.buffer_frames > 0 {
+            driver_status.buffer_frames
+        } else {
+            512
+        };
+        let fallback_input_channels = if driver_status.channel_count > 0 {
+            driver_status.channel_count as usize
+        } else {
+            2
+        };
+
+        let plan = {
+            let state = self.system_state.lock();
+            state.prepare_from_spec(state.desired_spec(), fallback_input_channels)
+        };
+        match plan {
+            Ok(plan) => self.apply_pipeline_plan(
+                plan,
+                driver_status,
+                driver_sample_rate,
+                driver_buffer_frames,
+            ),
+            Err(error) => Response::err(format!("Failed to prepare playback pipeline: {error}")),
         }
     }
 
@@ -482,8 +582,10 @@ impl AudioDaemon {
 
     pub(super) fn handle_set_volume(&self, volume: f32) -> Response {
         let manager = self.manager.lock();
-        let _ = manager.set_volume(volume);
-        Response::ok_empty()
+        match manager.set_volume(volume) {
+            Ok(()) => Response::ok_empty(),
+            Err(error) => Response::err(format!("Failed to set volume: {error}")),
+        }
     }
 
     pub(super) fn handle_list_devices(&self) -> Response {
@@ -584,6 +686,61 @@ impl AudioDaemon {
         driver_sample_rate: u32,
         driver_buffer_frames: u32,
     ) -> Response {
+        let fallback_input_channels = if driver_status.channel_count > 0 {
+            driver_status.channel_count as usize
+        } else {
+            2
+        };
+        let previous_plan = {
+            let state = self.system_state.lock();
+            state
+                .applied_spec()
+                .and_then(|spec| state.prepare_from_spec(spec, fallback_input_channels).ok())
+        };
+
+        let response = self.apply_pipeline_plan_once(
+            plan,
+            driver_status.clone(),
+            driver_sample_rate,
+            driver_buffer_frames,
+        );
+        if response.success || previous_plan.is_none() {
+            return response;
+        }
+
+        let Some(previous_plan) = previous_plan else {
+            return response;
+        };
+        let restore = self.apply_pipeline_plan_once(
+            previous_plan,
+            driver_status,
+            driver_sample_rate,
+            driver_buffer_frames,
+        );
+        if restore.success {
+            Response::err(format!(
+                "{}; restored the last working pipeline; retry the requested change",
+                response
+                    .error
+                    .unwrap_or_else(|| "pipeline apply failed".to_string())
+            ))
+        } else {
+            Response::err(format!(
+                "{}; pipeline recovery also failed, restart the daemon",
+                response
+                    .error
+                    .unwrap_or_else(|| "pipeline apply failed".to_string())
+            ))
+        }
+    }
+
+    fn apply_pipeline_plan_once(
+        &self,
+        plan: PipelinePlan,
+        driver_status: driver_common::DriverStatus,
+        driver_sample_rate: u32,
+        driver_buffer_frames: u32,
+    ) -> Response {
         self.driver_manager.lock().set_engine_ready(false);
 
         {
@@ -597,11 +754,11 @@ impl AudioDaemon {
         if driver_status.driver_installed
             && driver_status.channel_count != plan.spec.input_channels as u32
         {
-            let result = self.driver_manager.lock().request_config(DriverConfig {
-                sample_rate: driver_sample_rate,
-                buffer_frames: driver_buffer_frames,
-                channel_count: plan.spec.input_channels as u32,
-            });
+            let result = self.driver_manager.lock().request_config(DriverConfig::new(
+                driver_sample_rate,
+                driver_buffer_frames,
+                plan.spec.input_channels as u32,
+            ));
 
             match result {
                 driver_common::ConfigResult::Accepted
@@ -621,6 +778,7 @@ impl AudioDaemon {
                     log::error!("Failed to set HAL input channels: {}", e);
                     return Response::err(format!("Failed to set HAL input channels: {}", e));
                 }
+                _ => return Response::err("Driver returned an unknown configuration result"),
             }
         }
 
@@ -634,34 +792,15 @@ impl AudioDaemon {
             plan.spec.output_device
         );
 
-        let mut manager = self.manager.lock();
-        let bootstrap_plugins = if plan.runtime_graph.is_some() {
-            build_driver_plugin_chain(Vec::new()).0
-        } else {
-            plan.runtime_plugins.clone()
-        };
-        let mut result = manager
-            .start_hal_playback_with_driver_config(
-                plan.spec.output_device.clone(),
-                bootstrap_plugins,
-                plan.spec.output_channels,
+        let result = {
+            let mut manager = self.manager.lock();
+            Self::start_pipeline_plan(
+                &mut manager,
+                &plan,
                 effective_driver_sample_rate,
                 effective_driver_buffer_frames,
-                plan.spec.input_channels,
             )
-            .map_err(|error| error.to_string());
-        if result.is_ok()
-            && let Some(graph) = plan.runtime_graph.clone()
-        {
-            result = manager.update_plugin_graph(graph);
-            if result.is_err() {
-                let _ = manager.stop();
-            }
-        }
-        if result.is_ok() {
-            manager.set_loudness_plugin_index(plan.output_loudness_index);
-        }
-        drop(manager);
+        };
 
         match result {
             Ok(_) => {
@@ -681,6 +820,43 @@ impl AudioDaemon {
                 Response::err(format!("Failed to load plugin chain: {}", e))
             }
         }
+    }
+
+    /// Start one prepared pipeline, including the graph bootstrap/update
+    /// sequence and loudness monitor selection. Both IPC mutations and the
+    /// driver reconfiguration watcher use this helper so their recovery paths
+    /// cannot drift apart.
+    pub(super) fn start_pipeline_plan(
+        manager: &mut AudioEngineManager,
+        plan: &PipelinePlan,
+        sample_rate: u32,
+        buffer_frames: u32,
+    ) -> Result<(), String> {
+        let bootstrap_plugins = if plan.runtime_graph.is_some() {
+            build_driver_plugin_chain(Vec::new()).0
+        } else {
+            plan.runtime_plugins.clone()
+        };
+        manager
+            .start_hal_playback_with_driver_config(
+                plan.spec.output_device.clone(),
+                bootstrap_plugins,
+                plan.spec.output_channels,
+                sample_rate,
+                buffer_frames,
+                plan.spec.input_channels,
+            )
+            .map_err(|error| error.to_string())?;
+
+        if let Some(graph) = plan.runtime_graph.clone()
+            && let Err(error) = manager.update_plugin_graph(graph)
+        {
+            let _ = manager.stop();
+            return Err(error);
+        }
+
+        manager.set_loudness_plugin_index(plan.output_loudness_index);
+        Ok(())
     }
 
     pub(super) fn handle_load_plugins_with_channels(
@@ -804,10 +980,9 @@ impl AudioDaemon {
         if !channel_geometry_changed
             && self.manager.lock().get_state() != sotf_audio::manager::StreamingState::Idle
         {
-            let runtime_graph = plan
-                .runtime_graph
-                .clone()
-                .expect("graph plan must contain runtime graph");
+            let Some(runtime_graph) = plan.runtime_graph.clone() else {
+                return Response::err("Graph plan did not contain a runtime graph");
+            };
             let mut manager = self.manager.lock();
             if let Err(error) = manager.update_plugin_graph(runtime_graph) {
                 return Response::err(format!(
@@ -940,13 +1115,23 @@ impl AudioDaemon {
                     let engine_type = plugin_type_to_engine_str(pt);
                     !excluded.contains(&engine_type)
                 })
-                .map(|pt| {
+                .filter_map(|pt| {
                     let engine_type = plugin_type_to_engine_str(&pt);
                     let category = plugin_type_category(&pt);
-                    let default_settings = sotf_audio::PluginSettings::default_for(&pt)
-                        .expect("PluginType::all must only contain plugins with default settings");
+                    let default_settings =
+                        match sotf_audio::PluginSettings::default_for(&pt) {
+                            Ok(settings) => settings,
+                            Err(error) => {
+                                log::warn!(
+                                    "Skipping plugin type {} because default settings are unavailable: {}",
+                                    engine_type,
+                                    error
+                                );
+                                return None;
+                            }
+                        };
                     let default_parameters = default_settings.to_plugin_config(48_000.0).parameters;
-                    serde_json::json!({
+                    Some(serde_json::json!({
                         "type": engine_type,
                         "name": pt.name(),
                         "description": pt.description(),
@@ -954,7 +1139,7 @@ impl AudioDaemon {
                         "maturity": format!("{:?}", pt.maturity()),
                         "default_parameters": default_parameters,
                         "parameters": plugin_parameter_descriptors(&default_settings),
-                    })
+                    }))
                 })
                 .collect();
 
@@ -1250,17 +1435,13 @@ impl AudioDaemon {
         drop(manager);
 
         if state != sotf_audio::manager::StreamingState::Idle {
-            log::warn!(
-                "Cannot change sample rate during active playback, will apply on next start"
+            return Response::err(
+                "Cannot change sample rate while playback is active; stop playback and retry",
             );
         }
 
         let mut driver = self.driver_manager.lock();
-        let result = driver.request_config(DriverConfig {
-            sample_rate: rate,
-            buffer_frames: 0, // Keep current
-            channel_count: 0, // Keep current
-        });
+        let result = driver.request_config(DriverConfig::with_sample_rate(rate));
 
         match result {
             driver_common::ConfigResult::Accepted
@@ -1271,6 +1452,7 @@ impl AudioDaemon {
             driver_common::ConfigResult::Error(e) => {
                 Response::err(format!("Failed to set sample rate: {}", e))
             }
+            _ => Response::err("Driver returned an unknown configuration result"),
         }
     }
 
@@ -1282,12 +1464,15 @@ impl AudioDaemon {
             ));
         }
 
+        let state = self.manager.lock().get_state();
+        if state != sotf_audio::manager::StreamingState::Idle {
+            return Response::err(
+                "Cannot change buffer size while playback is active; stop playback and retry",
+            );
+        }
+
         let mut driver = self.driver_manager.lock();
-        let result = driver.request_config(DriverConfig {
-            sample_rate: 0, // Keep current
-            buffer_frames: frames,
-            channel_count: 0, // Keep current
-        });
+        let result = driver.request_config(DriverConfig::with_buffer_frames(frames));
 
         match result {
             driver_common::ConfigResult::Accepted
@@ -1298,6 +1483,7 @@ impl AudioDaemon {
             driver_common::ConfigResult::Error(e) => {
                 Response::err(format!("Failed to set buffer frames: {}", e))
             }
+            _ => Response::err("Driver returned an unknown configuration result"),
         }
     }
 
@@ -1411,7 +1597,12 @@ impl AudioDaemon {
         let socket_path = get_socket_path();
 
         // Ensure socket directory exists with secure permissions
-        ensure_secure_socket_dir(&socket_path)?;
+        ensure_secure_socket_dir(&socket_path).map_err(|error| {
+            format!(
+                "failed to prepare daemon socket directory {}: {error}",
+                socket_path.display()
+            )
+        })?;
 
         // Start driver config watcher thread
         let config_watcher = {
@@ -1419,7 +1610,14 @@ impl AudioDaemon {
             let audio_manager = Arc::clone(&self.manager);
             let running = Arc::clone(&self.running);
             let pipeline = Arc::clone(&self.system_state);
-            spawn_driver_config_watcher(driver_manager, audio_manager, running, pipeline)
+            let pipeline_mutation = Arc::clone(&self.pipeline_mutation);
+            spawn_driver_config_watcher(
+                driver_manager,
+                audio_manager,
+                running,
+                pipeline,
+                pipeline_mutation,
+            )
         };
 
         // Bind the socket. To avoid a TOCTOU race window between an
@@ -1429,7 +1627,12 @@ impl AudioDaemon {
         // unlinking when we have positively confirmed the existing entry
         // is a stale `AF_UNIX` socket -- never a regular file, FIFO, or
         // symlink. See `bind_unix_socket` below for the full strategy.
-        let listener = bind_unix_socket(&socket_path)?;
+        let listener = bind_unix_socket(&socket_path).map_err(|error| {
+            format!(
+                "failed to bind daemon socket {}: {error}",
+                socket_path.display()
+            )
+        })?;
         println!("Audio daemon listening on {}", socket_path.display());
 
         // NOTE: the legacy `/tmp/autoeq_audio.sock` symlink that previous
@@ -1446,6 +1649,7 @@ impl AudioDaemon {
         // Accept connections (non-blocking so Ctrl-C can interrupt)
         listener.set_nonblocking(true)?;
         self.spawn_initial_driver_playback();
+        let active_clients = Arc::new(AtomicUsize::new(0));
 
         loop {
             if !*self.running.lock() {
@@ -1476,9 +1680,19 @@ impl AudioDaemon {
                         }
                     };
 
+                    if !try_acquire_client_slot(&active_clients) {
+                        log::warn!(
+                            "Rejecting IPC client: maximum of {} active clients reached",
+                            MAX_IPC_CLIENTS
+                        );
+                        continue;
+                    }
+
                     let daemon = self.clone();
+                    let client_slot = ClientSlot(Arc::clone(&active_clients));
 
                     std::thread::spawn(move || {
+                        let _client_slot = client_slot;
                         daemon.handle_client(stream, peer_class);
                     });
                 }
@@ -1486,7 +1700,11 @@ impl AudioDaemon {
                     std::thread::sleep(std::time::Duration::from_millis(50));
                 }
                 Err(e) => {
+                    // A persistent listener error must not turn the accept
+                    // loop into a hot spin. Keep the daemon responsive to
+                    // shutdown while applying a small bounded backoff.
                     log::error!("Failed to accept connection: {}", e);
+                    std::thread::sleep(std::time::Duration::from_millis(100));
                 }
             }
         }

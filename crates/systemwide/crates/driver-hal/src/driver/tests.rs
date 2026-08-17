@@ -54,11 +54,17 @@ fn test_hal_driver_is_send() {
 }
 
 #[test]
+fn test_hal_driver_conforms_to_audio_driver_contract() {
+    driver_common::test_support::assert_audio_driver_contract(HalDriver::new())
+        .expect("HalDriver contract");
+}
+
+#[test]
 fn test_hal_driver_as_audio_driver() {
     let driver: Box<dyn AudioDriver> = Box::new(HalDriver::new());
     let status = driver.status();
     assert!(status.platform_supported);
-    assert_eq!(&status.driver_name, "macOS CoreAudio HAL");
+    assert_eq!(status.driver_name, "macOS CoreAudio HAL");
 }
 
 #[test]
@@ -110,11 +116,7 @@ fn test_request_config_writes_daemon_request_fields() {
     let mut driver = HalDriver::new();
     driver.config_buffer = Some(buffer);
 
-    let result = driver.request_config(DriverConfig {
-        sample_rate: 96_000,
-        buffer_frames: 256,
-        channel_count: 0,
-    });
+    let result = driver.request_config(DriverConfig::new(96_000, 256, 0));
 
     assert!(matches!(result, ConfigResult::Accepted));
     ack.join().expect("Config ack thread failed");
@@ -142,11 +144,7 @@ fn test_request_config_zero_values_keep_current_geometry() {
     let mut driver = HalDriver::new();
     driver.config_buffer = Some(buffer);
 
-    let result = driver.request_config(DriverConfig {
-        sample_rate: 0,
-        buffer_frames: 0,
-        channel_count: 0,
-    });
+    let result = driver.request_config(DriverConfig::keep_current());
 
     assert!(matches!(result, ConfigResult::Accepted));
     ack.join().expect("Config ack thread failed");
@@ -177,11 +175,7 @@ fn test_request_config_writes_channel_count_when_capacity_allows() {
     let mut driver = HalDriver::new();
     driver.config_buffer = Some(buffer);
 
-    let result = driver.request_config(DriverConfig {
-        sample_rate: 48_000,
-        buffer_frames: 512,
-        channel_count: 10,
-    });
+    let result = driver.request_config(DriverConfig::new(48_000, 512, 10));
 
     assert!(matches!(result, ConfigResult::Accepted));
     ack.join().expect("Config ack thread failed");
@@ -190,7 +184,8 @@ fn test_request_config_writes_channel_count_when_capacity_allows() {
         .config_buffer
         .as_ref()
         .expect("Expected config buffer");
-    assert_eq!(buffer.channel_count(), 10);
+    assert_eq!(buffer.channel_count(), 2);
+    assert_eq!(buffer.requested_channel_count(), 10);
     assert_eq!(buffer.config_source(), 2);
     assert_eq!(buffer.config_status(), 1);
 }
@@ -204,11 +199,7 @@ fn test_request_config_times_out_without_hal_ack() {
     let mut driver = HalDriver::new();
     driver.config_buffer = Some(buffer);
 
-    let result = driver.request_config(DriverConfig {
-        sample_rate: 96_000,
-        buffer_frames: 256,
-        channel_count: 0,
-    });
+    let result = driver.request_config(DriverConfig::new(96_000, 256, 0));
 
     assert!(matches!(result, ConfigResult::Error(_)));
 }

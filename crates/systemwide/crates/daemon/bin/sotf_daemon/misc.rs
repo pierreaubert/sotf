@@ -194,9 +194,12 @@ pub(super) fn parameter_descriptor_to_json(spec: &sotf_plugins::param_specs::Par
         },
     });
 
-    let object = descriptor
-        .as_object_mut()
-        .expect("descriptor starts as a JSON object");
+    let Some(object) = descriptor.as_object_mut() else {
+        // The value is constructed above with json! and should always be an
+        // object. Keep this helper total anyway so malformed future edits do
+        // not panic an IPC handler while building plugin metadata.
+        return descriptor;
+    };
 
     match spec.param_type {
         ParamType::Float {
@@ -516,5 +519,77 @@ pub(super) fn list_audio_devices() -> Result<Vec<serde_json::Value>, String> {
         Err("No audio devices found".to_string())
     } else {
         Ok(devices)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{bind_unix_socket, socket_is_unix_socket};
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn bind_unix_socket_accepts_a_fresh_path_and_reports_socket_type() {
+        let directory = tempdir().expect("create temporary directory");
+        let path = directory.path().join("daemon.sock");
+
+        let listener = bind_unix_socket(&path).expect("bind fresh socket");
+        assert!(socket_is_unix_socket(&path));
+        drop(listener);
+    }
+
+    #[test]
+    fn bind_unix_socket_rejects_a_live_daemon_without_unlinking_it() {
+        let directory = tempdir().expect("create temporary directory");
+        let path = directory.path().join("daemon.sock");
+        let listener = bind_unix_socket(&path).expect("bind live socket");
+
+        let error = bind_unix_socket(&path).expect_err("live daemon must remain authoritative");
+        assert_eq!(error.kind(), std::io::ErrorKind::AddrInUse);
+        assert!(socket_is_unix_socket(&path));
+        drop(listener);
+    }
+
+    #[test]
+    fn bind_unix_socket_rejects_regular_files_without_removing_them() {
+        let directory = tempdir().expect("create temporary directory");
+        let path = directory.path().join("daemon.sock");
+        fs::write(&path, b"do not remove").expect("create regular file");
+
+        assert!(bind_unix_socket(&path).is_err());
+        assert_eq!(
+            fs::read(&path).expect("read preserved file"),
+            b"do not remove"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bind_unix_socket_rejects_symlinks_without_following_or_removing_them() {
+        let directory = tempdir().expect("create temporary directory");
+        let target = directory.path().join("target");
+        let path = directory.path().join("daemon.sock");
+        fs::write(&target, b"target file").expect("create symlink target");
+        std::os::unix::fs::symlink(&target, &path).expect("create symlink");
+
+        assert!(bind_unix_socket(&path).is_err());
+        assert!(
+            fs::symlink_metadata(&path)
+                .expect("read preserved symlink")
+                .file_type()
+                .is_symlink()
+        );
+    }
+
+    #[test]
+    fn bind_unix_socket_reclaims_a_stale_socket_only() {
+        let directory = tempdir().expect("create temporary directory");
+        let path = directory.path().join("daemon.sock");
+        let stale = bind_unix_socket(&path).expect("bind stale fixture");
+        drop(stale);
+
+        let replacement = bind_unix_socket(&path).expect("replace stale socket");
+        assert!(socket_is_unix_socket(&path));
+        drop(replacement);
     }
 }
