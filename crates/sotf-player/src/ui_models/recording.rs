@@ -182,24 +182,7 @@ impl RecordingScreenModel {
     /// Filesystem-safe name used for the saved recording directory and
     /// session-level file names.
     pub fn safe_save_name(&self) -> String {
-        let safe: String = self
-            .save_name
-            .trim()
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == '_' || c == '-' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect();
-
-        if safe.is_empty() {
-            "recording".to_string()
-        } else {
-            safe
-        }
+        crate::recording_helpers::sanitize_recording_name(&self.save_name)
     }
 
     /// Directory implied by the user-selected base directory and current
@@ -352,6 +335,147 @@ impl RecordingScreenModel {
         if map.is_empty() { None } else { Some(map) }
     }
 
+    /// Build the complete [`autoeq::roomeq::RecordingConfiguration`]
+    /// persisted alongside the measurements in `recordings.json`.
+    ///
+    /// Single canonical builder shared by all frontends (fixes B4: the TUI
+    /// previously dropped bass-anchor / SPL / sweep metadata via
+    /// `..Default::default()`). The GD-Opt sweep metadata
+    /// (`bass_octave_duration_s`, `pre_silence_s`, `post_silence_s`) is only
+    /// persisted when the actual stimulus is a sweep — frontends must route
+    /// sweep capture through
+    /// [`crate::recording_helpers::capture_signal_params`] with these same
+    /// values so the saved metadata describes the audio that was really
+    /// played (B1).
+    ///
+    /// `recording_directory` is the session output directory; `None` or an
+    /// empty string omits the field.
+    pub fn build_recording_configuration(
+        &self,
+        recording_directory: Option<&str>,
+    ) -> autoeq::roomeq::RecordingConfiguration {
+        let is_sweep = self.signal_type == RecordingSignalType::Sweep;
+        autoeq::roomeq::RecordingConfiguration {
+            playback_device_name: Some(self.playback_config.device_name.clone()),
+            playback_device_id: Some(self.playback_config.device_id.clone()),
+            playback_sample_rate: Some(self.playback_config.sample_rate),
+            playback_channels: Some(self.playback_config.num_channels),
+            speaker_configuration: Some(
+                self.playback_config
+                    .speaker_configuration
+                    .as_str()
+                    .to_string(),
+            ),
+            channel_names: Some(
+                self.playback_config
+                    .channel_mappings
+                    .iter()
+                    .map(|m| m.group_name.clone())
+                    .collect(),
+            ),
+            recording_device_name: Some(self.recording_config.device_name.clone()),
+            recording_device_id: Some(self.recording_config.device_id.clone()),
+            recording_sample_rate: Some(self.recording_config.sample_rate),
+            recording_channels: Some(self.recording_config.num_channels),
+            mic_calibration_path: self.mic_calibration_path.clone().filter(|s| !s.is_empty()),
+            mic_calibration_paths: if self.mic_calibration_paths.is_empty() {
+                None
+            } else {
+                Some(self.mic_calibration_paths.clone())
+            },
+            recording_directory: recording_directory
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
+            signal_type: Some(self.signal_type.as_str().to_string()),
+            signal_duration_secs: Some(self.signal_duration_secs),
+            signal_level_db: Some(self.signal_level_db),
+            sweep_start_freq: Some(self.sweep_start_freq),
+            sweep_end_freq: Some(self.sweep_end_freq),
+            room_dimensions: self.room_dimensions_for_save(),
+            setup_description: {
+                let s = self.setup_description.trim();
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s.to_string())
+                }
+            },
+            channel_speakers: self.channel_speakers_map_for_save(),
+            // Translate the engine `ProbeDelayResults` into the
+            // autoeq-local `ProbeResultsLegacy` mirror so the RoomConfig
+            // JSON only depends on autoeq types.
+            probe_results: self.probe_capture.results.as_ref().map(|r| {
+                autoeq::roomeq::ProbeResultsLegacy {
+                    channels: r
+                        .channels
+                        .iter()
+                        .map(|c| autoeq::roomeq::ProbeChannelResultLegacy {
+                            channel_name: c.channel_name.clone(),
+                            channel_index: c.channel_index,
+                            arrival_ms: c.arrival_ms,
+                            gain_db: c.gain_db,
+                            snr_db: c.snr_db,
+                        })
+                        .collect(),
+                    sample_rate: r.sample_rate,
+                    alignment_delays_ms: r.alignment_delays_ms.clone(),
+                }
+            }),
+            probe_wav_relative: self
+                .probe_capture
+                .wav_path
+                .as_ref()
+                .and_then(|p| std::path::Path::new(p).file_name())
+                .map(|f| f.to_string_lossy().to_string()),
+            bass_anchor_results: self.bass_anchor_capture.results.as_ref().map(|r| {
+                autoeq::roomeq::BassAnchorResultsLegacy {
+                    channels: r
+                        .channels
+                        .iter()
+                        .map(|c| autoeq::roomeq::BassAnchorChannelResultLegacy {
+                            channel_name: c.channel_name.clone(),
+                            channel_index: c.channel_index,
+                            bass_anchor_phase_deg: c.bass_anchor_phase_deg,
+                            bass_anchor_magnitude: c.bass_anchor_magnitude,
+                            bass_anchor_stability_deg: c.bass_anchor_stability_deg,
+                            bass_anchor_loopback_phase_deg: c.bass_anchor_loopback_phase_deg,
+                            bass_anchor_coherence: c.bass_anchor_coherence,
+                        })
+                        .collect(),
+                    sample_rate: r.sample_rate,
+                    bass_freq_hz: r.bass_freq_hz,
+                    bass_duration_s: r.bass_duration_s,
+                }
+            }),
+            bass_anchor_wav_relative: self
+                .bass_anchor_capture
+                .wav_path
+                .as_ref()
+                .and_then(|p| std::path::Path::new(p).file_name())
+                .map(|f| f.to_string_lossy().to_string()),
+            // GD-Opt v2 sweep metadata — only persisted when the stimulus
+            // is actually a sweep generated through `capture_signal_params`
+            // with these same values (B1).
+            bass_octave_duration_s: is_sweep.then_some(self.bass_octave_duration_s),
+            pre_silence_s: is_sweep.then_some(self.pre_silence_s),
+            post_silence_s: if is_sweep { self.post_silence_s } else { None },
+            // Remaining GD-Opt v2 fields (later phases): leave as None.
+            sweep_level_db_spl: None,
+            num_sweeps: None,
+            coherence_threshold: None,
+            bass_probe_freq_hz: Some(self.bass_anchor_capture.bass_freq_hz),
+            bass_probe_duration_s: Some(self.bass_anchor_capture.bass_duration_s),
+            mic_phase_calibration_path: None,
+            mic_phase_calibration_paths: None,
+            spl_calibration: self.spl_calibration_capture.to_spl_calibration(),
+            recording_seed: None,
+            num_positions: {
+                let n = self.recording_config.num_positions.max(1);
+                if n > 1 { Some(n) } else { None }
+            },
+        }
+    }
+
     /// Currently-active mic-calibration path string (read-only). Returns
     /// `""` when `editing_channel` is `None` or when the channel slot is empty.
     pub fn active_mic_cal_path(&self, editing_channel: Option<usize>) -> &str {
@@ -422,5 +546,128 @@ impl RecordingScreenModel {
     ///   6..6+N-1 per-playback-channel speaker entries
     pub fn save_field_count(&self) -> usize {
         6 + self.playback_config.channel_mappings.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::recording_types::{
+        BassAnchorChannelResult, BassAnchorResults, DelayProbeChannelResult, DelayProbeResults,
+        SplCalibrationResult,
+    };
+
+    #[test]
+    fn build_recording_configuration_persists_devices_and_signal() {
+        let mut model = RecordingScreenModel::default();
+        model.playback_config.device_name = "DAC".to_string();
+        model.recording_config.device_name = "Mic".to_string();
+        model.recording_config.sample_rate = 96_000;
+        model.mic_calibration_path = Some("global-cal.txt".to_string());
+        model.mic_calibration_paths = vec![Some("mic0.txt".to_string()), None];
+
+        let config = model.build_recording_configuration(Some("/tmp/session"));
+
+        assert_eq!(config.playback_device_name.as_deref(), Some("DAC"));
+        assert_eq!(config.recording_device_name.as_deref(), Some("Mic"));
+        assert_eq!(config.recording_sample_rate, Some(96_000));
+        assert_eq!(config.signal_type.as_deref(), Some("Sweep"));
+        assert_eq!(
+            config.mic_calibration_path.as_deref(),
+            Some("global-cal.txt")
+        );
+        assert_eq!(
+            config.mic_calibration_paths,
+            Some(vec![Some("mic0.txt".to_string()), None])
+        );
+        assert_eq!(config.recording_directory.as_deref(), Some("/tmp/session"));
+        assert_eq!(config.num_positions, None);
+    }
+
+    #[test]
+    fn build_recording_configuration_gates_sweep_metadata_on_signal_type() {
+        // Sweep sessions persist the GD-Opt metadata the capture used.
+        let sweep = RecordingScreenModel::default().build_recording_configuration(None);
+        assert_eq!(sweep.bass_octave_duration_s, Some(3.0));
+        assert_eq!(sweep.pre_silence_s, Some(2.0));
+        assert_eq!(sweep.post_silence_s, None);
+        assert_eq!(sweep.recording_directory, None);
+
+        // Non-sweep stimuli must not claim sweep metadata (B1).
+        let mut noise = RecordingScreenModel::default();
+        noise.signal_type = RecordingSignalType::PinkNoise;
+        let noise = noise.build_recording_configuration(None);
+        assert_eq!(noise.bass_octave_duration_s, None);
+        assert_eq!(noise.pre_silence_s, None);
+        assert_eq!(noise.post_silence_s, None);
+    }
+
+    #[test]
+    fn build_recording_configuration_includes_probe_bass_anchor_and_spl() {
+        let mut model = RecordingScreenModel::default();
+        model.probe_capture.results = Some(DelayProbeResults {
+            channels: vec![DelayProbeChannelResult {
+                channel_name: "L".to_string(),
+                channel_index: 0,
+                arrival_ms: 1.5,
+                gain_db: -2.0,
+                snr_db: 40.0,
+            }],
+            sample_rate: 48_000,
+            alignment_delays_ms: vec![0.0],
+        });
+        model.probe_capture.wav_path = Some("/tmp/session/probe.wav".to_string());
+        model.bass_anchor_capture.results = Some(BassAnchorResults {
+            channels: vec![BassAnchorChannelResult {
+                channel_name: "L".to_string(),
+                channel_index: 0,
+                bass_anchor_phase_deg: 12.0,
+                bass_anchor_magnitude: 0.8,
+                bass_anchor_stability_deg: 5.0,
+                bass_anchor_loopback_phase_deg: Some(1.0),
+                bass_anchor_coherence: Some(0.95),
+            }],
+            sample_rate: 48_000,
+            bass_freq_hz: 30.0,
+            bass_duration_s: 2.0,
+        });
+        model.spl_calibration_capture.engine_result = Some(SplCalibrationResult {
+            sample_rate: 48_000,
+            peak_sample_level: 0.4,
+            rms_sample_level: 0.25,
+            reference_freq_hz: 1000.0,
+            output_channel: 0,
+        });
+        model.spl_calibration_capture.reported_db_spl = Some(75.0);
+
+        let config = model.build_recording_configuration(None);
+
+        let probe = config.probe_results.expect("probe results persisted");
+        assert_eq!(probe.channels.len(), 1);
+        assert_eq!(probe.channels[0].channel_name, "L");
+        assert_eq!(probe.channels[0].arrival_ms, 1.5);
+        assert_eq!(probe.sample_rate, 48_000);
+        assert_eq!(config.probe_wav_relative.as_deref(), Some("probe.wav"));
+
+        let bass = config.bass_anchor_results.expect("bass anchor persisted");
+        assert_eq!(bass.channels.len(), 1);
+        assert_eq!(bass.channels[0].bass_anchor_phase_deg, 12.0);
+        assert_eq!(bass.bass_freq_hz, 30.0);
+
+        let spl = config.spl_calibration.expect("spl calibration persisted");
+        assert_eq!(spl.reported_db_spl, 75.0);
+        assert_eq!(spl.reference_freq_hz, 1000.0);
+    }
+
+    #[test]
+    fn build_recording_configuration_num_positions_only_when_multi() {
+        let mut model = RecordingScreenModel::default();
+        model.recording_config.num_positions = 3;
+        assert_eq!(
+            model.build_recording_configuration(None).num_positions,
+            Some(3)
+        );
+        model.recording_config.num_positions = 1;
+        assert_eq!(model.build_recording_configuration(None).num_positions, None);
     }
 }

@@ -36,6 +36,7 @@ pub mod player;
 pub mod plugin_categories;
 pub mod plugin_graph;
 pub mod queue;
+pub mod recording_helpers;
 pub mod recording_types;
 pub mod room_eq_types;
 pub mod spinorama_eq_types;
