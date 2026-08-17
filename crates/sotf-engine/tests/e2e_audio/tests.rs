@@ -57,6 +57,7 @@ fn test_loopback_tone() {
         Some(device.as_str()),
         None,
         None,
+        None,
     );
     if let Err(e) = &result {
         println!("  Note: Analysis failed (expected for tones): {}", e);
@@ -159,6 +160,7 @@ fn test_loopback_pink_noise() {
         config.record_channel,
         Some(device.as_str()),
         Some(device.as_str()),
+        None,
         None,
         None,
     );

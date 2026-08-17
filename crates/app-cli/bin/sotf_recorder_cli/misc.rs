@@ -337,6 +337,7 @@ pub fn record_signal(
             device.as_deref(),  // Optional input device name
             effective_mic_comp, // Per-channel or global microphone compensation
             None,               // Optional sweep range
+            None,               // Optional cancel flag
         )?;
 
         println!("  ✓ Recording complete");

@@ -1383,6 +1383,7 @@ impl PlayerView {
                     in_dev,
                     mic_calibrations[0].as_deref(),
                     sweep_range,
+                    None,
                 )
                 .map(|r| vec![r])
             } else {
@@ -1399,6 +1400,7 @@ impl PlayerView {
                     in_dev,
                     &mic_calibrations,
                     sweep_range,
+                    None,
                 )
             };
 

@@ -1,7 +1,13 @@
 #[cfg(not(target_os = "ios"))]
+use super::consts::CANCELLED_ERR;
+#[cfg(not(target_os = "ios"))]
 use super::misc::capture_capacity;
 #[cfg(not(target_os = "ios"))]
+use super::misc::check_capture_clipping;
+#[cfg(not(target_os = "ios"))]
 use super::misc::drain_capture;
+#[cfg(not(target_os = "ios"))]
+use super::types::{CancelFlag, cancel_requested};
 #[cfg(not(target_os = "ios"))]
 use super::write::write_selected_channel_to_ring;
 use super::write::write_wav_file;
@@ -71,6 +77,10 @@ pub(super) fn resample_reference_signal(
 ///
 /// Plays back a signal to a specific output channel while simultaneously
 /// recording from a specific input channel, then analyzes the result.
+///
+/// `cancel` is a cooperative cancellation flag (see [`CancelFlag`]): when
+/// set, the capture stops the streams and returns
+/// `Err(CANCELLED_ERR)` ("cancelled") instead of analyzing.
 #[cfg(not(target_os = "ios"))]
 #[allow(clippy::too_many_arguments)]
 pub fn record_and_analyze(
@@ -85,11 +95,16 @@ pub fn record_and_analyze(
     input_device_name: Option<&str>,
     microphone_compensation_path: Option<&str>,
     sweep_range: Option<(f32, f32)>,
+    cancel: Option<CancelFlag>,
 ) -> Result<crate::signal_analysis::AnalysisResult, String> {
     use crate::AudioEngineManager;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::thread::sleep;
     use std::time::Duration;
+
+    if cancel_requested(cancel.as_ref()) {
+        return Err(CANCELLED_ERR.to_string());
+    }
 
     log::debug!("[record_and_analyze] Starting playback and recording...");
     log::debug!("[record_and_analyze]   Playback file: {:?}", temp_wav_path);
@@ -239,7 +254,9 @@ pub fn record_and_analyze(
                 );
                 recorded_count_callback.fetch_add(written, Ordering::Relaxed);
                 if written < frames {
-                    recorded_overruns_callback.fetch_add(1, Ordering::Relaxed);
+                    // Count the actual dropped samples, not just the
+                    // number of callbacks that saw a shortfall.
+                    recorded_overruns_callback.fetch_add(frames - written, Ordering::Relaxed);
                     crate::rate_limited_log!(
                         warn,
                         5,
@@ -267,6 +284,12 @@ pub fn record_and_analyze(
 
     // Small delay to let recording buffer fill
     sleep(Duration::from_millis(100));
+
+    // Honor cancellation before starting playback (mirrors the aux path).
+    if cancel_requested(cancel.as_ref()) {
+        std::mem::drop(input_stream);
+        return Err(CANCELLED_ERR.to_string());
+    }
 
     // Start playback using AudioEngineManager
     // Allow virtual output devices (BlackHole, loopback) — recording intentionally
@@ -383,12 +406,18 @@ pub fn record_and_analyze(
     let total_wait = Duration::from_secs_f64(expected_duration + 3.0);
     let check_interval = Duration::from_millis(50);
     let mut elapsed = Duration::ZERO;
-    let mut last_sample_count = 0;
-    let mut stable_count = 0;
+    let mut cancelled = false;
 
     while elapsed < total_wait {
         sleep(check_interval);
         elapsed += check_interval;
+
+        // Honor cancellation between polls (worst-case ~50 ms latency).
+        if cancel_requested(cancel.as_ref()) {
+            cancelled = true;
+            log::info!("[record_and_analyze] Cancellation requested — aborting capture");
+            break;
+        }
 
         // Check recording progress
         let current_sample_count = recorded_count.load(Ordering::Relaxed);
@@ -404,20 +433,6 @@ pub fn record_and_analyze(
             );
         }
 
-        // Check if recording has stopped growing (playback finished)
-        if current_sample_count == last_sample_count && current_sample_count > 0 {
-            stable_count += 1;
-            // If sample count hasn't changed for 150ms, assume playback is done
-            if stable_count >= 3 {
-                // 3 * 50ms = 150ms
-                log::debug!("[record_and_analyze] Recording stable, playback likely complete");
-                break;
-            }
-        } else {
-            stable_count = 0;
-        }
-        last_sample_count = current_sample_count;
-
         // Check for events
         manager.try_recv_event();
         let state = manager.get_state();
@@ -430,8 +445,11 @@ pub fn record_and_analyze(
 
     // Add a buffer after playback finishes to capture any tail/latency
     // 1 second is generous but ensures we don't cut off the end of the sweep
-    // on high-latency systems (e.g. large buffers, wireless, or complex routing)
-    sleep(Duration::from_millis(1000));
+    // on high-latency systems (e.g. large buffers, wireless, or complex routing).
+    // On cancel, skip the tail capture so the UI gets snappy feedback.
+    if !cancelled {
+        sleep(Duration::from_millis(1000));
+    }
 
     // Stop playback
     manager
@@ -444,6 +462,10 @@ pub fn record_and_analyze(
 
     // Small delay to ensure all buffers are flushed
     sleep(Duration::from_millis(100));
+
+    if cancelled {
+        return Err(CANCELLED_ERR.to_string());
+    }
 
     // Get recorded samples
     let recorded = drain_capture(
@@ -486,13 +508,21 @@ pub fn record_and_analyze(
         rms_db,
     );
     if max_amplitude < 1e-6 {
-        log::warn!("[record_and_analyze] WARNING: Recorded signal is essentially silence!");
-    } else if rms_db < -60.0 {
+        // Consistent with the aux capture path (`play_per_channel_and_record_mono`):
+        // a silent take must not silently succeed and feed garbage to roomeq.
+        return Err(format!(
+            "[record_and_analyze] Recording appears silent (peak {:.6}). Check mic, input channel, and output device availability.",
+            max_amplitude
+        ));
+    }
+    if rms_db < -60.0 {
         log::warn!(
             "[record_and_analyze] WARNING: Recorded signal is very quiet ({:.1} dBFS RMS)",
             rms_db
         );
     }
+    // Refuse hard-clipped takes; warn on moderate clipping.
+    check_capture_clipping(&recorded, "record_and_analyze")?;
 
     // Write recorded samples to WAV file as MONO (1 channel)
     log::info!(
@@ -564,6 +594,10 @@ pub fn record_and_analyze(
 /// Each channel's WAV and CSV are written to `recorded_wav_paths` / `csv_paths`.
 ///
 /// `mic_calibrations` must be the same length as `input_channels` (use `None` for uncalibrated).
+///
+/// `cancel` is a cooperative cancellation flag (see [`CancelFlag`]): when
+/// set, the capture stops the streams and returns
+/// `Err(CANCELLED_ERR)` ("cancelled") instead of analyzing.
 #[cfg(not(target_os = "ios"))]
 #[allow(clippy::too_many_arguments)]
 pub fn record_and_analyze_multi(
@@ -578,11 +612,16 @@ pub fn record_and_analyze_multi(
     input_device_name: Option<&str>,
     mic_calibrations: &[Option<String>],
     sweep_range: Option<(f32, f32)>,
+    cancel: Option<CancelFlag>,
 ) -> Result<Vec<crate::signal_analysis::AnalysisResult>, String> {
     use crate::AudioEngineManager;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::thread::sleep;
     use std::time::Duration;
+
+    if cancel_requested(cancel.as_ref()) {
+        return Err(CANCELLED_ERR.to_string());
+    }
 
     assert_eq!(input_channels.len(), recorded_wav_paths.len());
     assert_eq!(input_channels.len(), csv_paths.len());
@@ -697,7 +736,9 @@ pub fn record_and_analyze_multi(
                     );
                     counts_callback[mic_i].fetch_add(written, Ordering::Relaxed);
                     if ch_idx < hardware_input_channels && written < frames {
-                        recorded_overruns_callback.fetch_add(1, Ordering::Relaxed);
+                        // Count the actual dropped samples, not just the
+                        // number of callbacks that saw a shortfall.
+                        recorded_overruns_callback.fetch_add(frames - written, Ordering::Relaxed);
                         crate::rate_limited_log!(
                             warn,
                             5,
@@ -723,6 +764,12 @@ pub fn record_and_analyze_multi(
         .map_err(|e| format!("Failed to start input stream: {}", e))?;
 
     sleep(Duration::from_millis(100));
+
+    // Honor cancellation before starting playback (mirrors the aux path).
+    if cancel_requested(cancel.as_ref()) {
+        std::mem::drop(input_stream);
+        return Err(CANCELLED_ERR.to_string());
+    }
 
     // --- Start playback ---
     let mut manager = AudioEngineManager::new();
@@ -792,12 +839,18 @@ pub fn record_and_analyze_multi(
     let total_wait = Duration::from_secs_f64(expected_duration + 3.0);
     let check_interval = Duration::from_millis(50);
     let mut elapsed = Duration::ZERO;
-    let mut last_sample_count = 0usize;
-    let mut stable_count = 0;
+    let mut cancelled = false;
 
     while elapsed < total_wait {
         sleep(check_interval);
         elapsed += check_interval;
+
+        // Honor cancellation between polls (worst-case ~50 ms latency).
+        if cancel_requested(cancel.as_ref()) {
+            cancelled = true;
+            log::info!("[record_and_analyze_multi] Cancellation requested — aborting capture");
+            break;
+        }
 
         let current_sample_count = recorded_counts[0].load(Ordering::Relaxed);
 
@@ -810,28 +863,25 @@ pub fn record_and_analyze_multi(
             );
         }
 
-        if current_sample_count == last_sample_count && current_sample_count > 0 {
-            stable_count += 1;
-            if stable_count >= 3 {
-                break;
-            }
-        } else {
-            stable_count = 0;
-        }
-        last_sample_count = current_sample_count;
-
         manager.try_recv_event();
         if manager.get_state() == crate::StreamingState::Idle {
             break;
         }
     }
 
-    sleep(Duration::from_millis(1000));
+    // On cancel, skip the tail-capture sleep so the UI gets snappy feedback.
+    if !cancelled {
+        sleep(Duration::from_millis(1000));
+    }
     manager
         .stop()
         .map_err(|e| format!("Failed to stop playback: {}", e))?;
     std::mem::drop(input_stream);
     sleep(Duration::from_millis(100));
+
+    if cancelled {
+        return Err(CANCELLED_ERR.to_string());
+    }
 
     // --- Analyze each mic channel independently ---
     let analysis_sample_rate = input_sample_rate;
@@ -864,6 +914,18 @@ pub fn record_and_analyze_multi(
         if recorded.is_empty() {
             return Err(format!("No samples recorded on mic {}", mic_i));
         }
+
+        // Consistent with the single-mic sweep path and the aux capture
+        // path: a silent take must not silently succeed.
+        let peak = recorded.iter().map(|s| s.abs()).fold(0.0_f32, f32::max);
+        if peak < 1e-6 {
+            return Err(format!(
+                "[record_and_analyze_multi] Mic {} recording appears silent (peak {:.6}). Check mic, input channel, and output device availability.",
+                mic_i, peak
+            ));
+        }
+        // Refuse hard-clipped takes; warn on moderate clipping.
+        check_capture_clipping(&recorded, &format!("record_and_analyze_multi mic {mic_i}"))?;
 
         // Write WAV
         write_wav_file(

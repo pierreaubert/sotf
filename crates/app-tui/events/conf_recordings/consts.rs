@@ -390,6 +390,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 in_dev,
                 &calibrations,
                 sweep_range,
+                None,
             )
             .map(|mut results| {
                 if loopback_input.is_some() {
@@ -410,6 +411,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 in_dev,
                 mic_calibration.as_deref(),
                 sweep_range,
+                None,
             )
             .map(|result| vec![result])
         };

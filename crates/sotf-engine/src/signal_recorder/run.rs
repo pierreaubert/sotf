@@ -1,5 +1,6 @@
 use super::consts::DEFAULT_AUXILIARY_SIGNAL_LEVEL_DB;
 use super::measurement::measurement_amplitude_from_level_db;
+use super::misc::analyze_clipping;
 use super::types::BassAnchorResults;
 use super::types::CancelFlag;
 use super::types::SplCalibrationResult;
@@ -217,7 +218,7 @@ fn run_bass_anchor_core(
         fade_ms,
         num_windows,
         sample_rate,
-        signal_level_db.clamp(-40.0, 20.0),
+        signal_level_db.clamp(-40.0, 0.0),
         if loopback_input_channel.is_some() {
             " + loopback ref"
         } else {
@@ -363,6 +364,19 @@ pub fn run_spl_calibration(
     let stable = &capture.recorded[start..end];
 
     let peak = stable.iter().map(|s| s.abs()).fold(0.0_f32, f32::max);
+
+    // A clipped calibration tone silently corrupts spl_offset_db — refuse
+    // instead of returning a plausible-looking but wrong level.
+    let clip = analyze_clipping(stable);
+    if clip.clipped_samples > 0 {
+        return Err(format!(
+            "[run_spl_calibration] Calibration tone clipped at the mic: {} samples at full scale \
+             ({:.2}% of the stable window, peak {peak:.4}). Lower the output level or mic gain \
+             and re-run the calibration.",
+            clip.clipped_samples, clip.clip_percent,
+        ));
+    }
+
     let rms = {
         let sum_sq: f64 = stable.iter().map(|&s| (s as f64) * (s as f64)).sum();
         ((sum_sq / stable.len() as f64).sqrt()) as f32

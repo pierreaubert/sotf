@@ -1,8 +1,35 @@
 use super::build::build_octave_sweep_with_silence;
+use super::misc::prepare_signal;
+use super::signal_params::validate_signal_params;
 use super::signal_type::SignalType;
 use super::types::SignalParams;
 use crate::signals::*;
 use std::path::PathBuf;
+
+/// One-stop measurement stimulus preparation: validate the parameters,
+/// generate the raw signal, and apply the standard 20 ms fades + 250 ms
+/// pre/post silence padding ([`prepare_signal`]).
+///
+/// CLI/TUI/GPUI should all route through this single entry point so every
+/// frontend gets identical validation (Nyquist, start < end, amplitude
+/// range) and a click-free, padded stimulus instead of re-implementing
+/// the steps piecemeal.
+///
+/// `SignalType::Sweep` with [`SignalParams::OctaveSweep`] is self-timed:
+/// `duration` is ignored by generation (as in [`generate_signal`]) but
+/// must still be positive for validation. The octave sweep already
+/// carries its own silence windows; the extra padding simply extends
+/// them and the fades land on silence.
+pub fn prepare_measurement_signal(
+    signal_type: SignalType,
+    params: &SignalParams,
+    duration: f32,
+    sample_rate: u32,
+) -> Result<Vec<f32>, String> {
+    validate_signal_params(signal_type, params, duration, sample_rate)?;
+    let signal = generate_signal(signal_type, params, duration, sample_rate)?;
+    Ok(prepare_signal(signal, sample_rate))
+}
 
 /// Generate a signal based on parameters
 pub fn generate_signal(

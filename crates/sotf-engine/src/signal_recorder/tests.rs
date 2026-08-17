@@ -1,20 +1,32 @@
 use super::build::build_octave_sweep_with_silence;
+use super::consts::CANCELLED_ERR;
 use super::consts::DEFAULT_MLS_ORDER;
 use super::consts::PROBE_SEED;
 use super::generate::generate_output_filenames;
 use super::generate::generate_output_filenames_stereo;
 use super::generate::generate_signal;
+use super::generate::prepare_measurement_signal;
+use super::measurement::measurement_amplitude_from_level_db;
+use super::misc::CLIP_BLOCK_SAMPLES;
+use super::misc::CLIP_THRESHOLD;
+use super::misc::analyze_clipping;
+#[cfg(not(target_os = "ios"))]
+use super::misc::check_capture_clipping;
 use super::misc::parse_channel_list;
 use super::misc::prepare_signal;
 use super::probe::gen_schroeder_narrowband_probe;
 #[cfg(not(target_os = "ios"))]
 use super::record::record_and_analyze;
 #[cfg(not(target_os = "ios"))]
+use super::record::record_and_analyze_multi;
+#[cfg(not(target_os = "ios"))]
 use super::record::resample_reference_signal;
 use super::recording_session::RecordingSession;
 use super::signal_params::sweep_params_from_config;
 use super::signal_params::validate_signal_params;
 use super::signal_type::SignalType;
+#[cfg(not(target_os = "ios"))]
+use super::types::CancelFlag;
 use super::types::ChannelRecordingInfo;
 use super::types::SignalParams;
 use super::types::analyze_bass_anchor_recording;
@@ -24,6 +36,8 @@ use super::write::write_wav_file;
 use hound::SampleFormat;
 use hound::WavReader;
 use std::path::{Path, PathBuf};
+#[cfg(not(target_os = "ios"))]
+use std::sync::atomic::Ordering;
 use std::str::FromStr;
 use tempfile::tempdir;
 
@@ -711,6 +725,7 @@ fn test_record_and_analyze_signature() {
                 None,        // input_device_name
                 None,        // microphone_compensation_path
                 None,        // sweep_range
+                None,        // cancel flag
             );
         }
     };
@@ -1552,4 +1567,167 @@ fn test_validate_signal_params_mismatch_ok() {
         amp: 0.5,
     };
     assert!(validate_signal_params(SignalType::Tone, &p, 1.0, sample_rate).is_ok());
+}
+
+// --- Recording-pipeline hardening (reviews/20260818-recording.md R1, R3, R4, R8) ---
+
+#[test]
+fn measurement_level_db_clamps_to_full_scale() {
+    // R3: hot levels must clamp to amplitude 1.0 instead of producing a
+    // stimulus that gets hard-clipped sample-by-sample at the output.
+    assert_eq!(measurement_amplitude_from_level_db(0.0), 1.0);
+    assert_eq!(measurement_amplitude_from_level_db(6.0), 1.0);
+    assert_eq!(measurement_amplitude_from_level_db(20.0), 1.0);
+    assert!((measurement_amplitude_from_level_db(-6.0206) - 0.5).abs() < 1e-4);
+    assert!((measurement_amplitude_from_level_db(-40.0) - 0.01).abs() < 1e-6);
+    // Below the floor stays at the floor.
+    assert_eq!(
+        measurement_amplitude_from_level_db(-80.0),
+        measurement_amplitude_from_level_db(-40.0)
+    );
+}
+
+#[test]
+fn analyze_clipping_counts_full_scale_samples() {
+    // Empty buffer.
+    let empty = analyze_clipping(&[]);
+    assert_eq!(empty.clipped_samples, 0);
+    assert_eq!(empty.clip_percent, 0.0);
+    assert_eq!(empty.max_block_clip_percent, 0.0);
+
+    // No clipping.
+    let clean = analyze_clipping(&[0.5f32; 4096]);
+    assert_eq!(clean.clipped_samples, 0);
+    assert_eq!(clean.clip_percent, 0.0);
+
+    // Exactly at the threshold counts as clipped (matches generator-side
+    // clip() semantics: output hard-clamps at ±1.0).
+    let mut buf = vec![0.0f32; CLIP_BLOCK_SAMPLES * 2];
+    buf[10] = CLIP_THRESHOLD;
+    buf[11] = -1.0;
+    let stats = analyze_clipping(&buf);
+    assert_eq!(stats.clipped_samples, 2);
+    assert!((stats.clip_percent - 2.0 / buf.len() as f32 * 100.0).abs() < 1e-6);
+    assert!(stats.max_block_clip_percent < 1.0);
+}
+
+#[test]
+fn analyze_clipping_reports_worst_block() {
+    // Second half fully clipped: 50% overall, 100% in the worst block.
+    let mut buf = vec![0.0f32; CLIP_BLOCK_SAMPLES * 2];
+    buf[CLIP_BLOCK_SAMPLES..].fill(1.0);
+    let stats = analyze_clipping(&buf);
+    assert_eq!(stats.clipped_samples, CLIP_BLOCK_SAMPLES);
+    assert!((stats.clip_percent - 50.0).abs() < 1e-6);
+    assert!((stats.max_block_clip_percent - 100.0).abs() < 1e-6);
+}
+
+#[cfg(not(target_os = "ios"))]
+#[test]
+fn check_capture_clipping_aborts_only_on_heavily_clipped_block() {
+    // >30% of one block clipped → Err (REW abort rule).
+    let mut buf = vec![0.0f32; CLIP_BLOCK_SAMPLES];
+    buf[..CLIP_BLOCK_SAMPLES / 2].fill(1.0);
+    let err = check_capture_clipping(&buf, "test").unwrap_err();
+    assert!(err.contains("clipped"), "unexpected error: {err}");
+
+    // ~1% overall, spread out so no block exceeds 30% → warn-only Ok.
+    let mut buf = vec![0.0f32; CLIP_BLOCK_SAMPLES * 10];
+    for i in 0..CLIP_BLOCK_SAMPLES / 10 {
+        buf[i * 10] = 1.0;
+    }
+    assert!(check_capture_clipping(&buf, "test").is_ok());
+
+    // Fully clean → Ok, no warning.
+    assert!(check_capture_clipping(&[0.25f32; 4096], "test").is_ok());
+}
+
+#[test]
+fn prepare_measurement_signal_validates_generates_and_pads() {
+    let sample_rate = 48_000;
+    let params = SignalParams::Sweep {
+        start_freq: 20.0,
+        end_freq: 20_000.0,
+        amp: 0.5,
+    };
+    let prepared =
+        prepare_measurement_signal(SignalType::Sweep, &params, 1.0, sample_rate).unwrap();
+    let raw = generate_signal(SignalType::Sweep, &params, 1.0, sample_rate).unwrap();
+    let padding = (0.25 * sample_rate as f32) as usize; // prepare_signal: 250 ms each side
+    assert_eq!(prepared.len(), raw.len() + 2 * padding);
+    assert!(prepared[..padding].iter().all(|&s| s == 0.0));
+    assert!(prepared[padding + raw.len()..].iter().all(|&s| s == 0.0));
+
+    // Invalid params (start >= Nyquist, start >= end) fail before generation.
+    let bad = SignalParams::Sweep {
+        start_freq: 30_000.0,
+        end_freq: 20_000.0,
+        amp: 0.5,
+    };
+    assert!(prepare_measurement_signal(SignalType::Sweep, &bad, 1.0, sample_rate).is_err());
+    let bad_amp = SignalParams::Noise { amp: 2.0 };
+    assert!(
+        prepare_measurement_signal(SignalType::WhiteNoise, &bad_amp, 1.0, sample_rate).is_err()
+    );
+}
+
+#[cfg(not(target_os = "ios"))]
+#[test]
+fn record_and_analyze_honors_pre_set_cancel_flag() {
+    // A flag that is already set must abort before any audio device is
+    // touched, so this test needs no hardware.
+    let dir = tempdir().unwrap();
+    let temp_wav = dir.path().join("temp.wav");
+    let recorded_wav = dir.path().join("recorded.wav");
+    let csv = dir.path().join("analysis.csv");
+    let flag = CancelFlag::default();
+    flag.store(true, Ordering::Relaxed);
+
+    let err = record_and_analyze(
+        &temp_wav,
+        &recorded_wav,
+        &[0.0f32; 4800],
+        48000,
+        &csv,
+        0,
+        0,
+        None,
+        None,
+        None,
+        None,
+        Some(flag),
+    )
+    .unwrap_err();
+    assert_eq!(err, CANCELLED_ERR);
+    assert!(!recorded_wav.exists());
+}
+
+#[cfg(not(target_os = "ios"))]
+#[test]
+fn record_and_analyze_multi_honors_pre_set_cancel_flag() {
+    let dir = tempdir().unwrap();
+    let temp_wav = dir.path().join("temp.wav");
+    let wav_paths = vec![dir.path().join("recorded.wav")];
+    let csv_paths = vec![dir.path().join("analysis.csv")];
+    let mic_calibrations = vec![None];
+    let flag = CancelFlag::default();
+    flag.store(true, Ordering::Relaxed);
+
+    let err = record_and_analyze_multi(
+        &temp_wav,
+        &wav_paths,
+        &[0.0f32; 4800],
+        48000,
+        &csv_paths,
+        0,
+        &[0],
+        None,
+        None,
+        &mic_calibrations,
+        None,
+        Some(flag),
+    )
+    .unwrap_err();
+    assert_eq!(err, CANCELLED_ERR);
+    assert!(!wav_paths[0].exists());
 }

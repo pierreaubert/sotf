@@ -1,5 +1,85 @@
 use crate::signals::*;
 
+/// Absolute sample magnitude at/above which a captured sample counts as
+/// clipped. The output stage hard-clamps to ±1.0, so anything reaching
+/// ±0.999 rode the limiter (matches the generator-side `clip()` semantics).
+pub const CLIP_THRESHOLD: f32 = 0.999;
+
+/// Overall clipped-sample percentage above which a capture gets a warning.
+pub const CLIP_WARN_PERCENT: f32 = 0.1;
+
+/// Per-block clipped-sample percentage above which a capture is refused,
+/// mirroring REW's abort rule (>30% clipped samples in a block).
+pub const CLIP_ABORT_BLOCK_PERCENT: f32 = 30.0;
+
+/// Block length used by [`analyze_clipping`] for the per-block percentage
+/// (≈43 ms at 48 kHz).
+pub const CLIP_BLOCK_SAMPLES: usize = 2048;
+
+/// Summary of clipping observed in a captured buffer.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClipStats {
+    /// Number of samples with `|s| >= CLIP_THRESHOLD`.
+    pub clipped_samples: usize,
+    /// Clipped samples as a percentage of the whole buffer.
+    pub clip_percent: f32,
+    /// Highest clipped-sample percentage observed in any single
+    /// [`CLIP_BLOCK_SAMPLES`]-sample block.
+    pub max_block_clip_percent: f32,
+}
+
+/// Count clipped samples in a captured buffer, overall and per block.
+pub fn analyze_clipping(samples: &[f32]) -> ClipStats {
+    if samples.is_empty() {
+        return ClipStats {
+            clipped_samples: 0,
+            clip_percent: 0.0,
+            max_block_clip_percent: 0.0,
+        };
+    }
+
+    let mut clipped_samples = 0_usize;
+    let mut max_block_clip_percent = 0.0_f32;
+    for block in samples.chunks(CLIP_BLOCK_SAMPLES) {
+        let block_clipped = block.iter().filter(|s| s.abs() >= CLIP_THRESHOLD).count();
+        clipped_samples += block_clipped;
+        let block_percent = block_clipped as f32 / block.len() as f32 * 100.0;
+        max_block_clip_percent = max_block_clip_percent.max(block_percent);
+    }
+
+    ClipStats {
+        clipped_samples,
+        clip_percent: clipped_samples as f32 / samples.len() as f32 * 100.0,
+        max_block_clip_percent,
+    }
+}
+
+/// Inspect a captured buffer for clipping: logs a warning once clipping
+/// exceeds [`CLIP_WARN_PERCENT`] overall and returns `Err` when any block
+/// exceeds [`CLIP_ABORT_BLOCK_PERCENT`] (REW's abort rule).
+#[cfg(not(target_os = "ios"))]
+pub(super) fn check_capture_clipping(samples: &[f32], log_tag: &str) -> Result<(), String> {
+    let stats = analyze_clipping(samples);
+    if stats.max_block_clip_percent > CLIP_ABORT_BLOCK_PERCENT {
+        return Err(format!(
+            "[{log_tag}] Recording clipped hard: {:.1}% of samples at full scale in the worst block \
+             ({} clipped samples, {:.2}% overall). Lower the output level or mic gain and re-run \
+             the measurement.",
+            stats.max_block_clip_percent, stats.clipped_samples, stats.clip_percent,
+        ));
+    }
+    if stats.clip_percent > CLIP_WARN_PERCENT {
+        log::warn!(
+            "[{log_tag}] Recording clipped: {} samples at full scale ({:.2}% overall, worst block {:.1}%). \
+             Consider lowering the output level or mic gain.",
+            stats.clipped_samples,
+            stats.clip_percent,
+            stats.max_block_clip_percent,
+        );
+    }
+    Ok(())
+}
+
 #[cfg(not(target_os = "ios"))]
 pub(super) fn capture_capacity(
     sample_rate: u32,
