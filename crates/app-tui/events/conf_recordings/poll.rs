@@ -5,6 +5,10 @@ use super::consts::SPL_CAPTURE_RESULT;
 use crate::app::App;
 use std::sync::{Arc, Mutex};
 
+/// Transfer-function average level (dB rel. unity) below which a completed
+/// capture is flagged as suspiciously low (R10). Same threshold as GPUI.
+const LOW_LEVEL_THRESHOLD_DB: f32 = -50.0;
+
 /// Drain the probe-capture slot into `app.recording.model.probe_capture`.
 /// Returns `true` if state changed and the UI should redraw.
 pub fn poll_probe_capture(app: &mut App) -> bool {
@@ -32,6 +36,10 @@ pub fn poll_probe_capture(app: &mut App) -> bool {
                 .model
                 .probe_capture
                 .apply_results(results, Some(wav_path));
+        }
+        Err(e) if e == sotf_audio::signal_recorder::CANCELLED_ERR => {
+            log::info!("Probe capture cancelled by user");
+            app.recording.model.probe_capture.status = ProbeCaptureStatus::Idle;
         }
         Err(e) => {
             app.recording.model.probe_capture.status = ProbeCaptureStatus::Failed(e);
@@ -104,6 +112,10 @@ pub fn poll_bass_anchor_capture(app: &mut App) -> bool {
                 .bass_anchor_capture
                 .apply_results(results, Some(wav_path));
         }
+        Err(e) if e == sotf_audio::signal_recorder::CANCELLED_ERR => {
+            log::info!("Bass-anchor capture cancelled by user");
+            app.recording.model.bass_anchor_capture.status = BassAnchorCaptureStatus::Idle;
+        }
         Err(e) => {
             app.recording.model.bass_anchor_capture.status = BassAnchorCaptureStatus::Failed(e);
         }
@@ -136,12 +148,45 @@ pub fn poll_recording(app: &mut App) -> bool {
         match result {
             Ok((rec_results, loopback)) => {
                 let mut completed_names = Vec::new();
+                let mut low_level_names = Vec::new();
                 for (ch_idx, rec_result) in rec_results {
                     if let Some(ch) = app.recording.model.channel_recordings.get_mut(ch_idx) {
                         ch.state = ChannelRecordingState::Done;
                         completed_names.push(ch.channel_name.clone());
+                        // R10: post-capture level check (same semantics as
+                        // GPUI). Note this measures the *transfer-function
+                        // average level* in the sweep band (dB rel. unity),
+                        // not a true acoustic noise floor — the warning text
+                        // below is worded accordingly.
+                        let avg_min = ch.sweep_start_freq.max(20.0);
+                        let avg_max = ch.sweep_end_freq.min(20000.0);
+                        let mut sum = 0.0_f32;
+                        let mut count = 0usize;
+                        for (&freq, &mag) in rec_result
+                            .frequencies
+                            .iter()
+                            .zip(rec_result.magnitude_db.iter())
+                        {
+                            if freq >= avg_min && freq <= avg_max && mag > -150.0 {
+                                sum += mag;
+                                count += 1;
+                            }
+                        }
+                        if count > 0 && sum / (count as f32) < LOW_LEVEL_THRESHOLD_DB {
+                            low_level_names.push(ch.channel_name.clone());
+                        }
                         ch.result = Some(rec_result);
                     }
+                }
+                if low_level_names.is_empty() {
+                    app.recording.model.noise_floor_warning = None;
+                } else {
+                    let warning = format!(
+                        "Very low measured level on {} — check mic connection and input gain",
+                        low_level_names.join(", ")
+                    );
+                    log::warn!("Low-level warning: {}", warning);
+                    app.recording.model.noise_floor_warning = Some(warning);
                 }
                 if let Some(loopback) = loopback {
                     app.recording.model.transfer_matrix_loopbacks.retain(|r| {
@@ -151,13 +196,17 @@ pub fn poll_recording(app: &mut App) -> bool {
                     app.recording.model.transfer_matrix_loopbacks.push(loopback);
                 }
                 if !completed_names.is_empty() {
-                    if completed_names.len() == 1 {
-                        app.recording.model.status_message =
-                            format!("Channel {} recording complete", completed_names[0]);
+                    let mut msg = if completed_names.len() == 1 {
+                        format!("Channel {} recording complete", completed_names[0])
                     } else {
-                        app.recording.model.status_message =
-                            format!("Recorded {} CTC ear channels", completed_names.len());
+                        format!("Recorded {} CTC ear channels", completed_names.len())
+                    };
+                    // The TUI has no dedicated widget for
+                    // `noise_floor_warning`; surface it in the status line.
+                    if let Some(warning) = &app.recording.model.noise_floor_warning {
+                        msg = format!("{} — {}", msg, warning);
                     }
+                    app.recording.model.status_message = msg;
                 }
             }
             Err(e) => {

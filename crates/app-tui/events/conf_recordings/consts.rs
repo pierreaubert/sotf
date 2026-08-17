@@ -69,10 +69,12 @@ pub(super) static RECORDING_RESULT: std::sync::OnceLock<RecordingResultSlot> =
     std::sync::OnceLock::new();
 
 pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
-    use sotf_audio_player::recording_types::ChannelRecordingState;
-    use sotf_audio_player::signal_recorder::{
-        DEFAULT_MLS_ORDER, SignalParams, SignalType, generate_signal, write_temp_wav,
+    use sotf_audio_player::recording_helpers::{
+        capture_signal_params, measurement_amplitude, resolve_mic_calibration,
+        sanitize_recording_name, signal_type_for,
     };
+    use sotf_audio_player::recording_types::ChannelRecordingState;
+    use sotf_audio_player::signal_recorder::{SignalType, generate_signal, write_temp_wav};
 
     let selected = match app.recording.model.channel_recordings.get(channel_idx) {
         Some(ch) => ch.clone(),
@@ -108,27 +110,19 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     let speaker_index = selected.channel_index;
     let mic_index = selected.mic_index;
 
-    // Map signal type
-    let signal_type = match app.recording.model.signal_type {
-        sotf_audio_player::recording_types::RecordingSignalType::Sweep => SignalType::Sweep,
-        sotf_audio_player::recording_types::RecordingSignalType::WhiteNoise => {
-            SignalType::WhiteNoise
-        }
-        sotf_audio_player::recording_types::RecordingSignalType::PinkNoise => SignalType::PinkNoise,
-        sotf_audio_player::recording_types::RecordingSignalType::Mls => SignalType::Mls,
-        sotf_audio_player::recording_types::RecordingSignalType::Dirac => SignalType::Dirac,
-        sotf_audio_player::recording_types::RecordingSignalType::DelayProbe => {
-            log::warn!(
-                "DelayProbe selected in per-channel mode; use probe_channel_delays() instead. Falling back to Sweep."
-            );
-            SignalType::Sweep
-        }
-    };
+    // Map signal type via the shared helper (DelayProbe falls back to Sweep).
+    let signal_type = signal_type_for(app.recording.model.signal_type);
 
     let duration_secs = app.recording.model.signal_duration_secs;
     let level_db = app.recording.model.signal_level_db;
     let sweep_start_freq = selected.sweep_start_freq;
     let sweep_end_freq = selected.sweep_end_freq;
+    // GD-Opt sweep shaping (B1): the same model values persisted by
+    // `build_recording_configuration`, so the saved metadata describes the
+    // stimulus actually played.
+    let bass_octave_duration_s = app.recording.model.bass_octave_duration_s;
+    let pre_silence_s = app.recording.model.pre_silence_s;
+    let post_silence_s = app.recording.model.post_silence_s;
     let sample_rate = app.recording.model.playback_config.sample_rate;
 
     let output_device = app.recording.model.playback_config.device_name.clone();
@@ -157,45 +151,37 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
         .ctc_loopback_input_channel;
     let position_idx = selected.mic_position_index;
 
-    // Per-channel calibration lives in `recording_config.mic_calibration_paths`.
-    // The per-channel signal recorder takes a single path and applies it to
-    // its one input — pick the calibration for the input channel being used.
-    let mic_calibration = app
-        .recording
-        .model
-        .recording_config
-        .mic_calibration_paths
-        .get(input_channel as usize)
-        .and_then(|o| o.clone())
-        .filter(|s| !s.is_empty());
+    // Per-mic calibration lives in the model-level `mic_calibration_paths`,
+    // indexed by mic slot (parallel to `recording_config.channel_mappings`),
+    // NOT by hardware input channel (B3). Falls back to the session-global
+    // `mic_calibration_path` when the per-mic slot is unset.
+    let mic_calibration = resolve_mic_calibration(
+        &app.recording.model.mic_calibration_paths,
+        mic_index,
+        app.recording.model.mic_calibration_path.as_deref(),
+    );
 
     let channel_name = app.recording.model.channel_recordings[channel_idx]
         .channel_name
         .clone();
     let output_directory = app.recording.output_directory.clone();
 
-    // Convert dB level to linear amplitude
-    let amplitude = 10.0_f32.powf(level_db / 20.0);
+    // Convert dB level to linear amplitude (clamped to ≤ 0 dBFS, R3).
+    let amplitude = measurement_amplitude(level_db as f64);
 
-    // Generate signal parameters
-    let params = match signal_type {
-        SignalType::Sweep => SignalParams::Sweep {
-            start_freq: sweep_start_freq,
-            end_freq: sweep_end_freq,
-            amp: amplitude,
-        },
-        SignalType::WhiteNoise | SignalType::PinkNoise => SignalParams::Noise { amp: amplitude },
-        SignalType::Mls => SignalParams::Mls {
-            order: DEFAULT_MLS_ORDER,
-            amp: amplitude,
-        },
-        SignalType::Dirac => SignalParams::Dirac { amp: amplitude },
-        _ => SignalParams::Sweep {
-            start_freq: sweep_start_freq,
-            end_freq: sweep_end_freq,
-            amp: amplitude,
-        },
-    };
+    // Generate signal parameters. The sweep path routes through the shared
+    // helper (B1): with `bass_octave_duration_s` set, the stimulus becomes
+    // the self-timed octave-scaled sweep with silence windows — the same
+    // values `build_recording_configuration` persists at save time.
+    let params = capture_signal_params(
+        signal_type,
+        sweep_start_freq,
+        sweep_end_freq,
+        amplitude,
+        Some(bass_octave_duration_s),
+        Some(pre_silence_s),
+        post_silence_s,
+    );
 
     // Generate the test signal
     let signal = match generate_signal(signal_type, &params, duration_secs, sample_rate) {
@@ -222,16 +208,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     };
 
     // Create output paths
-    let safe_channel_name: String = channel_name
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '_' || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
+    let safe_channel_name = sanitize_recording_name(&channel_name);
     let recording_dir = std::path::PathBuf::from(&output_directory);
     let recorded_wav_path = recording_dir.join(format!("{}.wav", safe_channel_name));
     let csv_path = recording_dir.join(format!("{}.csv", safe_channel_name));
@@ -249,17 +226,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
             .iter()
             .filter_map(|idx| {
                 let rec = app.recording.model.channel_recordings.get(*idx)?;
-                let safe_name: String = rec
-                    .channel_name
-                    .chars()
-                    .map(|c| {
-                        if c.is_alphanumeric() || c == '_' || c == '-' {
-                            c
-                        } else {
-                            '_'
-                        }
-                    })
-                    .collect();
+                let safe_name = sanitize_recording_name(&rec.channel_name);
                 let input_ch = app
                     .recording
                     .model
@@ -268,14 +235,11 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                     .get(rec.mic_index)
                     .copied()
                     .unwrap_or(0) as u16;
-                let calibration = app
-                    .recording
-                    .model
-                    .recording_config
-                    .mic_calibration_paths
-                    .get(input_ch as usize)
-                    .and_then(|o| o.clone())
-                    .filter(|s| !s.is_empty());
+                let calibration = resolve_mic_calibration(
+                    &app.recording.model.mic_calibration_paths,
+                    rec.mic_index,
+                    app.recording.model.mic_calibration_path.as_deref(),
+                );
                 Some((
                     *idx,
                     recording_dir.join(format!("{}.wav", safe_name)),

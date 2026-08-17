@@ -1,12 +1,19 @@
 use super::adjust::adjust_recording_field;
+use super::consts::{BASS_ANCHOR_CAPTURE_RESULT, PROBE_CAPTURE_RESULT, RECORDING_RESULT};
 use super::handle::handle_recording_keys;
 use super::misc::ctc_raw_capture_channel_indices;
 use super::misc::init_recording_channels;
 use super::misc::save_recordings;
+use super::misc::set_recording_field_from_string;
 use super::misc::update_channel_mappings_for_config;
+use super::poll::{poll_bass_anchor_capture, poll_probe_capture, poll_recording};
 
 use crate::events::tests::make_app;
-use sotf_audio_player::recording_types::{ChannelMapping, RecordingStep, SpeakerConfiguration};
+use sotf_audio_player::recording_types::{
+    ChannelMapping, ChannelRecording, ChannelRecordingState, RecordingResult, RecordingStep,
+    SpeakerConfiguration,
+};
+use std::sync::{Arc, Mutex};
 
 #[test]
 fn init_recording_channels_creates_channels() {
@@ -233,5 +240,179 @@ fn right_on_config_adjusts_field() {
     assert_eq!(
         app.recording.model.step,
         sotf_audio_player::recording_types::RecordingStep::Config
+    );
+}
+
+fn done_recording_result(mag_db: f32) -> RecordingResult {
+    RecordingResult {
+        channel: 0,
+        wav_path: None,
+        csv_path: Some("FL.csv".to_string()),
+        frequencies: vec![100.0, 1000.0, 10000.0],
+        magnitude_db: vec![mag_db; 3],
+        phase_deg: vec![0.0; 3],
+        impulse_response: None,
+        impulse_time_ms: None,
+        thd_percent: None,
+        harmonic_distortion_db: None,
+        excess_group_delay_ms: None,
+        rt60_ms: None,
+        clarity_c50_db: None,
+        clarity_c80_db: None,
+        spectrogram_db: None,
+    }
+}
+
+#[test]
+fn level_edit_rejects_positive_db_with_message() {
+    // R3: a user-typed level above 0 dBFS must be rejected with a clear
+    // message instead of silently clamping into a clipped sweep.
+    let mut app = make_app();
+    app.recording.selected_field = 5; // Level
+    app.recording.edit_buffer = "6.0".to_string();
+    let before = app.recording.model.signal_level_db;
+    set_recording_field_from_string(&mut app);
+    assert_eq!(app.recording.model.signal_level_db, before);
+    assert!(
+        app.recording.model.status_message.contains("0 dB"),
+        "unexpected status: {}",
+        app.recording.model.status_message
+    );
+}
+
+#[test]
+fn level_edit_accepts_negative_db() {
+    let mut app = make_app();
+    app.recording.selected_field = 5; // Level
+    app.recording.edit_buffer = "-12.5".to_string();
+    set_recording_field_from_string(&mut app);
+    assert_eq!(app.recording.model.signal_level_db, -12.5);
+}
+
+#[test]
+fn poll_probe_capture_treats_cancelled_as_idle() {
+    use sotf_audio_player::recording_types::ProbeCaptureStatus;
+    let mut app = make_app();
+    app.recording.model.probe_capture.status = ProbeCaptureStatus::Running { started_at_ms: 0 };
+    let slot = PROBE_CAPTURE_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    *slot.lock().unwrap() = Some(Err(
+        sotf_audio::signal_recorder::CANCELLED_ERR.to_string()
+    ));
+    assert!(poll_probe_capture(&mut app));
+    assert!(matches!(
+        app.recording.model.probe_capture.status,
+        ProbeCaptureStatus::Idle
+    ));
+}
+
+#[test]
+fn poll_bass_anchor_capture_treats_cancelled_as_idle() {
+    use sotf_audio_player::recording_types::BassAnchorCaptureStatus;
+    let mut app = make_app();
+    app.recording.model.bass_anchor_capture.status =
+        BassAnchorCaptureStatus::Running { started_at_ms: 0 };
+    let slot = BASS_ANCHOR_CAPTURE_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    *slot.lock().unwrap() = Some(Err(
+        sotf_audio::signal_recorder::CANCELLED_ERR.to_string()
+    ));
+    assert!(poll_bass_anchor_capture(&mut app));
+    assert!(matches!(
+        app.recording.model.bass_anchor_capture.status,
+        BassAnchorCaptureStatus::Idle
+    ));
+}
+
+#[test]
+fn poll_recording_sets_and_clears_low_level_warning() {
+    // R10: the shared static is process-global, so both scenarios run
+    // sequentially in one test to avoid racing another test on the slot.
+    let mut app = make_app();
+    let mut ch = ChannelRecording::new(0, "FL".to_string());
+    ch.state = ChannelRecordingState::Recording;
+    app.recording.model.channel_recordings = vec![ch];
+    let slot = RECORDING_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+
+    // Very low transfer-function level → warning set and surfaced.
+    *slot.lock().unwrap() = Some(Ok((vec![(0, done_recording_result(-80.0))], None)));
+    assert!(poll_recording(&mut app));
+    assert_eq!(
+        app.recording.model.channel_recordings[0].state,
+        ChannelRecordingState::Done
+    );
+    let warning = app
+        .recording
+        .model
+        .noise_floor_warning
+        .as_ref()
+        .expect("low-level warning set");
+    assert!(warning.contains("Very low measured level"));
+    assert!(warning.contains("FL"));
+    assert!(
+        app.recording
+            .model
+            .status_message
+            .contains("Very low measured level"),
+        "warning should be surfaced in the status line: {}",
+        app.recording.model.status_message
+    );
+
+    // Healthy level on the next take → warning cleared.
+    app.recording.model.channel_recordings[0].state = ChannelRecordingState::Recording;
+    *slot.lock().unwrap() = Some(Ok((vec![(0, done_recording_result(-10.0))], None)));
+    assert!(poll_recording(&mut app));
+    assert!(app.recording.model.noise_floor_warning.is_none());
+}
+
+#[test]
+fn save_recordings_writes_canonical_recordings_json() {
+    // B5: the session file is always `recordings.json`, regardless of the
+    // user-chosen session name; B4: previously dropped metadata fields are
+    // persisted via the shared builder.
+    let mut app = make_app();
+    let tmp = tempfile::tempdir().unwrap();
+    app.recording.output_directory = tmp.path().to_string_lossy().to_string();
+    app.recording.model.save_name = "my_session".to_string();
+    app.recording.model.playback_config.channel_mappings =
+        vec![ChannelMapping::single(0, "FL")];
+    app.recording.model.playback_config.num_channels = 1;
+    let mut ch = ChannelRecording::new(0, "FL".to_string());
+    ch.state = ChannelRecordingState::Done;
+    ch.result = Some(done_recording_result(-10.0));
+    app.recording.model.channel_recordings = vec![ch];
+
+    save_recordings(&mut app);
+    assert!(app.recording.save.error.is_none(), "save_recordings errored: {:?}", app.recording.save.error);
+    let rx = app
+        .recording
+        .save
+        .receiver
+        .take()
+        .expect("save thread spawned");
+    let result = rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("save thread answered");
+    result.expect("save succeeded");
+
+    let canonical = tmp.path().join("recordings.json");
+    assert!(canonical.exists(), "expected {}", canonical.display());
+    assert!(!tmp.path().join("my_session.json").exists());
+
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&canonical).unwrap()).unwrap();
+    let cfg = &json["recording_config"];
+    assert!(cfg.is_object(), "recording_config persisted");
+    // Fields the old `..Default::default()` literal used to drop (B4).
+    assert!(cfg.get("bass_probe_freq_hz").is_some());
+    assert_eq!(cfg["bass_octave_duration_s"].as_f64(), Some(3.0));
+    assert_eq!(cfg["pre_silence_s"].as_f64(), Some(2.0));
+    assert_eq!(
+        cfg["signal_type"].as_str(),
+        Some(app.recording.model.signal_type.as_str())
     );
 }

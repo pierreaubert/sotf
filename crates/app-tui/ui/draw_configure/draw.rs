@@ -518,8 +518,9 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 }
             };
             let mic_cal_value = |ch: usize| {
+                // Model-level vec: the wizard's working copy that the
+                // editing accessors, capture and save all consult.
                 s.model
-                    .recording_config
                     .mic_calibration_paths
                     .get(ch)
                     .and_then(|o| o.clone())
@@ -644,7 +645,6 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                         Some(RecordingField::OutputDir) => s.output_directory.clone(),
                         Some(RecordingField::MicCal(ch)) => s
                             .model
-                            .recording_config
                             .mic_calibration_paths
                             .get(ch)
                             .and_then(|o| o.clone())

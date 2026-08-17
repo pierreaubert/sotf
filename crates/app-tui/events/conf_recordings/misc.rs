@@ -20,6 +20,22 @@ pub(super) fn request_spl_cancel(app: &mut App) {
         .store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
+pub(super) fn request_probe_cancel(app: &mut App) {
+    log::info!("Cancel requested for probe capture");
+    app.recording
+        .model
+        .probe_cancel_requested
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(super) fn request_bass_anchor_cancel(app: &mut App) {
+    log::info!("Cancel requested for bass-anchor capture");
+    app.recording
+        .model
+        .bass_anchor_cancel_requested
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Snapshot the current field's display value into `edit_buffer` so
 /// editing an existing value doesn't start from an empty buffer.
 pub(super) fn current_save_field_value(app: &App) -> String {
@@ -111,7 +127,14 @@ pub(super) fn set_recording_field_from_string(app: &mut App) {
         }
         Level => {
             if let Ok(v) = buf.parse::<f32>() {
-                app.recording.model.signal_level_db = v.clamp(-40.0, 0.0);
+                // R3: a positive level would clip the stimulus at full
+                // scale; reject it loudly instead of silently clamping.
+                if v > 0.0 {
+                    app.recording.model.status_message =
+                        "Level must be \u{2264} 0 dB (positive values clip the sweep)".to_string();
+                } else {
+                    app.recording.model.signal_level_db = v.max(-40.0);
+                }
             }
         }
         SweepStart => {
@@ -294,7 +317,8 @@ pub(super) fn ctc_raw_capture_channel_indices(app: &App, channel_idx: usize) -> 
 }
 
 pub(crate) fn save_recordings(app: &mut App) {
-    use autoeq::{OptimizerConfig, RecordingConfiguration, RoomConfig};
+    use autoeq::{OptimizerConfig, RoomConfig};
+    use sotf_audio_player::recording_helpers::RECORDINGS_FILENAME;
     use sotf_audio_player::recording_types::ChannelRecordingState;
     use sotf_audio_player::room_eq_types::{
         DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY, RoomEqMeasurementsFile,
@@ -443,93 +467,19 @@ pub(crate) fn save_recordings(app: &mut App) {
         return;
     }
 
-    let mic_calibration_paths_value = app
+    // B4: build the persisted RecordingConfiguration through the shared
+    // model builder so the TUI saves the same complete metadata GPUI does
+    // (probe/bass-anchor/SPL results, sweep shaping, mic calibration) —
+    // the previous literal with `..Default::default()` silently dropped
+    // those fields.
+    let configuration = app
         .recording
         .model
-        .recording_config
-        .mic_calibration_paths
-        .clone();
-
-    let configuration = RecordingConfiguration {
-        playback_device_name: Some(app.recording.model.playback_config.device_name.clone()),
-        playback_device_id: Some(app.recording.model.playback_config.device_id.clone()),
-        playback_sample_rate: Some(app.recording.model.playback_config.sample_rate),
-        playback_channels: Some(app.recording.model.playback_config.num_channels),
-        speaker_configuration: Some(
-            app.recording
-                .model
-                .playback_config
-                .speaker_configuration
-                .as_str()
-                .to_string(),
-        ),
-        channel_names: Some(channel_names.clone()),
-        recording_device_name: Some(app.recording.model.recording_config.device_name.clone()),
-        recording_device_id: Some(app.recording.model.recording_config.device_id.clone()),
-        recording_sample_rate: Some(app.recording.model.recording_config.sample_rate),
-        recording_channels: Some(app.recording.model.recording_config.num_channels),
-        mic_calibration_path: mic_calibration_paths_value
-            .first()
-            .and_then(|o| o.clone())
-            .filter(|s| !s.is_empty()),
-        mic_calibration_paths: if mic_calibration_paths_value.is_empty() {
+        .build_recording_configuration(if app.recording.output_directory.is_empty() {
             None
         } else {
-            Some(mic_calibration_paths_value)
-        },
-        recording_directory: if app.recording.output_directory.is_empty() {
-            None
-        } else {
-            Some(app.recording.output_directory.clone())
-        },
-        signal_type: Some(app.recording.model.signal_type.as_str().to_string()),
-        signal_duration_secs: Some(app.recording.model.signal_duration_secs),
-        signal_level_db: Some(app.recording.model.signal_level_db),
-        sweep_start_freq: Some(app.recording.model.sweep_start_freq),
-        sweep_end_freq: Some(app.recording.model.sweep_end_freq),
-        room_dimensions: app.recording.room_dimensions_for_save(),
-        setup_description: {
-            let s = app.recording.model.setup_description.trim();
-            if s.is_empty() {
-                None
-            } else {
-                Some(s.to_string())
-            }
-        },
-        channel_speakers: app.recording.channel_speakers_map_for_save(),
-        probe_results: app.recording.model.probe_capture.results.as_ref().map(|r| {
-            autoeq::roomeq::ProbeResultsLegacy {
-                channels: r
-                    .channels
-                    .iter()
-                    .map(|c| autoeq::roomeq::ProbeChannelResultLegacy {
-                        channel_name: c.channel_name.clone(),
-                        channel_index: c.channel_index,
-                        arrival_ms: c.arrival_ms,
-                        gain_db: c.gain_db,
-                        snr_db: c.snr_db,
-                    })
-                    .collect(),
-                sample_rate: r.sample_rate,
-                alignment_delays_ms: r.alignment_delays_ms.clone(),
-            }
-        }),
-        probe_wav_relative: app
-            .recording
-            .model
-            .probe_capture
-            .wav_path
-            .as_ref()
-            .and_then(|p| std::path::Path::new(p).file_name())
-            .map(|f| f.to_string_lossy().to_string()),
-        num_positions: {
-            let n = app.recording.model.recording_config.num_positions.max(1);
-            if n > 1 { Some(n) } else { None }
-        },
-        bass_probe_freq_hz: Some(app.recording.model.bass_anchor_capture.bass_freq_hz),
-        bass_probe_duration_s: Some(app.recording.model.bass_anchor_capture.bass_duration_s),
-        ..Default::default()
-    };
+            Some(app.recording.output_directory.as_str())
+        });
 
     let ctc = ctc_measurements.map(|measurements| {
         let raw = ctc_reference_sweep.is_some();
@@ -588,7 +538,10 @@ pub(crate) fn save_recordings(app: &mut App) {
         cea2034_cache: None,
     };
 
-    let path = std::path::PathBuf::from(&dir).join(format!("{}.json", name));
+    // B5: canonical session filename shared with GPUI and the Room EQ
+    // "FromFile" flow — the user-chosen session name is validated above
+    // but no longer appears in the file name.
+    let path = std::path::PathBuf::from(&dir).join(RECORDINGS_FILENAME);
 
     // Serialize + write on a background thread — JSON for a
     // multi-position multichannel session can be megabytes, and the

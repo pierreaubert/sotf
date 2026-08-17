@@ -16,6 +16,8 @@ use super::misc::current_save_field_value;
 use super::misc::init_recording_channels;
 use super::misc::is_recording_field_numerical_kind;
 use super::misc::remove_custom_speaker;
+use super::misc::request_bass_anchor_cancel;
+use super::misc::request_probe_cancel;
 use super::misc::request_spl_cancel;
 use super::misc::save_recordings;
 use super::misc::set_recording_field_from_string;
@@ -422,9 +424,10 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
 ///   3  Run button
 ///
 /// `Tab` / `↓` advance; `Shift-Tab` / `↑` retreat. `Enter` on a numeric
-/// field begins editing; `Enter` on Run triggers the capture. `+` / `-`
-/// or `←` / `→` nudge numeric values. `r` starts the capture from any
-/// focused field. `Ctrl+S` never applies here — saving lives on the
+/// field begins editing; `Enter` on Run triggers the capture (or requests
+/// cancellation while one is running). `+` / `-`
+/// or `←` / `→` nudge numeric values. `r` starts (or cancels) the capture
+/// from any focused field. `Ctrl+S` never applies here — saving lives on the
 /// Save step.
 fn handle_probe_step_keys(app: &mut App, key: KeyEvent) {
     use sotf_audio_player::recording_types::ProbeCaptureStatus;
@@ -530,15 +533,23 @@ fn handle_probe_step_keys(app: &mut App, key: KeyEvent) {
             _ => {}
         },
         KeyCode::Enter => {
-            if app.recording.probe_selected_field == FIELD_RUN && !running {
-                spawn_probe_capture(app);
-            } else if app.recording.probe_selected_field != FIELD_RUN {
+            if app.recording.probe_selected_field == FIELD_RUN {
+                if running {
+                    request_probe_cancel(app);
+                } else {
+                    spawn_probe_capture(app);
+                }
+            } else {
                 app.recording.probe_editing_value = true;
                 app.recording.edit_buffer.clear();
             }
         }
-        KeyCode::Char('r') if !running => {
-            spawn_probe_capture(app);
+        KeyCode::Char('r') => {
+            if running {
+                request_probe_cancel(app);
+            } else {
+                spawn_probe_capture(app);
+            }
         }
         _ => {}
     }
@@ -672,8 +683,7 @@ fn handle_bass_anchor_step_keys(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Enter | KeyCode::Char('r') => {
             if running {
-                // No cancel flag wired in the TUI yet — just leave it
-                // running; the engine call will return when it finishes.
+                request_bass_anchor_cancel(app);
             } else {
                 spawn_bass_anchor_capture(app);
             }

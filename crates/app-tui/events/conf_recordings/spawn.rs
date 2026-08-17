@@ -46,6 +46,14 @@ pub(super) fn spawn_probe_capture(app: &mut App) {
     let output_device = Some(app.recording.model.playback_config.device_name.clone());
     let input_device = Some(app.recording.model.recording_config.device_name.clone());
 
+    // Reset the cancel flag and capture status so the new run starts
+    // clean (mirrors `spawn_spl_calibration_capture`).
+    app.recording
+        .model
+        .probe_cancel_requested
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+    let cancel_flag = app.recording.model.probe_cancel_requested.clone();
+
     app.recording.model.probe_capture.status = ProbeCaptureStatus::Running {
         started_at_ms: now_ms(),
     };
@@ -71,7 +79,7 @@ pub(super) fn spawn_probe_capture(app: &mut App) {
             input_channel,
             &wav_path,
             signal_level_db,
-            None,
+            Some(cancel_flag),
         )
         .map(|r| (r, wav_path_str));
         if let Ok(mut g) = slot.lock() {
@@ -182,6 +190,14 @@ pub(super) fn spawn_bass_anchor_capture(app: &mut App) {
     let output_device = Some(app.recording.model.playback_config.device_name.clone());
     let input_device = Some(app.recording.model.recording_config.device_name.clone());
 
+    // Reset the cancel flag and capture status so the new run starts
+    // clean (mirrors `spawn_spl_calibration_capture`).
+    app.recording
+        .model
+        .bass_anchor_cancel_requested
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+    let cancel_flag = app.recording.model.bass_anchor_cancel_requested.clone();
+
     app.recording.model.bass_anchor_capture.status = BassAnchorCaptureStatus::Running {
         started_at_ms: now_ms(),
     };
@@ -211,7 +227,7 @@ pub(super) fn spawn_bass_anchor_capture(app: &mut App) {
             loopback_input_channel,
             &wav_path,
             signal_level_db,
-            None,
+            Some(cancel_flag),
         )
         .map(|r| (r, wav_path_str));
         if let Ok(mut g) = slot.lock() {
