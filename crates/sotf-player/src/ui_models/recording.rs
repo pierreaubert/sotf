@@ -31,6 +31,12 @@ pub struct RecordingScreenModel {
     pub mic_calibration_path: Option<String>,
     /// Per-channel microphone calibration file paths (parallel to
     /// `recording_config.channel_mappings`).
+    ///
+    /// This is the wizard's working copy: the editing accessors, capture
+    /// (`recording_helpers::resolve_mic_calibration`) and save
+    /// (`build_recording_configuration`) all use it. The same-named field on
+    /// `recording_config` is only the serde persistence layer that frontends
+    /// load into / save back from this vec.
     pub mic_calibration_paths: Vec<Option<String>>,
     /// Parsed calibration data for display.
     pub mic_calibration_data: Option<CalibrationData>,
@@ -346,7 +352,8 @@ impl RecordingScreenModel {
     /// sweep capture through
     /// [`crate::recording_helpers::capture_signal_params`] with these same
     /// values so the saved metadata describes the audio that was really
-    /// played (B1).
+    /// played (B1). The values are clamped here exactly as the engine's
+    /// `sweep_params_from_config` clamps them, so the two can never diverge.
     ///
     /// `recording_directory` is the session output directory; `None` or an
     /// empty string omits the field.
@@ -455,10 +462,18 @@ impl RecordingScreenModel {
                 .map(|f| f.to_string_lossy().to_string()),
             // GD-Opt v2 sweep metadata — only persisted when the stimulus
             // is actually a sweep generated through `capture_signal_params`
-            // with these same values (B1).
-            bass_octave_duration_s: is_sweep.then_some(self.bass_octave_duration_s),
-            pre_silence_s: is_sweep.then_some(self.pre_silence_s),
-            post_silence_s: if is_sweep { self.post_silence_s } else { None },
+            // with these same values (B1). Clamped exactly like the engine's
+            // `sweep_params_from_config` (bass to [1.0, 10.0], silences to
+            // >= 0.0) so persisted metadata can never diverge from the
+            // actual stimulus.
+            bass_octave_duration_s: is_sweep
+                .then_some(self.bass_octave_duration_s.clamp(1.0, 10.0)),
+            pre_silence_s: is_sweep.then_some(self.pre_silence_s.max(0.0)),
+            post_silence_s: if is_sweep {
+                self.post_silence_s.map(|s| s.max(0.0))
+            } else {
+                None
+            },
             // Remaining GD-Opt v2 fields (later phases): leave as None.
             sweep_level_db_spl: None,
             num_sweeps: None,
@@ -478,10 +493,15 @@ impl RecordingScreenModel {
 
     /// Currently-active mic-calibration path string (read-only). Returns
     /// `""` when `editing_channel` is `None` or when the channel slot is empty.
+    ///
+    /// Reads the model-level `mic_calibration_paths` — the wizard's working
+    /// copy that capture (`resolve_mic_calibration`) and save
+    /// (`build_recording_configuration`) both consult. The
+    /// `recording_config.mic_calibration_paths` field remains only as the
+    /// serde persistence layer frontends load from / save back to.
     pub fn active_mic_cal_path(&self, editing_channel: Option<usize>) -> &str {
         match editing_channel {
             Some(ch) => self
-                .recording_config
                 .mic_calibration_paths
                 .get(ch)
                 .and_then(|o| o.as_deref())
@@ -492,13 +512,14 @@ impl RecordingScreenModel {
 
     /// Mutable reference to the mic-calibration path for `editing_channel`,
     /// growing the underlying `Vec` and lazily inserting an empty `String`
-    /// in the slot if needed.
+    /// in the slot if needed. Operates on the model-level
+    /// `mic_calibration_paths` (see [`Self::active_mic_cal_path`]).
     pub fn active_mic_cal_path_mut(
         &mut self,
         editing_channel: Option<usize>,
     ) -> Option<&mut String> {
         let ch = editing_channel?;
-        let paths = &mut self.recording_config.mic_calibration_paths;
+        let paths = &mut self.mic_calibration_paths;
         while paths.len() <= ch {
             paths.push(None);
         }
@@ -509,10 +530,11 @@ impl RecordingScreenModel {
     }
 
     /// Replace the mic-calibration path for `editing_channel`, normalising an
-    /// empty string back to `None`.
+    /// empty string back to `None`. Operates on the model-level
+    /// `mic_calibration_paths` (see [`Self::active_mic_cal_path`]).
     pub fn set_active_mic_cal_path(&mut self, editing_channel: Option<usize>, val: String) {
         if let Some(ch) = editing_channel {
-            let paths = &mut self.recording_config.mic_calibration_paths;
+            let paths = &mut self.mic_calibration_paths;
             while paths.len() <= ch {
                 paths.push(None);
             }
@@ -521,7 +543,9 @@ impl RecordingScreenModel {
     }
 
     /// Resize the mic-calibration and recording-channel-mapping vecs to
-    /// match `num_channels`.
+    /// match `num_channels`. The mic-calibration working copy is the
+    /// model-level `mic_calibration_paths` (see [`Self::active_mic_cal_path`]);
+    /// `channel_mappings` still lives on `recording_config`.
     pub fn sync_recording_channel_vecs(&mut self) {
         let target = self.recording_config.num_channels.max(1);
         let cm = &mut self.recording_config.channel_mappings;
@@ -530,7 +554,7 @@ impl RecordingScreenModel {
         }
         cm.truncate(target);
 
-        let cal = &mut self.recording_config.mic_calibration_paths;
+        let cal = &mut self.mic_calibration_paths;
         while cal.len() < target {
             cal.push(None);
         }
@@ -669,5 +693,92 @@ mod tests {
         );
         model.recording_config.num_positions = 1;
         assert_eq!(model.build_recording_configuration(None).num_positions, None);
+    }
+
+    #[test]
+    fn build_recording_configuration_clamps_sweep_metadata_like_engine() {
+        // Same clamps as the engine's sweep_params_from_config: bass to
+        // [1.0, 10.0], silences to >= 0.0 — so persisted metadata matches
+        // the actual stimulus.
+        let mut model = RecordingScreenModel::default();
+        model.bass_octave_duration_s = 0.5;
+        model.pre_silence_s = -1.0;
+        model.post_silence_s = Some(-5.0);
+        let config = model.build_recording_configuration(None);
+        assert_eq!(config.bass_octave_duration_s, Some(1.0));
+        assert_eq!(config.pre_silence_s, Some(0.0));
+        assert_eq!(config.post_silence_s, Some(0.0));
+
+        let mut model = RecordingScreenModel::default();
+        model.bass_octave_duration_s = 42.0;
+        let config = model.build_recording_configuration(None);
+        assert_eq!(config.bass_octave_duration_s, Some(10.0));
+
+        // In-range values pass through unchanged.
+        let mut model = RecordingScreenModel::default();
+        model.bass_octave_duration_s = 4.5;
+        model.pre_silence_s = 1.5;
+        model.post_silence_s = Some(3.0);
+        let config = model.build_recording_configuration(None);
+        assert_eq!(config.bass_octave_duration_s, Some(4.5));
+        assert_eq!(config.pre_silence_s, Some(1.5));
+        assert_eq!(config.post_silence_s, Some(3.0));
+    }
+
+    #[test]
+    fn mic_cal_accessors_use_model_level_vec() {
+        let mut model = RecordingScreenModel::default();
+        // Pre-existing persisted config storage must stay untouched.
+        model.recording_config.mic_calibration_paths = vec![Some("persisted.txt".to_string())];
+
+        model.set_active_mic_cal_path(Some(1), "mic1.txt".to_string());
+        assert_eq!(model.mic_calibration_paths.len(), 2);
+        assert_eq!(model.mic_calibration_paths[1].as_deref(), Some("mic1.txt"));
+        assert_eq!(model.active_mic_cal_path(Some(1)), "mic1.txt");
+        assert_eq!(model.active_mic_cal_path(Some(0)), "");
+        assert_eq!(model.active_mic_cal_path(None), "");
+        // The config-level (serde) vec is NOT written by the wizard.
+        assert_eq!(
+            model.recording_config.mic_calibration_paths,
+            vec![Some("persisted.txt".to_string())]
+        );
+
+        // Empty strings normalise back to None.
+        model.set_active_mic_cal_path(Some(1), String::new());
+        assert_eq!(model.mic_calibration_paths[1], None);
+    }
+
+    #[test]
+    fn active_mic_cal_path_mut_grows_model_level_vec() {
+        let mut model = RecordingScreenModel::default();
+        let slot = model
+            .active_mic_cal_path_mut(Some(2))
+            .expect("slot for in-range channel");
+        slot.push_str("edited.txt");
+        assert_eq!(model.mic_calibration_paths.len(), 3);
+        assert_eq!(
+            model.mic_calibration_paths[2].as_deref(),
+            Some("edited.txt")
+        );
+        assert!(model.recording_config.mic_calibration_paths.len() <= 1);
+        assert!(model.active_mic_cal_path_mut(None).is_none());
+    }
+
+    #[test]
+    fn sync_recording_channel_vecs_resizes_model_level_cal_vec() {
+        let mut model = RecordingScreenModel::default();
+        model.recording_config.num_channels = 3;
+        model.mic_calibration_paths = vec![Some("mic0.txt".to_string())];
+        model.sync_recording_channel_vecs();
+        assert_eq!(model.recording_config.channel_mappings.len(), 3);
+        assert_eq!(model.mic_calibration_paths.len(), 3);
+        assert_eq!(model.mic_calibration_paths[0].as_deref(), Some("mic0.txt"));
+        assert_eq!(model.mic_calibration_paths[1], None);
+
+        // Shrinking num_channels truncates the model-level vec too.
+        model.recording_config.num_channels = 1;
+        model.sync_recording_channel_vecs();
+        assert_eq!(model.mic_calibration_paths.len(), 1);
+        assert_eq!(model.recording_config.channel_mappings.len(), 1);
     }
 }
