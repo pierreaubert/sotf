@@ -15,6 +15,10 @@ let package = Package(
             name: "ConfigBarUI",
             targets: ["ConfigBarUI"]
         ),
+        .executable(
+            name: "sotf-systemwide",
+            targets: ["SotFSystemwide"]
+        ),
     ],
     targets: [
         .target(
@@ -34,6 +38,20 @@ let package = Package(
             path: "src",
             exclude: ["AppMain.swift", "PluginModels.swift", "ConfigBarIPC.swift", "ConfigBarPure.swift"],
             sources: ["ConfigBar.swift", "PluginEditorViews.swift", "PluginRackView.swift"]
+        ),
+        .executableTarget(
+            name: "SotFSystemwide",
+            dependencies: ["ConfigBarUI"],
+            path: "src",
+            exclude: [
+                "ConfigBar.swift",
+                "PluginEditorViews.swift",
+                "PluginRackView.swift",
+                "PluginModels.swift",
+                "ConfigBarIPC.swift",
+                "ConfigBarPure.swift",
+            ],
+            sources: ["AppMain.swift"]
         ),
         .testTarget(
             name: "ConfigBarModelTests",

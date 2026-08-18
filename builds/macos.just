@@ -22,14 +22,10 @@ prod-systemwide:
 	BUILD_DIR="target/release"
 	mkdir -p "$BUILD_DIR"
 	echo "Building SotF Systemwide..."
-	swiftc \
-		-o "$BUILD_DIR/sotf-systemwide" \
-		"$CONFIGBAR_DIR"/src/*.swift \
-		-framework SwiftUI \
-		-framework WebKit \
-		-framework UserNotifications \
-		-framework CoreAudio \
-		-O
+	SWIFT_BUILD_DIR="$BUILD_DIR/configbar-swiftpm"
+	SWIFT_BIN_PATH="$(swift build --package-path "$CONFIGBAR_DIR" --scratch-path "$SWIFT_BUILD_DIR" --configuration release --show-bin-path)"
+	swift build --package-path "$CONFIGBAR_DIR" --scratch-path "$SWIFT_BUILD_DIR" --configuration release --product sotf-systemwide
+	cp "$SWIFT_BIN_PATH/sotf-systemwide" "$BUILD_DIR/sotf-systemwide"
 	echo "✅ Systemwide built: $BUILD_DIR/sotf-systemwide"
 
 # Backward-compatible build target.
@@ -131,14 +127,10 @@ dist-systemwide:
 	BUILD_DIR="target/dist"
 	mkdir -p "$BUILD_DIR"
 	echo "Building SotF Systemwide (dist)..."
-	swiftc \
-		-o "$BUILD_DIR/sotf-systemwide" \
-		"$CONFIGBAR_DIR"/src/*.swift \
-		-framework SwiftUI \
-		-framework WebKit \
-		-framework UserNotifications \
-		-framework CoreAudio \
-		-O
+	SWIFT_BUILD_DIR="$BUILD_DIR/configbar-swiftpm"
+	SWIFT_BIN_PATH="$(swift build --package-path "$CONFIGBAR_DIR" --scratch-path "$SWIFT_BUILD_DIR" --configuration release --show-bin-path)"
+	swift build --package-path "$CONFIGBAR_DIR" --scratch-path "$SWIFT_BUILD_DIR" --configuration release --product sotf-systemwide
+	cp "$SWIFT_BIN_PATH/sotf-systemwide" "$BUILD_DIR/sotf-systemwide"
 	echo "✅ Systemwide built: $BUILD_DIR/sotf-systemwide"
 
 [group('dist')]

@@ -1,4 +1,5 @@
 import Cocoa
+import ConfigBarUI
 
 // MARK: - App Delegate
 

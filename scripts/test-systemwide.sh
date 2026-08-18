@@ -65,18 +65,15 @@ test_macos() {
         -- \
         -D warnings
 
-    local module_cache="${CARGO_TARGET_DIR:-target}/systemwide-swift-module-cache"
-    mkdir -p "$module_cache"
+    local configbar_dir="crates/systemwide/crates/daemon/configbar"
+    local swift_build_dir="${CARGO_TARGET_DIR:-target}/systemwide-swift-package"
+    mkdir -p "$swift_build_dir"
 
     phase "Swift menu-bar client type-check"
-    swiftc \
-        -module-cache-path "$module_cache" \
-        -typecheck \
-        crates/systemwide/crates/daemon/configbar/src/*.swift \
-        -framework SwiftUI \
-        -framework WebKit \
-        -framework UserNotifications \
-        -framework CoreAudio
+    swift build \
+        --package-path "$configbar_dir" \
+        --scratch-path "$swift_build_dir" \
+        --target SotFSystemwide
 
     local hal_sources="crates/systemwide/crates/driver-hal/swift/Sources"
     phase "Swift HAL driver type-check"

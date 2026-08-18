@@ -1224,7 +1224,7 @@ private final class ConfigurationWindow: NSWindow {
     }
 }
 
-class StatusBarController: NSObject, ObservableObject {
+public class StatusBarController: NSObject, ObservableObject {
     private var statusItem: NSStatusItem!
     @Published var currentState: AudioEngineClient.AudioState = .idle
     @Published var showingWindow = false
@@ -1239,7 +1239,7 @@ class StatusBarController: NSObject, ObservableObject {
     private let daemonManager = DaemonManager()
     @Published var daemonRunning = false
 
-    override init() {
+    public override init() {
         super.init()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -1390,12 +1390,12 @@ class StatusBarController: NSObject, ObservableObject {
         }
     }
 
-    func stopMonitoring() {
+    public func stopMonitoring() {
         monitorTimer?.invalidate()
         monitorTimer = nil
     }
 
-    func stopDaemon() {
+    public func stopDaemon() {
         daemonManager.stopDaemon()
     }
 

@@ -4005,7 +4005,7 @@ dependencies = [
 [[package]]
 name = "gpui_macos"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed.git?tag=v1.9.0#ced90fc636c4ede05402befc38a63bae7fd741bd"
+source = "git+https://github.com/pierreaubert/gpui-toolkit?branch=main#bde094249057af29fd1b46dbe0676802d7ef47e3"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -10281,7 +10281,7 @@ dependencies = [
  "crossterm",
  "driver-hal",
  "env_logger",
- "glam 0.30.10",
+ "glam 0.33.3",
  "gpui",
  "gpui-audio-kit",
  "gpui-builder 0.9.6",
