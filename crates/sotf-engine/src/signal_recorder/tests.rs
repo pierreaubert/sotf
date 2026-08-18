@@ -1204,6 +1204,10 @@ fn test_repeat_sweep_averaging_rejects_outlier_and_extends_csv() {
     // review A4): it must be removed when this 5-take run writes its takes.
     let stale = dir.path().join("L.take9.wav");
     std::fs::write(&stale, b"stale").unwrap();
+    // An unrelated user file sharing the `.take` prefix must survive the
+    // cleanup (task-10 review): only `{stem}.take{N}.wav` is matched.
+    let keep = dir.path().join("L.takeaway.wav");
+    std::fs::write(&keep, b"keep").unwrap();
     let capture = super::record::analyze_sweep_takes(
         &wav,
         &csv,
@@ -1221,6 +1225,10 @@ fn test_repeat_sweep_averaging_rejects_outlier_and_extends_csv() {
     assert!(
         !stale.exists(),
         "stale L.take9.wav from a higher-N run must be cleaned up"
+    );
+    assert!(
+        keep.exists(),
+        "unrelated L.takeaway.wav must survive the take-WAV cleanup"
     );
 
     // Outlier rejected; num_sweeps metadata is truthful.

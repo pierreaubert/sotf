@@ -1185,8 +1185,14 @@ fn remove_stale_take_wavs(recorded_wav_path: &Path, log_tag: &str) {
     for entry in entries.flatten() {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if name.starts_with(&prefix)
-            && name.ends_with(".wav")
+        // Match exactly `{stem}.take{N}.wav`: a bare prefix match would also
+        // hit unrelated user files like `{stem}.takeaway.wav` (task-10
+        // review).
+        let is_take_wav = name
+            .strip_prefix(&prefix)
+            .and_then(|rest| rest.strip_suffix(".wav"))
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+        if is_take_wav
             && let Err(e) = std::fs::remove_file(entry.path())
         {
             log::warn!(
