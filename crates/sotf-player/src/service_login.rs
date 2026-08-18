@@ -225,13 +225,17 @@ mod tests {
         #[test]
         fn scheme_and_host_whitelist() {
             // https is always fine.
-            assert!(is_browser_openable_url("https://auth.example.com/device?code=abc"));
+            assert!(is_browser_openable_url(
+                "https://auth.example.com/device?code=abc"
+            ));
             // http only on loopback (local auth mocks).
             assert!(is_browser_openable_url("http://127.0.0.1:8080/callback"));
             assert!(is_browser_openable_url("http://localhost/verify"));
             assert!(is_browser_openable_url("http://[::1]:9000/"));
             assert!(!is_browser_openable_url("http://example.com/"));
-            assert!(!is_browser_openable_url("http://127.0.0.1.evil.example.com/"));
+            assert!(!is_browser_openable_url(
+                "http://127.0.0.1.evil.example.com/"
+            ));
             // Everything else is refused.
             assert!(!is_browser_openable_url("file:///etc/passwd"));
             assert!(!is_browser_openable_url("javascript:alert(1)"));

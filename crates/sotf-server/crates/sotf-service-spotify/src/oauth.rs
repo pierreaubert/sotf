@@ -493,7 +493,11 @@ mod tests {
                 "{}",
                 req.body
             );
-            assert!(req.body.contains("refresh_token=old-refresh"), "{}", req.body);
+            assert!(
+                req.body.contains("refresh_token=old-refresh"),
+                "{}",
+                req.body
+            );
             assert!(req.body.contains("client_id=test-client"), "{}", req.body);
             (
                 200,

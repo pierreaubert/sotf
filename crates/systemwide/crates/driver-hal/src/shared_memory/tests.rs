@@ -24,38 +24,64 @@ fn test_header_size() {
 
 #[test]
 fn test_header_offsets_match_swift_layout_contract() {
-    assert_eq!(std::mem::offset_of!(SharedAudioHeader, magic), 0);
-    assert_eq!(std::mem::offset_of!(SharedAudioHeader, version), 4);
-    assert_eq!(std::mem::offset_of!(SharedAudioHeader, sample_rate), 8);
-    assert_eq!(std::mem::offset_of!(SharedAudioHeader, buffer_frames), 12);
-    assert_eq!(std::mem::offset_of!(SharedAudioHeader, channel_count), 16);
-    assert_eq!(std::mem::offset_of!(SharedAudioHeader, write_position), 24);
-    assert_eq!(std::mem::offset_of!(SharedAudioHeader, read_position), 32);
-    assert_eq!(std::mem::offset_of!(SharedAudioHeader, active), 40);
-    assert_eq!(std::mem::offset_of!(SharedAudioHeader, key_fingerprint), 64);
-    assert_eq!(std::mem::offset_of!(SharedAudioHeader, frame_counter), 72);
+    let manifest: serde_json::Value = serde_json::from_str(
+        super::SHARED_MEMORY_LAYOUT_MANIFEST,
+    )
+    .expect("shared-memory layout manifest must be valid JSON");
     assert_eq!(
-        std::mem::offset_of!(SharedAudioHeader, requested_sample_rate),
-        80
-    );
-    assert_eq!(std::mem::offset_of!(SharedAudioHeader, config_status), 96);
-    assert_eq!(
-        std::mem::offset_of!(SharedAudioHeader, encryption_overflow_count),
-        112
+        manifest["size"].as_u64(),
+        Some(std::mem::size_of::<SharedAudioHeader>() as u64)
     );
     assert_eq!(
-        std::mem::offset_of!(SharedAudioHeader, daemon_heartbeat_ms),
-        120
+        manifest["alignment"].as_u64(),
+        Some(std::mem::align_of::<SharedAudioHeader>() as u64)
     );
-    assert_eq!(std::mem::offset_of!(SharedAudioHeader, configuring), 128);
+    let fields = manifest["fields"]
+        .as_object()
+        .expect("shared-memory layout manifest fields must be an object");
     assert_eq!(
-        std::mem::offset_of!(SharedAudioHeader, configuring_ack),
-        132
+        fields.len(),
+        26,
+        "manifest must contain exactly every SharedAudioHeader field"
     );
-    assert_eq!(
-        std::mem::offset_of!(SharedAudioHeader, requested_channel_count),
-        136
-    );
+
+    macro_rules! assert_manifest_offset {
+        ($name:literal, $field:ident) => {
+            assert_eq!(
+                manifest["fields"][$name].as_u64(),
+                Some(std::mem::offset_of!(SharedAudioHeader, $field) as u64),
+                "layout manifest mismatch for {}",
+                $name
+            );
+        };
+    }
+
+    assert_manifest_offset!("magic", magic);
+    assert_manifest_offset!("version", version);
+    assert_manifest_offset!("sample_rate", sample_rate);
+    assert_manifest_offset!("buffer_frames", buffer_frames);
+    assert_manifest_offset!("channel_count", channel_count);
+    assert_manifest_offset!("write_position", write_position);
+    assert_manifest_offset!("read_position", read_position);
+    assert_manifest_offset!("active", active);
+    assert_manifest_offset!("config_changed", config_changed);
+    assert_manifest_offset!("driver_ready", driver_ready);
+    assert_manifest_offset!("engine_ready", engine_ready);
+    assert_manifest_offset!("encrypted", encrypted);
+    assert_manifest_offset!("key_fingerprint", key_fingerprint);
+    assert_manifest_offset!("frame_counter", frame_counter);
+    assert_manifest_offset!("requested_sample_rate", requested_sample_rate);
+    assert_manifest_offset!("requested_buffer_frames", requested_buffer_frames);
+    assert_manifest_offset!("actual_sample_rate", actual_sample_rate);
+    assert_manifest_offset!("actual_buffer_frames", actual_buffer_frames);
+    assert_manifest_offset!("config_status", config_status);
+    assert_manifest_offset!("config_source", config_source);
+    assert_manifest_offset!("config_error_code", config_error_code);
+    assert_manifest_offset!("encryption_overflow_count", encryption_overflow_count);
+    assert_manifest_offset!("daemon_heartbeat_ms", daemon_heartbeat_ms);
+    assert_manifest_offset!("configuring", configuring);
+    assert_manifest_offset!("configuring_ack", configuring_ack);
+    assert_manifest_offset!("requested_channel_count", requested_channel_count);
 }
 
 #[test]
@@ -115,7 +141,7 @@ fn open_mapping_derives_capacity_after_cross_process_geometry_change() {
 fn pending_channel_request_does_not_change_live_ring_geometry() {
     let temp_file = NamedTempFile::new().expect("Failed to create temp file");
     let mut buffer =
-        SharedAudioBuffer::create_or_open_with_capacity(temp_file.path(), 48_000, 16, 2, 8)
+        SharedAudioBuffer::create_or_open_with_max_geometry(temp_file.path(), 48_000, 16, 2, 32, 8)
             .expect("Failed to create shared memory");
 
     let input: Vec<f32> = (0..8).map(|sample| sample as f32).collect();
@@ -130,6 +156,41 @@ fn pending_channel_request_does_not_change_live_ring_geometry() {
     let mut output = vec![0.0; 8];
     assert_eq!(buffer.read_audio(&mut output), 4);
     assert_eq!(output, input);
+}
+
+#[test]
+fn cross_process_reconfiguration_protocol_round_trip() {
+    let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    let mut daemon =
+        SharedAudioBuffer::create_or_open_with_max_geometry(temp_file.path(), 48_000, 16, 2, 16, 8)
+            .expect("Failed to create shared memory");
+    let swift_hal = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open HAL view");
+
+    // Requester publishes pending geometry without changing the active ring.
+    daemon.request_config_change(96_000, 16, 8, 1);
+    assert_eq!(swift_hal.sample_rate(), 48_000);
+    assert_eq!(swift_hal.channel_count(), 2);
+    assert_eq!(swift_hal.requested_sample_rate(), 96_000);
+    assert_eq!(swift_hal.requested_channel_count(), 8);
+
+    // Daemon asks the HAL IO participant to quiesce. The second process must
+    // observe the bit and publish configuring_ack before the daemon commits.
+    daemon.header().configuring.store(
+        super::shared_audio_buffer::CONFIGURING_RECONFIGURE,
+        Ordering::Release,
+    );
+    let mut silence = vec![0.0; 2];
+    assert_eq!(swift_hal.read_audio(&mut silence), 0);
+    assert_eq!(daemon.header().configuring_ack.load(Ordering::Acquire), 1);
+    daemon.header().configuring.store(0, Ordering::Release);
+
+    daemon.reconfigure_quiesced(Some(96_000), Some(16), Some(8));
+    assert_eq!(daemon.sample_rate(), 96_000);
+    assert_eq!(daemon.buffer_frames(), 16);
+    assert_eq!(daemon.channel_count(), 8);
+    assert_eq!(daemon.requested_channel_count(), 8);
+    assert_eq!(daemon.header().configuring.load(Ordering::Acquire), 0);
+    assert_eq!(daemon.header().configuring_ack.load(Ordering::Acquire), 0);
 }
 
 #[test]
@@ -329,6 +390,81 @@ fn test_reconfigure_quiesced_sets_and_clears_configuring_flag() {
 }
 
 #[test]
+fn reconfigure_timeout_does_not_mutate_geometry_or_ring_state() {
+    let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    let mut buffer =
+        SharedAudioBuffer::create_or_open_with_max_geometry(temp_file.path(), 48_000, 16, 2, 32, 8)
+            .expect("Failed to create shared memory");
+    buffer.write_audio(&[1.0, 2.0]);
+    buffer.header().configuring.store(
+        super::shared_audio_buffer::CONFIGURING_WRITE_COMMIT,
+        Ordering::Release,
+    );
+
+    buffer.reconfigure_quiesced(Some(96_000), Some(32), Some(8));
+
+    assert_eq!(buffer.sample_rate(), 48_000);
+    assert_eq!(buffer.buffer_frames(), 16);
+    assert_eq!(buffer.channel_count(), 2);
+    assert_eq!(buffer.header().write_position.load(Ordering::Acquire), 2);
+    assert_eq!(buffer.header().configuring.load(Ordering::Acquire), 4);
+
+    buffer.header().configuring.store(0, Ordering::Release);
+    buffer.reconfigure_quiesced(Some(96_000), Some(32), Some(8));
+    assert_eq!(buffer.sample_rate(), 96_000);
+    assert_eq!(buffer.buffer_frames(), 32);
+    assert_eq!(buffer.channel_count(), 8);
+    assert_eq!(buffer.header().write_position.load(Ordering::Acquire), 0);
+    assert_eq!(buffer.header().read_position.load(Ordering::Acquire), 0);
+}
+
+#[test]
+fn stale_plain_cursor_commit_is_rejected_after_reconfigure_begins() {
+    let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    let buffer =
+        SharedAudioBuffer::create_or_open_with_capacity(temp_file.path(), 48_000, 16, 2, 2)
+            .expect("Failed to create shared memory");
+
+    buffer
+        .header()
+        .write_position
+        .store(8, Ordering::Release);
+    buffer.header().configuring.store(
+        super::shared_audio_buffer::CONFIGURING_RECONFIGURE,
+        Ordering::Release,
+    );
+
+    // This models an IO operation that copied the old-geometry payload before
+    // the controller raised the reconfigure bit, then reached its publication
+    // point afterward. It must not resurrect the stale cursor.
+    assert!(!buffer.commit_write_position(16));
+    assert_eq!(buffer.header().write_position.load(Ordering::Acquire), 8);
+}
+
+#[test]
+fn stale_encrypted_cursor_commit_is_rejected_after_reconfigure_begins() {
+    let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    let buffer =
+        SharedAudioBuffer::create_or_open_with_capacity(temp_file.path(), 48_000, 16, 2, 2)
+            .expect("Failed to create shared memory");
+
+    buffer
+        .header()
+        .read_position
+        .store(12, Ordering::Release);
+    buffer.header().configuring.store(
+        super::shared_audio_buffer::CONFIGURING_RECONFIGURE,
+        Ordering::Release,
+    );
+
+    // Encrypted reads publish through the same guarded commit primitive after
+    // decrypting a record. A reconfiguration that wins before publication
+    // must force the record to be discarded rather than restoring read_pos.
+    assert!(!buffer.commit_read_position(20));
+    assert_eq!(buffer.header().read_position.load(Ordering::Acquire), 12);
+}
+
+#[test]
 fn io_acknowledges_a_preexisting_quiesce_request() {
     let temp_file = NamedTempFile::new().expect("Failed to create temp file");
     let buffer =
@@ -445,7 +581,7 @@ fn concurrent_spsc_io_preserves_frame_order_in_ci() {
 
     let reader_done = Arc::clone(&writer_done);
     let reader_thread = thread::spawn(move || {
-        let mut reader = reader;
+        let reader = reader;
         let mut output = [0.0_f32; 2];
         let mut next_frame = 0_u32;
         loop {

@@ -1,4 +1,5 @@
 import SwiftUI
+import ConfigBarModels
 
 // MARK: - Plugin Editor Views
 
@@ -42,7 +43,7 @@ struct GainEditor: View {
                 Text("Gain:")
                     .frame(width: 80, alignment: .trailing)
                 Slider(value: $gainDb, in: -60...20, step: 0.1)
-                    .onChange(of: gainDb) { _, newValue in
+                    .onChange(of: gainDb) { newValue in
                         onUpdate(["gain_db": newValue])
                     }
                 Text("\(gainDb, specifier: "%.1f") dB")
@@ -133,22 +134,22 @@ struct EQBandRow: View {
                 }
             }
             .frame(width: 90)
-            .onChange(of: filterType) { _, _ in emitUpdate() }
+            .onChange(of: filterType) { _ in emitUpdate() }
 
             Text("Hz:")
             TextField("", value: $frequency, format: .number)
                 .frame(width: 60)
-                .onChange(of: frequency) { _, _ in emitUpdate() }
+                .onChange(of: frequency) { _ in emitUpdate() }
 
             Text("Q:")
             TextField("", value: $q, format: .number)
                 .frame(width: 45)
-                .onChange(of: q) { _, _ in emitUpdate() }
+                .onChange(of: q) { _ in emitUpdate() }
 
             Text("dB:")
             TextField("", value: $gainDb, format: .number)
                 .frame(width: 50)
-                .onChange(of: gainDb) { _, _ in emitUpdate() }
+                .onChange(of: gainDb) { _ in emitUpdate() }
 
             Button(action: onRemove) {
                 Image(systemName: "minus.circle")
@@ -228,7 +229,7 @@ struct CompressorEditor: View {
             Text(label)
                 .frame(width: 80, alignment: .trailing)
             Slider(value: value, in: range)
-                .onChange(of: value.wrappedValue) { _, _ in emitUpdate() }
+                .onChange(of: value.wrappedValue) { _ in emitUpdate() }
             Text("\(value.wrappedValue, specifier: "%.1f") \(unit)")
                 .frame(width: 80, alignment: .trailing)
                 .monospacedDigit()
@@ -272,7 +273,7 @@ struct LimiterEditor: View {
             Text(label)
                 .frame(width: 80, alignment: .trailing)
             Slider(value: value, in: range)
-                .onChange(of: value.wrappedValue) { _, _ in emitUpdate() }
+                .onChange(of: value.wrappedValue) { _ in emitUpdate() }
             Text("\(value.wrappedValue, specifier: "%.1f") \(unit)")
                 .frame(width: 80, alignment: .trailing)
                 .monospacedDigit()
@@ -324,7 +325,7 @@ struct GateEditor: View {
             Text(label)
                 .frame(width: 80, alignment: .trailing)
             Slider(value: value, in: range)
-                .onChange(of: value.wrappedValue) { _, _ in emitUpdate() }
+                .onChange(of: value.wrappedValue) { _ in emitUpdate() }
             Text("\(value.wrappedValue, specifier: "%.1f") \(unit)")
                 .frame(width: 80, alignment: .trailing)
                 .monospacedDigit()

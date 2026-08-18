@@ -9,9 +9,20 @@ use sotf_audio::engine::PluginGraphConfig;
 use sotf_audio::manager::AudioEngineManager;
 use std::sync::Arc;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct PipelineRecovery {
+    pub(super) error: String,
+    pub(super) actions: Vec<String>,
+}
+
 #[derive(Debug, Default)]
 pub(super) struct SystemwideState {
     pub(super) pipeline: PipelineSupervisor,
+    /// Durable control-plane state for a transition that left the engine
+    /// stopped. This is separate from `AppliedPipeline`: the last applied
+    /// plan remains authoritative even when a later transition cannot be
+    /// applied or restored.
+    pub(super) pipeline_recovery: Option<PipelineRecovery>,
 }
 
 impl SystemwideState {
@@ -57,6 +68,21 @@ impl SystemwideState {
 
     pub(super) fn applied_spec(&self) -> Option<PipelineSpec> {
         self.pipeline.applied_spec()
+    }
+
+    pub(super) fn pipeline_recovery(&self) -> Option<PipelineRecovery> {
+        self.pipeline_recovery.clone()
+    }
+
+    pub(super) fn mark_pipeline_recovery(&mut self, error: impl Into<String>) {
+        self.pipeline_recovery = Some(PipelineRecovery {
+            error: error.into(),
+            actions: vec!["restart_daemon".to_string()],
+        });
+    }
+
+    pub(super) fn clear_pipeline_recovery(&mut self) {
+        self.pipeline_recovery = None;
     }
 
     pub(super) fn prepare_plan(

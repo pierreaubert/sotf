@@ -3,26 +3,26 @@ import Foundation
 // MARK: - Plugin Models
 
 /// Parameter metadata for descriptor-driven plugin editors.
-struct PluginParameterDescriptor: Identifiable {
-    let key: String
-    let name: String
-    let type: String
-    let unit: String
-    let group: String
-    let doc: String
-    let updateMode: String
-    let min: Double?
-    let max: Double?
-    let step: Double?
-    let defaultDouble: Double?
-    let defaultBool: Bool?
-    let choices: [String]?
-    let trueLabel: String?
-    let falseLabel: String?
+public struct PluginParameterDescriptor: Identifiable {
+    public let key: String
+    public let name: String
+    public let type: String
+    public let unit: String
+    public let group: String
+    public let doc: String
+    public let updateMode: String
+    public let min: Double?
+    public let max: Double?
+    public let step: Double?
+    public let defaultDouble: Double?
+    public let defaultBool: Bool?
+    public let choices: [String]?
+    public let trueLabel: String?
+    public let falseLabel: String?
 
-    var id: String { key }
+    public var id: String { key }
 
-    init(
+    public init(
         key: String,
         name: String,
         type: String,
@@ -59,59 +59,108 @@ struct PluginParameterDescriptor: Identifiable {
 }
 
 /// Metadata for an available plugin type (from get_available_plugins)
-struct AvailablePlugin: Identifiable {
-    let type_: String
-    let name: String
-    let description: String
-    let category: String
-    let maturity: String
-    let defaultParameters: [String: Any]
-    let parameters: [PluginParameterDescriptor]
+public struct AvailablePlugin: Identifiable {
+    public let type_: String
+    public let name: String
+    public let description: String
+    public let category: String
+    public let maturity: String
+    public let defaultParameters: [String: Any]
+    public let parameters: [PluginParameterDescriptor]
 
-    var id: String { type_ }
+    public init(
+        type_: String,
+        name: String,
+        description: String,
+        category: String,
+        maturity: String,
+        defaultParameters: [String: Any],
+        parameters: [PluginParameterDescriptor]
+    ) {
+        self.type_ = type_
+        self.name = name
+        self.description = description
+        self.category = category
+        self.maturity = maturity
+        self.defaultParameters = defaultParameters
+        self.parameters = parameters
+    }
+
+    public var id: String { type_ }
 }
 
 /// A plugin instance in the current chain (from get_plugins)
-class PluginInstance: Identifiable, ObservableObject {
-    let id: UUID
-    let index: Int
-    let pluginType: String
-    let pluginName: String
-    @Published var parameters: [String: Any]
+public class PluginInstance: Identifiable, ObservableObject {
+    public let id: UUID
+    public let index: Int
+    public let pluginType: String
+    public let pluginName: String
+    @Published public var parameters: [String: Any]
+    @Published public var inputChannels: Int
+    @Published public var bypassed: Bool
 
-    init(index: Int, pluginType: String, pluginName: String, parameters: [String: Any]) {
+    public init(
+        index: Int,
+        pluginType: String,
+        pluginName: String,
+        parameters: [String: Any],
+        inputChannels: Int = 1,
+        bypassed: Bool = false
+    ) {
         self.id = UUID()
         self.index = index
         self.pluginType = pluginType
         self.pluginName = pluginName
         self.parameters = parameters
+        self.inputChannels = max(1, inputChannels)
+        self.bypassed = bypassed
     }
 }
 
 /// Plugin categories for the picker
-struct PluginCategory: Identifiable {
-    let name: String
-    let plugins: [AvailablePlugin]
-    var id: String { name }
+public struct PluginCategory: Identifiable {
+    public let name: String
+    public let plugins: [AvailablePlugin]
+
+    public init(name: String, plugins: [AvailablePlugin]) {
+        self.name = name
+        self.plugins = plugins
+    }
+
+    public var id: String { name }
 }
 
-enum PluginPipelineTopology: String {
+public enum PluginPipelineTopology: String {
     case rack
     case graph
 }
 
-struct PluginGraphNodeModel: Identifiable {
-    let id: Int
-    var pluginType: String
-    var parameters: [String: Any]
-    var inputChannels: Int
-    var bypassed: Bool
+public struct PluginGraphNodeModel: Identifiable {
+    public let id: Int
+    public var pluginType: String
+    public var parameters: [String: Any]
+    public var inputChannels: Int
+    public var bypassed: Bool
 
-    var pluginName: String {
+    public init(
+        id: Int,
+        pluginType: String,
+        parameters: [String: Any],
+        inputChannels: Int,
+        bypassed: Bool
+    ) {
+        self.id = id
+        self.pluginType = pluginType
+        self.parameters = parameters
+        self.inputChannels = inputChannels
+        self.bypassed = bypassed
+    }
+
+    public var pluginName: String {
         pluginDisplayName(pluginType)
     }
 
-    var artifact: [String: Any] {
+    public var artifact: [String: Any] {
         [
             "id": id,
             "plugin_type": pluginType,
@@ -122,38 +171,48 @@ struct PluginGraphNodeModel: Identifiable {
     }
 }
 
-struct PluginGraphEdgeModel: Identifiable, Hashable {
-    let fromNode: Int
-    let toNode: Int
+public struct PluginGraphEdgeModel: Identifiable, Hashable {
+    public let fromNode: Int
+    public let toNode: Int
 
-    var id: String { "\(fromNode)->\(toNode)" }
+    public init(fromNode: Int, toNode: Int) {
+        self.fromNode = fromNode
+        self.toNode = toNode
+    }
 
-    var artifact: [String: Any] {
+    public var id: String { "\(fromNode)->\(toNode)" }
+
+    public var artifact: [String: Any] {
         ["from_node": fromNode, "to_node": toNode]
     }
 
-    static func == (lhs: PluginGraphEdgeModel, rhs: PluginGraphEdgeModel) -> Bool {
+    public static func == (lhs: PluginGraphEdgeModel, rhs: PluginGraphEdgeModel) -> Bool {
         lhs.fromNode == rhs.fromNode && lhs.toNode == rhs.toNode
     }
 
-    func hash(into hasher: inout Hasher) {
+    public func hash(into hasher: inout Hasher) {
         hasher.combine(fromNode)
         hasher.combine(toNode)
     }
 }
 
-struct PluginGraphModel {
-    var nodes: [PluginGraphNodeModel]
-    var edges: [PluginGraphEdgeModel]
+public struct PluginGraphModel {
+    public var nodes: [PluginGraphNodeModel]
+    public var edges: [PluginGraphEdgeModel]
 
-    var artifact: [String: Any] {
+    public init(nodes: [PluginGraphNodeModel], edges: [PluginGraphEdgeModel]) {
+        self.nodes = nodes
+        self.edges = edges
+    }
+
+    public var artifact: [String: Any] {
         [
             "nodes": nodes.map(\.artifact),
             "edges": edges.map(\.artifact),
         ]
     }
 
-    var linearNodeIDs: [Int]? {
+    public var linearNodeIDs: [Int]? {
         guard !nodes.isEmpty else { return [] }
         let nodeIDs = Set(nodes.map(\.id))
         guard nodeIDs.count == nodes.count,
@@ -187,20 +246,32 @@ struct PluginGraphModel {
         return ordered.count == nodes.count ? ordered : nil
     }
 
-    var isLinear: Bool {
+    public var isLinear: Bool {
         linearNodeIDs != nil
     }
 }
 
-struct PluginPipelineModel {
-    var topology: PluginPipelineTopology
-    var plugins: [[String: Any]]
-    var graph: PluginGraphModel?
-    var generation: Int?
+public struct PluginPipelineModel {
+    public var topology: PluginPipelineTopology
+    public var plugins: [[String: Any]]
+    public var graph: PluginGraphModel?
+    public var generation: Int?
+
+    public init(
+        topology: PluginPipelineTopology,
+        plugins: [[String: Any]],
+        graph: PluginGraphModel?,
+        generation: Int?
+    ) {
+        self.topology = topology
+        self.plugins = plugins
+        self.graph = graph
+        self.generation = generation
+    }
 }
 
 /// Group available plugins by category
-func groupPluginsByCategory(_ plugins: [AvailablePlugin]) -> [PluginCategory] {
+public func groupPluginsByCategory(_ plugins: [AvailablePlugin]) -> [PluginCategory] {
     var categoryMap: [String: [AvailablePlugin]] = [:]
     for plugin in plugins {
         categoryMap[plugin.category, default: []].append(plugin)
@@ -221,7 +292,7 @@ func groupPluginsByCategory(_ plugins: [AvailablePlugin]) -> [PluginCategory] {
 }
 
 /// Display name for a plugin type string
-func pluginDisplayName(_ type: String) -> String {
+public func pluginDisplayName(_ type: String) -> String {
     switch type {
     case "eq": return "EQ"
     case "gain": return "Gain"
@@ -263,7 +334,7 @@ func pluginDisplayName(_ type: String) -> String {
     }
 }
 
-let engineTypeToAppGpuiSettingsVariant: [String: String] = [
+public let engineTypeToAppGpuiSettingsVariant: [String: String] = [
     "eq": "EQ",
     "gain": "Gain",
     "upmixer": "Upmixer",
@@ -307,6 +378,6 @@ let engineTypeToAppGpuiSettingsVariant: [String: String] = [
     "aae": "AAE",
 ]
 
-let appGpuiSettingsVariantToEngineType: [String: String] = Dictionary(
+public let appGpuiSettingsVariantToEngineType: [String: String] = Dictionary(
     uniqueKeysWithValues: engineTypeToAppGpuiSettingsVariant.map { ($0.value, $0.key) }
 )

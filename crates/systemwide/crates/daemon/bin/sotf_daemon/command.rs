@@ -43,6 +43,12 @@ pub(super) enum Command {
         #[serde(default)]
         base_generation: Option<u64>,
     },
+    #[serde(rename = "reorder_graph")]
+    ReorderGraph {
+        order: Vec<usize>,
+        #[serde(default)]
+        base_generation: Option<u64>,
+    },
     #[serde(rename = "set_input_channels")]
     SetInputChannels { channels: usize },
     #[serde(rename = "set_output_channels")]
@@ -78,6 +84,16 @@ pub(super) enum Command {
     },
     #[serde(rename = "reorder_plugins")]
     ReorderPlugins { order: Vec<usize> },
+    #[serde(rename = "set_rack_plugin_state")]
+    SetRackPluginState {
+        index: usize,
+        #[serde(default)]
+        input_channels: Option<usize>,
+        #[serde(default)]
+        bypassed: Option<bool>,
+        #[serde(default)]
+        base_generation: Option<u64>,
+    },
     // Driver status (replaces hal_status, kept as alias)
     #[serde(rename = "driver_status", alias = "hal_status")]
     DriverStatus,
@@ -120,6 +136,7 @@ impl Command {
             Command::SetDevice { .. } => "set_device",
             Command::LoadPlugins { .. } => "load_plugins",
             Command::LoadPluginArtifact { .. } => "load_plugin_artifact",
+            Command::ReorderGraph { .. } => "reorder_graph",
             Command::SetInputChannels { .. } => "set_input_channels",
             Command::SetOutputChannels { .. } => "set_output_channels",
             Command::SetPipelineChannels { .. } => "set_pipeline_channels",
@@ -131,6 +148,7 @@ impl Command {
             Command::RemovePlugin { .. } => "remove_plugin",
             Command::UpdatePlugin { .. } => "update_plugin",
             Command::ReorderPlugins { .. } => "reorder_plugins",
+            Command::SetRackPluginState { .. } => "set_rack_plugin_state",
             Command::DriverStatus => "driver_status",
             Command::Shutdown => "shutdown",
             Command::SetEncryption { .. } => "set_encryption",

@@ -119,6 +119,16 @@ pub(super) mod encryption_impl {
     use std::process::Command;
 
     fn ensure_owned_secure_dir(path: &Path) -> io::Result<()> {
+        ensure_owned_secure_dir_for_uid(path, get_current_uid())
+    }
+
+    /// Validate ownership separately from the process UID so the security
+    /// tests can exercise the first-boot foreign-owner failure without
+    /// requiring root to chown a fixture.
+    pub(crate) fn ensure_owned_secure_dir_for_uid(
+        path: &Path,
+        expected_uid: u32,
+    ) -> io::Result<()> {
         if path.exists() {
             let metadata = fs::symlink_metadata(path)?;
             if metadata.file_type().is_symlink() || !metadata.is_dir() {
@@ -127,7 +137,7 @@ pub(super) mod encryption_impl {
                     format!("runtime path {} is not a directory", path.display()),
                 ));
             }
-            if metadata.uid() != get_current_uid() {
+            if metadata.uid() != expected_uid {
                 return Err(io::Error::new(
                     io::ErrorKind::PermissionDenied,
                     format!(

@@ -14,8 +14,53 @@ import Foundation
 /// Test runner for HAL driver components
 final class HALDriverTests {
 
+    private struct SharedMemoryLayoutManifest: Decodable {
+        let size: Int
+        let alignment: Int
+        let fields: [String: Int]
+    }
+
+    private static func sharedMemoryLayoutManifest() -> SharedMemoryLayoutManifest? {
+        var candidates: [URL] = []
+        let environment = ProcessInfo.processInfo.environment
+        if let configuredPath = environment["SOTF_SHARED_MEMORY_LAYOUT_MANIFEST"],
+           !configuredPath.isEmpty
+        {
+            candidates.append(URL(fileURLWithPath: configuredPath))
+        }
+        if let bundleURL = Bundle.main.url(
+            forResource: "shared_memory_layout",
+            withExtension: "json"
+        ) {
+            candidates.append(bundleURL)
+        }
+        if let bundleURL = Bundle(for: HALDriverTests.self).url(
+            forResource: "shared_memory_layout",
+            withExtension: "json"
+        ) {
+            candidates.append(bundleURL)
+        }
+
+        for manifestURL in candidates {
+            guard let data = try? Data(contentsOf: manifestURL) else { continue }
+            do {
+                return try JSONDecoder().decode(SharedMemoryLayoutManifest.self, from: data)
+            } catch {
+                halLog("    FAIL: shared-memory layout manifest is invalid: \(error)")
+                return nil
+            }
+        }
+
+        halLog(
+            "    FAIL: shared-memory layout manifest is missing; set "
+                + "SOTF_SHARED_MEMORY_LAYOUT_MANIFEST or package it as a bundle resource"
+        )
+        return nil
+    }
+
     /// Run all tests
-    static func runAllTests() {
+    @discardableResult
+    static func runAllTests() -> Bool {
         halLog("Running HAL driver tests...")
 
         var passed = 0
@@ -28,6 +73,9 @@ final class HALDriverTests {
 
         // Cross-language shared-memory ABI
         if testSharedAudioHeaderLayout() { passed += 1 } else { failed += 1 }
+        if testSampleRateRequestRemainsTransactional() { passed += 1 } else { failed += 1 }
+        if testCrossProcessReconfigurationProtocol() { passed += 1 } else { failed += 1 }
+        if testGeometryCacheSurvivesDaemonRestart() { passed += 1 } else { failed += 1 }
 
         // Encryption tests
         if testEncryptionRoundTrip() { passed += 1 } else { failed += 1 }
@@ -37,6 +85,7 @@ final class HALDriverTests {
         if testSharedMemoryEncryptedPassthrough() { passed += 1 } else { failed += 1 }
 
         halLog("Tests complete: \(passed) passed, \(failed) failed")
+        return failed == 0
     }
 
     /// Keep the Swift mirror byte-for-byte compatible with Rust's
@@ -46,29 +95,12 @@ final class HALDriverTests {
     static func testSharedAudioHeaderLayout() -> Bool {
         halLog("  Test: SharedAudioHeader layout")
 
-        let expectedOffsets: [(String, Int?, Int)] = [
-            ("magic", MemoryLayout<SharedAudioHeader>.offset(of: \.magic), 0),
-            ("version", MemoryLayout<SharedAudioHeader>.offset(of: \.version), 4),
-            ("sampleRate", MemoryLayout<SharedAudioHeader>.offset(of: \.sampleRate), 8),
-            ("bufferFrames", MemoryLayout<SharedAudioHeader>.offset(of: \.bufferFrames), 12),
-            ("channelCount", MemoryLayout<SharedAudioHeader>.offset(of: \.channelCount), 16),
-            ("writePosition", MemoryLayout<SharedAudioHeader>.offset(of: \.writePosition), 24),
-            ("readPosition", MemoryLayout<SharedAudioHeader>.offset(of: \.readPosition), 32),
-            ("active", MemoryLayout<SharedAudioHeader>.offset(of: \.active), 40),
-            ("keyFingerprint", MemoryLayout<SharedAudioHeader>.offset(of: \.keyFingerprint), 64),
-            ("frameCounter", MemoryLayout<SharedAudioHeader>.offset(of: \.frameCounter), 72),
-            ("requestedSampleRate", MemoryLayout<SharedAudioHeader>.offset(of: \.requestedSampleRate), 80),
-            ("configStatus", MemoryLayout<SharedAudioHeader>.offset(of: \.configStatus), 96),
-            ("encryptionOverflowCount", MemoryLayout<SharedAudioHeader>.offset(of: \.encryptionOverflowCount), 112),
-            ("daemonHeartbeatMs", MemoryLayout<SharedAudioHeader>.offset(of: \.daemonHeartbeatMs), 120),
-            ("configuring", MemoryLayout<SharedAudioHeader>.offset(of: \.configuring), 128),
-            ("configuringAck", MemoryLayout<SharedAudioHeader>.offset(of: \.configuringAck), 132),
-            ("requestedChannelCount", MemoryLayout<SharedAudioHeader>.offset(of: \.requestedChannelCount), 136),
-        ]
-
-        guard MemoryLayout<SharedAudioHeader>.size == 144,
-              MemoryLayout<SharedAudioHeader>.stride == 144,
-              MemoryLayout<SharedAudioHeader>.alignment == 8 else {
+        guard let manifest = sharedMemoryLayoutManifest(),
+              // Rust's repr(C, align(8)) size includes trailing padding. Swift
+              // exposes the same ABI value as `stride`; `size` only covers the
+              // last field and is therefore 140 bytes for this header.
+              MemoryLayout<SharedAudioHeader>.stride == manifest.size,
+              MemoryLayout<SharedAudioHeader>.alignment == manifest.alignment else {
             halLog(
                 "    FAIL: size=\(MemoryLayout<SharedAudioHeader>.size), " +
                 "stride=\(MemoryLayout<SharedAudioHeader>.stride), " +
@@ -77,8 +109,444 @@ final class HALDriverTests {
             return false
         }
 
-        for (name, actual, expected) in expectedOffsets where actual != expected {
-            halLog("    FAIL: \(name) offset=\(String(describing: actual)), expected=\(expected)")
+        let actualOffsets: [String: Int] = [
+            "magic": MemoryLayout<SharedAudioHeader>.offset(of: \.magic)!,
+            "version": MemoryLayout<SharedAudioHeader>.offset(of: \.version)!,
+            "sample_rate": MemoryLayout<SharedAudioHeader>.offset(of: \.sampleRate)!,
+            "buffer_frames": MemoryLayout<SharedAudioHeader>.offset(of: \.bufferFrames)!,
+            "channel_count": MemoryLayout<SharedAudioHeader>.offset(of: \.channelCount)!,
+            "write_position": MemoryLayout<SharedAudioHeader>.offset(of: \.writePosition)!,
+            "read_position": MemoryLayout<SharedAudioHeader>.offset(of: \.readPosition)!,
+            "active": MemoryLayout<SharedAudioHeader>.offset(of: \.active)!,
+            "config_changed": MemoryLayout<SharedAudioHeader>.offset(of: \.configChanged)!,
+            "driver_ready": MemoryLayout<SharedAudioHeader>.offset(of: \.driverReady)!,
+            "engine_ready": MemoryLayout<SharedAudioHeader>.offset(of: \.engineReady)!,
+            "encrypted": MemoryLayout<SharedAudioHeader>.offset(of: \.encrypted)!,
+            "key_fingerprint": MemoryLayout<SharedAudioHeader>.offset(of: \.keyFingerprint)!,
+            "frame_counter": MemoryLayout<SharedAudioHeader>.offset(of: \.frameCounter)!,
+            "requested_sample_rate": MemoryLayout<SharedAudioHeader>.offset(of: \.requestedSampleRate)!,
+            "requested_buffer_frames": MemoryLayout<SharedAudioHeader>.offset(of: \.requestedBufferFrames)!,
+            "actual_sample_rate": MemoryLayout<SharedAudioHeader>.offset(of: \.actualSampleRate)!,
+            "actual_buffer_frames": MemoryLayout<SharedAudioHeader>.offset(of: \.actualBufferFrames)!,
+            "config_status": MemoryLayout<SharedAudioHeader>.offset(of: \.configStatus)!,
+            "config_source": MemoryLayout<SharedAudioHeader>.offset(of: \.configSource)!,
+            "config_error_code": MemoryLayout<SharedAudioHeader>.offset(of: \.configErrorCode)!,
+            "encryption_overflow_count": MemoryLayout<SharedAudioHeader>.offset(of: \.encryptionOverflowCount)!,
+            "daemon_heartbeat_ms": MemoryLayout<SharedAudioHeader>.offset(of: \.daemonHeartbeatMs)!,
+            "configuring": MemoryLayout<SharedAudioHeader>.offset(of: \.configuring)!,
+            "configuring_ack": MemoryLayout<SharedAudioHeader>.offset(of: \.configuringAck)!,
+            "requested_channel_count": MemoryLayout<SharedAudioHeader>.offset(of: \.requestedChannelCount)!,
+        ]
+        guard Set(actualOffsets.keys) == Set(manifest.fields.keys) else {
+            halLog("    FAIL: manifest field set does not match Swift header")
+            return false
+        }
+        for (name, expected) in manifest.fields where actualOffsets[name] != expected {
+            halLog("    FAIL: \(name) offset=\(String(describing: actualOffsets[name])), expected=\(expected)")
+            return false
+        }
+
+        halLog("    PASS")
+        return true
+    }
+
+    /// A HAL property change must publish a request without changing the
+    /// active ring geometry. The daemon owns the acknowledgment; only then
+    /// may the active sample rate be changed by the driver state machine.
+    static func testSampleRateRequestRemainsTransactional() -> Bool {
+        halLog("  Test: sample-rate request remains transactional")
+
+        let fileManager = FileManager.default
+        let tempDir = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("sotf-hal-config-(UUID().uuidString)")
+        let shmPath = (tempDir as NSString).appendingPathComponent("audio.shm")
+        let sampleRate: UInt32 = 48_000
+        let bufferFrames: UInt32 = 64
+        let channelCount: UInt32 = 2
+        let audioCapacity = Int(bufferFrames) * Int(channelCount) * 8
+        let headerSize = MemoryLayout<SharedAudioHeader>.size
+        let alignedHeaderSize = (headerSize + 63) & ~63
+        let totalSize = alignedHeaderSize + audioCapacity * MemoryLayout<Float>.size
+
+        do {
+            try fileManager.createDirectory(
+                atPath: tempDir,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            fileManager.createFile(atPath: shmPath, contents: Data(count: totalSize))
+        } catch {
+            halLog("    FAIL: fixture setup failed: (error)")
+            return false
+        }
+
+        var header = SharedAudioHeader(
+            magic: 0x534F5446,
+            version: 6,
+            sampleRate: sampleRate,
+            bufferFrames: bufferFrames,
+            channelCount: channelCount,
+            writePosition: 0,
+            readPosition: 0,
+            active: 0,
+            configChanged: 0,
+            driverReady: 0,
+            engineReady: 1,
+            encrypted: 0,
+            keyFingerprint: 0,
+            frameCounter: 0,
+            requestedSampleRate: sampleRate,
+            requestedBufferFrames: bufferFrames,
+            actualSampleRate: sampleRate,
+            actualBufferFrames: bufferFrames,
+            configStatus: 1,
+            configSource: 0,
+            configErrorCode: 0,
+            encryptionOverflowCount: 0,
+            daemonHeartbeatMs: 0,
+            configuring: 0,
+            configuringAck: 0,
+            requestedChannelCount: channelCount
+        )
+
+        let fd = Darwin.open(shmPath, O_RDWR)
+        guard fd >= 0 else {
+            try? fileManager.removeItem(atPath: tempDir)
+            halLog("    FAIL: fixture open failed")
+            return false
+        }
+        let headerWritten = withUnsafeBytes(of: &header) { bytes in
+            Darwin.write(fd, bytes.baseAddress, bytes.count)
+        }
+        Darwin.close(fd)
+        guard headerWritten == headerSize else {
+            try? fileManager.removeItem(atPath: tempDir)
+            halLog("    FAIL: fixture header write failed")
+            return false
+        }
+
+        setenv("SOTF_HAL_SHARED_MEMORY_PATH", shmPath, 1)
+        defer {
+            unsetenv("SOTF_HAL_SHARED_MEMORY_PATH")
+            try? fileManager.removeItem(atPath: tempDir)
+        }
+
+        let sharedAudio = SharedAudioBuffer()
+        guard sharedAudio.initialize(
+            sampleRate: sampleRate,
+            bufferFrames: bufferFrames,
+            channelCount: channelCount
+        ) else {
+            halLog("    FAIL: SharedAudioBuffer.initialize failed")
+            return false
+        }
+        defer { sharedAudio.closeSharedMemory() }
+
+        sharedAudio.updateSampleRate(96_000)
+
+        guard sharedAudio.getActiveSampleRate() == sampleRate,
+              sharedAudio.getRequestedSampleRate() == 96_000,
+              sharedAudio.configChanged(),
+              sharedAudio.configSource() == 1,
+              sharedAudio.getConfigStatus() == 0 else {
+            halLog("    FAIL: request changed active state or did not publish pending status")
+            return false
+        }
+
+        sharedAudio.acknowledgeConfigChange(
+            actualSampleRate: 96_000,
+            actualBufferFrames: bufferFrames,
+            status: 1,
+            errorCode: 0
+        )
+        guard sharedAudio.applyActiveConfiguration(
+            sampleRate: 96_000,
+            bufferFrames: bufferFrames,
+            channelCount: channelCount
+        ), sharedAudio.getActiveSampleRate() == 96_000 else {
+            halLog("    FAIL: acknowledged geometry was not committed")
+            return false
+        }
+
+        halLog("    PASS")
+        return true
+    }
+
+    /// Exercise the same pending-channel and configuring_ack protocol used by
+    /// the Rust daemon. The fixture is intentionally larger than the active
+    /// 2-channel geometry so the new 8-channel geometry can be committed only
+    /// after the simulated Rust-side quiesce request has been acknowledged by
+    /// Swift IO.
+    static func testCrossProcessReconfigurationProtocol() -> Bool {
+        halLog("  Test: cross-process reconfiguration protocol")
+
+        let fileManager = FileManager.default
+        let tempDir = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("sotf-hal-reconfigure-\(UUID().uuidString)")
+        let shmPath = (tempDir as NSString).appendingPathComponent("audio.shm")
+        let sampleRate: UInt32 = 48_000
+        let bufferFrames: UInt32 = 64
+        let activeChannels: UInt32 = 2
+        let pendingChannels: UInt32 = 8
+        let audioCapacity = Int(bufferFrames) * Int(pendingChannels) * 8
+        let alignedHeaderSize = (MemoryLayout<SharedAudioHeader>.size + 63) & ~63
+        let totalSize = alignedHeaderSize + audioCapacity * MemoryLayout<Float>.size
+
+        do {
+            try fileManager.createDirectory(
+                atPath: tempDir,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            fileManager.createFile(atPath: shmPath, contents: Data(count: totalSize))
+        } catch {
+            halLog("    FAIL: fixture setup failed: \(error)")
+            return false
+        }
+        defer { try? fileManager.removeItem(atPath: tempDir) }
+
+        var header = SharedAudioHeader(
+            magic: 0x534F5446,
+            version: 6,
+            sampleRate: sampleRate,
+            bufferFrames: bufferFrames,
+            channelCount: activeChannels,
+            writePosition: 0,
+            readPosition: 0,
+            active: 0,
+            configChanged: 0,
+            driverReady: 0,
+            engineReady: 1,
+            encrypted: 0,
+            keyFingerprint: 0,
+            frameCounter: 0,
+            requestedSampleRate: sampleRate,
+            requestedBufferFrames: bufferFrames,
+            actualSampleRate: sampleRate,
+            actualBufferFrames: bufferFrames,
+            configStatus: 1,
+            configSource: 0,
+            configErrorCode: 0,
+            encryptionOverflowCount: 0,
+            daemonHeartbeatMs: 0,
+            configuring: 0,
+            configuringAck: 0,
+            requestedChannelCount: activeChannels
+        )
+        let fd = Darwin.open(shmPath, O_RDWR)
+        guard fd >= 0 else {
+            halLog("    FAIL: fixture open failed")
+            return false
+        }
+        let headerWritten = withUnsafeBytes(of: &header) { bytes in
+            Darwin.pwrite(fd, bytes.baseAddress, bytes.count, 0)
+        }
+        guard headerWritten == MemoryLayout<SharedAudioHeader>.size else {
+            Darwin.close(fd)
+            halLog("    FAIL: fixture header write failed")
+            return false
+        }
+
+        func writeUInt32(_ value: UInt32, at offset: off_t) -> Bool {
+            var value = value
+            return withUnsafeBytes(of: &value) { bytes in
+                Darwin.pwrite(fd, bytes.baseAddress, bytes.count, offset) == bytes.count
+            }
+        }
+        func readUInt32(at offset: off_t) -> UInt32? {
+            var value: UInt32 = 0
+            let count = withUnsafeMutableBytes(of: &value) { bytes in
+                Darwin.pread(fd, bytes.baseAddress, bytes.count, offset)
+            }
+            return count == MemoryLayout<UInt32>.size ? value : nil
+        }
+
+        setenv("SOTF_HAL_SHARED_MEMORY_PATH", shmPath, 1)
+        let sharedAudio = SharedAudioBuffer()
+        guard sharedAudio.initialize(
+            sampleRate: sampleRate,
+            bufferFrames: bufferFrames,
+            channelCount: activeChannels
+        ) else {
+            Darwin.close(fd)
+            unsetenv("SOTF_HAL_SHARED_MEMORY_PATH")
+            halLog("    FAIL: SharedAudioBuffer.initialize failed")
+            return false
+        }
+        defer {
+            sharedAudio.closeSharedMemory()
+            Darwin.close(fd)
+            unsetenv("SOTF_HAL_SHARED_MEMORY_PATH")
+        }
+
+        // Swift publishes the pending request while the active geometry stays
+        // at 2 channels. A Rust daemon would consume these fields next.
+        sharedAudio.updateSampleRate(96_000)
+        guard writeUInt32(pendingChannels, at: 136),
+              sharedAudio.getActiveChannelCount() == activeChannels,
+              sharedAudio.getRequestedSampleRate() == 96_000,
+              sharedAudio.getRequestedChannelCount() == pendingChannels else {
+            halLog("    FAIL: pending request changed active geometry")
+            return false
+        }
+
+        // A Rust-side reconfigure request sets configuring. Swift IO must
+        // acknowledge it before either process changes ring geometry.
+        guard writeUInt32(1, at: 128) else {
+            halLog("    FAIL: could not publish configuring request")
+            return false
+        }
+        var silence = [Float](repeating: 0, count: 2)
+        _ = silence.withUnsafeMutableBufferPointer { buffer in
+            sharedAudio.readAudio(buffer.baseAddress!, frameCount: 1, channelCount: 2)
+        }
+        guard readUInt32(at: 132) == 1 else {
+            halLog("    FAIL: Swift IO did not publish configuring_ack")
+            return false
+        }
+        guard writeUInt32(0, at: 128) else {
+            halLog("    FAIL: could not clear configuring request")
+            return false
+        }
+
+        sharedAudio.acknowledgeConfigChange(
+            actualSampleRate: 96_000,
+            actualBufferFrames: bufferFrames,
+            status: 1,
+            errorCode: 0
+        )
+        let applied = sharedAudio.applyActiveConfiguration(
+            sampleRate: 96_000,
+            bufferFrames: bufferFrames,
+            channelCount: pendingChannels
+        )
+        let activeSampleRate = sharedAudio.getActiveSampleRate()
+        let activeChannelCount = sharedAudio.getActiveChannelCount()
+        let configuring = readUInt32(at: 128)
+        let configuringAck = readUInt32(at: 132)
+        guard applied,
+              activeSampleRate == 96_000,
+              activeChannelCount == pendingChannels,
+              configuring == 0,
+              configuringAck == 0 else {
+            halLog(
+                "    FAIL: acknowledged geometry was not committed atomically "
+                    + "(applied=\(applied), rate=\(activeSampleRate), "
+                    + "channels=\(activeChannelCount), configuring=\(String(describing: configuring)), "
+                    + "ack=\(String(describing: configuringAck)))"
+            )
+            return false
+        }
+
+        halLog("    PASS")
+        return true
+    }
+
+    /// A CoreAudio helper restart must preserve the daemon-owned active
+    /// geometry. Reopening the mapping with a different requested format may
+    /// publish a pending request, but it must never use a stale local cache to
+    /// rewrite `channelCount` before the daemon acknowledges it.
+    static func testGeometryCacheSurvivesDaemonRestart() -> Bool {
+        halLog("  Test: geometry cache survives daemon restart")
+
+        let fileManager = FileManager.default
+        let tempDir = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("sotf-hal-restart-\(UUID().uuidString)")
+        let shmPath = (tempDir as NSString).appendingPathComponent("audio.shm")
+        let sampleRate: UInt32 = 48_000
+        let bufferFrames: UInt32 = 64
+        let activeChannels: UInt32 = 2
+        let requestedChannels: UInt32 = 8
+        let audioCapacity = Int(bufferFrames) * Int(requestedChannels) * 8
+        let alignedHeaderSize = (MemoryLayout<SharedAudioHeader>.size + 63) & ~63
+        let totalSize = alignedHeaderSize + audioCapacity * MemoryLayout<Float>.size
+
+        do {
+            try fileManager.createDirectory(
+                atPath: tempDir,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            fileManager.createFile(atPath: shmPath, contents: Data(count: totalSize))
+        } catch {
+            halLog("    FAIL: fixture setup failed: \(error)")
+            return false
+        }
+        defer { try? fileManager.removeItem(atPath: tempDir) }
+
+        var header = SharedAudioHeader(
+            magic: 0x534F5446,
+            version: 6,
+            sampleRate: sampleRate,
+            bufferFrames: bufferFrames,
+            channelCount: activeChannels,
+            writePosition: 0,
+            readPosition: 0,
+            active: 1,
+            configChanged: 0,
+            driverReady: 1,
+            engineReady: 1,
+            encrypted: 0,
+            keyFingerprint: 0,
+            frameCounter: 0,
+            requestedSampleRate: sampleRate,
+            requestedBufferFrames: bufferFrames,
+            actualSampleRate: sampleRate,
+            actualBufferFrames: bufferFrames,
+            configStatus: 1,
+            configSource: 0,
+            configErrorCode: 0,
+            encryptionOverflowCount: 0,
+            daemonHeartbeatMs: 1,
+            configuring: 0,
+            configuringAck: 0,
+            requestedChannelCount: activeChannels
+        )
+
+        let fd = Darwin.open(shmPath, O_RDWR)
+        guard fd >= 0 else {
+            halLog("    FAIL: fixture open failed")
+            return false
+        }
+        let written = withUnsafeBytes(of: &header) { bytes in
+            Darwin.pwrite(fd, bytes.baseAddress, bytes.count, 0)
+        }
+        Darwin.close(fd)
+        guard written == MemoryLayout<SharedAudioHeader>.size else {
+            halLog("    FAIL: fixture header write failed")
+            return false
+        }
+
+        setenv("SOTF_HAL_SHARED_MEMORY_PATH", shmPath, 1)
+        defer { unsetenv("SOTF_HAL_SHARED_MEMORY_PATH") }
+
+        let firstConnection = SharedAudioBuffer()
+        guard firstConnection.initialize(
+            sampleRate: sampleRate,
+            bufferFrames: bufferFrames,
+            channelCount: activeChannels
+        ) else {
+            halLog("    FAIL: first HAL connection failed")
+            return false
+        }
+        firstConnection.closeSharedMemory()
+
+        let restartedConnection = SharedAudioBuffer()
+        guard restartedConnection.initialize(
+            sampleRate: sampleRate,
+            bufferFrames: bufferFrames,
+            channelCount: requestedChannels
+        ) else {
+            halLog("    FAIL: restarted HAL connection failed")
+            return false
+        }
+        defer { restartedConnection.closeSharedMemory() }
+
+        guard restartedConnection.getActiveChannelCount() == activeChannels,
+              restartedConnection.getRequestedChannelCount() == requestedChannels,
+              restartedConnection.configChanged(),
+              restartedConnection.configSource() == 1 else {
+            halLog("    FAIL: restart rewrote active geometry or lost pending request")
             return false
         }
 

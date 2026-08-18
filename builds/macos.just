@@ -64,6 +64,8 @@ prod-hal-driver:
 		"$HAL_SWIFT_DIR/Sources/Encryption.swift" \
 		"$HAL_SWIFT_DIR/Sources/SotFHALDriver.swift"
 	cp "$HAL_SWIFT_DIR/Info.plist" "$BUILD_DIR/Contents/Info.plist"
+	cp "crates/systemwide/crates/driver-hal/shared_memory_layout.json" \
+		"$BUILD_DIR/Contents/Resources/shared_memory_layout.json"
 	chmod 755 "$BUILD_DIR/Contents/MacOS/SotFHAL"
 	chmod 644 "$BUILD_DIR/Contents/Info.plist"
 	# Ad-hoc sign the driver bundle so CoreAudio will load it locally.
@@ -72,6 +74,38 @@ prod-hal-driver:
 	echo "Ad-hoc signing HAL driver..."
 	codesign --force --deep --sign - "$BUILD_DIR"
 	echo "✅ HAL driver built: $BUILD_DIR"
+
+# Run the assertion-based HAL tests as an executable bundle. This exercises
+# the same Swift sources as the driver and verifies that the ABI manifest is
+# discoverable from bundle resources, not only through a source-tree path.
+[group('test')]
+test-hal-driver-swift:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	HAL_SWIFT_DIR="crates/systemwide/crates/driver-hal/swift"
+	BUILD_DIR="target/debug/SotFHALTests.bundle"
+	mkdir -p "$BUILD_DIR/Contents/MacOS" "$BUILD_DIR/Contents/Resources"
+	echo "Building and running Swift HAL tests..."
+	swiftc \
+		-o "$BUILD_DIR/Contents/MacOS/SotFHALTests" \
+		-module-name SotFHALTests \
+		-import-objc-header "$HAL_SWIFT_DIR/Sources/BridgingHeader.h" \
+		-framework CoreAudio \
+		-framework CoreFoundation \
+		-framework Foundation \
+		-O \
+		"$HAL_SWIFT_DIR/Sources/Timing.swift" \
+		"$HAL_SWIFT_DIR/Sources/RingBuffer.swift" \
+		"$HAL_SWIFT_DIR/Sources/SharedMemory.swift" \
+		"$HAL_SWIFT_DIR/Sources/Encryption.swift" \
+		"$HAL_SWIFT_DIR/Sources/SotFHALDriver.swift" \
+		"$HAL_SWIFT_DIR/Sources/Tests.swift" \
+		"$HAL_SWIFT_DIR/TestsRunner.swift"
+	cp "$HAL_SWIFT_DIR/TestsBundleInfo.plist" "$BUILD_DIR/Contents/Info.plist"
+	cp "crates/systemwide/crates/driver-hal/shared_memory_layout.json" \
+		"$BUILD_DIR/Contents/Resources/shared_memory_layout.json"
+	chmod 755 "$BUILD_DIR/Contents/MacOS/SotFHALTests"
+	"$BUILD_DIR/Contents/MacOS/SotFHALTests"
 
 # Build all macOS daemon components (daemon + Systemwide app + HAL driver)
 [group('build-macos')]
@@ -133,6 +167,8 @@ dist-hal-driver:
 		"$HAL_SWIFT_DIR/Sources/Encryption.swift" \
 		"$HAL_SWIFT_DIR/Sources/SotFHALDriver.swift"
 	cp "$HAL_SWIFT_DIR/Info.plist" "$BUILD_DIR/Contents/Info.plist"
+	cp "crates/systemwide/crates/driver-hal/shared_memory_layout.json" \
+		"$BUILD_DIR/Contents/Resources/shared_memory_layout.json"
 	chmod 755 "$BUILD_DIR/Contents/MacOS/SotFHAL"
 	chmod 644 "$BUILD_DIR/Contents/Info.plist"
 	echo "Ad-hoc signing HAL driver..."

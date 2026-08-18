@@ -62,17 +62,30 @@ capture drivers:
   than creating a daemon thread for every poll. The unused Tokio runtime was
   removed, and immutable available-plugin metadata is cached once per process.
 - The shared-memory protocol is version 6. Geometry changes use a requested
-  channel count plus a quiesce/ack handshake; Rust and Swift IO paths honor the
-  configuring gate before publishing ring positions. Reads and writes are
-  frame-aligned and never expose a partially published interleaved frame.
+  channel count plus a quiesce/ack handshake. The atomic `configuring` word is
+  also a commit bitset: bit 0 blocks new IO commits, while bits 1 and 2 reserve
+  the reader and writer cursor publications. Both Rust and Swift claim the
+  relevant bit immediately before publishing a cursor; reconfiguration waits
+  for those bits and aborts without changing geometry if the bounded wait
+  expires. Reads and writes are frame-aligned and never expose a partially
+  published interleaved frame.
 - Pipeline mutations are serialized across IPC clients and apply failures roll
   back to the last applied plan when possible. A failed transition leaves an
   explicit recovery diagnostic instead of silently claiming that the old audio
-  stream is still live.
+  stream is still live. If both the requested apply and restore fail, the
+  process-lifetime `pipeline_recovery` state remains set, `engine_ready` stays
+  cleared, and status/snapshot responses expose `restart_daemon` as the
+  actionable recovery step. The state clears only after a successful apply.
 - Every shared header field used across Rust and Swift is accessed atomically.
   Swift uses C11 acquire loads and release stores exposed by
   `BridgingHeader.h`; Rust uses matching atomic types and orderings. Contract
   tests pin the shared-header size and field offsets on both sides.
+- The checked-in `driver-hal/shared_memory_layout.json` is the ABI manifest.
+  Rust includes and validates it against size, alignment, field count, and
+  every field offset; HAL packaging copies the same file into bundle
+  resources, and Swift test code loads it from an explicit environment path or
+  bundle resource. A source-file-relative fallback is not part of the runtime
+  contract.
 - Ring capacity is derived from the current atomic geometry rather than a
   process-local cached geometry. Both Swift read and write paths re-check the
   `configuring` gate before publishing ring positions after copying.
@@ -334,7 +347,7 @@ This removes the previous independent daemon mutexes for `selected_device`,
 | Input/output channel counts | `PipelineSupervisor.desired`, shared-memory header, toolbar `@State` | Daemon desired channel counts now have one owner; shared memory reports negotiated transport state. |
 | Metering indices | `AppliedPipeline.input_loudness_index`, `AppliedPipeline.output_loudness_index`, `AudioEngineManager` plugin cache | Derived from the applied plugin chain and no longer independently mutable. |
 | Encryption enabled/fingerprint | `KeyManager`, shared-memory header, Swift toolbar cache, HAL reader/writer cached cipher | `KeyManager` owns the desired key state; shared memory publishes the active transport state. |
-| Daemon process lifecycle | Toolbar `DaemonManager`, daemon `running` flag | The toolbar owns only a child it spawned; it probes and adopts launchd/debug daemons. The daemon owns its accept-loop shutdown flag and handles SIGINT/SIGTERM by clearing readiness, stopping the engine, joining the watcher, and removing its socket. |
+| Daemon process lifecycle | Toolbar `DaemonManager`, daemon `running` flag | The toolbar owns only a child it spawned; it probes and adopts launchd/debug daemons without terminating them. For an adopted daemon, the outage action is labeled `Reconnect`; the daemon owner remains responsible for restart. The daemon owns its accept-loop shutdown flag and handles SIGINT/SIGTERM by clearing readiness, stopping the engine, joining the watcher, and removing its socket. |
 
 Command handlers still orchestrate several effects—driver config, engine
 restart/hot update, shared-memory encryption sync, and response building—but
@@ -843,6 +856,10 @@ Current implementation:
   Rack mutation commands reject graph mode rather than converting it.
 - Configbar selects the existing rack or a graph editor with stable IDs,
   add/remove/reorder, connect/disconnect, settings, and host-level bypass.
+- The linear rack row still exposes edit/remove without per-plugin bypass or
+  channel controls, and graph reorder currently reloads the full artifact;
+  these remain explicit UI/API follow-up items rather than hidden guarantees
+  of the rack path.
 
 ### 5. Make Shared Memory A Transport, Not A State Store
 
@@ -946,6 +963,11 @@ flowchart TB
 
 Manual installed-HAL testing should become the smallest layer. Most regressions
 should be caught before a developer installs anything.
+
+The current lab still cannot prove CoreAudio object lifecycle, device
+ownership, actual audio callbacks, or bundle-resource loading without an
+installed driver. Those remain release-validation gates even though the
+daemon, IPC, shared-memory, and SwiftPM layers are covered by automated tests.
 
 Current branch coverage starts the lower middle of that pyramid:
 

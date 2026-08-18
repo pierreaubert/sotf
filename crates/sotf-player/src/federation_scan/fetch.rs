@@ -255,7 +255,10 @@ fn tidal_token_persister_with(
         if !crate::service_login::apply_tidal_device_tokens(&mut entry, new_access, new_refresh) {
             return; // not a Tidal source — nothing to persist
         }
-        log::info!("[Tidal] persisting rotated tokens for source {}", entry.source_id);
+        log::info!(
+            "[Tidal] persisting rotated tokens for source {}",
+            entry.source_id
+        );
         if let Err(e) = save(&entry) {
             log::warn!(
                 "[Tidal] failed to persist rotated tokens for source {}: {e}",

@@ -28,6 +28,16 @@ private let kEncryptedRecordMagic: UInt32 = 0x5345_4131
 private let kEncryptedRecordHeaderBytes = 24
 private let kEncryptedRecordHeaderFloats = kEncryptedRecordHeaderBytes / 4
 
+// `configuring` is a cross-process state bitset shared with Rust. Bit 0
+// blocks new IO commits, while bits 1 and 2 protect the reader and writer
+// publication stores respectively. This prevents a reconfiguration from
+// resetting ring positions and then losing a stale cursor update.
+private let kConfiguringReconfigure: UInt32 = 1
+private let kConfiguringReadCommit: UInt32 = 2
+private let kConfiguringWriteCommit: UInt32 = 4
+private let kConfiguringIOMask: UInt32 = kConfiguringReadCommit | kConfiguringWriteCommit
+private let kReconfigurationTimeoutNanoseconds: UInt64 = 5_000_000
+
 @inline(__always)
 private func atomicLoad(_ pointer: UnsafeMutablePointer<UInt32>) -> UInt32 {
     sotf_atomic_load_u32(pointer)
@@ -46,6 +56,121 @@ private func atomicStore(_ pointer: UnsafeMutablePointer<UInt32>, _ value: UInt3
 @inline(__always)
 private func atomicStore(_ pointer: UnsafeMutablePointer<UInt64>, _ value: UInt64) {
     sotf_atomic_store_u64(pointer, value)
+}
+
+@inline(__always)
+private func reconfigurationRequested(_ header: UnsafeMutablePointer<SharedAudioHeader>) -> Bool {
+    return atomicLoad(&header.pointee.configuring) & kConfiguringReconfigure != 0
+}
+
+@inline(__always)
+private func tryAcquireIOCommit(
+    _ header: UnsafeMutablePointer<SharedAudioHeader>,
+    bit: UInt32
+) -> Bool {
+    var state = atomicLoad(&header.pointee.configuring)
+    while true {
+        if state & kConfiguringReconfigure != 0 || state & bit != 0 {
+            return false
+        }
+        if sotf_atomic_compare_exchange_u32(
+            &header.pointee.configuring,
+            state,
+            state | bit
+        ) {
+            return true
+        }
+        state = atomicLoad(&header.pointee.configuring)
+    }
+}
+
+@inline(__always)
+private func releaseIOCommit(
+    _ header: UnsafeMutablePointer<SharedAudioHeader>,
+    bit: UInt32
+) {
+    var state = atomicLoad(&header.pointee.configuring)
+    while true {
+        let next = state & ~bit
+        if sotf_atomic_compare_exchange_u32(
+            &header.pointee.configuring,
+            state,
+            next
+        ) {
+            return
+        }
+        state = atomicLoad(&header.pointee.configuring)
+    }
+}
+
+@inline(__always)
+private func clearReconfiguration(
+    _ header: UnsafeMutablePointer<SharedAudioHeader>
+) {
+    var state = atomicLoad(&header.pointee.configuring)
+    while true {
+        let next = state & ~kConfiguringReconfigure
+        if sotf_atomic_compare_exchange_u32(
+            &header.pointee.configuring,
+            state,
+            next
+        ) {
+            return
+        }
+        state = atomicLoad(&header.pointee.configuring)
+    }
+}
+
+/// Claim the shared-memory geometry transition bit and wait for in-flight
+/// cursor publications to finish. Geometry must never be changed while a
+/// Rust or Swift IO endpoint can still publish a cursor based on the old
+/// layout.
+@inline(__always)
+private func beginReconfiguration(
+    _ header: UnsafeMutablePointer<SharedAudioHeader>
+) -> Bool {
+    let start = DispatchTime.now().uptimeNanoseconds
+    var state = atomicLoad(&header.pointee.configuring)
+
+    while true {
+        if state & kConfiguringReconfigure != 0 {
+            return false
+        }
+        if sotf_atomic_compare_exchange_u32(
+            &header.pointee.configuring,
+            state,
+            state | kConfiguringReconfigure
+        ) {
+            break
+        }
+        state = atomicLoad(&header.pointee.configuring)
+        if DispatchTime.now().uptimeNanoseconds - start >= kReconfigurationTimeoutNanoseconds {
+            return false
+        }
+    }
+
+    while atomicLoad(&header.pointee.configuring) & kConfiguringIOMask != 0 {
+        if DispatchTime.now().uptimeNanoseconds - start >= kReconfigurationTimeoutNanoseconds {
+            clearReconfiguration(header)
+            return false
+        }
+        _ = sched_yield()
+    }
+
+    return true
+}
+
+@inline(__always)
+private func commitReadPosition(
+    _ header: UnsafeMutablePointer<SharedAudioHeader>,
+    _ position: UInt64
+) -> Bool {
+    guard tryAcquireIOCommit(header, bit: kConfiguringReadCommit) else {
+        return false
+    }
+    atomicStore(&header.pointee.readPosition, position)
+    releaseIOCommit(header, bit: kConfiguringReadCommit)
+    return true
 }
 
 private func currentUnixMillis() -> UInt64 {
@@ -307,21 +432,93 @@ final class SharedAudioBuffer {
 
         halLog("SharedMemory: already initialized, preserving daemon state")
 
-        // Always set: identifying fields and structural geometry.
-        // Geometry can legitimately change across coreaudiod re-spawns even
-        // when the daemon was running (different sample rate, different buffer
-        // size). The daemon tolerates this through its config-negotiation path.
+        // Set identifying fields only. Active geometry belongs to the
+        // acknowledged configuration path below; changing it here would let
+        // a coreaudiod reconnect race the daemon and expose a mismatched ring.
         atomicStore(&header.pointee.magic, kSharedMemoryMagic)
         atomicStore(&header.pointee.version, kSharedMemoryVersion)
-        atomicStore(&header.pointee.sampleRate, sampleRate)
-        atomicStore(&header.pointee.bufferFrames, bufferFrames)
-        atomicStore(&header.pointee.requestedChannelCount, channelCount)
-        atomicStore(&header.pointee.actualSampleRate, sampleRate)
-        atomicStore(&header.pointee.actualBufferFrames, bufferFrames)
         atomicStore(&header.pointee.driverReady, 1)
+
+        let activeSampleRate = atomicLoad(&header.pointee.sampleRate)
+        let activeBufferFrames = atomicLoad(&header.pointee.bufferFrames)
+        let activeChannelCount = atomicLoad(&header.pointee.channelCount)
+        guard activeSampleRate > 0, activeBufferFrames > 0, activeChannelCount > 0 else {
+            halLog("SharedMemory: daemon header has invalid active geometry")
+            return false
+        }
+
+        audioCapacity = Int(activeBufferFrames) * Int(activeChannelCount) * numBuffers
+        if activeSampleRate != sampleRate
+            || activeBufferFrames != bufferFrames
+            || activeChannelCount != channelCount {
+            requestConfigChange(
+                sampleRate: sampleRate,
+                bufferFrames: bufferFrames,
+                channelCount: channelCount
+            )
+            halLog(
+                "SharedMemory: queued reconnect geometry (sampleRate)Hz, "
+                    + "(bufferFrames) frames, (channelCount) channels; "
+                    + "active remains (activeSampleRate)Hz, (activeBufferFrames) frames, "
+                    + "(activeChannelCount) channels"
+            )
+        }
 
         let engineReady = atomicLoad(&header.pointee.engineReady)
         halLog("SharedMemory: initialized (version \(kSharedMemoryVersion), fresh=\(!alreadyInitialized), engineReady=\(engineReady))")
+        return true
+    }
+
+    /// Apply negotiated geometry after the daemon has acknowledged it.
+    ///
+    /// This is the only Swift-side path that mutates active ring geometry.
+    /// The request path writes only requested fields; this method waits for
+    /// both endpoint publication bits before changing the active fields and
+    /// resetting cursors.
+    func applyActiveConfiguration(
+        sampleRate: UInt32,
+        bufferFrames: UInt32,
+        channelCount: UInt32
+    ) -> Bool {
+        guard let header,
+              sampleRate > 0,
+              bufferFrames > 0,
+              channelCount > 0 else {
+            return false
+        }
+
+        let newCapacity = Int(bufferFrames) * Int(channelCount) * numBuffers
+        let headerSize = MemoryLayout<SharedAudioHeader>.size
+        let alignedHeaderSize = (headerSize + 63) & ~63
+        guard newCapacity > 0,
+              alignedHeaderSize + newCapacity * MemoryLayout<Float>.size <= memorySize else {
+            halLog(
+                "SharedMemory: negotiated geometry exceeds mapped capacity: "
+                    + "(sampleRate)Hz, (bufferFrames) frames, (channelCount) channels"
+            )
+            return false
+        }
+
+        guard beginReconfiguration(header) else {
+            halLog("SharedMemory: timed out waiting to apply negotiated geometry")
+            return false
+        }
+        defer { clearReconfiguration(header) }
+
+        atomicStore(&header.pointee.sampleRate, sampleRate)
+        atomicStore(&header.pointee.bufferFrames, bufferFrames)
+        atomicStore(&header.pointee.channelCount, channelCount)
+        atomicStore(&header.pointee.requestedChannelCount, channelCount)
+        atomicStore(&header.pointee.actualSampleRate, sampleRate)
+        atomicStore(&header.pointee.actualBufferFrames, bufferFrames)
+        atomicStore(&header.pointee.writePosition, 0)
+        atomicStore(&header.pointee.readPosition, 0)
+        audioCapacity = newCapacity
+        // The IO participant acknowledged the reconfiguration while the
+        // configuring bit was set. Once the new geometry and cursors are
+        // published, release that acknowledgement just as the Rust side does
+        // at the end of its reconfigure transaction.
+        atomicStore(&header.pointee.configuringAck, 0)
         return true
     }
 
@@ -360,17 +557,29 @@ final class SharedAudioBuffer {
     /// This uses the config negotiation protocol to notify the daemon
     func updateSampleRate(_ sampleRate: UInt32) {
         guard let header = header else { return }
-        atomicStore(&header.pointee.sampleRate, sampleRate)
-        // Use config negotiation so daemon knows to reconfigure
-        atomicStore(&header.pointee.requestedSampleRate, sampleRate)
-        atomicStore(
-            &header.pointee.requestedBufferFrames,
-            atomicLoad(&header.pointee.bufferFrames)
+        // Publish a request only. `sampleRate` is active geometry and must
+        // remain unchanged until the daemon acknowledges the transition.
+        requestConfigChange(
+            sampleRate: sampleRate,
+            bufferFrames: atomicLoad(&header.pointee.bufferFrames),
+            channelCount: atomicLoad(&header.pointee.channelCount)
         )
-        atomicStore(&header.pointee.configStatus, 0)  // pending
-        atomicStore(&header.pointee.configSource, 1)  // HAL initiated
-        atomicStore(&header.pointee.configChanged, 1)
         halLog("updateSampleRate: requested \(sampleRate)Hz via config negotiation")
+    }
+
+    func getActiveSampleRate() -> UInt32 {
+        guard let header else { return 0 }
+        return atomicLoad(&header.pointee.sampleRate)
+    }
+
+    func getActiveBufferFrames() -> UInt32 {
+        guard let header else { return 0 }
+        return atomicLoad(&header.pointee.bufferFrames)
+    }
+
+    func getActiveChannelCount() -> UInt32 {
+        guard let header else { return 0 }
+        return atomicLoad(&header.pointee.channelCount)
     }
 
     private func fingerprintMatches(_ headerFingerprint: UInt64, _ cipherFingerprint: [UInt8]) -> Bool {
@@ -492,7 +701,7 @@ final class SharedAudioBuffer {
     func writeAudio(_ buffer: UnsafePointer<Float>, frameCount: Int, channelCount: Int) -> Int {
         guard let header = header, let audioData = audioData else { return 0 }
         guard frameCount > 0, channelCount > 0, audioCapacity > 0 else { return 0 }
-        if atomicLoad(&header.pointee.configuring) != 0 {
+        if reconfigurationRequested(header) {
             atomicStore(&header.pointee.configuringAck, 1)
             return 0
         }
@@ -569,10 +778,6 @@ final class SharedAudioBuffer {
         let samplesToDrop = max(0, used + samplesToWrite - writableCapacity)
         let adjustedReadPos = effectiveReadPos + UInt64(samplesToDrop)
 
-        if adjustedReadPos != readPos {
-            atomicStore(&header.pointee.readPosition, adjustedReadPos)
-        }
-
         let writeIndex = Int(writePos % UInt64(audioCapacity))
         let firstPart = min(samplesToWrite, audioCapacity - writeIndex)
         let secondPart = samplesToWrite - firstPart
@@ -585,14 +790,20 @@ final class SharedAudioBuffer {
 
         // Do not publish a position computed from stale geometry if a daemon
         // reconfiguration began while this IO cycle was copying samples.
-        if atomicLoad(&header.pointee.configuring) != 0 {
-            atomicStore(&header.pointee.configuringAck, 1)
+        guard tryAcquireIOCommit(header, bit: kConfiguringWriteCommit) else {
+            if reconfigurationRequested(header) {
+                atomicStore(&header.pointee.configuringAck, 1)
+            }
             return 0
+        }
+        if adjustedReadPos != readPos {
+            atomicStore(&header.pointee.readPosition, adjustedReadPos)
         }
         if atomicLoad(&header.pointee.active) == 0 {
             atomicStore(&header.pointee.active, 1)
         }
         atomicStore(&header.pointee.writePosition, writePos + UInt64(samplesToWrite))
+        releaseIOCommit(header, bit: kConfiguringWriteCommit)
 
         // TRACE: Log successful write to shared memory ring buffer
         // Note: Avoid logging every frame in production (use os_signpost for performance tracing)
@@ -609,7 +820,7 @@ final class SharedAudioBuffer {
     /// Helper to write raw bytes (ciphertext) to ring buffer
     private func writeRawBytes(_ bytes: [UInt8], byteCount: Int, originalFrameCount: Int) -> Int {
         guard let header = header, let audioData = audioData else { return 0 }
-        if atomicLoad(&header.pointee.configuring) != 0 {
+        if reconfigurationRequested(header) {
             atomicStore(&header.pointee.configuringAck, 1)
             return 0
         }
@@ -634,9 +845,6 @@ final class SharedAudioBuffer {
         
         if floatCount > available {
             _ = sotf_atomic_fetch_add_u64_previous(&header.pointee.encryptionOverflowCount, 1)
-            atomicStore(&header.pointee.readPosition, writePos)
-        } else if writePos < readPos {
-            atomicStore(&header.pointee.readPosition, writePos)
         }
         
         let writeIndex = Int(writePos % UInt64(audioCapacity))
@@ -660,14 +868,20 @@ final class SharedAudioBuffer {
             }
         }
         
-        if atomicLoad(&header.pointee.configuring) != 0 {
-            atomicStore(&header.pointee.configuringAck, 1)
+        guard tryAcquireIOCommit(header, bit: kConfiguringWriteCommit) else {
+            if reconfigurationRequested(header) {
+                atomicStore(&header.pointee.configuringAck, 1)
+            }
             return 0
+        }
+        if floatCount > available || writePos < readPos {
+            atomicStore(&header.pointee.readPosition, writePos)
         }
         if atomicLoad(&header.pointee.active) == 0 {
             atomicStore(&header.pointee.active, 1)
         }
         atomicStore(&header.pointee.writePosition, writePos + UInt64(floatCount))
+        releaseIOCommit(header, bit: kConfiguringWriteCommit)
         
         return originalFrameCount
     }
@@ -680,7 +894,7 @@ final class SharedAudioBuffer {
             memset(buffer, 0, frameCount * channelCount * MemoryLayout<Float>.size)
             return 0
         }
-        if atomicLoad(&header.pointee.configuring) != 0 {
+        if reconfigurationRequested(header) {
             atomicStore(&header.pointee.configuringAck, 1)
             memset(buffer, 0, frameCount * channelCount * MemoryLayout<Float>.size)
             return 0
@@ -703,17 +917,14 @@ final class SharedAudioBuffer {
                     )
 
                     guard let record = parseEncryptedRecordHeader(encryptedHeaderScratch) else {
-                        atomicStore(&header.pointee.readPosition, writePos)
+                        _ = commitReadPosition(header, writePos)
                         memset(buffer, 0, requestedSampleCount * MemoryLayout<Float>.size)
                         return 0
                     }
 
                     if record.floatCount <= available && record.sampleCount <= requestedSampleCount {
                         guard record.totalBytes <= encryptedPayloadScratch.count else {
-                            atomicStore(
-                                &header.pointee.readPosition,
-                                readPos + UInt64(record.floatCount)
-                            )
+                            _ = commitReadPosition(header, readPos + UInt64(record.floatCount))
                             memset(buffer, 0, requestedSampleCount * MemoryLayout<Float>.size)
                             return 0
                         }
@@ -734,15 +945,15 @@ final class SharedAudioBuffer {
                             )
                         }
 
-                        if atomicLoad(&header.pointee.configuring) != 0 {
+                        if reconfigurationRequested(header) {
                             atomicStore(&header.pointee.configuringAck, 1)
                             memset(buffer, 0, requestedSampleCount * MemoryLayout<Float>.size)
                             return 0
                         }
-                        atomicStore(
-                            &header.pointee.readPosition,
-                            readPos + UInt64(record.floatCount)
-                        )
+                        guard commitReadPosition(header, readPos + UInt64(record.floatCount)) else {
+                            memset(buffer, 0, requestedSampleCount * MemoryLayout<Float>.size)
+                            return 0
+                        }
 
                         if decryptedCount > 0 {
                             if decryptedCount < requestedSampleCount {
@@ -796,12 +1007,15 @@ final class SharedAudioBuffer {
             memset(buffer.advanced(by: toRead), 0, (sampleCount - toRead) * MemoryLayout<Float>.size)
         }
 
-        if atomicLoad(&header.pointee.configuring) != 0 {
+        if reconfigurationRequested(header) {
             atomicStore(&header.pointee.configuringAck, 1)
             memset(buffer, 0, frameCount * channelCount * MemoryLayout<Float>.size)
             return 0
         }
-        atomicStore(&header.pointee.readPosition, readPos + UInt64(toRead))
+        guard commitReadPosition(header, readPos + UInt64(toRead)) else {
+            memset(buffer, 0, frameCount * channelCount * MemoryLayout<Float>.size)
+            return 0
+        }
 
         // TRACE: Log successful read from shared memory ring buffer
         #if SOTF_AUDIO_TRACE
@@ -845,7 +1059,7 @@ final class SharedAudioBuffer {
         let readPos = atomicLoad(&header.pointee.readPosition)
         copyRawBytes(at: readPos, into: &buffer, byteCount: buffer.count, floatCount: floatCount)
 
-        atomicStore(&header.pointee.readPosition, readPos + UInt64(floatCount))
+        _ = commitReadPosition(header, readPos + UInt64(floatCount))
     }
 
     // MARK: - Config Negotiation Methods (version 3+)
@@ -918,10 +1132,11 @@ final class SharedAudioBuffer {
     ///
     /// Memory ordering: values are release-stored before `configChanged`; the
     /// responder uses acquire loads so it observes one coherent request.
-    func requestConfigChange(sampleRate: UInt32, bufferFrames: UInt32, channelCount: UInt32) {
-        guard let header = header else { return }
-        if atomicLoad(&header.pointee.configuring) != 0 {
-            return
+    @discardableResult
+    func requestConfigChange(sampleRate: UInt32, bufferFrames: UInt32, channelCount: UInt32) -> Bool {
+        guard let header = header else { return false }
+        if reconfigurationRequested(header) {
+            return false
         }
         atomicStore(&header.pointee.requestedSampleRate, sampleRate)
         atomicStore(&header.pointee.requestedBufferFrames, bufferFrames)
@@ -929,6 +1144,7 @@ final class SharedAudioBuffer {
         atomicStore(&header.pointee.configStatus, 0)  // pending
         atomicStore(&header.pointee.configSource, 1)  // HAL initiated
         atomicStore(&header.pointee.configChanged, 1)
+        return true
     }
 
     /// Wait for daemon to acknowledge config change

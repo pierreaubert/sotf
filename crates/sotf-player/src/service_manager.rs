@@ -1338,8 +1338,7 @@ mod tests {
         let spotify_cache_dir = tempfile::tempdir().expect("temp cache dir");
         #[cfg(feature = "spotify")]
         {
-            manager =
-                manager.with_test_spotify_cache_dir(spotify_cache_dir.path().to_path_buf());
+            manager = manager.with_test_spotify_cache_dir(spotify_cache_dir.path().to_path_buf());
         }
         install_manager_for_tests(manager);
 

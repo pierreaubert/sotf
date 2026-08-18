@@ -1,3 +1,10 @@
-/Volumes/home_ext1/src_pierre/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModelTests.build/ConfigBarModelTests.swift.o
-/Volumes/home_ext1/src_pierre/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/PluginModels.swift.o
-/Volumes/home_ext1/src_pierre/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.build/runner.swift.o
+/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModelTests.build/ConfigBarIPCTests.swift.o
+/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModelTests.build/ConfigBarModelTests.swift.o
+/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarIPC.swift.o
+/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarPure.swift.o
+/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/PluginModels.swift.o
+/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.build/runner.swift.o
+/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/ConfigBar.swift.o
+/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/PluginEditorViews.swift.o
+/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/PluginRackView.swift.o
+/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUITests.build/ConfigBarUITests.swift.o

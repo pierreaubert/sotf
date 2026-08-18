@@ -20,14 +20,20 @@
 //!
 //! # Reconfiguration protocol
 //!
-//! Geometry changes go through [`SharedAudioBuffer::reconfigure_quiesced`]
-//! which uses a `configuring` handshake flag:
+//! Geometry changes go through [`SharedAudioBuffer::reconfigure_quiesced`].
+//! The `configuring` word is a cross-process bitset:
 //!
-//! 1. Daemon stores `configuring = 1` (Release).
-//! 2. Daemon spins briefly so the writer can drain its IO cycle.
-//! 3. Daemon publishes new geometry and resets ring positions.
-//! 4. Daemon sets `config_changed = 1` so the writer reloads geometry.
-//! 5. Daemon clears `configuring = 0`.
+//! - bit 0 requests reconfiguration and blocks new IO commits;
+//! - bit 1 reserves the reader cursor publication;
+//! - bit 2 reserves the writer cursor publication.
+//!
+//! A reader or writer may copy audio before the request arrives. It must claim
+//! its publication bit immediately before storing its cursor. Reconfiguration
+//! claims bit 0, waits for the publication bits to clear, then resets the
+//! geometry and ring positions. If that bounded wait times out, it releases
+//! bit 0 and leaves all geometry and ring state unchanged. `configuring_ack`
+//! remains a compatibility indication for the Swift IO path, but the commit
+//! bits are the correctness mechanism that prevents a stale cursor store.
 //!
 //! The legacy `set_sample_rate` / `set_buffer_frames` / `set_channel_count`
 //! setters route through this path so they no longer race the HAL writer.
@@ -53,6 +59,13 @@ pub use hal_input_reader::*;
 pub use hal_output_writer::*;
 pub use misc::*;
 pub use shared_audio_buffer::*;
+
+/// The checked-in cross-language layout contract. Keeping this as an
+/// `include_str!` makes the Rust build consume the same manifest that the
+/// packaged Swift HAL bundle carries as a resource; tests below validate the
+/// actual Rust offsets against every manifest field.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) const SHARED_MEMORY_LAYOUT_MANIFEST: &str = include_str!("../shared_memory_layout.json");
 
 /// Header structure for shared memory region.
 ///

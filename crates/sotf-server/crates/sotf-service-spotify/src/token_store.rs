@@ -52,11 +52,7 @@ fn now_unix() -> u64 {
 
 impl WebApiToken {
     /// Build a token whose access token expires `expires_in` from now.
-    pub(crate) fn new(
-        access_token: String,
-        refresh_token: String,
-        expires_in: Duration,
-    ) -> Self {
+    pub(crate) fn new(access_token: String, refresh_token: String, expires_in: Duration) -> Self {
         Self {
             access_token,
             refresh_token,
@@ -107,12 +103,11 @@ impl WebApiToken {
             use std::os::unix::fs::OpenOptionsExt;
             opts.mode(0o600);
         }
-        let mut file = opts.open(&path).map_err(|e| {
-            ServiceError::Other(format!("Failed to write {}: {e}", path.display()))
-        })?;
-        file.write_all(&json).map_err(|e| {
-            ServiceError::Other(format!("Failed to write {}: {e}", path.display()))
-        })?;
+        let mut file = opts
+            .open(&path)
+            .map_err(|e| ServiceError::Other(format!("Failed to write {}: {e}", path.display())))?;
+        file.write_all(&json)
+            .map_err(|e| ServiceError::Other(format!("Failed to write {}: {e}", path.display())))?;
         // `mode` only applies at creation; tighten an existing file too.
         #[cfg(unix)]
         {

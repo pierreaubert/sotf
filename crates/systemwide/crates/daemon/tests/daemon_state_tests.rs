@@ -199,14 +199,15 @@ fn configbar_reconciles_daemon_owned_channel_counts_from_status() {
 
     assert!(
         source.contains("if let inputChannels = status.inputChannels")
-            && source.contains("halInputChannels = min(max(inputChannels, 1), 32)")
-            && source.contains("syncMeterArrays(inputChannels: halInputChannels)"),
+            && source.contains("let confirmed = min(max(inputChannels, 1), 32)")
+            && source.contains("halInputChannels = confirmed")
+            && source.contains("syncMeterArrays(inputChannels: confirmed)"),
         "toolbar status sync should adopt daemon-owned HAL input channels"
     );
     assert!(
         source.contains("let daemonOutputChannels = status.outputChannels ?? status.channels")
-            && source.contains("halOutputChannels = min(max(channels, 1), 32)")
-            && source.contains("syncMeterArrays(outputChannels: halOutputChannels)"),
+            && source.contains("halOutputChannels = confirmed")
+            && source.contains("syncMeterArrays(outputChannels: confirmed)"),
         "toolbar status sync should prefer daemon-owned output channels while keeping legacy status.channels fallback"
     );
 }
@@ -332,7 +333,7 @@ fn configbar_output_device_refresh_tracks_channel_limits() {
     );
     assert!(
         configbar.contains("let channelOptions = Array(1...32)")
-            && configbar.contains("\"input_channels\": halInputChannels"),
+            && configbar.contains("\"input_channels\": requestedInputChannels"),
         "toolbar should expose and send HAL input channel counts up to 32"
     );
     assert!(
@@ -545,8 +546,8 @@ fn configbar_channel_apply_uses_patch_intent_instead_of_replaying_plugins() {
 
     assert!(
         body.contains("\"command\": \"set_pipeline_channels\"")
-            && body.contains("\"input_channels\": halInputChannels")
-            && body.contains("\"output_channels\": halOutputChannels"),
+            && body.contains("\"input_channels\": requestedInputChannels")
+            && body.contains("\"output_channels\": requestedOutputChannels"),
         "HAL channel apply should use the daemon's typed channel patch command"
     );
     assert!(

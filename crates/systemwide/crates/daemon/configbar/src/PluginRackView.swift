@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import ConfigBarModels
 
 // MARK: - Plugin Rack View
 
@@ -20,6 +21,7 @@ struct PluginRackView: View {
     @State private var errorMessage: String? = nil
     @State private var loadingAvailablePlugins = false
     @State private var refreshingPlugins = false
+    @State private var graphRevision = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -92,16 +94,17 @@ struct PluginRackView: View {
                     LinearGraphRackEditorView(
                         graph: graph,
                         availablePlugins: availablePlugins,
-                        onApply: applyGraphMutation
+                        onApply: applyGraphMutation,
+                        onReorder: reorderGraph
                     )
-                    .id(graphGeneration)
+                    .id(graphRevision)
                 } else {
                     PluginGraphEditorView(
                         graph: graph,
                         availablePlugins: availablePlugins,
                         onApply: applyGraphMutation
                     )
-                    .id(graphGeneration)
+                    .id(graphRevision)
                 }
             } else if refreshingPlugins && plugins.isEmpty {
                 HStack {
@@ -143,6 +146,13 @@ struct PluginRackView: View {
                             },
                             onRemove: {
                                 removePlugin(at: index)
+                            },
+                            onStateChange: { inputChannels, bypassed in
+                                setRackPluginState(
+                                    for: plugin.id,
+                                    inputChannels: inputChannels,
+                                    bypassed: bypassed
+                                )
                             }
                         )
                     }
@@ -158,7 +168,7 @@ struct PluginRackView: View {
             loadAvailablePlugins()
             refreshPlugins()
         }
-        .onChange(of: refreshTrigger) { _, _ in
+        .onChange(of: refreshTrigger) { _ in
             refreshPlugins()
         }
         .sheet(isPresented: $showingAddSheet) {
@@ -310,6 +320,7 @@ struct PluginRackView: View {
                 if let result = result {
                     graph = result.graph
                     graphGeneration = result.generation
+                    graphRevision += 1
                     plugins = result.plugins.enumerated().map { index, dict in
                         let type_ = dict["plugin_type"] as? String ?? "unknown"
                         let params = dict["parameters"] as? [String: Any] ?? [:]
@@ -317,7 +328,9 @@ struct PluginRackView: View {
                             index: index,
                             pluginType: type_,
                             pluginName: pluginDisplayName(type_),
-                            parameters: params
+                            parameters: params,
+                            inputChannels: max(1, dict["input_channels"] as? Int ?? 1),
+                            bypassed: dict["bypassed"] as? Bool ?? false
                         )
                     }
                 } else {
@@ -348,6 +361,27 @@ struct PluginRackView: View {
         // Keep the editor responsive while the serialized mutation is in
         // flight; the completion above reconciles the authoritative graph.
         graph = candidate
+        return true
+    }
+
+    private func reorderGraph(_ order: [Int]) -> Bool {
+        errorMessage = nil
+        var command: [String: Any] = [
+            "command": "reorder_graph",
+            "order": order,
+        ]
+        if let graphGeneration {
+            command["base_generation"] = graphGeneration
+        }
+
+        client.sendCommandAsync(command) { response in
+            if response?.success != true {
+                errorMessage = response?.error ?? "Graph reorder failed; refresh before retrying."
+            }
+            // The daemon owns graph order and generation. Reconcile both
+            // success and failure with a fresh authoritative response.
+            refreshPlugins()
+        }
         return true
     }
 
@@ -434,6 +468,48 @@ struct PluginRackView: View {
             }
         }
     }
+
+    private func setRackPluginState(
+        for pluginID: UUID,
+        inputChannels: Int?,
+        bypassed: Bool?
+    ) {
+        guard let index = plugins.firstIndex(where: { $0.id == pluginID }) else {
+            errorMessage = "Plugin is no longer in the rack"
+            return
+        }
+        guard inputChannels != nil || bypassed != nil else { return }
+
+        if let inputChannels {
+            plugins[index].inputChannels = max(1, min(inputChannels, 32))
+        }
+        if let bypassed {
+            plugins[index].bypassed = bypassed
+        }
+
+        var command: [String: Any] = [
+            "command": "set_rack_plugin_state",
+            "index": index,
+        ]
+        if let inputChannels {
+            command["input_channels"] = max(1, min(inputChannels, 32))
+        }
+        if let bypassed {
+            command["bypassed"] = bypassed
+        }
+        if let graphGeneration {
+            command["base_generation"] = graphGeneration
+        }
+
+        client.sendCommandAsync(command) { response in
+            if response?.success != true {
+                errorMessage = response?.error ?? "Failed to update plugin state"
+            }
+            // A successful state patch promotes the rack to a graph. Refresh
+            // on both paths so the UI always reflects daemon-owned state.
+            refreshPlugins()
+        }
+    }
 }
 
 // MARK: - Plugin Graph Editor
@@ -442,6 +518,7 @@ struct LinearGraphRackEditorView: View {
     let graph: PluginGraphModel
     let availablePlugins: [AvailablePlugin]
     let onApply: (PluginGraphModel) -> Bool
+    let onReorder: ([Int]) -> Bool
 
     @State private var draft: PluginGraphModel
     @State private var editingNodeID: Int? = nil
@@ -450,11 +527,13 @@ struct LinearGraphRackEditorView: View {
     init(
         graph: PluginGraphModel,
         availablePlugins: [AvailablePlugin],
-        onApply: @escaping (PluginGraphModel) -> Bool
+        onApply: @escaping (PluginGraphModel) -> Bool,
+        onReorder: @escaping ([Int]) -> Bool
     ) {
         self.graph = graph
         self.availablePlugins = availablePlugins
         self.onApply = onApply
+        self.onReorder = onReorder
         _draft = State(initialValue: graph)
     }
 
@@ -593,9 +672,18 @@ struct LinearGraphRackEditorView: View {
     private func moveNodes(from source: IndexSet, to destination: Int) {
         var order = draft.linearNodeIDs ?? []
         order.move(fromOffsets: source, toOffset: destination)
-        _ = commit { candidate in
-            rebuildEdges(&candidate, order: order)
+        guard onReorder(order) else {
+            graphError = "Graph reorder was rejected; the active graph was not changed."
+            return
         }
+
+        // Reordering has a dedicated daemon command. Update the local draft
+        // only for responsiveness; the parent refresh above replaces it with
+        // the authoritative graph (or rolls it back after a rejection).
+        var candidate = draft
+        rebuildEdges(&candidate, order: order)
+        draft = candidate
+        graphError = nil
     }
 
     private func updateNode(_ id: Int, parameters: [String: Any]) -> Bool {
@@ -872,6 +960,7 @@ struct PluginRowView: View {
     let requiredOutputChannels: Int
     let onEdit: () -> Void
     let onRemove: () -> Void
+    let onStateChange: (_ inputChannels: Int?, _ bypassed: Bool?) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -893,6 +982,28 @@ struct PluginRowView: View {
                 }
 
                 Spacer()
+
+                Stepper(
+                    value: Binding(
+                        get: { plugin.inputChannels },
+                        set: { onStateChange($0, nil) }
+                    ),
+                    in: 1...32
+                ) {
+                    Text("\(plugin.inputChannels) ch")
+                        .font(.caption)
+                        .frame(minWidth: 42)
+                }
+                .help("Set plugin input channel count")
+
+                Button {
+                    onStateChange(nil, !plugin.bypassed)
+                } label: {
+                    Image(systemName: plugin.bypassed ? "power.circle.fill" : "power.circle")
+                        .foregroundColor(plugin.bypassed ? .orange : .primary)
+                }
+                .buttonStyle(.borderless)
+                .help(plugin.bypassed ? "Enable plugin" : "Bypass plugin")
 
                 Button(action: onEdit) {
                     Image(systemName: "slider.horizontal.3")
@@ -1492,7 +1603,7 @@ struct AddPluginSheet: View {
         .onAppear {
             selectInitialPluginIfNeeded()
         }
-        .onChange(of: availablePlugins.count) { _, _ in
+        .onChange(of: availablePlugins.count) { _ in
             selectInitialPluginIfNeeded()
         }
         .onMoveCommand { direction in

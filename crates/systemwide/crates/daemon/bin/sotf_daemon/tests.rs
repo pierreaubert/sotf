@@ -1,6 +1,9 @@
 #![allow(clippy::field_reassign_with_default)]
 use super::audio_daemon::try_acquire_client_slot;
-use super::audio_daemon::{AudioDaemon, pipeline_timing_after_config_request};
+use super::audio_daemon::{
+    AudioDaemon, pipeline_timing_after_config_request, rack_plugins_to_linear_graph,
+    reorder_linear_graph,
+};
 use super::command::Command;
 use super::configured::configured_output_device_from_value;
 use super::consts::{MAX_HAL_CHANNELS, MAX_IPC_CLIENTS, MAX_IPC_COMMAND_BYTES};
@@ -11,7 +14,7 @@ use super::misc::sanitize_user_plugins;
 use super::misc::transport_snapshot_and_faults;
 use super::misc::{
     build_driver_plugin_chain, build_driver_plugin_graph, is_safe_output_device_name,
-    parameter_descriptor_to_json,
+    list_audio_devices, parameter_descriptor_to_json,
 };
 use super::pipeline_reconfigure_outcome::handle_driver_config_change;
 use super::pipeline_reconfigure_outcome::reconfigure_audio_pipeline;
@@ -252,6 +255,91 @@ fn build_driver_plugin_graph_preserves_topology_and_adds_monitor_boundaries() {
 }
 
 #[test]
+fn reorder_linear_graph_preserves_node_state_and_rebuilds_edges() {
+    let mut first =
+        PluginGraphNodeConfig::try_new(10, "gain", serde_json::json!({"gain_db": -3.0}), 2)
+            .unwrap();
+    first.bypassed = true;
+    let mut second =
+        PluginGraphNodeConfig::try_new(20, "eq", serde_json::json!({"filters": [1, 2]}), 6)
+            .unwrap();
+    second.bypassed = false;
+    let graph = PluginGraphConfig::try_new(
+        vec![first.clone(), second.clone()],
+        vec![PluginGraphEdgeConfig::new(10, 20)],
+    )
+    .unwrap();
+
+    let reordered = reorder_linear_graph(&graph, &[20, 10]).unwrap();
+    assert_eq!(
+        reordered
+            .nodes
+            .iter()
+            .map(|node| node.id)
+            .collect::<Vec<_>>(),
+        vec![20, 10]
+    );
+    assert_eq!(reordered.edges.len(), 1);
+    assert_eq!(reordered.edges[0].from_node, 20);
+    assert_eq!(reordered.edges[0].to_node, 10);
+    assert_eq!(reordered.nodes[0].parameters, second.parameters);
+    assert_eq!(reordered.nodes[0].input_channels, second.input_channels);
+    assert_eq!(reordered.nodes[0].bypassed, second.bypassed);
+    assert_eq!(reordered.nodes[1].parameters, first.parameters);
+    assert_eq!(reordered.nodes[1].input_channels, first.input_channels);
+    assert_eq!(reordered.nodes[1].bypassed, first.bypassed);
+}
+
+#[test]
+fn reorder_linear_graph_rejects_invalid_order_and_nonlinear_graphs() {
+    let graph = PluginGraphConfig::try_new(
+        vec![
+            PluginGraphNodeConfig::try_new(1, "gain", serde_json::json!({}), 2).unwrap(),
+            PluginGraphNodeConfig::try_new(2, "gain", serde_json::json!({}), 2).unwrap(),
+        ],
+        vec![PluginGraphEdgeConfig::new(1, 2)],
+    )
+    .unwrap();
+    assert!(reorder_linear_graph(&graph, &[1, 1]).is_err());
+    assert!(reorder_linear_graph(&graph, &[1]).is_err());
+
+    let nonlinear = PluginGraphConfig::try_new(
+        vec![
+            PluginGraphNodeConfig::try_new(1, "gain", serde_json::json!({}), 2).unwrap(),
+            PluginGraphNodeConfig::try_new(2, "gain", serde_json::json!({}), 2).unwrap(),
+            PluginGraphNodeConfig::try_new(3, "gain", serde_json::json!({}), 2).unwrap(),
+        ],
+        vec![
+            PluginGraphEdgeConfig::new(1, 2),
+            PluginGraphEdgeConfig::new(1, 3),
+        ],
+    )
+    .unwrap();
+    assert!(reorder_linear_graph(&nonlinear, &[1, 2, 3]).is_err());
+}
+
+#[test]
+fn rack_state_promotion_preserves_order_and_parameters() {
+    let plugins = vec![
+        test_plugin("gain"),
+        PluginConfig::new("eq", serde_json::json!({"filters": [1]})),
+    ];
+    let graph = rack_plugins_to_linear_graph(&plugins, 2, 1, Some(6), Some(true)).unwrap();
+    assert_eq!(graph.nodes.len(), 2);
+    assert_eq!(graph.edges.len(), 1);
+    assert_eq!(graph.edges[0].from_node, 0);
+    assert_eq!(graph.edges[0].to_node, 1);
+    assert_eq!(graph.nodes[0].plugin_type, "gain");
+    assert_eq!(graph.nodes[0].parameters, plugins[0].parameters);
+    assert_eq!(graph.nodes[0].input_channels, 2);
+    assert!(!graph.nodes[0].bypassed);
+    assert_eq!(graph.nodes[1].plugin_type, "eq");
+    assert_eq!(graph.nodes[1].parameters, plugins[1].parameters);
+    assert_eq!(graph.nodes[1].input_channels, 6);
+    assert!(graph.nodes[1].bypassed);
+}
+
+#[test]
 fn empty_loudness_json_clamps_channels_and_shapes_defaults() {
     let zero = super::consts::empty_loudness_json(0);
     assert_eq!(zero["momentary"], -60.0);
@@ -392,6 +480,22 @@ fn command_name_covers_all_variants() {
         ),
         (Command::RemovePlugin { index: 0 }, "remove_plugin"),
         (Command::ReorderPlugins { order: vec![] }, "reorder_plugins"),
+        (
+            Command::ReorderGraph {
+                order: vec![10, 20],
+                base_generation: Some(3),
+            },
+            "reorder_graph",
+        ),
+        (
+            Command::SetRackPluginState {
+                index: 0,
+                input_channels: Some(6),
+                bypassed: Some(true),
+                base_generation: Some(3),
+            },
+            "set_rack_plugin_state",
+        ),
         (Command::SetEncryption { enabled: true }, "set_encryption"),
         (Command::EncryptionStatus, "encryption_status"),
         (Command::RotateEncryptionKey, "rotate_encryption_key"),
@@ -639,6 +743,32 @@ mod ipc_safety_tests {
             serde_json::from_str(r#"{"command":"load_plugin_artifact","artifact":[]}"#).unwrap();
         assert_eq!(cmd.name(), "load_plugin_artifact");
 
+        let cmd: Command = serde_json::from_str(
+            r#"{"command":"reorder_graph","order":[20,10],"base_generation":3}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            cmd,
+            Command::ReorderGraph {
+                order,
+                base_generation: Some(3)
+            } if order == vec![20, 10]
+        ));
+
+        let cmd: Command = serde_json::from_str(
+            r#"{"command":"set_rack_plugin_state","index":1,"input_channels":8,"bypassed":true,"base_generation":4}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            cmd,
+            Command::SetRackPluginState {
+                index: 1,
+                input_channels: Some(8),
+                bypassed: Some(true),
+                base_generation: Some(4)
+            }
+        ));
+
         let cmd: Command = serde_json::from_str(r#"{"command":"shutdown"}"#).unwrap();
         assert_eq!(cmd.name(), "shutdown");
     }
@@ -651,6 +781,7 @@ mod ipc_safety_tests {
         last_ack: Option<(DriverConfig, ConfigResult)>,
         pending_config_change: Option<DriverConfig>,
         fail_next_config: Option<String>,
+        config_failures_remaining: usize,
     }
 
     #[derive(Debug, Clone)]
@@ -695,10 +826,14 @@ mod ipc_safety_tests {
         fn request_config(&mut self, config: DriverConfig) -> ConfigResult {
             let mut state = self.state.lock();
             state.last_requested_config = Some(config);
-            state
-                .fail_next_config
-                .take()
-                .map_or(ConfigResult::Accepted, ConfigResult::error)
+            if let Some(error) = state.fail_next_config.take() {
+                ConfigResult::error(error)
+            } else if state.config_failures_remaining > 0 {
+                state.config_failures_remaining -= 1;
+                ConfigResult::error("queued config failure")
+            } else {
+                ConfigResult::Accepted
+            }
         }
 
         fn poll_config_change(&mut self) -> Option<DriverConfig> {
@@ -722,11 +857,20 @@ mod ipc_safety_tests {
             last_ack: None,
             pending_config_change: None,
             fail_next_config: None,
+            config_failures_remaining: 0,
         }))
     }
 
     fn healthy_driver_status() -> DriverStatus {
         DriverStatus::new(true, true, true, 48_000, 2, 512, "Fake HAL", true)
+    }
+
+    fn has_physical_output_device() -> bool {
+        list_audio_devices()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|device| device["name"].as_str())
+            .any(is_safe_output_device_name)
     }
 
     fn fault_codes(faults: &[Value]) -> Vec<&str> {
@@ -982,6 +1126,31 @@ mod ipc_safety_tests {
     }
 
     #[test]
+    fn testkit_driver_status_wire_matches_serde_status_fields() {
+        let state = fake_driver_state();
+        let expected = state.lock().status.clone();
+        let daemon = test_daemon_with_driver(state);
+        let response = daemon.handle_command(Command::DriverStatus);
+        let data = response.data.expect("driver status data");
+        let serde_fields = serde_json::to_value(&expected).expect("status serializes");
+
+        for field in [
+            "platform_supported",
+            "driver_installed",
+            "capture_active",
+            "sample_rate",
+            "channel_count",
+            "buffer_frames",
+            "driver_name",
+            "driver_ready",
+        ] {
+            assert_eq!(data[field], serde_fields[field], "wire field {field}");
+        }
+        assert_eq!(data["ready"], true);
+        assert_eq!(data["buffer_initialized"], true);
+    }
+
+    #[test]
     fn testkit_invalid_plugin_load_does_not_mutate_pipeline_state() {
         let state = fake_driver_state();
         let daemon = test_daemon_with_driver(state);
@@ -1141,6 +1310,97 @@ mod ipc_safety_tests {
         let graph = state.user_graph().unwrap();
         assert_eq!(graph.nodes[0].id, 7);
         assert_eq!(graph.nodes[0].parameters["gain_db"], -3.0);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn testkit_live_rack_state_promotion_and_graph_reorder_preserve_node_state() {
+        if !has_physical_output_device() {
+            eprintln!("skipping live graph/rack mutation test: no physical output device");
+            return;
+        }
+
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+        let seed = daemon.handle_command(Command::LoadPlugins {
+            plugins: vec![
+                PluginConfig::new("gain", serde_json::json!({"gain_db": -3.0})),
+                PluginConfig::new("eq", serde_json::json!({"filters": []})),
+            ],
+            input_channels: 2,
+            output_channels: 2,
+        });
+        if !seed.success
+            && seed
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("No physical output device found"))
+        {
+            eprintln!("skipping live graph/rack mutation test: engine has no usable physical output");
+            return;
+        }
+        assert!(seed.success, "failed to seed rack pipeline: {seed:?}");
+        let rack_generation = daemon
+            .system_state
+            .lock()
+            .applied_generation()
+            .expect("rack seed must have an applied generation");
+
+        let promoted = daemon.handle_command(Command::SetRackPluginState {
+            index: 1,
+            input_channels: Some(4),
+            bypassed: Some(true),
+            base_generation: Some(rack_generation),
+        });
+        assert!(promoted.success, "failed to promote rack state: {promoted:?}");
+
+        let promoted_state = daemon.system_state.lock();
+        let graph = promoted_state
+            .user_graph()
+            .expect("rack state mutation must retain a graph owner");
+        assert_eq!(graph.nodes.len(), 2);
+        assert_eq!(graph.nodes[0].id, 0);
+        assert_eq!(graph.nodes[0].parameters["gain_db"], -3.0);
+        assert_eq!(graph.nodes[1].id, 1);
+        assert_eq!(graph.nodes[1].parameters["filters"], serde_json::json!([]));
+        assert_eq!(graph.nodes[1].input_channels, 4);
+        assert!(graph.nodes[1].bypassed);
+        assert_eq!(graph.edges.len(), 1);
+        let graph_generation = promoted_state
+            .applied_generation()
+            .expect("promoted graph must have a generation");
+        drop(promoted_state);
+
+        let reordered = daemon.handle_command(Command::ReorderGraph {
+            order: vec![1, 0],
+            base_generation: Some(graph_generation),
+        });
+        assert!(reordered.success, "failed to reorder graph: {reordered:?}");
+
+        let reordered_state = daemon.system_state.lock();
+        let graph = reordered_state.user_graph().expect("graph must remain active");
+        assert_eq!(graph.nodes.iter().map(|node| node.id).collect::<Vec<_>>(), vec![1, 0]);
+        assert_eq!(graph.nodes[0].parameters["filters"], serde_json::json!([]));
+        assert_eq!(graph.nodes[0].input_channels, 4);
+        assert!(graph.nodes[0].bypassed);
+        assert_eq!(graph.nodes[1].parameters["gain_db"], -3.0);
+        assert_eq!(graph.edges[0].from_node, 1);
+        assert_eq!(graph.edges[0].to_node, 0);
+        assert_eq!(
+            reordered_state.applied_generation(),
+            Some(graph_generation + 1)
+        );
+        drop(reordered_state);
+
+        let stale = daemon.handle_command(Command::ReorderGraph {
+            order: vec![0, 1],
+            base_generation: Some(graph_generation),
+        });
+        assert!(!stale.success);
+        assert!(stale
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("generation conflict")));
     }
 
     #[test]
@@ -1403,8 +1663,52 @@ mod ipc_safety_tests {
     }
 
     #[test]
+    fn testkit_failed_first_pipeline_apply_exposes_restart_recovery() {
+        let state = fake_driver_state();
+        state.lock().fail_next_config = Some("first apply failed".to_string());
+        let daemon = test_daemon_with_driver(Arc::clone(&state));
+
+        // There is no applied plan yet. Changing the requested input geometry
+        // forces the driver configuration path before the engine can start,
+        // making the failure deterministic without requiring a physical
+        // output device.
+        let response = daemon.handle_command(Command::LoadPlugins {
+            plugins: Vec::new(),
+            input_channels: 4,
+            output_channels: 2,
+        });
+
+        assert!(!response.success);
+        assert!(
+            response
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("Failed to set HAL input channels"))
+        );
+        assert!(!state.lock().engine_ready);
+
+        let state = daemon.system_state.lock();
+        assert_eq!(state.applied_generation(), None);
+        let recovery = state
+            .pipeline_recovery()
+            .expect("first apply failure must remain observable");
+        assert!(recovery.error.contains("Failed to set HAL input channels"));
+        assert_eq!(recovery.actions, vec!["restart_daemon"]);
+    }
+
+    #[test]
     #[serial_test::serial]
     fn testkit_concurrent_add_plugin_preserves_both_mutations() {
+        let has_physical_output = list_audio_devices()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|device| device["name"].as_str())
+            .any(is_safe_output_device_name);
+        if !has_physical_output {
+            eprintln!("skipping live engine mutation test: no physical output device");
+            return;
+        }
+
         let state = fake_driver_state();
         let daemon = Arc::new(test_daemon_with_driver(state));
         let seed = daemon.handle_command(Command::LoadPlugins {
@@ -1413,6 +1717,16 @@ mod ipc_safety_tests {
             output_channels: 2,
         });
         assert!(seed.success, "failed to seed pipeline: {seed:?}");
+        if daemon
+            .manager
+            .lock()
+            .get_engine_state()
+            .playback_output_device
+            .is_none()
+        {
+            eprintln!("skipping live engine mutation test: playback has no output device");
+            return;
+        }
 
         let start = Arc::new(Barrier::new(3));
         let first_daemon = Arc::clone(&daemon);
@@ -1461,6 +1775,58 @@ mod ipc_safety_tests {
         drop(state);
         let stopped = daemon.handle_command(Command::Stop);
         assert!(stopped.success, "failed to stop test engine: {stopped:?}");
+    }
+
+    #[test]
+    fn testkit_double_pipeline_failure_marks_restart_recovery() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(Arc::clone(&state));
+
+        let seed = daemon.handle_command(Command::LoadPlugins {
+            plugins: vec![test_plugin("eq")],
+            input_channels: 2,
+            output_channels: 2,
+        });
+        assert!(seed.success, "failed to seed pipeline: {seed:?}");
+
+        {
+            let mut state = state.lock();
+            state.status.channel_count = 8;
+            state.config_failures_remaining = 2;
+        }
+
+        let response = daemon.handle_command(Command::SetInputChannels { channels: 4 });
+        assert!(!response.success);
+        assert!(
+            response
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("recovery also failed"))
+        );
+        assert!(!state.lock().engine_ready);
+
+        let status = daemon.handle_command(Command::Status);
+        let data = status.data.expect("status data");
+        assert_eq!(
+            data["pipeline_recovery"]["actions"],
+            serde_json::json!(["restart_daemon"])
+        );
+        assert!(
+            data["recovery_actions"]
+                .as_array()
+                .is_some_and(|actions| actions.iter().any(|action| action == "restart_daemon"))
+        );
+
+        let snapshot = daemon.handle_command(Command::GetSnapshot);
+        let snapshot_data = snapshot.data.expect("snapshot data");
+        let faults = snapshot_data["diagnostics"]["faults"]
+            .as_array()
+            .expect("fault list");
+        assert!(
+            faults
+                .iter()
+                .any(|fault| fault["code"] == "pipeline_recovery_required")
+        );
     }
 }
 
@@ -1838,6 +2204,44 @@ mod command_roundtrip_tests {
         assert!(data.get("channel_count").is_some());
         assert!(data.get("driver_installed").is_some());
         assert!(data.get("platform_supported").is_some());
+    }
+
+    #[test]
+    fn get_driver_config_wire_preserves_canonical_fields_and_legacy_aliases() {
+        let response = run_command(Command::GetDriverConfig);
+        assert!(response.success);
+        let data = response.data.expect("get_driver_config data");
+
+        let expected_fields = [
+            "sample_rate",
+            "actual_sample_rate",
+            "buffer_frames",
+            "actual_buffer_frames",
+            "channel_count",
+            "active",
+            "driver_name",
+            "driver_installed",
+            "driver_ready",
+            "platform_supported",
+        ];
+        let actual_fields: std::collections::BTreeSet<&str> =
+            data.as_object()
+                .expect("driver config is an object")
+                .keys()
+                .map(String::as_str)
+                .collect();
+        let expected_field_set: std::collections::BTreeSet<&str> =
+            expected_fields.into_iter().collect();
+        assert_eq!(actual_fields, expected_field_set);
+
+        assert_eq!(data["actual_sample_rate"], data["sample_rate"]);
+        assert_eq!(data["actual_buffer_frames"], data["buffer_frames"]);
+        assert!(data["channel_count"].is_u64());
+        assert!(data["active"].is_boolean());
+        assert!(data["driver_name"].is_string());
+        assert!(data["driver_installed"].is_boolean());
+        assert!(data["driver_ready"].is_boolean());
+        assert!(data["platform_supported"].is_boolean());
     }
 
     #[test]

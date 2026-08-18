@@ -30,6 +30,15 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{Ordering, fence};
 
+// `configuring` is a small cross-process state bitset. The reconfiguration bit
+// blocks new IO commits, while the read/write bits protect an IO operation that
+// passed the initial gate but has not yet published its cursor. Keeping this in
+// the existing atomic preserves the Rust/Swift header layout.
+pub(super) const CONFIGURING_RECONFIGURE: u32 = 1;
+pub(super) const CONFIGURING_READ_COMMIT: u32 = 2;
+pub(super) const CONFIGURING_WRITE_COMMIT: u32 = 4;
+const CONFIGURING_IO_MASK: u32 = CONFIGURING_READ_COMMIT | CONFIGURING_WRITE_COMMIT;
+
 /// Shared audio buffer for communication with Swift HAL driver
 pub struct SharedAudioBuffer {
     pub(super) mmap: MmapMut,
@@ -40,6 +49,80 @@ pub struct SharedAudioBuffer {
 }
 
 impl SharedAudioBuffer {
+    fn reconfiguration_requested(&self) -> bool {
+        self.header().configuring.load(Ordering::Acquire) & CONFIGURING_RECONFIGURE != 0
+    }
+
+    /// Claim the short publication critical section for one SPSC endpoint.
+    ///
+    /// A reconfiguration can set its bit while an IO operation is copying.
+    /// Such an operation then fails this claim and must discard its pending
+    /// cursor update. Conversely, a reconfiguration waits for claims already
+    /// in progress before resetting the ring positions.
+    fn try_acquire_io_commit(&self, bit: u32) -> bool {
+        debug_assert!(bit == CONFIGURING_READ_COMMIT || bit == CONFIGURING_WRITE_COMMIT);
+        let configuring = &self.header().configuring;
+        let mut state = configuring.load(Ordering::Acquire);
+        loop {
+            if state & CONFIGURING_RECONFIGURE != 0 || state & bit != 0 {
+                return false;
+            }
+            match configuring.compare_exchange_weak(
+                state,
+                state | bit,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return true,
+                Err(observed) => state = observed,
+            }
+        }
+    }
+
+    fn release_io_commit(&self, bit: u32) {
+        self.header().configuring.fetch_and(!bit, Ordering::Release);
+    }
+
+    /// Set the reconfiguration bit and wait for already-running IO commits.
+    /// Returning false is deliberately safe: geometry must not be changed
+    /// unless the old ring publishers have quiesced.
+    fn begin_reconfiguration(&self) -> bool {
+        let configuring = &self.header().configuring;
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_nanos(RECONFIG_QUIESCE_TIMEOUT_NS);
+        let mut state = configuring.load(Ordering::Acquire);
+
+        loop {
+            if state & CONFIGURING_RECONFIGURE != 0 {
+                return false;
+            }
+            match configuring.compare_exchange_weak(
+                state,
+                state | CONFIGURING_RECONFIGURE,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(observed) => {
+                    state = observed;
+                    if start.elapsed() >= timeout {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        while configuring.load(Ordering::Acquire) & CONFIGURING_IO_MASK != 0 {
+            if start.elapsed() >= timeout {
+                configuring.fetch_and(!CONFIGURING_RECONFIGURE, Ordering::Release);
+                return false;
+            }
+            std::hint::spin_loop();
+        }
+
+        true
+    }
+
     pub(super) fn audio_layout(
         buffer_frames: u32,
         channel_count: u32,
@@ -564,19 +647,14 @@ impl SharedAudioBuffer {
             return;
         }
 
+        if !self.begin_reconfiguration() {
+            log::debug!("Timed out waiting for shared-memory IO quiesce");
+            return;
+        }
+
         {
             let header = self.header();
-            header.configuring.store(1, Ordering::Release);
             header.configuring_ack.store(0, Ordering::Release);
-            let start = std::time::Instant::now();
-            let timeout = std::time::Duration::from_nanos(RECONFIG_QUIESCE_TIMEOUT_NS);
-            while header.configuring_ack.load(Ordering::Acquire) == 0 && start.elapsed() < timeout {
-                std::hint::spin_loop();
-            }
-
-            if header.configuring_ack.load(Ordering::Acquire) == 0 {
-                log::debug!("Timed out waiting for shared-memory IO quiesce acknowledgment");
-            }
 
             if let Some(rate) = sample_rate {
                 header.sample_rate.store(rate, Ordering::Release);
@@ -598,7 +676,9 @@ impl SharedAudioBuffer {
         header.write_position.store(0, Ordering::Release);
         header.read_position.store(0, Ordering::Release);
         header.config_changed.store(1, Ordering::Release);
-        header.configuring.store(0, Ordering::Release);
+        header
+            .configuring
+            .fetch_and(!CONFIGURING_RECONFIGURE, Ordering::Release);
         header.configuring_ack.store(0, Ordering::Release);
     }
 
@@ -926,21 +1006,54 @@ impl SharedAudioBuffer {
     ///
     /// There is exactly one daemon reader and one HAL writer per ring, so
     /// atomic stores from this `&self` method are well-defined.
-    pub(super) fn commit_read_position(&self, new_read_pos: u64) {
+    pub(super) fn commit_read_position(&self, new_read_pos: u64) -> bool {
+        if !self.try_acquire_io_commit(CONFIGURING_READ_COMMIT) {
+            return false;
+        }
         self.header()
             .read_position
             .store(new_read_pos, Ordering::Release);
+        self.release_io_commit(CONFIGURING_READ_COMMIT);
+        true
+    }
+
+    #[cfg(test)]
+    pub(super) fn commit_write_position(&self, new_write_pos: u64) -> bool {
+        if !self.try_acquire_io_commit(CONFIGURING_WRITE_COMMIT) {
+            return false;
+        }
+        self.header()
+            .write_position
+            .store(new_write_pos, Ordering::Release);
+        self.release_io_commit(CONFIGURING_WRITE_COMMIT);
+        true
     }
 
     /// Read audio from the shared memory ring buffer.
     /// Returns the number of frames actually read.
     pub fn read_audio(&self, buffer: &mut [f32]) -> usize {
         let header = self.header();
-        if header.configuring.load(Ordering::Acquire) != 0 {
+        if self.reconfiguration_requested() {
             header.configuring_ack.store(1, Ordering::Release);
             buffer.fill(0.0);
             return 0;
         }
+        if !self.try_acquire_io_commit(CONFIGURING_READ_COMMIT) {
+            buffer.fill(0.0);
+            return 0;
+        }
+
+        let frames_read = self.read_audio_under_commit(buffer);
+        self.release_io_commit(CONFIGURING_READ_COMMIT);
+        frames_read
+    }
+
+    /// Read one plain ring transaction while holding the read publication bit.
+    /// The bit covers both the payload copy and cursor publication; otherwise a
+    /// reconfiguration could reset the ring between those two operations and a
+    /// stale read cursor could be published after the reset.
+    fn read_audio_under_commit(&self, buffer: &mut [f32]) -> usize {
+        let header = self.header();
         let channel_count = header.channel_count.load(Ordering::Acquire) as usize;
         if channel_count == 0 {
             buffer.fill(0.0);
@@ -997,7 +1110,9 @@ impl SharedAudioBuffer {
         }
 
         let new_read_pos = read_pos + to_read as u64;
-        self.commit_read_position(new_read_pos);
+        header
+            .read_position
+            .store(new_read_pos, Ordering::Release);
 
         let frames_read = to_read / channel_count.max(1);
         #[cfg(feature = "audio-trace")]
@@ -1021,15 +1136,58 @@ impl SharedAudioBuffer {
     /// Returns the number of frames actually written.
     pub fn write_audio(&mut self, buffer: &[f32]) -> usize {
         let header = self.header();
-        if header.configuring.load(Ordering::Acquire) != 0 {
+        if self.reconfiguration_requested() {
             header.configuring_ack.store(1, Ordering::Release);
             return 0;
         }
-        let channel_count = header.channel_count.load(Ordering::Acquire) as usize;
+        if !self.try_acquire_io_commit(CONFIGURING_WRITE_COMMIT) {
+            return 0;
+        }
+
+        let frames_written = self.write_audio_under_commit(buffer);
+        self.release_io_commit(CONFIGURING_WRITE_COMMIT);
+        frames_written
+    }
+
+    /// Write audio only if the caller's channel snapshot is still the active
+    /// shared-memory geometry. HAL callbacks can hold a buffer created before
+    /// a format transition; rejecting that stale buffer is safer than
+    /// reinterpreting its samples at the new channel width.
+    pub(super) fn write_audio_with_channel_count(
+        &mut self,
+        buffer: &[f32],
+        expected_channel_count: usize,
+    ) -> usize {
+        if expected_channel_count == 0 {
+            return 0;
+        }
+        if self.reconfiguration_requested() {
+            self.header().configuring_ack.store(1, Ordering::Release);
+            return 0;
+        }
+        if !self.try_acquire_io_commit(CONFIGURING_WRITE_COMMIT) {
+            return 0;
+        }
+
+        let geometry_matches = self.header().channel_count.load(Ordering::Acquire) as usize
+            == expected_channel_count;
+        let frames_written = if geometry_matches {
+            self.write_audio_under_commit(buffer)
+        } else {
+            0
+        };
+        self.release_io_commit(CONFIGURING_WRITE_COMMIT);
+        frames_written
+    }
+
+    /// Write one plain ring transaction while holding the write publication
+    /// bit across the payload copy and cursor publication.
+    fn write_audio_under_commit(&mut self, buffer: &[f32]) -> usize {
+        let channel_count = self.header().channel_count.load(Ordering::Acquire) as usize;
         let sample_count = buffer.len();
 
-        let write_pos = header.write_position.load(Ordering::Acquire);
-        let read_pos = header.read_position.load(Ordering::Acquire);
+        let write_pos = self.header().write_position.load(Ordering::Acquire);
+        let read_pos = self.header().read_position.load(Ordering::Acquire);
 
         let (_, used) = self.compute_repair(write_pos, read_pos);
         let audio_capacity = self.current_audio_capacity();
@@ -1092,7 +1250,7 @@ impl SharedAudioBuffer {
     /// Get available frames to read.
     pub fn available_read_frames(&self) -> usize {
         let header = self.header();
-        if header.configuring.load(Ordering::Acquire) != 0 {
+        if self.reconfiguration_requested() {
             header.configuring_ack.store(1, Ordering::Release);
             return 0;
         }
@@ -1255,12 +1413,40 @@ impl SharedAudioBuffer {
         encrypted_buf: &mut Vec<f32>,
         ciphertext_buf: &mut Vec<u8>,
     ) -> EncryptedRecordRead {
+        if self.reconfiguration_requested()
+            || !self.try_acquire_io_commit(CONFIGURING_READ_COMMIT)
+        {
+            return EncryptedRecordRead::Empty;
+        }
+
+        let result = self.read_next_encrypted_record_under_commit(
+            output,
+            cipher,
+            encrypted_buf,
+            ciphertext_buf,
+        );
+        self.release_io_commit(CONFIGURING_READ_COMMIT);
+        result
+    }
+
+    /// Read and publish one encrypted record while holding the read commit bit
+    /// across all payload copies, authentication, decryption, and cursor
+    /// publication. This is also called directly by the streaming adapter.
+    fn read_next_encrypted_record_under_commit(
+        &self,
+        output: &mut [f32],
+        cipher: &crate::encryption::AudioCipher,
+        encrypted_buf: &mut Vec<f32>,
+        ciphertext_buf: &mut Vec<u8>,
+    ) -> EncryptedRecordRead {
         let header = self.header();
         let write_pos = header.write_position.load(Ordering::Acquire);
         let original_read_pos = header.read_position.load(Ordering::Acquire);
         let (read_pos, available_slots) = self.compute_repair(write_pos, original_read_pos);
         if read_pos != original_read_pos {
-            self.commit_read_position(write_pos);
+            header
+                .read_position
+                .store(write_pos, Ordering::Release);
             return EncryptedRecordRead::Empty;
         }
 
@@ -1271,7 +1457,9 @@ impl SharedAudioBuffer {
             ciphertext_buf,
         ) else {
             log::warn!("Invalid encrypted audio record header; flushing encrypted ring");
-            self.commit_read_position(write_pos);
+            header
+                .read_position
+                .store(write_pos, Ordering::Release);
             return EncryptedRecordRead::InvalidHeader;
         };
 
@@ -1286,7 +1474,9 @@ impl SharedAudioBuffer {
                 record.sample_count,
                 channel_count
             );
-            self.commit_read_position(write_pos);
+            header
+                .read_position
+                .store(write_pos, Ordering::Release);
             return EncryptedRecordRead::InvalidHeader;
         }
 
@@ -1302,7 +1492,9 @@ impl SharedAudioBuffer {
         if encrypted_buf.capacity() < record.slot_count
             || ciphertext_buf.capacity() < record.total_bytes
         {
-            self.commit_read_position(write_pos);
+            header
+                .read_position
+                .store(write_pos, Ordering::Release);
             return EncryptedRecordRead::InvalidHeader;
         }
         if encrypted_buf.len() < record.slot_count {
@@ -1347,7 +1539,9 @@ impl SharedAudioBuffer {
             }
         };
 
-        self.commit_read_position(read_pos + record.slot_count as u64);
+        header
+            .read_position
+            .store(read_pos + record.slot_count as u64, Ordering::Release);
         status
     }
 
@@ -1359,7 +1553,7 @@ impl SharedAudioBuffer {
         encrypted_buf: &mut Vec<f32>,
         ciphertext_buf: &mut Vec<u8>,
     ) -> usize {
-        if self.header().configuring.load(Ordering::Acquire) != 0 {
+        if self.reconfiguration_requested() {
             self.header().configuring_ack.store(1, Ordering::Release);
             buffer.fill(0.0);
             return 0;
@@ -1367,6 +1561,31 @@ impl SharedAudioBuffer {
         if !self.is_encrypted() {
             return self.read_audio(buffer);
         }
+
+        if !self.try_acquire_io_commit(CONFIGURING_READ_COMMIT) {
+            buffer.fill(0.0);
+            return 0;
+        }
+        let frames_read = self.read_audio_encrypted_under_commit(
+            buffer,
+            cipher,
+            encrypted_buf,
+            ciphertext_buf,
+        );
+        self.release_io_commit(CONFIGURING_READ_COMMIT);
+        frames_read
+    }
+
+    /// Read an encrypted batch while holding the read commit bit. Keeping one
+    /// geometry snapshot for the whole batch prevents a completed channel
+    /// transition from making the target buffer's old frame width ambiguous.
+    fn read_audio_encrypted_under_commit(
+        &self,
+        buffer: &mut [f32],
+        cipher: &crate::encryption::AudioCipher,
+        encrypted_buf: &mut Vec<f32>,
+        ciphertext_buf: &mut Vec<u8>,
+    ) -> usize {
 
         let channel_count = self.header().channel_count.load(Ordering::Acquire) as usize;
         if channel_count == 0 {
@@ -1381,7 +1600,7 @@ impl SharedAudioBuffer {
         let mut copied_samples = 0;
 
         while copied_samples < target_samples {
-            match self.read_next_encrypted_record_into(
+            match self.read_next_encrypted_record_under_commit(
                 &mut buffer[copied_samples..],
                 cipher,
                 encrypted_buf,
@@ -1418,20 +1637,94 @@ impl SharedAudioBuffer {
         ciphertext_buf: &mut Vec<u8>,
         encrypted_buf: &mut Vec<f32>,
     ) -> usize {
-        if self.header().configuring.load(Ordering::Acquire) != 0 {
+        self.write_audio_encrypted_into_with_expected_channel_count(
+            samples,
+            cipher,
+            ciphertext_buf,
+            encrypted_buf,
+            None,
+        )
+    }
+
+    /// Encrypted counterpart to [`write_audio_with_channel_count`].
+    pub(super) fn write_audio_encrypted_into_with_channel_count(
+        &mut self,
+        samples: &[f32],
+        cipher: &crate::encryption::AudioCipher,
+        ciphertext_buf: &mut Vec<u8>,
+        encrypted_buf: &mut Vec<f32>,
+        expected_channel_count: usize,
+    ) -> usize {
+        self.write_audio_encrypted_into_with_expected_channel_count(
+            samples,
+            cipher,
+            ciphertext_buf,
+            encrypted_buf,
+            Some(expected_channel_count),
+        )
+    }
+
+    fn write_audio_encrypted_into_with_expected_channel_count(
+        &mut self,
+        samples: &[f32],
+        cipher: &crate::encryption::AudioCipher,
+        ciphertext_buf: &mut Vec<u8>,
+        encrypted_buf: &mut Vec<f32>,
+        expected_channel_count: Option<usize>,
+    ) -> usize {
+        if self.reconfiguration_requested() {
             self.header().configuring_ack.store(1, Ordering::Release);
             return 0;
         }
         if !self.is_encrypted() {
-            return self.write_audio(samples);
+            return match expected_channel_count {
+                Some(expected) => self.write_audio_with_channel_count(samples, expected),
+                None => self.write_audio(samples),
+            };
         }
 
-        let header = self.header();
-        let channel_count = header.channel_count.load(Ordering::Acquire) as usize;
+        if !self.try_acquire_io_commit(CONFIGURING_WRITE_COMMIT) {
+            return 0;
+        }
+        if let Some(expected) = expected_channel_count
+            && self.header().channel_count.load(Ordering::Acquire) as usize != expected
+        {
+            self.release_io_commit(CONFIGURING_WRITE_COMMIT);
+            return 0;
+        }
+        let frames_written = self.write_audio_encrypted_under_commit(
+            samples,
+            cipher,
+            ciphertext_buf,
+            encrypted_buf,
+        );
+        self.release_io_commit(CONFIGURING_WRITE_COMMIT);
+        frames_written
+    }
+
+    /// Write one encrypted record while holding the write commit bit across
+    /// staging, ring copy, and cursor publication. This prevents a completed
+    /// reconfiguration from accepting an old-geometry record after it reset
+    /// the ring positions.
+    fn write_audio_encrypted_under_commit(
+        &mut self,
+        samples: &[f32],
+        cipher: &crate::encryption::AudioCipher,
+        ciphertext_buf: &mut Vec<u8>,
+        encrypted_buf: &mut Vec<f32>,
+    ) -> usize {
+
+        let channel_count = self.header().channel_count.load(Ordering::Acquire) as usize;
+        if channel_count == 0 {
+            self.header()
+                .encryption_overflow_count
+                .fetch_add(1, Ordering::Relaxed);
+            return 0;
+        }
         let sample_count = samples.len() / channel_count * channel_count;
 
         let max_samples = MAX_HAL_BUFFER_FRAMES as usize * MAX_HAL_CHANNEL_COUNT as usize;
-        if channel_count == 0 || sample_count == 0 || sample_count > max_samples {
+        if sample_count == 0 || sample_count > max_samples {
             return 0;
         }
         let samples = &samples[..sample_count];
@@ -1451,7 +1744,7 @@ impl SharedAudioBuffer {
         };
 
         if ciphertext_buf.capacity() < total_bytes || encrypted_buf.capacity() < encrypted_slots {
-            header
+            self.header()
                 .encryption_overflow_count
                 .fetch_add(1, Ordering::AcqRel);
             return 0;
@@ -1489,14 +1782,14 @@ impl SharedAudioBuffer {
 
         crate::encryption::encrypted_to_samples_into(&ciphertext_buf[..total_bytes], encrypted_buf);
 
-        let write_pos = header.write_position.load(Ordering::Acquire);
-        let read_pos = header.read_position.load(Ordering::Acquire);
+        let write_pos = self.header().write_position.load(Ordering::Acquire);
+        let read_pos = self.header().read_position.load(Ordering::Acquire);
 
         let (_, used) = self.compute_repair(write_pos, read_pos);
         let available = self.current_audio_capacity().saturating_sub(used);
 
         if encrypted_slots > available {
-            header
+            self.header()
                 .encryption_overflow_count
                 .fetch_add(1, Ordering::AcqRel);
             log::warn!(

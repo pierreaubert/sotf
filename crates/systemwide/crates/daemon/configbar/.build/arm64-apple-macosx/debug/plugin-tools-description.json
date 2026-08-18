@@ -28,6 +28,10 @@
       "inputs" : [
         {
           "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/tests/ConfigBarIPCTests.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/tests/ConfigBarModelTests.swift"
         },
         {
@@ -47,6 +51,7 @@
       "moduleName" : "ConfigBarModelTests",
       "moduleOutputPath" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/Modules/ConfigBarModelTests.swiftmodule",
       "objects" : [
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModelTests.build/ConfigBarIPCTests.swift.o",
         "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModelTests.build/ConfigBarModelTests.swift.o"
       ],
       "otherArguments" : [
@@ -101,6 +106,10 @@
       "outputs" : [
         {
           "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModelTests.build/ConfigBarIPCTests.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModelTests.build/ConfigBarModelTests.swift.o"
         },
         {
@@ -110,6 +119,7 @@
       ],
       "prepareForIndexing" : false,
       "sources" : [
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/tests/ConfigBarIPCTests.swift",
         "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/tests/ConfigBarModelTests.swift"
       ],
       "tempsPath" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModelTests.build",
@@ -120,6 +130,14 @@
       "fileList" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/sources",
       "importPath" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/Modules",
       "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/ConfigBarIPC.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/ConfigBarPure.swift"
+        },
         {
           "kind" : "file",
           "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/PluginModels.swift"
@@ -137,6 +155,8 @@
       "moduleName" : "ConfigBarModels",
       "moduleOutputPath" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/Modules/ConfigBarModels.swiftmodule",
       "objects" : [
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarIPC.swift.o",
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarPure.swift.o",
         "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/PluginModels.swift.o"
       ],
       "otherArguments" : [
@@ -192,6 +212,14 @@
       "outputs" : [
         {
           "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarIPC.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarPure.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/PluginModels.swift.o"
         },
         {
@@ -201,6 +229,8 @@
       ],
       "prepareForIndexing" : false,
       "sources" : [
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/ConfigBarIPC.swift",
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/ConfigBarPure.swift",
         "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/PluginModels.swift"
       ],
       "tempsPath" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build",
@@ -218,6 +248,10 @@
         {
           "kind" : "file",
           "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/Modules/ConfigBarUITests.swiftmodule"
         },
         {
           "kind" : "file",
@@ -300,6 +334,219 @@
       ],
       "tempsPath" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.build",
       "wholeModuleOptimization" : false
+    },
+    "C.ConfigBarUI-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/sources",
+      "importPath" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/ConfigBar.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/PluginEditorViews.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/PluginRackView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/Modules/ConfigBarModels.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "ConfigBarUI",
+      "moduleOutputPath" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/Modules/ConfigBarUI.swiftmodule",
+      "objects" : [
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/ConfigBar.swift.o",
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/PluginEditorViews.swift.o",
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/PluginRackView.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx13.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-j14",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/include/ConfigBarUI-Swift.h",
+        "-swift-version",
+        "5",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "configbar"
+      ],
+      "outputFileMapPath" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/ConfigBar.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/PluginEditorViews.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/PluginRackView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/Modules/ConfigBarUI.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/ConfigBar.swift",
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/PluginEditorViews.swift",
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/PluginRackView.swift"
+      ],
+      "tempsPath" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.ConfigBarUITests-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUITests.build/sources",
+      "importPath" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/tests/ConfigBarUITests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/Modules/ConfigBarUI.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/Modules/ConfigBarModels.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUITests.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "ConfigBarUITests",
+      "moduleOutputPath" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/Modules/ConfigBarUITests.swiftmodule",
+      "objects" : [
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUITests.build/ConfigBarUITests.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-Xfrontend",
+        "-enable-cross-import-overlays",
+        "-j14",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-swift-version",
+        "5",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "configbar"
+      ],
+      "outputFileMapPath" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUITests.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUITests.build/ConfigBarUITests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/Modules/ConfigBarUITests.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/tests/ConfigBarUITests.swift"
+      ],
+      "tempsPath" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUITests.build",
+      "wholeModuleOptimization" : false
     }
   },
   "swiftFrontendCommands" : {
@@ -313,6 +560,7 @@
       "-package-name",
       "configbar",
       "-c",
+      "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/tests/ConfigBarIPCTests.swift",
       "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/tests/ConfigBarModelTests.swift",
       "-I",
       "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/Modules",
@@ -372,6 +620,8 @@
       "-package-name",
       "configbar",
       "-c",
+      "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/ConfigBarIPC.swift",
+      "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/ConfigBarPure.swift",
       "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/PluginModels.swift",
       "-I",
       "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/Modules",
@@ -484,6 +734,127 @@
       "configbar",
       "-driver-use-frontend-path",
       "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "ConfigBarUI" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "ConfigBarUI",
+      "-package-name",
+      "configbar",
+      "-c",
+      "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/ConfigBar.swift",
+      "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/PluginEditorViews.swift",
+      "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/PluginRackView.swift",
+      "-I",
+      "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-j14",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/include/ConfigBarUI-Swift.h",
+      "-swift-version",
+      "5",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "configbar",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "ConfigBarUITests" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "ConfigBarUITests",
+      "-package-name",
+      "configbar",
+      "-c",
+      "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/tests/ConfigBarUITests.swift",
+      "-I",
+      "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-Xfrontend",
+      "-enable-cross-import-overlays",
+      "-j14",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-swift-version",
+      "5",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "configbar",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
     ]
   },
   "targetDependencyMap" : {
@@ -495,6 +866,15 @@
     ],
     "ConfigBarPackageTests" : [
       "ConfigBarModelTests",
+      "ConfigBarUITests",
+      "ConfigBarUI",
+      "ConfigBarModels"
+    ],
+    "ConfigBarUI" : [
+      "ConfigBarModels"
+    ],
+    "ConfigBarUITests" : [
+      "ConfigBarUI",
       "ConfigBarModels"
     ]
   },
@@ -529,6 +909,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/tests/ConfigBarIPCTests.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/tests/ConfigBarModelTests.swift"
         }
       ],
@@ -540,6 +924,14 @@
         {
           "kind" : "virtual",
           "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/ConfigBarIPC.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/ConfigBarPure.swift"
         },
         {
           "kind" : "file",
@@ -571,7 +963,19 @@
         },
         {
           "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModelTests.build/ConfigBarIPCTests.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModelTests.build/ConfigBarModelTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarIPC.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarPure.swift.o"
         },
         {
           "kind" : "file",
@@ -580,9 +984,61 @@
         {
           "kind" : "file",
           "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.build/runner.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/ConfigBar.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/PluginEditorViews.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/PluginRackView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUITests.build/ConfigBarUITests.swift.o"
         }
       ],
       "outputFilePath" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.product/Objects.LinkFileList"
+    },
+    "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/ConfigBar.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/PluginEditorViews.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/PluginRackView.swift"
+        }
+      ],
+      "outputFilePath" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUI.build/sources"
+    },
+    "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUITests.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/tests/ConfigBarUITests.swift"
+        }
+      ],
+      "outputFilePath" : "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarUITests.build/sources"
     },
     "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt" : {
       "alwaysOutOfDate" : true,

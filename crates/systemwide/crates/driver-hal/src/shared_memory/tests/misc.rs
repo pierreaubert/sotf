@@ -1,7 +1,13 @@
 use super::super::hal_input_reader::HalInputReader;
 use super::super::shared_audio_buffer::SharedAudioBuffer;
+use crate::encryption::AudioCipher;
 use proptest::prelude::*;
+use std::env;
+use std::fs;
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::Ordering;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use tempfile::NamedTempFile;
 
@@ -18,6 +24,29 @@ fn create_mock_shared_memory(
         channel_count,
     )
     .expect("Failed to create mock shared memory");
+    buffer.header().driver_ready.store(1, Ordering::Release);
+    buffer.header().active.store(1, Ordering::Release);
+    drop(buffer);
+    temp_file
+}
+
+fn create_mock_shared_memory_with_max_geometry(
+    sample_rate: u32,
+    buffer_frames: u32,
+    channel_count: u32,
+    max_buffer_frames: u32,
+    max_channel_count: u32,
+) -> NamedTempFile {
+    let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    let buffer = SharedAudioBuffer::create_or_open_with_max_geometry(
+        temp_file.path(),
+        sample_rate,
+        buffer_frames,
+        channel_count,
+        max_buffer_frames,
+        max_channel_count,
+    )
+    .expect("Failed to create mock shared memory with max geometry");
     buffer.header().driver_ready.store(1, Ordering::Release);
     buffer.header().active.store(1, Ordering::Release);
     drop(buffer);
@@ -89,6 +118,106 @@ fn plain_writer_never_commits_a_partial_interleaved_frame() {
 }
 
 #[test]
+fn plain_io_does_not_publish_a_cursor_while_reconfigure_owns_commit_state() {
+    let temp_file = create_mock_shared_memory(48_000, 16, 2);
+    let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+
+    buffer.header().configuring.store(
+        super::super::shared_audio_buffer::CONFIGURING_WRITE_COMMIT,
+        Ordering::Release,
+    );
+    assert_eq!(buffer.write_audio(&[1.0, 2.0]), 0);
+    assert_eq!(buffer.header().write_position.load(Ordering::Acquire), 0);
+
+    buffer.header().configuring.store(
+        super::super::shared_audio_buffer::CONFIGURING_READ_COMMIT,
+        Ordering::Release,
+    );
+    let mut output = [9.0_f32, 9.0_f32];
+    assert_eq!(buffer.read_audio(&mut output), 0);
+    assert_eq!(output, [0.0, 0.0]);
+    assert_eq!(buffer.header().read_position.load(Ordering::Acquire), 0);
+
+    buffer.header().configuring.store(0, Ordering::Release);
+    assert_eq!(buffer.write_audio(&[1.0, 2.0]), 1);
+    assert_eq!(buffer.read_audio(&mut output), 1);
+    assert_eq!(output, [1.0, 2.0]);
+}
+
+#[test]
+fn cursor_commit_is_rejected_after_reconfiguration_claims_the_word() {
+    let temp_file = create_mock_shared_memory(48_000, 16, 2);
+    let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+
+    // Simulate an IO cycle that has finished copying but has not yet published
+    // its cursor. Reconfiguration owns the word before the publication step.
+    buffer.copy_audio_slots_from(0, &[1.0, 2.0]);
+    buffer.header().configuring.store(
+        super::super::shared_audio_buffer::CONFIGURING_RECONFIGURE,
+        Ordering::Release,
+    );
+    assert!(!buffer.commit_write_position(2));
+    assert_eq!(buffer.header().write_position.load(Ordering::Acquire), 0);
+
+    assert!(!buffer.commit_read_position(2));
+    assert_eq!(buffer.header().read_position.load(Ordering::Acquire), 0);
+}
+
+#[test]
+fn encrypted_io_does_not_publish_a_cursor_while_reconfigure_owns_commit_state() {
+    let temp_file = create_mock_shared_memory(48_000, 512, 2);
+    let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+    let cipher = test_audio_cipher();
+    buffer.set_key_fingerprint(*cipher.fingerprint());
+    buffer.set_encrypted(true);
+    let (mut ciphertext_buf, mut encrypted_buf) = encrypted_staging_buffers();
+    let samples = sequential_audio(32, 2, 0);
+
+    buffer.header().configuring.store(
+        super::super::shared_audio_buffer::CONFIGURING_WRITE_COMMIT,
+        Ordering::Release,
+    );
+    assert_eq!(
+        buffer.write_audio_encrypted_into(
+            &samples,
+            &cipher,
+            &mut ciphertext_buf,
+            &mut encrypted_buf,
+        ),
+        0
+    );
+    assert_eq!(buffer.header().write_position.load(Ordering::Acquire), 0);
+
+    buffer.header().configuring.store(0, Ordering::Release);
+    assert_eq!(
+        buffer.write_audio_encrypted_into(
+            &samples,
+            &cipher,
+            &mut ciphertext_buf,
+            &mut encrypted_buf,
+        ),
+        32
+    );
+
+    buffer.header().configuring.store(
+        super::super::shared_audio_buffer::CONFIGURING_READ_COMMIT,
+        Ordering::Release,
+    );
+    let mut output = vec![9.0_f32; samples.len()];
+    assert_eq!(
+        buffer.read_audio_encrypted_into(
+            &mut output,
+            &cipher,
+            &mut encrypted_buf,
+            &mut ciphertext_buf,
+        ),
+        0
+    );
+    assert!(output.iter().all(|sample| *sample == 0.0));
+    assert_eq!(buffer.header().read_position.load(Ordering::Acquire), 0);
+}
+
+#[test]
 fn deterministic_ring_sequence_preserves_interleaved_frame_order_across_wraps() {
     let temp_file = create_mock_shared_memory(48_000, 8, 2);
     let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("open shared memory");
@@ -97,7 +226,7 @@ fn deterministic_ring_sequence_preserves_interleaved_frame_order_across_wraps() 
 
     for step in 0..256 {
         let requested_frames = (step % 3) + 1;
-        let capacity = buffer.current_audio_capacity() as usize / 2;
+        let capacity = buffer.current_audio_capacity() / 2;
         let free_frames = capacity.saturating_sub(expected.len());
         let frames_to_write = requested_frames.min(free_frames);
         if frames_to_write > 0 {
@@ -212,6 +341,435 @@ proptest! {
                 );
             }
         }
+    }
+
+    #[test]
+    fn property_reconfiguration_preserves_frame_aligned_positions(
+        operations in prop::collection::vec((1_usize..8, 0_u32..2), 1..96),
+    ) {
+        let temp_file = create_mock_shared_memory_with_max_geometry(
+            48_000,
+            8,
+            2,
+            32,
+            8,
+        );
+        let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("open shared memory");
+        let cipher = test_audio_cipher();
+        buffer.set_key_fingerprint(*cipher.fingerprint());
+
+        for (requested_frames, channel_variant) in operations {
+            let channels = if channel_variant == 0 { 2 } else { 4 };
+            buffer.reconfigure_quiesced(
+                None,
+                Some(requested_frames as u32 + 1),
+                Some(channels),
+            );
+
+            let active_frames = buffer.buffer_frames() as usize;
+            let active_channels = buffer.channel_count() as usize;
+            prop_assert_eq!(active_channels, channels as usize);
+            prop_assert!(active_frames >= 2);
+
+            let input = sequential_audio(
+                requested_frames.min(active_frames),
+                active_channels,
+                0,
+            );
+            let written = buffer.write_audio(&input);
+            let mut output = vec![0.0; input.len() + active_channels];
+            let read = buffer.read_audio(&mut output);
+            prop_assert!(written <= input.len() / active_channels);
+            prop_assert!(read <= output.len() / active_channels);
+            prop_assert_eq!(
+                buffer.header().write_position.load(Ordering::Acquire)
+                    % active_channels as u64,
+                0
+            );
+            prop_assert_eq!(
+                buffer.header().read_position.load(Ordering::Acquire)
+                    % active_channels as u64,
+                0
+            );
+        }
+    }
+}
+
+#[test]
+fn cross_process_plain_ring_stress_reconfigures_only_between_spsc_commits() {
+    let temp_file = create_mock_shared_memory_with_max_geometry(48_000, 8, 2, 64, 8);
+    let mut writer = SharedAudioBuffer::open(temp_file.path()).expect("open writer");
+    let reader = SharedAudioBuffer::open(temp_file.path()).expect("open reader");
+    let mut controller = SharedAudioBuffer::open(temp_file.path()).expect("open controller");
+
+    let writer_errors = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let reader_errors = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let writer_error_count = std::sync::Arc::clone(&writer_errors);
+    let writer_thread = std::thread::spawn(move || {
+        for step in 0..2_000 {
+            let channels = writer.channel_count() as usize;
+            if channels == 0 {
+                writer_error_count.fetch_add(1, Ordering::Relaxed);
+                continue;
+            }
+            let requested_frames = (step % 4) + 1;
+            let input = sequential_audio(requested_frames, channels, step * 16);
+            let written = writer.write_audio(&input);
+            if written > requested_frames || written * channels > input.len() {
+                writer_error_count.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    });
+
+    let reader_error_count = std::sync::Arc::clone(&reader_errors);
+    let reader_thread = std::thread::spawn(move || {
+        let reader = reader;
+        let mut output = vec![0.0_f32; 64];
+        for _ in 0..2_000 {
+            let channels = reader.channel_count() as usize;
+            if channels == 0 {
+                reader_error_count.fetch_add(1, Ordering::Relaxed);
+                continue;
+            }
+            let read = reader.read_audio(&mut output);
+            if read > output.len() / channels || output.iter().any(|sample| !sample.is_finite()) {
+                reader_error_count.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    });
+
+    for step in 0..128 {
+        let channels = if step % 2 == 0 { 4 } else { 2 };
+        controller.reconfigure_quiesced(None, Some(8), Some(channels));
+        assert_eq!(
+            controller.header().configuring.load(Ordering::Acquire)
+                & super::super::shared_audio_buffer::CONFIGURING_RECONFIGURE,
+            0,
+            "reconfiguration must release its ownership bit"
+        );
+    }
+
+    writer_thread
+        .join()
+        .expect("writer thread must not panic");
+    reader_thread
+        .join()
+        .expect("reader thread must not panic");
+    assert_eq!(writer_errors.load(Ordering::Relaxed), 0);
+    assert_eq!(reader_errors.load(Ordering::Relaxed), 0);
+
+    // After the concurrent run, the next frame must still use the active
+    // channel geometry rather than a stale pre-reconfiguration cursor.
+    controller.reconfigure_quiesced(None, Some(8), Some(2));
+    let mut post_writer = SharedAudioBuffer::open(temp_file.path()).expect("open post writer");
+    let post_reader = SharedAudioBuffer::open(temp_file.path()).expect("open post reader");
+    let expected = [0.25_f32, -0.5_f32];
+    assert_eq!(post_writer.write_audio(&expected), 1);
+    let mut actual = [0.0_f32; 2];
+    assert_eq!(post_reader.read_audio(&mut actual), 1);
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn cross_process_encrypted_ring_stress_reconfigures_without_stale_records() {
+    let temp_file = create_mock_shared_memory_with_max_geometry(48_000, 16, 2, 64, 8);
+    let mut writer = SharedAudioBuffer::open(temp_file.path()).expect("open encrypted writer");
+    let reader = SharedAudioBuffer::open(temp_file.path()).expect("open encrypted reader");
+    let mut controller = SharedAudioBuffer::open(temp_file.path()).expect("open controller");
+    let writer_key = [0x21_u8; 32];
+    let reader_key = writer_key;
+    writer.set_key_fingerprint(*AudioCipher::new(&writer_key).fingerprint());
+    writer.set_encrypted(true);
+
+    let writer_errors = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let reader_errors = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+    let writer_error_count = std::sync::Arc::clone(&writer_errors);
+    let writer_thread = std::thread::spawn(move || {
+        let cipher = AudioCipher::new(&writer_key);
+        let (mut ciphertext, mut encrypted) = encrypted_staging_buffers();
+        let mut writer = writer;
+        for step in 0..512 {
+            let channels = writer.channel_count() as usize;
+            if channels == 0 {
+                writer_error_count.fetch_add(1, Ordering::Relaxed);
+                continue;
+            }
+            let frames = (step % 4) + 1;
+            let samples = sequential_audio(frames, channels, step * 32);
+            let written = writer.write_audio_encrypted_into(
+                &samples,
+                &cipher,
+                &mut ciphertext,
+                &mut encrypted,
+            );
+            if written > frames {
+                writer_error_count.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    });
+
+    let reader_error_count = std::sync::Arc::clone(&reader_errors);
+    let reader_thread = std::thread::spawn(move || {
+        let cipher = AudioCipher::new(&reader_key);
+        let (mut encrypted, mut ciphertext) = encrypted_staging_buffers();
+        let reader = reader;
+        let mut output = vec![0.0_f32; 64];
+        for _ in 0..512 {
+            let channels = reader.channel_count() as usize;
+            if channels == 0 {
+                reader_error_count.fetch_add(1, Ordering::Relaxed);
+                continue;
+            }
+            let read = reader.read_audio_encrypted_into(
+                &mut output,
+                &cipher,
+                &mut ciphertext,
+                &mut encrypted,
+            );
+            if read > output.len() / channels || output.iter().any(|sample| !sample.is_finite()) {
+                reader_error_count.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    });
+
+    for step in 0..64 {
+        controller.reconfigure_quiesced(None, Some(16), Some(if step % 2 == 0 { 4 } else { 2 }));
+    }
+
+    let _writer = writer_thread.join().expect("encrypted writer must not panic");
+    let _reader = reader_thread.join().expect("encrypted reader must not panic");
+    assert_eq!(writer_errors.load(Ordering::Relaxed), 0);
+    assert_eq!(reader_errors.load(Ordering::Relaxed), 0);
+
+    // Verify that the post-reconfiguration record stream is still readable
+    // with the same key and starts on a complete channel frame.
+    controller.reconfigure_quiesced(None, Some(16), Some(2));
+    let mut post_writer = SharedAudioBuffer::open(temp_file.path()).expect("open post writer");
+    let post_reader = SharedAudioBuffer::open(temp_file.path()).expect("open post reader");
+    post_writer.set_key_fingerprint(*AudioCipher::new(&writer_key).fingerprint());
+    post_writer.set_encrypted(true);
+    let cipher = AudioCipher::new(&writer_key);
+    let (mut ciphertext, mut encrypted) = encrypted_staging_buffers();
+    let expected = [0.25_f32, -0.5_f32];
+    assert_eq!(
+        post_writer.write_audio_encrypted_into(
+            &expected,
+            &cipher,
+            &mut ciphertext,
+            &mut encrypted,
+        ),
+        1
+    );
+    let mut actual = [0.0_f32; 2];
+    assert_eq!(
+        post_reader.read_audio_encrypted_into(
+            &mut actual,
+            &cipher,
+            &mut encrypted,
+            &mut ciphertext,
+        ),
+        1
+    );
+    assert_eq!(actual, expected);
+}
+
+const PROCESS_STRESS_PATH: &str = "SOTF_DRIVER_HAL_PROCESS_STRESS_PATH";
+const PROCESS_STRESS_READY: &str = "SOTF_DRIVER_HAL_PROCESS_STRESS_READY";
+const PROCESS_STRESS_MODE: &str = "SOTF_DRIVER_HAL_PROCESS_STRESS_MODE";
+const PROCESS_STRESS_ROLE: &str = "SOTF_DRIVER_HAL_PROCESS_STRESS_ROLE";
+
+fn spawn_process_ring_worker(
+    path: &std::path::Path,
+    ready_path: &std::path::Path,
+    mode: &str,
+    role: &str,
+) -> Child {
+    Command::new(env::current_exe().expect("current test executable"))
+        .arg("cross_process_ring_worker")
+        .arg("--nocapture")
+        .env(PROCESS_STRESS_PATH, path)
+        .env(PROCESS_STRESS_READY, ready_path)
+        .env(PROCESS_STRESS_MODE, mode)
+        .env(PROCESS_STRESS_ROLE, role)
+        .env("RUST_BACKTRACE", "1")
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn shared-memory worker process")
+}
+
+fn wait_for_worker_ready(paths: &[&std::path::Path]) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if paths.iter().all(|path| path.exists()) {
+            return;
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
+    panic!("shared-memory worker processes did not become ready");
+}
+
+fn wait_for_worker(child: Child, role: &str) {
+    let output = child
+        .wait_with_output()
+        .unwrap_or_else(|error| panic!("wait for {role} worker: {error}"));
+    assert!(
+        output.status.success(),
+        "{role} worker failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn run_true_cross_process_ring_stress(mode: &str) {
+    let temp_file = create_mock_shared_memory_with_max_geometry(48_000, 8, 2, 64, 8);
+    let mut controller = SharedAudioBuffer::open(temp_file.path()).expect("open controller");
+
+    if mode == "encrypted" {
+        let cipher = AudioCipher::new(&[0x21_u8; 32]);
+        controller.set_key_fingerprint(*cipher.fingerprint());
+        controller.set_encrypted(true);
+    }
+
+    let writer_ready = NamedTempFile::new().expect("writer ready file");
+    let reader_ready = NamedTempFile::new().expect("reader ready file");
+    fs::remove_file(writer_ready.path()).expect("remove writer ready placeholder");
+    fs::remove_file(reader_ready.path()).expect("remove reader ready placeholder");
+
+    let writer = spawn_process_ring_worker(
+        temp_file.path(),
+        writer_ready.path(),
+        mode,
+        "writer",
+    );
+    let reader = spawn_process_ring_worker(
+        temp_file.path(),
+        reader_ready.path(),
+        mode,
+        "reader",
+    );
+    wait_for_worker_ready(&[writer_ready.path(), reader_ready.path()]);
+
+    for step in 0..256 {
+        let channels = if step % 2 == 0 { 4 } else { 2 };
+        controller.reconfigure_quiesced(None, Some(8), Some(channels));
+        assert_eq!(
+            controller.header().configuring.load(Ordering::Acquire)
+                & super::super::shared_audio_buffer::CONFIGURING_RECONFIGURE,
+            0,
+            "cross-process reconfiguration must release its ownership bit"
+        );
+    }
+
+    wait_for_worker(writer, "writer");
+    wait_for_worker(reader, "reader");
+
+    // Prove the mappings still agree after the other processes have exited and
+    // that a complete frame can be exchanged at the final geometry.
+    controller.reconfigure_quiesced(None, Some(8), Some(2));
+    let mut post_writer = SharedAudioBuffer::open(temp_file.path()).expect("open post writer");
+    let post_reader = SharedAudioBuffer::open(temp_file.path()).expect("open post reader");
+    let expected = [0.25_f32, -0.5_f32];
+    if mode == "encrypted" {
+        let cipher = AudioCipher::new(&[0x21_u8; 32]);
+        post_writer.set_key_fingerprint(*cipher.fingerprint());
+        post_writer.set_encrypted(true);
+        let (mut ciphertext, mut encrypted) = encrypted_staging_buffers();
+        assert_eq!(
+            post_writer.write_audio_encrypted_into(
+                &expected,
+                &cipher,
+                &mut ciphertext,
+                &mut encrypted,
+            ),
+            1
+        );
+        let mut actual = [0.0_f32; 2];
+        assert_eq!(
+            post_reader.read_audio_encrypted_into(
+                &mut actual,
+                &cipher,
+                &mut encrypted,
+                &mut ciphertext,
+            ),
+            1
+        );
+        assert_eq!(actual, expected);
+    } else {
+        assert_eq!(post_writer.write_audio(&expected), 1);
+        let mut actual = [0.0_f32; 2];
+        assert_eq!(post_reader.read_audio(&mut actual), 1);
+        assert_eq!(actual, expected);
+    }
+}
+
+#[test]
+fn true_cross_process_plain_ring_stress_reconfigures_without_stale_records() {
+    run_true_cross_process_ring_stress("plain");
+}
+
+#[test]
+fn true_cross_process_encrypted_ring_stress_reconfigures_without_stale_records() {
+    run_true_cross_process_ring_stress("encrypted");
+}
+
+#[test]
+fn cross_process_ring_worker() {
+    let (Some(path), Some(ready), Some(mode), Some(role)) = (
+        env::var_os(PROCESS_STRESS_PATH),
+        env::var_os(PROCESS_STRESS_READY),
+        env::var(PROCESS_STRESS_MODE).ok(),
+        env::var(PROCESS_STRESS_ROLE).ok(),
+    ) else {
+        return;
+    };
+
+    let mut buffer = SharedAudioBuffer::open(path).expect("open worker mapping");
+    let cipher = AudioCipher::new(&[0x21_u8; 32]);
+    if mode == "encrypted" {
+        buffer.set_key_fingerprint(*cipher.fingerprint());
+        buffer.set_encrypted(true);
+    }
+    fs::write(ready, b"ready").expect("publish worker readiness");
+
+    for step in 0..10_000 {
+        let channels = buffer.channel_count() as usize;
+        assert!((1..=8).contains(&channels), "invalid worker channel count");
+        let frames = (step % 4) + 1;
+        if role == "writer" {
+            let samples = sequential_audio(frames, channels, step * 16);
+            let written = if mode == "encrypted" {
+                let (mut ciphertext, mut encrypted) = encrypted_staging_buffers();
+                buffer.write_audio_encrypted_into_with_channel_count(
+                    &samples,
+                    &cipher,
+                    &mut ciphertext,
+                    &mut encrypted,
+                    channels,
+                )
+            } else {
+                buffer.write_audio_with_channel_count(&samples, channels)
+            };
+            assert!(written <= frames, "writer returned too many frames");
+        } else if role == "reader" {
+            let mut output = vec![0.0_f32; channels * 8];
+            let read = if mode == "encrypted" {
+                let (mut encrypted, mut ciphertext) = encrypted_staging_buffers();
+                buffer.read_audio_encrypted_into(
+                    &mut output,
+                    &cipher,
+                    &mut ciphertext,
+                    &mut encrypted,
+                )
+            } else {
+                buffer.read_audio(&mut output)
+            };
+            assert!(read <= output.len() / channels, "reader returned too many frames");
+            assert!(output.iter().all(|sample| sample.is_finite()));
+        } else {
+            panic!("unknown worker role {role}");
+        }
+        thread::yield_now();
     }
 }
 
@@ -518,6 +1076,34 @@ fn encrypted_reader_never_consumes_a_partial_interleaved_frame() {
     let mut next = [0.0; 2];
     assert_eq!(buffer.read_audio_encrypted(&mut next, &cipher), 1);
     assert_eq!(next, [3.0, 4.0]);
+}
+
+#[test]
+fn encrypted_writer_rejects_zero_channel_geometry_without_panicking() {
+    let temp_file = create_mock_shared_memory(48_000, 512, 2);
+    let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("open shared memory");
+    let cipher = test_audio_cipher();
+    buffer.set_key_fingerprint(*cipher.fingerprint());
+    buffer.set_encrypted(true);
+
+    // Simulate a corrupted cross-process geometry word after the mapping was
+    // opened. The writer must reject it before doing sample/channel math.
+    buffer
+        .header()
+        .channel_count
+        .store(0, std::sync::atomic::Ordering::Release);
+
+    let mut ciphertext_buf = Vec::new();
+    let mut encrypted_buf = Vec::new();
+    assert_eq!(
+        buffer.write_audio_encrypted_into(
+            &[1.0, 2.0],
+            &cipher,
+            &mut ciphertext_buf,
+            &mut encrypted_buf,
+        ),
+        0
+    );
 }
 
 #[test]

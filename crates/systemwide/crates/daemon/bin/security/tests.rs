@@ -45,6 +45,19 @@ fn test_existing_socket_directory_is_hardened() {
     assert_eq!(mode, 0o700);
 }
 
+#[cfg(all(target_os = "macos", feature = "hal"))]
+#[test]
+fn test_foreign_owned_runtime_directory_is_rejected_before_chmod() {
+    let root = tempfile::tempdir().expect("temp runtime");
+    let runtime = root.path().join("runtime");
+    std::fs::create_dir(&runtime).expect("create runtime");
+
+    let foreign_uid = get_current_uid().wrapping_add(1);
+    let error = encryption_impl::ensure_owned_secure_dir_for_uid(&runtime, foreign_uid)
+        .expect_err("a directory owned by another UID must be rejected");
+    assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+}
+
 #[test]
 fn test_session_key_paths_support_lab_runtime_overrides() {
     let runtime = OsString::from("/tmp/sotf-key-path-test");

@@ -467,8 +467,9 @@ fn swift_shared_memory_protocol_matches_rust_v6_configuring_handshake() {
         "Swift must compare the UInt64 fingerprint using Rust's canonical big-endian byte order"
     );
     assert!(
-        source.contains("atomicLoad(&header.pointee.configuring) != 0"),
-        "HAL write/config paths must observe the daemon configuring flag"
+        source.contains("atomicLoad(&header.pointee.configuring) & kConfiguringReconfigure")
+            && source.contains("tryAcquireIOCommit"),
+        "HAL write/config paths must observe the daemon configuring bitset"
     );
 }
 
@@ -669,10 +670,11 @@ fn swift_hal_supports_daemon_requested_channel_counts_up_to_32() {
         "daemon-initiated config validation should include channel count"
     );
     assert!(
-        apply_config.contains("channelCount = pending.channelCount")
+        apply_config.contains("commitActiveConfiguration(configuration)")
             && apply_config.contains("channelCount: pending.channelCount")
-            && apply_config.contains("kSelector_StreamConfig"),
-        "applying daemon config should resize the HAL stream and notify CoreAudio"
+            && apply_config.contains("notifyConfigurationPropertiesChanged()")
+            && hal_source.contains("kSelector_StreamConfig"),
+        "applying daemon config should commit channel geometry and notify CoreAudio"
     );
     assert!(
         shm_source.contains("func getRequestedChannelCount()")

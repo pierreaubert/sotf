@@ -2,6 +2,20 @@
   "": {
     "swift-dependencies": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/primary.swiftdeps"
   },
+  "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/ConfigBarIPC.swift": {
+    "dependencies": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarIPC.d",
+    "object": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarIPC.swift.o",
+    "swiftmodule": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarIPC~partial.swiftmodule",
+    "swift-dependencies": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarIPC.swiftdeps",
+    "diagnostics": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarIPC.dia"
+  },
+  "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/ConfigBarPure.swift": {
+    "dependencies": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarPure.d",
+    "object": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarPure.swift.o",
+    "swiftmodule": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarPure~partial.swiftmodule",
+    "swift-dependencies": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarPure.swiftdeps",
+    "diagnostics": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/ConfigBarPure.dia"
+  },
   "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/src/PluginModels.swift": {
     "dependencies": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/PluginModels.d",
     "object": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarModels.build/PluginModels.swift.o",

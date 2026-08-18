@@ -11,6 +11,10 @@ let package = Package(
             name: "ConfigBarModels",
             targets: ["ConfigBarModels"]
         ),
+        .library(
+            name: "ConfigBarUI",
+            targets: ["ConfigBarUI"]
+        ),
     ],
     targets: [
         .target(
@@ -18,16 +22,32 @@ let package = Package(
             path: "src",
             exclude: [
                 "ConfigBar.swift",
+                "AppMain.swift",
                 "PluginEditorViews.swift",
                 "PluginRackView.swift",
             ],
             sources: ["PluginModels.swift", "ConfigBarIPC.swift", "ConfigBarPure.swift"]
         ),
+        .target(
+            name: "ConfigBarUI",
+            dependencies: ["ConfigBarModels"],
+            path: "src",
+            exclude: ["AppMain.swift", "PluginModels.swift", "ConfigBarIPC.swift", "ConfigBarPure.swift"],
+            sources: ["ConfigBar.swift", "PluginEditorViews.swift", "PluginRackView.swift"]
+        ),
         .testTarget(
             name: "ConfigBarModelTests",
             dependencies: ["ConfigBarModels"],
             path: "tests",
+            exclude: ["ConfigBarUITests.swift"],
             sources: ["ConfigBarModelTests.swift", "ConfigBarIPCTests.swift"]
+        ),
+        .testTarget(
+            name: "ConfigBarUITests",
+            dependencies: ["ConfigBarUI", "ConfigBarModels"],
+            path: "tests",
+            exclude: ["ConfigBarModelTests.swift", "ConfigBarIPCTests.swift"],
+            sources: ["ConfigBarUITests.swift"]
         ),
     ]
 )

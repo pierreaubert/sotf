@@ -36,6 +36,7 @@ pub struct DriverStatus {
 impl DriverStatus {
     /// Construct a status snapshot without exposing the struct's full field
     /// set to downstream driver implementations.
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         platform_supported: bool,
         driver_installed: bool,
@@ -373,6 +374,54 @@ pub trait AudioDriver: Send + 'static {
 pub mod test_support {
     use super::AudioDriver;
 
+    const SENTINEL: f32 = 123_456.75;
+
+    fn check_read_result(
+        method: &str,
+        buffer: &[f32],
+        channels: usize,
+        frames: usize,
+    ) -> Result<(), String> {
+        let max_frames = buffer.len().checked_div(channels).unwrap_or(0);
+        if frames > max_frames {
+            return Err(format!(
+                "{method} returned {frames} frames for {} samples and {channels} channels",
+                buffer.len()
+            ));
+        }
+
+        // A driver may return zero while disconnected or underrun and is
+        // allowed to fill the destination with silence in that case. When it
+        // reports frames, however, it must have written exactly complete
+        // interleaved frames and must not touch the partial-frame tail.
+        if frames > 0 {
+            let consumed_samples = frames
+                .checked_mul(channels)
+                .ok_or_else(|| format!("{method} frame/sample multiplication overflowed"))?;
+            if consumed_samples > buffer.len() {
+                return Err(format!(
+                    "{method} consumed {consumed_samples} samples from a {}-sample buffer",
+                    buffer.len()
+                ));
+            }
+            if buffer[..consumed_samples].contains(&SENTINEL) {
+                return Err(format!(
+                    "{method} reported frames without writing the complete interleaved frame data"
+                ));
+            }
+            if buffer[consumed_samples..]
+                .iter()
+                .any(|sample| *sample != SENTINEL)
+            {
+                return Err(format!(
+                    "{method} modified the partial-frame tail after reporting {frames} frames"
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
     /// Check the driver invariants that do not require a real audio device.
     pub fn assert_audio_driver_contract<D: AudioDriver>(mut driver: D) -> Result<(), String> {
         driver
@@ -383,22 +432,18 @@ pub mod test_support {
 
         let channels = driver.channel_count() as usize;
         let sample_count = channels.saturating_mul(3).saturating_add(1).max(1);
-        let max_frames = sample_count / channels.max(1);
 
-        let mut buffer = vec![f32::NAN; sample_count];
-        let frames = driver.read_audio(&mut buffer);
-        if frames > max_frames {
-            return Err(format!(
-                "read_audio returned {frames} frames for {sample_count} samples and {channels} channels"
-            ));
-        }
+        let mut audio_buffer = vec![SENTINEL; sample_count];
+        let audio_frames = driver.read_audio(&mut audio_buffer);
+        check_read_result("read_audio", &audio_buffer, channels, audio_frames)?;
 
-        let frames = driver.read_frames(&mut buffer);
-        if frames > max_frames {
-            return Err(format!(
-                "read_frames returned {frames} frames for {sample_count} samples and {channels} channels"
-            ));
-        }
+        // Use a fresh sentinel-filled destination so the two public entry
+        // points are checked independently. The default read_frames adapter
+        // must preserve the exact frame-based contract; a future override
+        // must satisfy the same complete-frame and tail invariants.
+        let mut frames_buffer = vec![SENTINEL; sample_count];
+        let frames_read = driver.read_frames(&mut frames_buffer);
+        check_read_result("read_frames", &frames_buffer, channels, frames_read)?;
 
         let _ = driver.available_frames();
         let _ = driver.sample_rate();
@@ -478,6 +523,140 @@ impl AudioDriver for NullDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct BadSampleCountDriver;
+
+    impl AudioDriver for BadSampleCountDriver {
+        fn initialize(&mut self) -> Result<(), DriverError> {
+            Ok(())
+        }
+
+        fn shutdown(&mut self) {}
+
+        fn status(&self) -> DriverStatus {
+            DriverStatus::new(true, true, true, 48_000, 2, 512, "bad-sample-count", true)
+        }
+
+        fn read_audio(&mut self, buffer: &mut [f32]) -> usize {
+            buffer.fill(0.0);
+            buffer.len()
+        }
+
+        fn available_frames(&self) -> usize {
+            3
+        }
+
+        fn sample_rate(&self) -> u32 {
+            48_000
+        }
+
+        fn channel_count(&self) -> u32 {
+            2
+        }
+
+        fn request_config(&mut self, _config: DriverConfig) -> ConfigResult {
+            ConfigResult::Accepted
+        }
+
+        fn poll_config_change(&mut self) -> Option<DriverConfig> {
+            None
+        }
+
+        fn acknowledge_config_change(&mut self, _actual: DriverConfig, _result: ConfigResult) {}
+
+        fn set_engine_ready(&mut self, _ready: bool) {}
+    }
+
+    struct BadPartialTailDriver;
+
+    impl AudioDriver for BadPartialTailDriver {
+        fn initialize(&mut self) -> Result<(), DriverError> {
+            Ok(())
+        }
+
+        fn shutdown(&mut self) {}
+
+        fn status(&self) -> DriverStatus {
+            DriverStatus::new(true, true, true, 48_000, 2, 512, "bad-partial-tail", true)
+        }
+
+        fn read_audio(&mut self, buffer: &mut [f32]) -> usize {
+            buffer.fill(0.0);
+            3
+        }
+
+        fn available_frames(&self) -> usize {
+            3
+        }
+
+        fn sample_rate(&self) -> u32 {
+            48_000
+        }
+
+        fn channel_count(&self) -> u32 {
+            2
+        }
+
+        fn request_config(&mut self, _config: DriverConfig) -> ConfigResult {
+            ConfigResult::Accepted
+        }
+
+        fn poll_config_change(&mut self) -> Option<DriverConfig> {
+            None
+        }
+
+        fn acknowledge_config_change(&mut self, _actual: DriverConfig, _result: ConfigResult) {}
+
+        fn set_engine_ready(&mut self, _ready: bool) {}
+    }
+
+    struct BadReadFramesAliasDriver;
+
+    impl AudioDriver for BadReadFramesAliasDriver {
+        fn initialize(&mut self) -> Result<(), DriverError> {
+            Ok(())
+        }
+
+        fn shutdown(&mut self) {}
+
+        fn status(&self) -> DriverStatus {
+            DriverStatus::new(true, true, true, 48_000, 2, 512, "bad-read-frames", true)
+        }
+
+        fn read_audio(&mut self, buffer: &mut [f32]) -> usize {
+            buffer[..6].fill(0.0);
+            3
+        }
+
+        fn read_frames(&mut self, buffer: &mut [f32]) -> usize {
+            buffer.fill(0.0);
+            buffer.len()
+        }
+
+        fn available_frames(&self) -> usize {
+            3
+        }
+
+        fn sample_rate(&self) -> u32 {
+            48_000
+        }
+
+        fn channel_count(&self) -> u32 {
+            2
+        }
+
+        fn request_config(&mut self, _config: DriverConfig) -> ConfigResult {
+            ConfigResult::Accepted
+        }
+
+        fn poll_config_change(&mut self) -> Option<DriverConfig> {
+            None
+        }
+
+        fn acknowledge_config_change(&mut self, _actual: DriverConfig, _result: ConfigResult) {}
+
+        fn set_engine_ready(&mut self, _ready: bool) {}
+    }
 
     #[test]
     fn test_null_driver_status() {
@@ -670,5 +849,26 @@ mod tests {
     #[test]
     fn test_null_driver_conforms_to_audio_driver_contract() {
         test_support::assert_audio_driver_contract(NullDriver::new()).expect("NullDriver contract");
+    }
+
+    #[test]
+    fn conformance_rejects_sample_count_returned_as_frames() {
+        let error = test_support::assert_audio_driver_contract(BadSampleCountDriver)
+            .expect_err("a sample-count driver must violate the frame contract");
+        assert!(error.contains("read_audio returned 7 frames"), "{error}");
+    }
+
+    #[test]
+    fn conformance_rejects_partial_interleaved_tail_writes() {
+        let error = test_support::assert_audio_driver_contract(BadPartialTailDriver)
+            .expect_err("a driver writing past its reported frames must fail");
+        assert!(error.contains("partial-frame tail"), "{error}");
+    }
+
+    #[test]
+    fn conformance_rejects_a_non_frame_based_read_frames_alias() {
+        let error = test_support::assert_audio_driver_contract(BadReadFramesAliasDriver)
+            .expect_err("read_frames must use the same frame-based contract as read_audio");
+        assert!(error.contains("read_frames returned 7 frames"), "{error}");
     }
 }

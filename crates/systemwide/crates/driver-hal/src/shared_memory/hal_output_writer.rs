@@ -127,18 +127,21 @@ impl HalOutputWriter {
             if let Some(cipher) = self.cipher.as_ref()
                 && let Some(buf) = &mut self.buffer
             {
-                return buf.write_audio_encrypted_into(
+                let expected_channel_count = buf.channel_count() as usize;
+                return buf.write_audio_encrypted_into_with_channel_count(
                     buffer,
                     cipher,
                     &mut self.ciphertext_buf,
                     &mut self.encrypted_buf,
+                    expected_channel_count,
                 );
             }
             return 0;
         }
 
         if let Some(buf) = &mut self.buffer {
-            buf.write_audio(buffer)
+            let expected_channel_count = buf.channel_count() as usize;
+            buf.write_audio_with_channel_count(buffer, expected_channel_count)
         } else {
             0
         }

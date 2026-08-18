@@ -114,6 +114,46 @@ fn daemon_status_roundtrip_over_unix_socket() {
 
 #[test]
 #[serial]
+fn second_daemon_cannot_take_ownership_of_a_live_runtime() {
+    let daemon = DaemonFixture::start();
+
+    let mut second = Command::new(env!("CARGO_BIN_EXE_sotf-daemon"))
+        .env("SOTF_DAEMON_SOCKET_PATH", &daemon.socket_path)
+        .env("SOTF_SYSTEMWIDE_RUNTIME_DIR", daemon._temp_dir.path())
+        .env("SOTF_SYSTEMWIDE_DRIVER", "null")
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn second sotf-daemon");
+
+    let mut second_status = None;
+    for _ in 0..100 {
+        if let Some(status) = second.try_wait().expect("poll second daemon") {
+            second_status = Some(status);
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    if second_status.is_none() {
+        let _ = second.kill();
+        let _ = second.wait();
+        panic!("second daemon must exit while the first owns the runtime lock");
+    }
+
+    let status = second_status.expect("second daemon exit status");
+    assert!(!status.success(), "second daemon unexpectedly became owner");
+    assert!(
+        daemon.socket_path.exists(),
+        "second daemon must not remove the live daemon socket"
+    );
+    let first_status = daemon.send(r#"{"command":"status"}"#);
+    assert_eq!(first_status["success"], true);
+
+    daemon.shutdown();
+}
+
+#[test]
+#[serial]
 fn daemon_get_metering_roundtrip_over_unix_socket() {
     let daemon = DaemonFixture::start();
 

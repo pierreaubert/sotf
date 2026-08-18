@@ -237,7 +237,9 @@ impl SpotifyWebApi {
     /// token is available or the grant failed (the caller then surfaces the
     /// original 401).
     async fn refresh_access_token(&self) -> bool {
-        let Some(refresh) = &self.refresh else { return false };
+        let Some(refresh) = &self.refresh else {
+            return false;
+        };
         // Grab the grant material and drop the guard before awaiting (a std
         // mutex guard must not be held across an await point).
         let (refresh_token, cache_dir) = match refresh.lock() {
@@ -280,9 +282,7 @@ impl SpotifyWebApi {
         query: &[(String, String)],
     ) -> Result<T, ServiceError> {
         let mut resp = self.send_get(url, query).await?;
-        if resp.status() == reqwest::StatusCode::UNAUTHORIZED
-            && self.refresh_access_token().await
-        {
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED && self.refresh_access_token().await {
             resp = self.send_get(url, query).await?;
         }
         let status = resp.status();
@@ -684,11 +684,23 @@ mod tests {
     #[test]
     fn same_origin_check_has_host_boundary() {
         let base = "https://api.spotify.com/v1";
-        assert!(is_same_origin(base, "https://api.spotify.com/v1/me/tracks?offset=50"));
-        assert!(is_same_origin(base, "https://api.spotify.com:443/v1/me/tracks"));
+        assert!(is_same_origin(
+            base,
+            "https://api.spotify.com/v1/me/tracks?offset=50"
+        ));
+        assert!(is_same_origin(
+            base,
+            "https://api.spotify.com:443/v1/me/tracks"
+        ));
         // The review's example: a bare prefix check lets these through.
-        assert!(!is_same_origin(base, "https://api.spotify.com.evil.example/v1/me"));
-        assert!(!is_same_origin(base, "https://api.spotify.com.v1.evil.example/x"));
+        assert!(!is_same_origin(
+            base,
+            "https://api.spotify.com.evil.example/v1/me"
+        ));
+        assert!(!is_same_origin(
+            base,
+            "https://api.spotify.com.v1.evil.example/x"
+        ));
         assert!(!is_same_origin(base, "http://api.spotify.com/v1/me"));
         assert!(!is_same_origin(base, "https://api.spotify.com:444/v1/me"));
         assert!(!is_same_origin(base, "not a url"));
@@ -701,7 +713,10 @@ mod tests {
         let server = spawn_mock_server(|req| {
             (
                 200,
-                format!(r#"{{"items":[],"next":"http://{}.evil.example/steal"}}"#, req.host),
+                format!(
+                    r#"{{"items":[],"next":"http://{}.evil.example/steal"}}"#,
+                    req.host
+                ),
             )
         });
         let api = test_api(&server.base_url);
@@ -723,7 +738,11 @@ mod tests {
         let server = spawn_mock_server(move |req| {
             if req.method == "POST" && req.path == "/api/token" {
                 refresh_count2.fetch_add(1, Ordering::SeqCst);
-                assert!(req.body.contains("grant_type=refresh_token"), "{}", req.body);
+                assert!(
+                    req.body.contains("grant_type=refresh_token"),
+                    "{}",
+                    req.body
+                );
                 assert!(req.body.contains("refresh_token=refresh-1"), "{}", req.body);
                 return (
                     200,
@@ -751,7 +770,11 @@ mod tests {
         let tracks = api.saved_tracks().unwrap();
         assert!(tracks.is_empty());
         assert_eq!(get_count.load(Ordering::SeqCst), 2, "exactly one retry");
-        assert_eq!(refresh_count.load(Ordering::SeqCst), 1, "exactly one refresh");
+        assert_eq!(
+            refresh_count.load(Ordering::SeqCst),
+            1,
+            "exactly one refresh"
+        );
     }
 
     #[test]
@@ -769,7 +792,11 @@ mod tests {
             Err(ServiceError::AuthError(msg)) => assert!(msg.contains("401"), "got: {msg}"),
             other => panic!("expected AuthError, got: {other:?}"),
         }
-        assert_eq!(count.load(Ordering::SeqCst), 1, "no retry without refresh token");
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "no retry without refresh token"
+        );
     }
 
     #[test]

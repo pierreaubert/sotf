@@ -1,23 +1,23 @@
 import Foundation
 import Darwin
 
-enum ConfigBarIPCError: Error, Equatable {
+public enum ConfigBarIPCError: Error, Equatable {
     case lineTooLong
 }
 
 /// Small, platform-level helpers used by the configbar's line-oriented daemon
 /// protocol. Keeping framing and write-all behavior separate makes the socket
 /// contract testable without constructing the SwiftUI application.
-struct ConfigBarLineFramer {
-    let maxLineBytes: Int
-    private(set) var bufferedData = Data()
+public struct ConfigBarLineFramer {
+    public let maxLineBytes: Int
+    public private(set) var bufferedData = Data()
 
-    init(maxLineBytes: Int = 1024 * 1024) {
+    public init(maxLineBytes: Int = 1024 * 1024) {
         precondition(maxLineBytes > 0)
         self.maxLineBytes = maxLineBytes
     }
 
-    mutating func append(_ data: Data) throws {
+    public mutating func append(_ data: Data) throws {
         bufferedData.append(data)
 
         if let newline = bufferedData.firstIndex(of: UInt8(ascii: "\n")) {
@@ -30,7 +30,7 @@ struct ConfigBarLineFramer {
         }
     }
 
-    mutating func nextLine() -> Data? {
+    public mutating func nextLine() -> Data? {
         guard let newline = bufferedData.firstIndex(of: UInt8(ascii: "\n")) else {
             return nil
         }
@@ -41,8 +41,8 @@ struct ConfigBarLineFramer {
     }
 }
 
-enum ConfigBarIPC {
-    typealias SendFunction = (
+public enum ConfigBarIPC {
+    public typealias SendFunction = (
         Int32,
         UnsafeRawPointer?,
         Int,
@@ -51,7 +51,7 @@ enum ConfigBarIPC {
 
     /// Send all bytes in `data`, handling short writes and EINTR.
     @discardableResult
-    static func writeAll(
+    public static func writeAll(
         fd: Int32,
         data: Data,
         send: @escaping SendFunction = { fd, buffer, length, flags in
@@ -87,7 +87,7 @@ enum ConfigBarIPC {
     /// Configbar startup path. This is deliberately small and synchronous so
     /// callers can place it on a background queue; it also makes adoption
     /// behavior testable with a real Unix-domain listener.
-    static func probeDaemon(
+    public static func probeDaemon(
         socketPath: String,
         timeoutMilliseconds: Int32 = 250
     ) -> Bool {

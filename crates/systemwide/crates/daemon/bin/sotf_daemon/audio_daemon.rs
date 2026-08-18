@@ -1,6 +1,7 @@
 use super::command::Command;
 use super::configured::configured_output_device_from_env;
 use super::consts::LEGACY_SOCKET_PATH;
+use super::consts::MAX_HAL_CHANNELS;
 use super::consts::empty_loudness_json;
 use super::consts::get_socket_path;
 use super::consts::metering_source_json;
@@ -33,16 +34,56 @@ use super::types::PipelinePlan;
 use super::types::read_ipc_line_bounded;
 use driver_common::DriverConfig;
 use parking_lot::Mutex;
+use serde::Serialize;
 use serde_json::Value;
 use sotf_audio::PluginConfig;
+use sotf_audio::engine::{PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig};
 use sotf_audio::manager::AudioEngineManager;
 use sotf_audio::plugins::PluginType;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use super::consts::MAX_IPC_CLIENTS;
+
+/// Stable wire shape returned by `get_driver_config`/`get_hal_config`.
+///
+/// The daemon historically exposed configuration through a hand-built JSON
+/// object with aliases such as `active` and `actual_sample_rate`. Keep those
+/// aliases stable, but make the shape explicit so additions to
+/// `DriverStatus` cannot silently change this separate endpoint.
+#[derive(Debug, Serialize)]
+struct DriverConfigWire {
+    sample_rate: u32,
+    actual_sample_rate: u32,
+    buffer_frames: u32,
+    actual_buffer_frames: u32,
+    channel_count: u32,
+    active: bool,
+    driver_name: &'static str,
+    driver_installed: bool,
+    driver_ready: bool,
+    platform_supported: bool,
+}
+
+impl From<&driver_common::DriverStatus> for DriverConfigWire {
+    fn from(status: &driver_common::DriverStatus) -> Self {
+        Self {
+            sample_rate: status.sample_rate,
+            actual_sample_rate: status.sample_rate,
+            buffer_frames: status.buffer_frames,
+            actual_buffer_frames: status.buffer_frames,
+            channel_count: status.channel_count,
+            active: status.capture_active,
+            driver_name: status.driver_name,
+            driver_installed: status.driver_installed,
+            driver_ready: status.driver_ready,
+            platform_supported: status.platform_supported,
+        }
+    }
+}
 
 pub(super) fn pipeline_timing_after_config_request(
     result: &driver_common::ConfigResult,
@@ -60,6 +101,157 @@ pub(super) fn pipeline_timing_after_config_request(
         }
         _ => (requested_sample_rate, requested_buffer_frames),
     }
+}
+
+/// Return the node IDs of a graph when it is exactly one linear chain.
+fn linear_graph_node_ids(graph: &PluginGraphConfig) -> Option<Vec<usize>> {
+    if graph.nodes.is_empty() {
+        return graph.edges.is_empty().then_some(Vec::new());
+    }
+    if graph.edges.len() != graph.nodes.len().saturating_sub(1) {
+        return None;
+    }
+
+    let node_ids: HashSet<usize> = graph.nodes.iter().map(|node| node.id).collect();
+    if node_ids.len() != graph.nodes.len() {
+        return None;
+    }
+
+    let mut incoming = HashMap::<usize, usize>::with_capacity(graph.nodes.len());
+    let mut outgoing = HashMap::<usize, usize>::with_capacity(graph.nodes.len());
+    for &id in &node_ids {
+        incoming.insert(id, 0);
+    }
+    for edge in &graph.edges {
+        if !node_ids.contains(&edge.from_node) || !node_ids.contains(&edge.to_node) {
+            return None;
+        }
+        *incoming.get_mut(&edge.to_node)? += 1;
+        if outgoing.insert(edge.from_node, edge.to_node).is_some() {
+            return None;
+        }
+    }
+
+    let mut roots = incoming
+        .iter()
+        .filter_map(|(&id, &count)| (count == 0).then_some(id));
+    let root = roots.next()?;
+    if roots.next().is_some() {
+        return None;
+    }
+
+    let mut order = Vec::with_capacity(graph.nodes.len());
+    let mut current = Some(root);
+    while let Some(id) = current {
+        order.push(id);
+        current = outgoing.get(&id).copied();
+    }
+    (order.len() == graph.nodes.len()).then_some(order)
+}
+
+/// Reorder a linear graph without changing node IDs, parameters, channel
+/// counts, or bypass state. The order is expressed as node IDs, not positions.
+pub(super) fn reorder_linear_graph(
+    graph: &PluginGraphConfig,
+    order: &[usize],
+) -> Result<PluginGraphConfig, String> {
+    graph
+        .validate()
+        .map_err(|error| format!("Invalid plugin graph: {error}"))?;
+    let current_order = linear_graph_node_ids(graph)
+        .ok_or_else(|| "Graph reorder requires a single linear graph".to_string())?;
+    if order.len() != current_order.len() {
+        return Err(format!(
+            "Order length {} doesn't match graph node count {}",
+            order.len(),
+            current_order.len()
+        ));
+    }
+
+    let expected: HashSet<usize> = current_order.iter().copied().collect();
+    let mut seen = HashSet::with_capacity(order.len());
+    for &id in order {
+        if !expected.contains(&id) || !seen.insert(id) {
+            return Err(format!(
+                "Invalid graph order: duplicate or unknown node ID {id}"
+            ));
+        }
+    }
+
+    let nodes_by_id: HashMap<usize, &PluginGraphNodeConfig> =
+        graph.nodes.iter().map(|node| (node.id, node)).collect();
+    let Some(nodes) = order
+        .iter()
+        .map(|id| nodes_by_id.get(id).map(|node| (*node).clone()))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Err("Invalid graph order: node lookup failed".to_string());
+    };
+    let edges = order
+        .windows(2)
+        .map(|pair| PluginGraphEdgeConfig::new(pair[0], pair[1]))
+        .collect::<Vec<_>>();
+
+    PluginGraphConfig::try_new(nodes, edges)
+        .map_err(|error| format!("Reordered graph is invalid: {error}"))
+}
+
+/// Convert the legacy rack representation into a linear graph so per-node
+/// channel and bypass state has a durable owner. Existing rack order and
+/// plugin parameters are preserved; unspecified state uses the pipeline's
+/// current input geometry and enabled-by-default behavior.
+pub(super) fn rack_plugins_to_linear_graph(
+    plugins: &[PluginConfig],
+    pipeline_input_channels: usize,
+    selected_index: usize,
+    input_channels: Option<usize>,
+    bypassed: Option<bool>,
+) -> Result<PluginGraphConfig, String> {
+    if input_channels.is_none() && bypassed.is_none() {
+        return Err("set_rack_plugin_state requires input_channels or bypassed".to_string());
+    }
+    if selected_index >= plugins.len() {
+        return Err(format!(
+            "Plugin index {} out of range (have {})",
+            selected_index,
+            plugins.len()
+        ));
+    }
+    if let Some(channels) = input_channels
+        && !(1..=MAX_HAL_CHANNELS).contains(&channels)
+    {
+        return Err(format!(
+            "Invalid plugin input channel count {}. Must be between 1 and {}.",
+            channels, MAX_HAL_CHANNELS
+        ));
+    }
+
+    let default_channels = pipeline_input_channels.max(1);
+    let nodes = plugins
+        .iter()
+        .enumerate()
+        .map(|(index, plugin)| PluginGraphNodeConfig {
+            id: index,
+            plugin_type: plugin.plugin_type.clone(),
+            parameters: plugin.parameters.clone(),
+            input_channels: if index == selected_index {
+                input_channels.unwrap_or(default_channels)
+            } else {
+                default_channels
+            },
+            bypassed: if index == selected_index {
+                bypassed.unwrap_or(false)
+            } else {
+                false
+            },
+        })
+        .collect::<Vec<_>>();
+    let edges = (0..nodes.len().saturating_sub(1))
+        .map(|index| PluginGraphEdgeConfig::new(index, index + 1))
+        .collect::<Vec<_>>();
+
+    PluginGraphConfig::try_new(nodes, edges)
+        .map_err(|error| format!("Rack state cannot be represented as a graph: {error}"))
 }
 
 #[derive(Clone)]
@@ -174,6 +366,13 @@ impl AudioDaemon {
                 let _mutation = self.pipeline_mutation.lock();
                 self.handle_load_plugin_artifact(artifact, base_generation)
             }
+            Command::ReorderGraph {
+                order,
+                base_generation,
+            } => {
+                let _mutation = self.pipeline_mutation.lock();
+                self.handle_reorder_graph(order, base_generation)
+            }
             Command::SetInputChannels { channels } => {
                 let _mutation = self.pipeline_mutation.lock();
                 self.handle_set_pipeline_channels(Some(channels), None)
@@ -208,6 +407,15 @@ impl AudioDaemon {
             Command::ReorderPlugins { order } => {
                 let _mutation = self.pipeline_mutation.lock();
                 self.handle_reorder_plugins(order)
+            }
+            Command::SetRackPluginState {
+                index,
+                input_channels,
+                bypassed,
+                base_generation,
+            } => {
+                let _mutation = self.pipeline_mutation.lock();
+                self.handle_set_rack_plugin_state(index, input_channels, bypassed, base_generation)
             }
             Command::DriverStatus => self.handle_driver_status(),
             Command::Shutdown => {
@@ -295,6 +503,7 @@ impl AudioDaemon {
         let applied = pipeline.applied_spec();
         let applied_generation = pipeline.applied_generation();
         let applied_output_device = pipeline.applied_output_device();
+        let pipeline_recovery = pipeline.pipeline_recovery();
         drop(pipeline);
 
         let (transport, mut faults) =
@@ -320,6 +529,14 @@ impl AudioDaemon {
                 "code": "unsafe_observed_output_device",
                 "severity": "error",
                 "message": "Observed playback output device is virtual/loopback and risks feedback.",
+            }));
+        }
+        if let Some(recovery) = &pipeline_recovery {
+            faults.push(serde_json::json!({
+                "code": "pipeline_recovery_required",
+                "severity": "error",
+                "message": recovery.error,
+                "actions": recovery.actions,
             }));
         }
 
@@ -383,6 +600,12 @@ impl AudioDaemon {
             "diagnostics": {
                 "health": health,
                 "faults": faults,
+                "pipeline_recovery": pipeline_recovery.as_ref().map(|recovery| {
+                    serde_json::json!({
+                        "error": recovery.error,
+                        "actions": recovery.actions,
+                    })
+                }),
             },
         })
     }
@@ -420,6 +643,7 @@ impl AudioDaemon {
             output_channels,
             pipeline_generation,
             pipeline_applied_output_device,
+            pipeline_recovery,
         ) = {
             let pipeline = self.system_state.lock();
             (
@@ -428,6 +652,7 @@ impl AudioDaemon {
                 pipeline.output_channels(),
                 pipeline.applied_generation(),
                 pipeline.applied_output_device(),
+                pipeline.pipeline_recovery(),
             )
         };
         let driver_status = self.driver_manager.lock().status();
@@ -454,6 +679,13 @@ impl AudioDaemon {
         }
         if engine_state.underruns > 0 {
             recovery_actions.push("reset_shared_memory".to_string());
+        }
+        if let Some(recovery) = &pipeline_recovery {
+            for action in &recovery.actions {
+                if !recovery_actions.iter().any(|existing| existing == action) {
+                    recovery_actions.push(action.clone());
+                }
+            }
         }
 
         Response::ok(serde_json::json!({
@@ -495,6 +727,12 @@ impl AudioDaemon {
                 "playback_output_device": engine_state.playback_output_device,
                 "capture_active": driver_status.capture_active,
             },
+            "pipeline_recovery": pipeline_recovery.as_ref().map(|recovery| {
+                serde_json::json!({
+                    "error": recovery.error,
+                    "actions": recovery.actions,
+                })
+            }),
             "recovery_actions": recovery_actions,
         }))
     }
@@ -704,7 +942,17 @@ impl AudioDaemon {
             driver_sample_rate,
             driver_buffer_frames,
         );
-        if response.success || previous_plan.is_none() {
+        if response.success {
+            self.system_state.lock().clear_pipeline_recovery();
+            return response;
+        }
+
+        if previous_plan.is_none() {
+            let error = response
+                .error
+                .clone()
+                .unwrap_or_else(|| "pipeline apply failed".to_string());
+            self.system_state.lock().mark_pipeline_recovery(error);
             return response;
         }
 
@@ -718,6 +966,7 @@ impl AudioDaemon {
             driver_buffer_frames,
         );
         if restore.success {
+            self.system_state.lock().clear_pipeline_recovery();
             Response::err(format!(
                 "{}; restored the last working pipeline; retry the requested change",
                 response
@@ -725,12 +974,16 @@ impl AudioDaemon {
                     .unwrap_or_else(|| "pipeline apply failed".to_string())
             ))
         } else {
-            Response::err(format!(
+            let error = format!(
                 "{}; pipeline recovery also failed, restart the daemon",
                 response
                     .error
                     .unwrap_or_else(|| "pipeline apply failed".to_string())
-            ))
+            );
+            self.system_state
+                .lock()
+                .mark_pipeline_recovery(error.clone());
+            Response::err(error)
         }
     }
 
@@ -939,6 +1192,37 @@ impl AudioDaemon {
         }
     }
 
+    pub(super) fn handle_reorder_graph(
+        &self,
+        order: Vec<usize>,
+        base_generation: Option<u64>,
+    ) -> Response {
+        if let Some(base_generation) = base_generation {
+            let current_generation = self.system_state.lock().applied_generation().unwrap_or(0);
+            if base_generation != current_generation {
+                return Response::err(format!(
+                    "Graph generation conflict: editor based on generation {base_generation}, current generation is {current_generation}. Refresh before reordering."
+                ));
+            }
+        }
+
+        let (graph, input_channels, output_channels) = {
+            let state = self.system_state.lock();
+            let Some(graph) = state.user_graph() else {
+                return Response::err(
+                    "Graph reorder requires an active graph pipeline; use reorder_plugins for a rack.",
+                );
+            };
+            (graph, state.input_channels(), state.output_channels())
+        };
+
+        let reordered = match reorder_linear_graph(&graph, &order) {
+            Ok(graph) => graph,
+            Err(error) => return Response::err(error),
+        };
+        self.handle_load_plugin_graph_with_channels(reordered, input_channels, output_channels)
+    }
+
     fn handle_load_plugin_graph_with_channels(
         &self,
         graph: sotf_audio::engine::PluginGraphConfig,
@@ -1073,6 +1357,7 @@ impl AudioDaemon {
                 "generation": state.applied_generation(),
             }));
         }
+        let input_channels = state.input_channels().max(1);
         let plugins = state.user_plugins();
         drop(state);
         let result: Vec<Value> = plugins
@@ -1083,6 +1368,11 @@ impl AudioDaemon {
                     "index": i,
                     "plugin_type": p.plugin_type,
                     "parameters": p.parameters,
+                    // Legacy rack entries have no per-node metadata. These
+                    // defaults are made explicit so the Configbar can issue a
+                    // state patch that promotes the rack to a graph.
+                    "input_channels": input_channels,
+                    "bypassed": false,
                 })
             })
             .collect();
@@ -1246,6 +1536,50 @@ impl AudioDaemon {
         self.reload_plugins_with_user_plugins(reordered)
     }
 
+    pub(super) fn handle_set_rack_plugin_state(
+        &self,
+        index: usize,
+        input_channels: Option<usize>,
+        bypassed: Option<bool>,
+        base_generation: Option<u64>,
+    ) -> Response {
+        if let Some(base_generation) = base_generation {
+            let current_generation = self.system_state.lock().applied_generation().unwrap_or(0);
+            if base_generation != current_generation {
+                return Response::err(format!(
+                    "Rack generation conflict: editor based on generation {base_generation}, current generation is {current_generation}. Refresh before changing plugin state."
+                ));
+            }
+        }
+
+        let (plugins, graph, input_geometry, output_channels) = {
+            let state = self.system_state.lock();
+            (
+                state.user_plugins(),
+                state.user_graph(),
+                state.input_channels(),
+                state.output_channels(),
+            )
+        };
+        if graph.is_some() {
+            return Response::err(
+                "Rack plugin state requires a rack pipeline; use graph commands for graph nodes.",
+            );
+        }
+
+        let graph = match rack_plugins_to_linear_graph(
+            &plugins,
+            input_geometry,
+            index,
+            input_channels,
+            bypassed,
+        ) {
+            Ok(graph) => graph,
+            Err(error) => return Response::err(error),
+        };
+        self.handle_load_plugin_graph_with_channels(graph, input_geometry, output_channels)
+    }
+
     pub(super) fn reload_plugins_with_user_plugins(&self, plugins: Vec<PluginConfig>) -> Response {
         let prepared_plan = {
             let pipeline = self.system_state.lock();
@@ -1292,18 +1626,27 @@ impl AudioDaemon {
 
     pub(super) fn handle_driver_status(&self) -> Response {
         let status = get_driver_status(&self.driver_manager.lock());
-        Response::ok(serde_json::json!({
-            "platform_supported": status.platform_supported,
-            "driver_installed": status.driver_installed,
-            "capture_active": status.capture_active,
-            "sample_rate": status.sample_rate,
-            "channel_count": status.channel_count,
-            "buffer_frames": status.buffer_frames,
-            "driver_name": status.driver_name,
-            // Legacy fields for backward compatibility
-            "buffer_initialized": status.capture_active || status.driver_installed,
-            "ready": status.platform_supported && status.driver_installed,
-        }))
+        let mut data = match serde_json::to_value(&status) {
+            Ok(serde_json::Value::Object(data)) => data,
+            Ok(_) => return Response::err("Driver status did not serialize as an object"),
+            Err(error) => {
+                return Response::err(format!("Failed to serialize driver status: {error}"));
+            }
+        };
+        // Preserve the historical aliases while deriving the canonical fields
+        // from DriverStatus itself. This keeps the JSON wire shape aligned with
+        // the serde contract whenever a new status field is added.
+        data.insert(
+            "buffer_initialized".to_string(),
+            serde_json::Value::Bool(status.capture_active || status.driver_installed),
+        );
+        data.insert(
+            "ready".to_string(),
+            serde_json::Value::Bool(
+                status.platform_supported && status.driver_installed && status.driver_ready,
+            ),
+        );
+        Response::ok(serde_json::Value::Object(data))
     }
 
     // =========================================================================
@@ -1490,19 +1833,12 @@ impl AudioDaemon {
     pub(super) fn handle_get_driver_config(&self) -> Response {
         let driver = self.driver_manager.lock();
         let status = driver.status();
+        let wire = DriverConfigWire::from(&status);
 
-        Response::ok(serde_json::json!({
-            "sample_rate": status.sample_rate,
-            "actual_sample_rate": status.sample_rate,
-            "buffer_frames": status.buffer_frames,
-            "actual_buffer_frames": status.buffer_frames,
-            "channel_count": status.channel_count,
-            "active": status.capture_active,
-            "driver_name": status.driver_name,
-            "driver_installed": status.driver_installed,
-            "driver_ready": status.driver_ready,
-            "platform_supported": status.platform_supported,
-        }))
+        match serde_json::to_value(wire) {
+            Ok(data) => Response::ok(data),
+            Err(error) => Response::err(format!("Failed to serialize driver config: {error}")),
+        }
     }
 
     pub(super) fn handle_client(&self, mut stream: UnixStream, peer_class: PeerClass) {

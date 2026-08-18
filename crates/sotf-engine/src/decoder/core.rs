@@ -691,11 +691,9 @@ mod tests {
         // channel count above the engine's ceiling (PcmDecoder pre-allocates
         // 1024 * channels f32 — ~268 MB at u16::MAX), and a dishonest
         // bits_per_sample (the wire format is fixed f32).
-        for (sample_rate, channels, bits_per_sample) in [
-            (384_001, 2, 32),
-            (44_100, 17, 32),
-            (44_100, 2, 16),
-        ] {
+        for (sample_rate, channels, bits_per_sample) in
+            [(384_001, 2, 32), (44_100, 17, 32), (44_100, 2, 16)]
+        {
             set_service_stream_resolver(Arc::new(move |_, _| {
                 Ok(ResolvedServiceStream::Pcm {
                     sample_rate,

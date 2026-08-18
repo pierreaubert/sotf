@@ -82,6 +82,10 @@ pub(super) fn handle_driver_config_change(
     let negotiated = actual_rate != requested_rate;
 
     // Reconfigure audio pipeline
+    // Stop publishing input frames while the old engine is being torn down.
+    // A failed restart must not leave HAL believing that a stopped engine is
+    // still ready to consume audio.
+    driver_manager.lock().set_engine_ready(false);
     match reconfigure_audio_pipeline(
         audio_manager,
         system_state,
@@ -97,6 +101,8 @@ pub(super) fn handle_driver_config_change(
                 // Set engine_ready so driver continues sending audio.
                 driver_manager.lock().set_engine_ready(true);
             }
+
+            system_state.lock().clear_pipeline_recovery();
 
             let result = if negotiated {
                 log::info!(
@@ -127,6 +133,7 @@ pub(super) fn handle_driver_config_change(
         }
         Err(e) => {
             log::error!("Pipeline reconfiguration failed: {}", e);
+            system_state.lock().mark_pipeline_recovery(e.clone());
             driver_manager.lock().acknowledge_config_change(
                 DriverConfig::new(actual_rate, requested_frames, config.channel_count),
                 driver_common::ConfigResult::error(e),

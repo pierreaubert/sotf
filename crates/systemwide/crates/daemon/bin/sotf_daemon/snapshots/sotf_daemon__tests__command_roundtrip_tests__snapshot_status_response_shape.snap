@@ -29,6 +29,7 @@ expression: data
   "output_channels": 2,
   "pipeline_applied_output_device": null,
   "pipeline_generation": null,
+  "pipeline_recovery": null,
   "playback_buffer_fill_percent": 0,
   "playback_callback_count": 0,
   "playback_effective_sample_rate": 0,

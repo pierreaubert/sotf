@@ -1,0 +1,32 @@
+{
+  "size": 144,
+  "alignment": 8,
+  "fields": {
+    "magic": 0,
+    "version": 4,
+    "sample_rate": 8,
+    "buffer_frames": 12,
+    "channel_count": 16,
+    "write_position": 24,
+    "read_position": 32,
+    "active": 40,
+    "config_changed": 44,
+    "driver_ready": 48,
+    "engine_ready": 52,
+    "encrypted": 56,
+    "key_fingerprint": 64,
+    "frame_counter": 72,
+    "requested_sample_rate": 80,
+    "requested_buffer_frames": 84,
+    "actual_sample_rate": 88,
+    "actual_buffer_frames": 92,
+    "config_status": 96,
+    "config_source": 100,
+    "config_error_code": 104,
+    "encryption_overflow_count": 112,
+    "daemon_heartbeat_ms": 120,
+    "configuring": 128,
+    "configuring_ack": 132,
+    "requested_channel_count": 136
+  }
+}

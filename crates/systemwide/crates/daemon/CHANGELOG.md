@@ -22,9 +22,21 @@
   plugin defaults for every discovery request.
 - Extend regression coverage for startup ordering, real Unix-socket IPC, and
   Swift atomic shared-memory publication.
+- Standardize daemon `driver_status` responses from the shared `DriverStatus`
+  shape while retaining legacy aliases, and add a wire-shape regression test.
+- Add a checked-in shared-memory ABI manifest consumed by Rust and packaged for
+  Swift HAL validation, plus plain/encrypted reconfiguration stress coverage.
 
 ## Diagnostics and recovery UX (QA-SYS-003)
 
+- Pipeline apply failures now preserve an explicit process-lifetime recovery
+  state. If restoring the previous plan also fails, `engine_ready` remains
+  false and `status`/`get_snapshot` expose `pipeline_recovery_required` and
+  `restart_daemon` instead of reporting a healthy stopped engine.
+- Configbar now keeps reachability and optimistic device, volume, and channel
+  controls honest: adopted daemons are presented with a reconnect action, the
+  outage banner shows retry timing, and rejected mutations restore the last
+  confirmed value.
 - Added the executable `just systemwide-lab` macOS gate. It combines daemon
   state tests, real Unix-socket lab-driver scenarios, HAL protocol/streaming
   regressions, and Configbar model tests without installing the HAL bundle.

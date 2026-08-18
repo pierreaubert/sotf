@@ -240,4 +240,105 @@ final class ConfigBarModelTests: XCTestCase {
         XCTAssertFalse(guardState.consumeProgrammaticChange())
         XCTAssertEqual(daemonRequests, 1)
     }
+
+    func testRejectedOptimisticMutationsRollbackWithoutRetrying() {
+        var device = ConfigBarMutationState(confirmed: "Built-in Output")
+        var volume = ConfigBarMutationState(confirmed: Float(0.75))
+        var channels = ConfigBarMutationState(confirmed: 2)
+        var daemonRequests = 0
+
+        let deviceGeneration = device.begin("USB DAC")
+        daemonRequests += 1
+        XCTAssertEqual(
+            device.resolve(
+                generation: deviceGeneration,
+                requested: "USB DAC",
+                succeeded: false
+            ),
+            .rolledBack("Built-in Output")
+        )
+
+        let volumeGeneration = volume.begin(0.25)
+        daemonRequests += 1
+        XCTAssertEqual(
+            volume.resolve(
+                generation: volumeGeneration,
+                requested: 0.25,
+                succeeded: false
+            ),
+            .rolledBack(0.75)
+        )
+
+        let channelGeneration = channels.begin(8)
+        daemonRequests += 1
+        XCTAssertEqual(
+            channels.resolve(
+                generation: channelGeneration,
+                requested: 8,
+                succeeded: false
+            ),
+            .rolledBack(2)
+        )
+
+        // Rollback is a state assignment only; it must not become a second
+        // daemon request through a Picker or Slider callback.
+        XCTAssertEqual(daemonRequests, 3)
+        XCTAssertEqual(device.confirmed, "Built-in Output")
+        XCTAssertEqual(volume.confirmed, 0.75, accuracy: 0.0001)
+        XCTAssertEqual(channels.confirmed, 2)
+    }
+
+    func testStaleMutationCompletionCannotOverwriteNewerConfirmedValue() {
+        var state = ConfigBarMutationState(confirmed: 2)
+        let firstGeneration = state.begin(4)
+        let secondGeneration = state.begin(8)
+
+        XCTAssertNil(
+            state.resolve(
+                generation: firstGeneration,
+                requested: 4,
+                succeeded: false
+            )
+        )
+        XCTAssertEqual(
+            state.resolve(
+                generation: secondGeneration,
+                requested: 8,
+                succeeded: true
+            ),
+            .confirmed(8)
+        )
+        XCTAssertEqual(state.confirmed, 8)
+    }
+
+    func testStatusWatermarkRejectsSnapshotStartedBeforeMutation() {
+        var watermark = ConfigBarStatusWatermark()
+        let firstSnapshot = watermark.generation
+
+        XCTAssertTrue(watermark.accepts(snapshotGeneration: firstSnapshot))
+        XCTAssertEqual(watermark.beginMutation(), 1)
+        XCTAssertFalse(watermark.accepts(snapshotGeneration: firstSnapshot))
+
+        let secondSnapshot = watermark.generation
+        XCTAssertTrue(watermark.accepts(snapshotGeneration: secondSnapshot))
+    }
+
+    func testRejectedEncryptionMutationRollsBackOnceAndConsumesGuard() {
+        var state = ConfigBarMutationState(confirmed: true)
+        var toggleGuard = EncryptionToggleGuard()
+        var daemonRequests = 0
+
+        let generation = state.begin(false)
+        daemonRequests += 1
+        XCTAssertEqual(
+            state.resolve(generation: generation, requested: false, succeeded: false),
+            .rolledBack(true)
+        )
+
+        toggleGuard.markProgrammaticChange()
+        XCTAssertTrue(toggleGuard.consumeProgrammaticChange())
+        XCTAssertFalse(toggleGuard.consumeProgrammaticChange())
+        XCTAssertEqual(daemonRequests, 1)
+        XCTAssertTrue(state.confirmed)
+    }
 }
