@@ -4,6 +4,7 @@ use crate::app::types::{ChannelRecordingState, RecordingResult, RecordingSignalT
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::PlayerView;
+use sotf_audio_player::ui_models::recording::BatchNextAction;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
@@ -872,7 +873,7 @@ impl PlayerView {
                                             let view = view.clone();
                                             move |_, cx| {
                                                 view.update(cx, |this, cx| {
-                                                    this.state.update(cx, |state, _cx| {
+                                                    let accepted = this.state.update(cx, |state, _cx| {
                                                         let accepted = state
                                                             .app
                                                             .measurement_state
@@ -890,7 +891,16 @@ impl PlayerView {
                                                                 .accepted_takes(accepted)
                                                                 .to_string();
                                                         }
+                                                        accepted
                                                     });
+                                                    if accepted > 0 {
+                                                        // Resume a batch parked by the
+                                                        // quality gate (task-9 review R1).
+                                                        this.resume_batch_after_review_accept(
+                                                            mic_position,
+                                                            cx,
+                                                        );
+                                                    }
                                                     cx.notify();
                                                 });
                                             }
@@ -1523,8 +1533,7 @@ impl PlayerView {
 
             // Update state with results
             let Some(state_entity) = weak_state.upgrade() else { return; };
-            let (should_auto_continue, next_channel_idx, need_position_modal, cur_pos) =
-                state_entity.update(&mut cx.clone(), |state, _| {
+            let next_action = state_entity.update(&mut cx.clone(), |state, _| {
                     let should_continue = match results {
                         Ok(analysis_results) => {
                             let mut any_low_signal = false;
@@ -1662,22 +1671,14 @@ impl PlayerView {
                             }
                             state.app.measurement_state.recording_state.status_message = msg;
 
-                            if any_review {
-                                // Park auto-record: the user must accept or
-                                // re-record the warned take before moving on.
-                                state
-                                    .app
-                                    .measurement_state
-                                    .recording_state
-                                    .auto_record_remaining = false;
-                            }
-
-                            state
-                                .app
-                                .measurement_state
-                                .recording_state
-                                .auto_record_remaining
-                                && !any_review
+                            // The batch advance is decided below by
+                            // `batch_next_action`, which re-checks the batch
+                            // flag, in-flight captures, and parked takes.
+                            // `auto_record_remaining` deliberately stays set
+                            // while takes are parked for review (task-9
+                            // review R1): it is the batch intent the accept
+                            // and re-record paths resume from.
+                            true
                         }
                         Err(e) if e == sotf_audio::signal_recorder::CANCELLED_ERR => {
                             // R8: user-requested cancel (Stop button) —
@@ -1759,61 +1760,56 @@ impl PlayerView {
                         .recording_state
                         .recording_progress = 1.0;
 
-                    // Find the next speaker to record AT THE CURRENT
-                    // POSITION. When the current position is fully Done,
-                    // we don't return an index — the caller pauses for
-                    // the move-position modal (or finishes if no more
-                    // positions remain).
-                    let rec_state = &state.app.measurement_state.recording_state;
-                    let num_positions = rec_state.recording_config.num_positions.max(1);
-                    let cur_pos = rec_state.current_position();
-                    let next_channel_idx = if should_continue && cur_pos < num_positions {
-                        rec_state.next_channel_in_position(cur_pos)
+                    // Advance the batch from the position whose capture
+                    // just finished. Do NOT use `current_position()` here:
+                    // once a position is fully Done it has already advanced
+                    // to the next seat, which would skip the move-position
+                    // prompt and record it without the mics being moved.
+                    let finished_position =
+                        mics.first().map(|m| m.mic_position_index).unwrap_or(0);
+                    if should_continue {
+                        state
+                            .app
+                            .measurement_state
+                            .recording_state
+                            .batch_next_action(finished_position)
                     } else {
-                        None
-                    };
-                    let need_position_modal = should_continue
-                        && next_channel_idx.is_none()
-                        && cur_pos < num_positions;
-
-                    (
-                        should_continue,
-                        next_channel_idx,
-                        need_position_modal,
-                        cur_pos,
-                    )
+                        BatchNextAction::Hold
+                    }
                 });
 
-            if should_auto_continue {
-                if let Some(next_idx) = next_channel_idx {
+            match next_action {
+                BatchNextAction::StartChannel(next_idx) => {
                     log::info!("Auto-recording: starting next speaker at idx {}", next_idx);
                     let _ = weak_view.update(cx, |view, cx| {
                         view.start_recording_channel(next_idx, cx);
                     });
-                } else if need_position_modal {
+                }
+                BatchNextAction::PromptMovePosition { finished_position } => {
                     // Pause auto-record and ask the user to move the
                     // microphones to the next seat. The modal's Continue
                     // button resumes by calling start_recording_channel
-                    // for the first speaker at `cur_pos`.
+                    // for the first speaker at the next position.
                     log::info!(
                         "Auto-recording: position {} done; prompting user to move mics to position {}",
-                        cur_pos,
-                        cur_pos + 1
+                        finished_position + 1,
+                        finished_position + 2
                     );
                     let _ = weak_view.update(cx, |view, cx| {
                         view.state.update(cx, |state, _| {
                             let rec_state =
                                 &mut state.app.measurement_state.recording_state;
                             rec_state.move_position_modal_open = true;
-                            rec_state.pending_next_position = Some(cur_pos);
+                            rec_state.pending_next_position = Some(finished_position);
                             rec_state.status_message = format!(
                                 "Move microphones to position {} and click Continue",
-                                cur_pos + 1
+                                finished_position + 2
                             );
                         });
                         cx.notify();
                     });
-                } else {
+                }
+                BatchNextAction::Save => {
                     log::info!("Auto-recording complete - all channels recorded, saving JSON");
                     let _ = weak_view.update(cx, |view, cx| {
                         view.state.update(cx, |state, _| {
@@ -1830,6 +1826,7 @@ impl PlayerView {
                         cx.notify();
                     });
                 }
+                BatchNextAction::Hold => {}
             }
 
             drop(temp_wav);
@@ -2895,10 +2892,56 @@ impl PlayerView {
             )
     }
 
+    /// Resume an auto-record batch parked by the quality gate after the
+    /// user accepted the warned takes at `position` (task-9 review R1).
+    /// No-op when no batch is in progress, a capture is in flight, or
+    /// other takes are still parked. Non-destructive: never clears
+    /// existing channel results (unlike `start_recording_all_channels`).
+    pub(super) fn resume_batch_after_review_accept(
+        &mut self,
+        position: usize,
+        cx: &mut Context<Self>,
+    ) {
+        let action = self.state.update(cx, |state, _| {
+            let rec_state = &mut state.app.measurement_state.recording_state;
+            let action = rec_state.batch_next_action(position);
+            match action {
+                BatchNextAction::PromptMovePosition { finished_position } => {
+                    rec_state.move_position_modal_open = true;
+                    rec_state.pending_next_position = Some(finished_position);
+                    rec_state.status_message = format!(
+                        "Move microphones to position {} and click Continue",
+                        finished_position + 2
+                    );
+                }
+                BatchNextAction::Save => {
+                    rec_state.auto_record_remaining = false;
+                    rec_state.status_message = "All channels recorded, saving...".to_string();
+                }
+                _ => {}
+            }
+            action
+        });
+        match action {
+            BatchNextAction::StartChannel(idx) => {
+                log::info!(
+                    "Auto-record: resuming batch after review accept, channel {}",
+                    idx
+                );
+                self.start_recording_channel(idx, cx);
+            }
+            BatchNextAction::Save => {
+                log::info!("Auto-record: complete after review accept, saving JSON");
+                self.save_recordings(cx);
+            }
+            _ => {}
+        }
+        cx.notify();
+    }
+
     /// Continue button handler for the move-position modal. Closes the
     /// modal and resumes auto-record at the next position.
-    pub(super) fn continue_position_modal(&mut self, cx: &mut Context<Self>) {
-        let next_idx_opt = self.state.update(cx, |state, _| {
+    pub(super) fn continue_position_modal(&mut self, cx: &mut Context<Self>) {        let next_idx_opt = self.state.update(cx, |state, _| {
             let rec_state = &mut state.app.measurement_state.recording_state;
             rec_state.move_position_modal_open = false;
             let just_finished = rec_state.pending_next_position.take().unwrap_or(0);

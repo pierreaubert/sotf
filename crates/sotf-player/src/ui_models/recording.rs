@@ -20,6 +20,27 @@ use std::sync::atomic::AtomicBool;
 /// capture, delay probe, and bass anchor.
 pub const DEFAULT_SIGNAL_LEVEL_DB: f32 = -6.0206;
 
+/// What the UI should do to advance an auto-record batch, computed by
+/// [`RecordingScreenModel::batch_next_action`] from state only; the view
+/// performs the side effects (start recording, open the move-position
+/// modal, save).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BatchNextAction {
+    /// No batch in progress, a capture is in flight, or takes are still
+    /// parked for review — stay put.
+    Hold,
+    /// Start recording `channel_recordings[idx]` (same position).
+    StartChannel(usize),
+    /// `finished_position` is fully recorded and more positions remain —
+    /// prompt the user to move the mics.
+    PromptMovePosition {
+        /// Position (0-based) that just finished; the next one is +1.
+        finished_position: usize,
+    },
+    /// Every position done — persist the session.
+    Save,
+}
+
 /// Shared, UI-agnostic domain state for the Recording wizard.
 #[derive(Debug, Clone)]
 pub struct RecordingScreenModel {
@@ -380,6 +401,42 @@ impl RecordingScreenModel {
     pub fn request_sweep_cancel(&self) {
         self.sweep_cancel_requested
             .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Decide how an auto-record batch advances after a capture at
+    /// `finished_position` completes — or after warned takes were accepted
+    /// mid-batch (task-9 review R1, same decision). Pure state read; the
+    /// view performs the side effects (start recording, open the
+    /// move-position modal, save).
+    ///
+    /// `finished_position` is the 0-based position whose capture just
+    /// completed (or whose parked takes were just accepted). Do NOT pass
+    /// [`Self::current_position`]: once a position is fully `Done` it
+    /// advances to the next one, which would skip the move-position prompt
+    /// and record the next seat without the mics being moved.
+    ///
+    /// `auto_record_remaining` is kept set while a batch is parked for
+    /// review, so it doubles as "a batch is in progress" intent. Takes
+    /// still parked (`ReviewNeeded`) hold the batch: the user must resolve
+    /// every warned take before it moves on.
+    pub fn batch_next_action(&self, finished_position: usize) -> BatchNextAction {
+        if !self.auto_record_remaining
+            || self.capture_in_progress()
+            || !self.review_needed_indices().is_empty()
+        {
+            return BatchNextAction::Hold;
+        }
+        if let Some(idx) = self.next_channel_in_position(finished_position) {
+            return BatchNextAction::StartChannel(idx);
+        }
+        // No Empty entries left at `finished_position` (parked takes were
+        // excluded above): the position is complete.
+        let num_positions = self.recording_config.num_positions.max(1);
+        if finished_position + 1 < num_positions {
+            BatchNextAction::PromptMovePosition { finished_position }
+        } else {
+            BatchNextAction::Save
+        }
     }
 
     /// Reset the sweep cancel flag before starting a fresh capture so a
@@ -1043,5 +1100,88 @@ mod tests {
         let lines = model.session_quality_summary();
         assert_eq!(lines.len(), 1);
         assert!(lines[0].starts_with("FL: OK"), "{}", lines[0]);
+    }
+
+    // === Task 9 review R1: batch advance / resume-after-accept ===
+
+    use super::BatchNextAction;
+
+    #[test]
+    fn batch_next_holds_without_batch_or_while_parked_or_recording() {
+        let mut model = RecordingScreenModel::default();
+        model.channel_recordings = vec![
+            done_channel_with_quality(0, "FL", ChannelRecordingState::Done, 4),
+            done_channel_with_quality(1, "FR", ChannelRecordingState::Empty, 4),
+        ];
+        // No batch in progress: a manual single-channel flow must not
+        // suddenly start recording the rest.
+        assert_eq!(model.batch_next_action(0), BatchNextAction::Hold);
+
+        // Batch intent set, but a take is still parked: hold until every
+        // warned take is resolved.
+        model.auto_record_remaining = true;
+        model.channel_recordings.push(done_channel_with_quality(
+            2,
+            "C",
+            ChannelRecordingState::ReviewNeeded,
+            4,
+        ));
+        assert_eq!(model.batch_next_action(0), BatchNextAction::Hold);
+
+        // Parked take resolved, but a capture is in flight: hold.
+        model.accept_all_review_needed();
+        model.channel_recordings[1].state = ChannelRecordingState::Recording;
+        assert_eq!(model.batch_next_action(0), BatchNextAction::Hold);
+    }
+
+    #[test]
+    fn batch_next_starts_next_channel_in_same_position() {
+        let mut model = RecordingScreenModel::default();
+        model.auto_record_remaining = true;
+        model.channel_recordings = vec![
+            done_channel_with_quality(0, "FL", ChannelRecordingState::ReviewNeeded, 4),
+            done_channel_with_quality(1, "FR", ChannelRecordingState::Empty, 4),
+        ];
+        assert_eq!(model.accept_review_needed_for(0, 0), 1);
+        assert_eq!(
+            model.batch_next_action(0),
+            BatchNextAction::StartChannel(1)
+        );
+    }
+
+    #[test]
+    fn batch_next_prompts_position_move_only_after_position_done() {
+        let mut model = RecordingScreenModel::default();
+        model.recording_config.num_positions = 2;
+        model.auto_record_remaining = true;
+        let mut pos1 = done_channel_with_quality(0, "FL (Pos 2)", ChannelRecordingState::Empty, 4);
+        pos1.mic_position_index = 1;
+        model.channel_recordings = vec![
+            done_channel_with_quality(0, "FL (Pos 1)", ChannelRecordingState::ReviewNeeded, 4),
+            pos1,
+        ];
+        model.accept_all_review_needed();
+        // Position 0 is Done; position 1 entries exist but must NOT start
+        // until the user confirms the mics were moved.
+        assert_eq!(
+            model.batch_next_action(0),
+            BatchNextAction::PromptMovePosition {
+                finished_position: 0
+            }
+        );
+    }
+
+    #[test]
+    fn batch_next_saves_when_last_position_done() {
+        let mut model = RecordingScreenModel::default();
+        model.auto_record_remaining = true;
+        model.channel_recordings = vec![done_channel_with_quality(
+            0,
+            "FL",
+            ChannelRecordingState::ReviewNeeded,
+            4,
+        )];
+        model.accept_all_review_needed();
+        assert_eq!(model.batch_next_action(0), BatchNextAction::Save);
     }
 }
