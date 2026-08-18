@@ -1600,7 +1600,9 @@ pub(super) fn analyze_sweep_takes(
 /// `average_ess_recordings`), and the averaged capture is analyzed and
 /// written to `recorded_wav_path` / `output_csv_path` (the CSV gains real
 /// `coherence` and `noise_floor_db` columns). `num_sweeps <= 1` keeps the
-/// legacy single-sweep behavior. A cancelled or gated-out take aborts the
+/// legacy single-sweep behavior; `num_sweeps == 2` is bumped to
+/// [`super::consts::MIN_REPEAT_SWEEPS`] (3) with a warning because two
+/// takes cannot reject outliers. A cancelled or gated-out take aborts the
 /// whole set (no retry — REW abort semantics).
 ///
 /// After the capture passes the silence/clipping gates it goes through the
@@ -1723,7 +1725,8 @@ pub fn record_and_analyze(
 /// play/record cycle capturing ALL mics simultaneously; per mic the takes
 /// are then drift-corrected, robustly averaged, and analyzed exactly like
 /// [`record_and_analyze`]. `num_sweeps <= 1` keeps the legacy single-sweep
-/// behavior. A cancelled or gated-out take aborts the whole set.
+/// behavior; `num_sweeps == 2` is bumped to 3 (see [`record_and_analyze`]).
+/// A cancelled or gated-out take aborts the whole set.
 ///
 /// `mic_calibrations` must be the same length as `input_channels` (use `None` for uncalibrated).
 ///

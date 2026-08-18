@@ -369,7 +369,7 @@ pub fn record_signal(
             device.as_deref(),  // Optional input device name
             effective_mic_comp, // Per-channel or global microphone compensation
             None,               // Optional sweep range
-            1,                  // num_sweeps (repeat-sweep CLI flag is Task 9)
+            1,                  // num_sweeps: CLI captures a single sweep (no repeat flag)
             None,               // Optional cancel flag
         )?;
 
