@@ -101,13 +101,27 @@ pub(super) enum DriftAction {
 /// exceeds the threshold.
 #[cfg(not(target_os = "ios"))]
 pub(super) fn active_reference_span(reference: &[f32]) -> &[f32] {
+    let (start, end) = active_span_bounds(reference);
+    &reference[start..end]
+}
+
+/// Start index of the active (non-padding) content in a prepared reference —
+/// i.e. the length of its leading pre-silence/padding. Used to extend the
+/// noise-floor window through the reference's own pre-silence (Task 8).
+#[cfg(not(target_os = "ios"))]
+pub(super) fn active_reference_start(reference: &[f32]) -> usize {
+    active_span_bounds(reference).0
+}
+
+#[cfg(not(target_os = "ios"))]
+fn active_span_bounds(reference: &[f32]) -> (usize, usize) {
     let peak = reference
         .iter()
         .filter(|sample| sample.is_finite())
         .map(|sample| sample.abs())
         .fold(0.0_f32, f32::max);
     if peak <= f32::EPSILON {
-        return reference;
+        return (0, reference.len());
     }
     let threshold = peak * 1e-6;
     let start = reference
@@ -119,7 +133,7 @@ pub(super) fn active_reference_span(reference: &[f32]) -> &[f32] {
         .rposition(|sample| sample.abs() > threshold)
         .map(|index| index + 1)
         .unwrap_or(reference.len());
-    &reference[start..end.max(start)]
+    (start, end.max(start))
 }
 
 /// Normalize the ppm scale of a math-dsp `ClockDriftEstimate`.

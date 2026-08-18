@@ -57,6 +57,7 @@ fn test_loopback_tone() {
         Some(device.as_str()),
         None,
         None,
+        1, // num_sweeps
         None,
     );
     if let Err(e) = &result {
@@ -162,6 +163,7 @@ fn test_loopback_pink_noise() {
         Some(device.as_str()),
         None,
         None,
+        1, // num_sweeps
         None,
     );
     if let Err(e) = &result {

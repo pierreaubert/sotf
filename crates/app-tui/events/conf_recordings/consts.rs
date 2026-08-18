@@ -370,6 +370,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 in_dev,
                 &calibrations,
                 sweep_range,
+                1, // num_sweeps: repeat-count config wiring is Task 9
                 Some(cancel_flag.clone()),
             )
             .map(|mut results| {
@@ -391,6 +392,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 in_dev,
                 mic_calibration.as_deref(),
                 sweep_range,
+                1, // num_sweeps: repeat-count config wiring is Task 9
                 Some(cancel_flag),
             )
             .map(|result| vec![result])

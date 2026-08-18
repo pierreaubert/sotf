@@ -1374,6 +1374,7 @@ impl PlayerView {
                     in_dev,
                     mic_calibrations[0].as_deref(),
                     sweep_range,
+                    1, // num_sweeps: repeat-count config wiring is Task 9
                     Some(cancel_flag),
                 )
                 .map(|r| vec![r])
@@ -1391,6 +1392,7 @@ impl PlayerView {
                     in_dev,
                     &mic_calibrations,
                     sweep_range,
+                    1, // num_sweeps: repeat-count config wiring is Task 9
                     Some(cancel_flag),
                 )
             };

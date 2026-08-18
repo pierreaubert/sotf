@@ -70,6 +70,7 @@ pub(super) fn sweep_loopback(
         Some(device),
         None,
         Some((20.0, 20000.0)),
+        1, // num_sweeps
         None,
     )?;
 

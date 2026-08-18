@@ -730,17 +730,21 @@ fn test_record_and_analyze_signature() {
                 None,        // input_device_name
                 None,        // microphone_compensation_path
                 None,        // sweep_range
+                1_u16,       // num_sweeps (1 = legacy single-sweep capture)
                 None,        // cancel flag
             );
             // Task 7: the return value is a CaptureAnalysis wrapper carrying
             // the math-dsp analysis plus the per-take quality report, drift
-            // estimate, and dropout count (R6).
+            // estimate, and dropout count (R6). Task 8 adds the truthful
+            // accepted/rejected take counts for `num_sweeps` persistence.
             if let Ok(capture) = outcome {
                 let _ = &capture.result;
                 let _ = &capture.quality;
                 let _ = &capture.drift;
                 let _ = capture.drift_corrected;
                 let _ = capture.dropped_samples;
+                let _ = capture.accepted_count;
+                let _ = capture.rejected_count;
             }
         }
     };
@@ -834,11 +838,12 @@ fn test_lag_lock_gate_threshold() {
 fn test_build_capture_quality_clean_take_is_trustworthy() {
     let lag = lag_estimate_with_confidence(0.9);
     let clean = vec![0.0_f32; 4096];
-    let report = build_capture_quality(&clean, &lag, Vec::new());
+    let report = build_capture_quality(&clean, &lag, None, None, None, Vec::new());
     assert!(report.trustworthy, "issues: {:?}", report.issues);
     assert!(report.issues.is_empty());
-    // Coherence / SNR inputs are not wired yet (Task 8): reported missing,
-    // but not treated as failures under the default config.
+    // Single-take captures do not wire coherence / SNR inputs (repeat-sweep
+    // averaging, Task 8, does): reported missing, but not treated as
+    // failures under the default config.
     assert!(!report.quality_data_complete);
     assert!(report.missing_metrics.iter().any(|m| m == "coherence"));
     assert!(report.missing_metrics.iter().any(|m| m == "noise_floor_db"));
@@ -849,7 +854,14 @@ fn test_build_capture_quality_clean_take_is_trustworthy() {
 fn test_build_capture_quality_extra_issue_marks_untrustworthy() {
     let lag = lag_estimate_with_confidence(0.9);
     let clean = vec![0.0_f32; 4096];
-    let report = build_capture_quality(&clean, &lag, vec!["clock drift 150.0 ppm".to_string()]);
+    let report = build_capture_quality(
+        &clean,
+        &lag,
+        None,
+        None,
+        None,
+        vec!["clock drift 150.0 ppm".to_string()],
+    );
     assert!(!report.trustworthy);
     assert!(
         report
@@ -871,7 +883,7 @@ fn test_build_capture_quality_flags_clipping() {
     for sample in clipped.iter_mut().take(41) {
         *sample = 1.0;
     }
-    let report = build_capture_quality(&clipped, &lag, Vec::new());
+    let report = build_capture_quality(&clipped, &lag, None, None, None, Vec::new());
     assert!(!report.trustworthy);
     assert!(
         report.issues.iter().any(|issue| issue.contains("clipping")),
@@ -993,6 +1005,382 @@ fn test_clock_drift_estimate_and_correct_roundtrip() {
         "residual drift after correction should be small, got {:.2} ppm",
         residual.ppm
     );
+}
+
+// --- Task 8: repeat-sweep averaging, coherence, extended CSV ---
+
+/// Deterministic xorshift PRNG returning samples in [-1, 1).
+#[cfg(not(target_os = "ios"))]
+fn xorshift_noise(state: &mut u64) -> f32 {
+    *state ^= *state << 13;
+    *state ^= *state >> 7;
+    *state ^= *state << 17;
+    ((*state >> 40) as f32 / (1u64 << 24) as f32) * 2.0 - 1.0
+}
+
+#[cfg(not(target_os = "ios"))]
+fn convolve(signal: &[f32], ir: &[f32]) -> Vec<f32> {
+    let mut out = vec![0.0_f32; signal.len() + ir.len() - 1];
+    for (i, &x) in signal.iter().enumerate() {
+        if x == 0.0 {
+            continue;
+        }
+        for (j, &h) in ir.iter().enumerate() {
+            out[i + j] += x * h;
+        }
+    }
+    out
+}
+
+/// Simulate one noisy capture of `reference` played through a known room IR:
+/// 100 ms of pre-roll room noise, the convolved sweep with additive noise,
+/// then a digital-silence tail (keeps the lag estimator's max-candidate-lag
+/// edge case dormant — see the Task-7 ledger note on 1-sample overlaps).
+#[cfg(not(target_os = "ios"))]
+fn simulate_sweep_take(reference: &[f32], ir: &[f32], noise_amp: f32, seed: u64) -> Vec<f32> {
+    let mut state = seed | 1;
+    let mut take: Vec<f32> = (0..4800)
+        .map(|_| xorshift_noise(&mut state) * noise_amp)
+        .collect();
+    let convolved = convolve(reference, ir);
+    take.extend(
+        convolved
+            .iter()
+            .map(|&s| s + xorshift_noise(&mut state) * noise_amp),
+    );
+    take.extend(std::iter::repeat_n(0.0, 4800));
+    take
+}
+
+/// Reference for the synthetic-capture tests: the raw sweep plus 250 ms of
+/// trailing digital-silence padding, mirroring `prepare_signal`. The lag
+/// estimator's extreme-candidate-lag (few-sample) overlaps then have zero
+/// variance on the reference side and cannot outscore the true peak (see the
+/// Task-7 ledger note on the lag-estimator edge fragility).
+#[cfg(not(target_os = "ios"))]
+fn padded_sweep_reference(sample_rate: u32) -> Vec<f32> {
+    let mut reference = crate::signals::gen_log_sweep(20.0, 20_000.0, 0.5, sample_rate, 1.0);
+    reference.extend(std::iter::repeat_n(0.0, sample_rate as usize / 4));
+    reference
+}
+
+/// A plausible room IR: direct + two discrete reflections + a short
+/// exponentially decaying diffuse tail.
+#[cfg(not(target_os = "ios"))]
+fn test_room_ir() -> Vec<f32> {
+    let mut ir = vec![0.0_f32; 512];
+    ir[0] = 0.5;
+    ir[96] = 0.2; // 2 ms reflection
+    ir[240] = 0.1; // 5 ms reflection
+    let mut state = 0x1234_5678_9abc_def0_u64;
+    for (i, tap) in ir.iter_mut().enumerate().skip(24) {
+        *tap += xorshift_noise(&mut state) * 0.05 * (-(i as f32) / 150.0).exp();
+    }
+    ir
+}
+
+/// A grossly different "room" — the deconvolved response of a take captured
+/// through this IR is a global outlier against `test_room_ir` takes and must
+/// be median/MAD-rejected.
+#[cfg(not(target_os = "ios"))]
+fn grossly_different_ir() -> Vec<f32> {
+    let mut ir = vec![0.0_f32; 512];
+    ir[0] = 0.3;
+    ir[200] = -0.6;
+    ir[400] = 0.45;
+    ir
+}
+
+/// Synthetic integration test (no hardware): five noisy captures of a sweep
+/// through a known room IR, one grossly corrupted. The averaging must reject
+/// the outlier, yield high coherence from the four clean takes, write both
+/// new CSV columns (still parseable by math-dsp's positional reader),
+/// preserve the raw takes, and report truthful take counts.
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn test_repeat_sweep_averaging_rejects_outlier_and_extends_csv() {
+    let sample_rate = 48_000_u32;
+    let reference = padded_sweep_reference(sample_rate);
+    let ir = test_room_ir();
+    let takes: Vec<Vec<f32>> = (0..4_u64)
+        .map(|i| simulate_sweep_take(&reference, &ir, 0.003, 0xC1EA_0000 + i))
+        .chain(std::iter::once(simulate_sweep_take(
+            &reference,
+            &grossly_different_ir(),
+            0.003,
+            0xBAD0_0000,
+        )))
+        .collect();
+
+    let dir = tempdir().unwrap();
+    let wav = dir.path().join("L.wav");
+    let csv = dir.path().join("L.csv");
+    let capture = super::record::analyze_sweep_takes(
+        &wav,
+        &csv,
+        &takes,
+        &reference,
+        sample_rate,
+        sample_rate,
+        Some((20.0, 20_000.0)),
+        None,
+        0,
+        "test",
+    )
+    .expect("repeat-sweep averaging on synthetic takes");
+
+    // Outlier rejected; num_sweeps metadata is truthful.
+    assert_eq!(capture.accepted_count, 4);
+    assert_eq!(capture.rejected_count, 1);
+    // High coherence from the clean takes, wired into the quality report
+    // together with the noise-floor SNR pair.
+    let mean_coherence = capture
+        .quality
+        .mean_coherence
+        .expect("4 accepted takes yield coherence");
+    assert!(
+        mean_coherence > 0.8,
+        "mean coherence should be high for clean takes, got {mean_coherence}"
+    );
+    assert!(
+        capture.quality.median_snr_db.is_some(),
+        "noise floor wired into the quality report"
+    );
+    assert!(
+        capture.quality.trustworthy,
+        "clean averaged capture should be trustworthy, issues: {:?}",
+        capture.quality.issues
+    );
+
+    // Raw (pre-correction) takes preserved next to the averaged WAV.
+    assert!(wav.exists());
+    for i in 1..=5 {
+        assert!(
+            dir.path().join(format!("L.take{i}.wav")).exists(),
+            "raw take {i} WAV preserved"
+        );
+    }
+
+    // CSV: the new columns are appended after the original 8, correctly named.
+    let text = std::fs::read_to_string(&csv).unwrap();
+    let mut lines = text.lines();
+    assert_eq!(
+        lines.next().unwrap(),
+        "frequency_hz,spl_db,phase_deg,thd_percent,rt60_ms,c50_db,c80_db,group_delay_ms,coherence,noise_floor_db"
+    );
+    for line in lines {
+        let parts: Vec<&str> = line.split(',').collect();
+        assert_eq!(parts.len(), 10, "row has both appended columns");
+        let coherence: f32 = parts[8].parse().unwrap();
+        assert!(
+            (0.0..=1.0).contains(&coherence),
+            "coherence is gamma^2 in [0, 1], got {coherence}"
+        );
+        let noise: f32 = parts[9].parse().unwrap();
+        assert!((-400.0..0.0).contains(&noise), "noise floor dB: {noise}");
+    }
+
+    // math-dsp's reader parses columns >= 8 POSITIONALLY: the extended file
+    // must still round-trip with the SPL column intact.
+    let roundtrip =
+        crate::signal_analysis::read_analysis_csv(&csv).expect("read_analysis_csv on extended CSV");
+    assert_eq!(
+        roundtrip.frequencies.len(),
+        capture.result.frequencies.len()
+    );
+    for (read_back, written) in roundtrip.spl_db.iter().zip(capture.result.spl_db.iter()) {
+        assert!(
+            (read_back - written).abs() < 0.01,
+            "spl column round-trips: {read_back} vs {written}"
+        );
+    }
+}
+
+/// With only three takes, coherence cannot be computed (math-dsp needs at
+/// least 4 accepted takes): the CSV must OMIT the `coherence` column rather
+/// than fabricate an all-ones one, while the real noise floor is still
+/// written.
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn test_repeat_sweep_three_takes_omits_coherence_column() {
+    let sample_rate = 48_000_u32;
+    let reference = padded_sweep_reference(sample_rate);
+    let ir = test_room_ir();
+    let takes: Vec<Vec<f32>> = (0..3_u64)
+        .map(|i| simulate_sweep_take(&reference, &ir, 0.003, 0xFEED_0000 + i))
+        .collect();
+
+    let dir = tempdir().unwrap();
+    let wav = dir.path().join("R.wav");
+    let csv = dir.path().join("R.csv");
+    let capture = super::record::analyze_sweep_takes(
+        &wav,
+        &csv,
+        &takes,
+        &reference,
+        sample_rate,
+        sample_rate,
+        Some((20.0, 20_000.0)),
+        None,
+        0,
+        "test",
+    )
+    .expect("3-take repeat capture");
+
+    assert_eq!(capture.accepted_count + capture.rejected_count, 3);
+    assert!(
+        capture.quality.mean_coherence.is_none(),
+        "no coherence with < 4 accepted takes"
+    );
+    assert!(
+        capture
+            .quality
+            .missing_metrics
+            .iter()
+            .any(|m| m == "coherence"),
+        "coherence reported missing, not faked"
+    );
+
+    let header = std::fs::read_to_string(&csv).unwrap();
+    let header = header.lines().next().unwrap();
+    assert!(
+        !header.split(',').any(|col| col == "coherence"),
+        "coherence column omitted: {header}"
+    );
+    assert!(
+        header.split(',').any(|col| col == "noise_floor_db"),
+        "noise floor column present: {header}"
+    );
+    assert!(
+        header.ends_with(",noise_floor_db"),
+        "new columns stay appended last: {header}"
+    );
+    crate::signal_analysis::read_analysis_csv(&csv).expect("round-trip without coherence column");
+}
+
+/// A take that never locks (pure noise) aborts the whole set — REW abort
+/// semantics, no silent partial average — before any WAV is written.
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn test_repeat_sweep_aborts_when_a_take_loses_lock() {
+    let sample_rate = 48_000_u32;
+    let reference = padded_sweep_reference(sample_rate);
+    let ir = test_room_ir();
+    let clean = simulate_sweep_take(&reference, &ir, 0.003, 0xAAAA_0000);
+    let mut state = 0xDEAD_0000_u64;
+    let noise_take: Vec<f32> = (0..clean.len())
+        .map(|_| xorshift_noise(&mut state) * 0.1)
+        .collect();
+
+    let dir = tempdir().unwrap();
+    let wav = dir.path().join("L.wav");
+    let csv = dir.path().join("L.csv");
+    let err = super::record::analyze_sweep_takes(
+        &wav,
+        &csv,
+        &[clean, noise_take],
+        &reference,
+        sample_rate,
+        sample_rate,
+        Some((20.0, 20_000.0)),
+        None,
+        0,
+        "test",
+    )
+    .expect_err("a take with no signal lock must abort the set");
+    assert!(
+        err.contains("check mic connection"),
+        "error is actionable: {err}"
+    );
+    assert!(!wav.exists(), "aborted set leaves no averaged WAV");
+    assert!(
+        !dir.path().join("L.take1.wav").exists(),
+        "aborted set leaves no raw takes"
+    );
+}
+
+/// Single-take capture (`num_sweeps == 1`) keeps the Task-7 behavior: the
+/// corrected take is written directly, no raw-take siblings, quality report
+/// keeps the None-metrics — but the CSV still gains the real noise-floor
+/// column from the pre-silence window.
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn test_single_take_behavior_with_noise_floor_column() {
+    let sample_rate = 48_000_u32;
+    let reference = padded_sweep_reference(sample_rate);
+    let ir = test_room_ir();
+    let take = simulate_sweep_take(&reference, &ir, 0.003, 0x5EED_0000);
+
+    let dir = tempdir().unwrap();
+    let wav = dir.path().join("L.wav");
+    let csv = dir.path().join("L.csv");
+    let capture = super::record::analyze_sweep_takes(
+        &wav,
+        &csv,
+        &[take],
+        &reference,
+        sample_rate,
+        sample_rate,
+        Some((20.0, 20_000.0)),
+        None,
+        0,
+        "test",
+    )
+    .expect("single-take analysis");
+
+    assert_eq!(capture.accepted_count, 1);
+    assert_eq!(capture.rejected_count, 0);
+    assert!(capture.quality.mean_coherence.is_none());
+    assert!(
+        capture
+            .quality
+            .missing_metrics
+            .iter()
+            .any(|m| m == "coherence")
+    );
+    assert!(
+        !dir.path().join("L.take1.wav").exists(),
+        "single-take captures write no raw-take siblings"
+    );
+
+    let header = std::fs::read_to_string(&csv).unwrap();
+    let header = header.lines().next().unwrap().to_string();
+    assert!(
+        !header.split(',').any(|col| col == "coherence"),
+        "no fabricated coherence: {header}"
+    );
+    assert!(
+        header.ends_with(",noise_floor_db"),
+        "real noise floor column present: {header}"
+    );
+    crate::signal_analysis::read_analysis_csv(&csv).expect("single-take CSV round-trip");
+}
+
+/// Log-frequency interpolation onto the CSV grid: log-linear between
+/// bracketing points, endpoint clamping, DC-bracket fallback.
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn test_interpolate_log_frequency_grid() {
+    let source_freqs = [0.0_f32, 100.0, 1_000.0, 10_000.0];
+    let source_values = [9.0_f32, 0.0, 10.0, 20.0];
+    // Midpoint in log frequency between 100 Hz and 1 kHz (~316 Hz) must
+    // interpolate to the value midpoint (5), not the linear one.
+    let target = [316.227_77_f32];
+    let out = super::write::interpolate_log_frequency_grid(&source_freqs, &source_values, &target);
+    assert!((out[0] - 5.0).abs() < 0.05, "log midpoint: {}", out[0]);
+    // Endpoints clamp; exact grid points pass through.
+    let out = super::write::interpolate_log_frequency_grid(
+        &source_freqs,
+        &source_values,
+        &[50.0, 100.0, 10_000.0, 20_000.0],
+    );
+    assert_eq!(out, [0.0, 0.0, 20.0, 20.0]);
+    // A target bracketed by the DC bin falls back to the upper sample.
+    let out = super::write::interpolate_log_frequency_grid(&source_freqs, &source_values, &[50.0]);
+    assert_eq!(out, [0.0]);
+    // Empty source yields zeros.
+    let out = super::write::interpolate_log_frequency_grid(&[], &[], &[100.0, 200.0]);
+    assert_eq!(out, [0.0, 0.0]);
 }
 
 /// Diagnostic test: reads the real probe WAV from a recording session,
@@ -1956,6 +2344,7 @@ fn record_and_analyze_honors_pre_set_cancel_flag() {
         None,
         None,
         None,
+        1, // num_sweeps
         Some(flag),
     )
     .unwrap_err();
@@ -1986,6 +2375,7 @@ fn record_and_analyze_multi_honors_pre_set_cancel_flag() {
         None,
         &mic_calibrations,
         None,
+        1, // num_sweeps
         Some(flag),
     )
     .unwrap_err();
@@ -2005,7 +2395,10 @@ fn actionable_capture_error_maps_permission_denial() {
         "macOS permission advice: {msg}"
     );
     #[cfg(target_os = "linux")]
-    assert!(msg.contains("'audio' group"), "Linux permission advice: {msg}");
+    assert!(
+        msg.contains("'audio' group"),
+        "Linux permission advice: {msg}"
+    );
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     assert!(msg.contains("privacy"), "generic permission advice: {msg}");
     // Original error text is kept for debugging.
@@ -2033,8 +2426,7 @@ fn actionable_capture_error_maps_missing_device() {
     assert!(msg.contains("--list-devices"), "{msg}");
     assert!(msg.contains("not found"), "{msg}");
 
-    let no_default =
-        actionable_capture_error("[test]", &"No default input device available");
+    let no_default = actionable_capture_error("[test]", &"No default input device available");
     assert!(no_default.contains("--list-devices"), "{no_default}");
 }
 
