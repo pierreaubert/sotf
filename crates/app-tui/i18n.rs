@@ -376,8 +376,8 @@ const FRENCH_UI: &[(&str, &str)] = &[
     ),
     (" Tab=next step", " Tab=étape suivante"),
     (
-        " Up/Down=select  Enter=record  A=auto-record all  Tab=evaluate",
-        " Haut/Bas=sélectionner  Entrée=enregistrer  A=tout automatiser  Tab=évaluer",
+        " Up/Down=select  Enter=record  a=accept warned take  Tab=evaluate",
+        " Haut/Bas=sélectionner  Entrée=enregistrer  a=accepter la prise  Tab=évaluer",
     ),
     (
         " Up/Down=select channel  Tab=save  BackTab=capture",
@@ -530,8 +530,8 @@ const GERMAN_UI: &[(&str, &str)] = &[
     (" Recordings saved successfully!", " Aufnahmen gespeichert!"),
     (" Tab=next step", " Tab=nächster Schritt"),
     (
-        " Up/Down=select  Enter=record  A=auto-record all  Tab=evaluate",
-        " Hoch/Runter=auswählen  Eingabe=aufnehmen  A=alle automatisch  Tab=auswerten",
+        " Up/Down=select  Enter=record  a=accept warned take  Tab=evaluate",
+        " Hoch/Runter=auswählen  Eingabe=aufnehmen  a=Take übernehmen  Tab=auswerten",
     ),
     (
         " Up/Down=select channel  Tab=save  BackTab=capture",
@@ -687,8 +687,8 @@ const SPANISH_UI: &[(&str, &str)] = &[
     ),
     (" Tab=next step", " Tab=paso siguiente"),
     (
-        " Up/Down=select  Enter=record  A=auto-record all  Tab=evaluate",
-        " Arriba/Abajo=seleccionar  Intro=grabar  A=grabar todo  Tab=evaluar",
+        " Up/Down=select  Enter=record  a=accept warned take  Tab=evaluate",
+        " Arriba/Abajo=seleccionar  Intro=grabar  a=aceptar toma  Tab=evaluar",
     ),
     (
         " Up/Down=select channel  Tab=save  BackTab=capture",
@@ -3166,6 +3166,24 @@ const DYNAMIC_TRANSLATIONS: &[DynamicTranslation] = &[
         "Entrada de bucle",
     ),
     dynamic_translation(
+        "── Measurement Quality ──",
+        "── Qualité de mesure ──",
+        "── Messqualität ──",
+        "── Calidad de medición ──",
+    ),
+    dynamic_translation(
+        "Sweeps per channel",
+        "Balayages par canal",
+        "Sweeps pro Kanal",
+        "Barridos por canal",
+    ),
+    dynamic_translation(
+        "Measurement positions",
+        "Positions de mesure",
+        "Messpositionen",
+        "Posiciones de medición",
+    ),
+    dynamic_translation(
         "Mic Cal Ch{}",
         "Cal. micro canal {}",
         "Mikro-Kal. Kanal {}",
@@ -4438,6 +4456,72 @@ const DYNAMIC_TRANSLATIONS: &[DynamicTranslation] = &[
         "{} canaux auriculaires CTC enregistrés",
         "{} CTC-Ohrkanäle aufgenommen",
         "{} canales CTC de oído grabados",
+    ),
+    dynamic_translation(
+        "Channel {} recording complete — {}",
+        "Enregistrement du canal {} terminé — {}",
+        "Aufnahme von Kanal {} abgeschlossen — {}",
+        "Grabación del canal {} completada — {}",
+    ),
+    dynamic_translation(
+        "Recorded {} CTC ear channels — {}",
+        "{} canaux auriculaires CTC enregistrés — {}",
+        "{} CTC-Ohrkanäle aufgenommen — {}",
+        "{} canales CTC de oído grabados — {}",
+    ),
+    dynamic_translation(
+        "{} needs review: {} (a=accept anyway, Enter=re-record)",
+        "{} à vérifier : {} (a=accepter quand même, Entrée=réenregistrer)",
+        "{} muss überprüft werden: {} (a=trotzdem übernehmen, Eingabe=neu aufnehmen)",
+        "{} necesita revisión: {} (a=aceptar igualmente, Enter=regrabar)",
+    ),
+    dynamic_translation(
+        "{} needs review: {} (a=accept anyway, Enter=re-record) — {}",
+        "{} à vérifier : {} (a=accepter quand même, Entrée=réenregistrer) — {}",
+        "{} muss überprüft werden: {} (a=trotzdem übernehmen, Eingabe=neu aufnehmen) — {}",
+        "{} necesita revisión: {} (a=aceptar igualmente, Enter=regrabar) — {}",
+    ),
+    dynamic_translation(
+        "Accepted {} take(s) despite quality warnings",
+        "{} prise(s) acceptée(s) malgré les avertissements de qualité",
+        "{} Take(s) trotz Qualitätswarnungen übernommen",
+        "{} toma(s) aceptada(s) a pesar de las advertencias de calidad",
+    ),
+    dynamic_translation(
+        "Recording cancelled",
+        "Enregistrement annulé",
+        "Aufnahme abgebrochen",
+        "Grabación cancelada",
+    ),
+    dynamic_translation(
+        "Very low measured level on {} — check mic connection and input gain",
+        "Niveau mesuré très faible sur {} — vérifiez la connexion du micro et le gain d’entrée",
+        "Sehr niedriger Messpegel auf {} — Mikrofonanschluss und Eingangsverstärkung prüfen",
+        "Nivel medido muy bajo en {} — compruebe la conexión del micrófono y la ganancia de entrada",
+    ),
+    dynamic_translation(
+        "{} samples dropped during capture — USB/driver underrun; results may be unreliable, consider re-measuring",
+        "{} échantillons perdus pendant la capture — sous-régime USB/pilote ; résultats potentiellement peu fiables, envisagez de re-mesurer",
+        "{} Samples während der Aufnahme verloren — USB-/Treiber-Underrun; Ergebnisse evtl. unzuverlässig, Messung wiederholen",
+        "{} muestras perdidas durante la captura — underrun de USB/controlador; los resultados pueden no ser fiables, considere repetir la medición",
+    ),
+    dynamic_translation(
+        "2 sweeps cannot reject outliers — using 3",
+        "2 balayages ne permettent pas d’exclure les valeurs aberrantes — utilisation de 3",
+        "2 Sweeps können keine Ausreißer verwerfen — verwende 3",
+        "2 barridos no pueden rechazar valores atípicos — usando 3",
+    ),
+    dynamic_translation(
+        "Position 1 of {}: place the mic(s) at the main listening position first",
+        "Position 1 sur {} : placez d’abord le(s) micro(s) à la position d’écoute principale",
+        "Position 1 von {}: Mikrofon(e) zuerst an der Haupthörposition platzieren",
+        "Posición 1 de {}: coloque primero el/los micrófono(s) en la posición de escucha principal",
+    ),
+    dynamic_translation(
+        "Move the mic(s) to position {} of {} — stay within ~60 cm of the main listening position",
+        "Déplacez le(s) micro(s) à la position {} sur {} — restez à ~60 cm de la position d’écoute principale",
+        "Mikrofon(e) an Position {} von {} bewegen — max. ~60 cm von der Haupthörposition entfernt bleiben",
+        "Mueva el/los micrófono(s) a la posición {} de {} — manténgase a ~60 cm de la posición de escucha principal",
     ),
     dynamic_translation(
         "Recording failed: {}",

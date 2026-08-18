@@ -885,6 +885,36 @@ const RUNTIME_MESSAGE_PATTERNS: &[RuntimeMessagePattern] = &[
         "Grabación de {} completada"
     ),
     message!(
+        "{} recording complete — {}",
+        "Enregistrement de {} terminé — {}",
+        "Aufnahme von {} abgeschlossen — {}",
+        "Grabación de {} completada — {}"
+    ),
+    message!(
+        "{} needs review: {} — accept anyway or re-record",
+        "{} à vérifier : {} — accepter quand même ou réenregistrer",
+        "{} muss überprüft werden: {} — trotzdem übernehmen oder neu aufnehmen",
+        "{} necesita revisión: {} — aceptar igualmente o regrabar"
+    ),
+    message!(
+        "{} needs review: {} — accept anyway or re-record — {}",
+        "{} à vérifier : {} — accepter quand même ou réenregistrer — {}",
+        "{} muss überprüft werden: {} — trotzdem übernehmen oder neu aufnehmen — {}",
+        "{} necesita revisión: {} — aceptar igualmente o regrabar — {}"
+    ),
+    message!(
+        "{} samples dropped during capture — USB/driver underrun; results may be unreliable, consider re-measuring",
+        "{} échantillons perdus pendant la capture — sous-régime USB/pilote ; résultats potentiellement peu fiables, envisagez de re-mesurer",
+        "{} Samples während der Aufnahme verloren — USB-/Treiber-Underrun; Ergebnisse evtl. unzuverlässig, Messung wiederholen",
+        "{} muestras perdidas durante la captura — underrun de USB/controlador; los resultados pueden no ser fiables, considere repetir la medición"
+    ),
+    message!(
+        "Recording cancelled",
+        "Enregistrement annulé",
+        "Aufnahme abgebrochen",
+        "Grabación cancelada"
+    ),
+    message!(
         "Export failed: {}",
         "Échec de l’export : {}",
         "Export fehlgeschlagen: {}",
@@ -1124,6 +1154,9 @@ const RUNTIME_MESSAGE_PATTERNS: &[RuntimeMessagePattern] = &[
         "Code kopiert.",
         "Código copiado."
     ),
+    // Language-neutral joiner for composed status lines (message + warning
+    // suffix). Must stay LAST: the specific patterns above win first.
+    message!("{} — {}", "{} — {}", "{} — {}", "{} — {}"),
 ];
 
 fn translate_pattern(source: &str, target: &str, message: &str) -> Option<String> {

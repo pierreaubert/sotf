@@ -1017,6 +1017,42 @@ fn test_recording_state_is_recording() {
 }
 
 #[test]
+fn test_recording_state_review_needed_accept_flow() {
+    // Task 9: untrustworthy takes park as ReviewNeeded; the GPUI "Accept
+    // anyway" button routes through `accept_review_needed_for`, and the
+    // per-session save metadata uses only accepted (Done) takes.
+    let mut state = RecordingState::default();
+    assert_eq!(state.num_sweeps, 4, "default sweep repeat count");
+
+    state.playback_config.channel_mappings = vec![
+        ChannelMapping::single(1, "L"),
+        ChannelMapping::single(2, "R"),
+    ];
+    state.recording_config.num_positions = 2;
+    state.init_channel_recordings();
+
+    state.channel_recordings[0].state = ChannelRecordingState::Done;
+    state.channel_recordings[0].result = Some(workflow_recording_result());
+    state.channel_recordings[1].state = ChannelRecordingState::ReviewNeeded;
+
+    // Position 0 is not complete while a take is parked for review.
+    assert!(!state.position_complete(0));
+    assert_eq!(state.review_needed_indices(), vec![1]);
+
+    // Accept only the parked take of speaker R (channel_index 1) at pos 0.
+    let accepted = state.accept_review_needed_for(1, 0);
+    assert_eq!(accepted, 1);
+    assert_eq!(
+        state.channel_recordings[1].state,
+        ChannelRecordingState::Done
+    );
+    assert!(state.position_complete(0));
+
+    // Nothing left to accept.
+    assert_eq!(state.accept_all_review_needed(), 0);
+}
+
+#[test]
 fn test_layout_mode_variants() {
     assert_ne!(LayoutMode::Compact, LayoutMode::Expanded);
 }
@@ -1069,6 +1105,7 @@ fn workflow_recording_result() -> RecordingResult {
         clarity_c50_db: None,
         clarity_c80_db: None,
         spectrogram_db: None,
+        quality: None,
     }
 }
 

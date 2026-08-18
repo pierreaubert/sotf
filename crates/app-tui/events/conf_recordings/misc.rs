@@ -1,6 +1,8 @@
 use crate::app::App;
 use crate::app::RecordingField;
+use sotf_audio_player::recording_helpers::clamp_num_sweeps;
 use sotf_audio_player::recording_types::CtcMatrixExportStrategy;
+use sotf_audio_player::signal_recorder::MIN_REPEAT_SWEEPS;
 
 /// Wall-clock millis since the Unix epoch — used by the Probe step's
 /// `started_at_ms` so the status banner can render an elapsed-time
@@ -113,6 +115,8 @@ pub(crate) fn is_recording_field_numerical_kind(field: &RecordingField) -> bool 
             | SweepEnd
             | NumRecordingChannels
             | CtcLoopbackInput
+            | NumSweeps
+            | NumPositions
             | ChannelInput(_)
     )
 }
@@ -169,6 +173,25 @@ pub(super) fn set_recording_field_from_string(app: &mut App) {
                     .model
                     .recording_config
                     .ctc_loopback_input_channel = Some(v.saturating_sub(1).min(127));
+            }
+        }
+        NumSweeps => {
+            if let Ok(v) = buf.parse::<u16>() {
+                if v == 2 {
+                    // 2 sweeps cannot reject outliers; explain instead of
+                    // silently changing the user's value.
+                    app.recording.model.num_sweeps = MIN_REPEAT_SWEEPS;
+                    app.recording.model.status_message =
+                        "2 sweeps cannot reject outliers — using 3".to_string();
+                } else {
+                    app.recording.model.num_sweeps = clamp_num_sweeps(v);
+                }
+            }
+        }
+        NumPositions => {
+            if let Ok(v) = buf.parse::<usize>() {
+                app.recording.model.recording_config.num_positions = v.clamp(1, 8);
+                init_recording_channels(app);
             }
         }
         ChannelInput(i) => {

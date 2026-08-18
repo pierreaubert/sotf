@@ -115,6 +115,11 @@ pub struct RecordingScreenModel {
     pub pre_silence_s: f32,
     /// `None` = derive from RT60 estimate; `Some(x)` = user-specified.
     pub post_silence_s: Option<f32>,
+    /// Sweeps captured per channel (Task 8/9). UI range: 1 (single sweep) or
+    /// 3–8 — 2 is never offered because two takes cannot reject outliers
+    /// (the engine clamps it up to 3 anyway). Default
+    /// `sotf_audio::signal_recorder::DEFAULT_NUM_SWEEPS` (4).
+    pub num_sweeps: u16,
 
     // === Noise Floor Warning ===
     pub noise_floor_warning: Option<String>,
@@ -177,6 +182,7 @@ impl Default for RecordingScreenModel {
             bass_octave_duration_s: 3.0,
             pre_silence_s: 2.0,
             post_silence_s: None,
+            num_sweeps: sotf_audio::signal_recorder::DEFAULT_NUM_SWEEPS,
             noise_floor_warning: None,
             move_position_modal_open: false,
             pending_next_position: None,
@@ -313,6 +319,59 @@ impl RecordingScreenModel {
         self.channel_recordings
             .iter()
             .any(|r| r.state == ChannelRecordingState::Recording)
+    }
+
+    /// Indices of channels parked in `ReviewNeeded` (capture succeeded but
+    /// the per-take quality verdict was not trustworthy — Task 9).
+    pub fn review_needed_indices(&self) -> Vec<usize> {
+        self.channel_recordings
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.state == ChannelRecordingState::ReviewNeeded)
+            .map(|(idx, _)| idx)
+            .collect()
+    }
+
+    /// Accept every take parked in `ReviewNeeded`, marking them `Done` so
+    /// the save paths pick them up. The take keeps its
+    /// `RecordingResult.quality` (`trustworthy == false`), which is how the
+    /// UIs distinguish accepted-with-warning from clean `Done` without a new
+    /// state. Returns the number of takes accepted.
+    pub fn accept_all_review_needed(&mut self) -> usize {
+        let mut accepted = 0;
+        for r in &mut self.channel_recordings {
+            if r.state == ChannelRecordingState::ReviewNeeded {
+                r.state = ChannelRecordingState::Done;
+                accepted += 1;
+            }
+        }
+        accepted
+    }
+
+    /// Accept the parked takes for one (speaker, position) pair — the GPUI
+    /// per-row "accept anyway" affordance. Returns the number accepted.
+    pub fn accept_review_needed_for(
+        &mut self,
+        channel_index: usize,
+        mic_position_index: usize,
+    ) -> usize {
+        let mut accepted = 0;
+        for r in &mut self.channel_recordings {
+            if r.state == ChannelRecordingState::ReviewNeeded
+                && r.channel_index == channel_index
+                && r.mic_position_index == mic_position_index
+            {
+                r.state = ChannelRecordingState::Done;
+                accepted += 1;
+            }
+        }
+        accepted
+    }
+
+    /// Session quality summary: one line per recorded channel with score +
+    /// warnings (see [`crate::recording_helpers::session_quality_summary`]).
+    pub fn session_quality_summary(&self) -> Vec<String> {
+        crate::recording_helpers::session_quality_summary(&self.channel_recordings)
     }
 
     /// Request cancellation of the in-flight sweep capture. The engine
@@ -507,7 +566,14 @@ impl RecordingScreenModel {
             },
             // Remaining GD-Opt v2 fields (later phases): leave as None.
             sweep_level_db_spl: None,
-            num_sweeps: None,
+            // Truthful take count (Task 8/9): the minimum engine-reported
+            // accepted-take count across completed channels, NOT the
+            // requested `self.num_sweeps` — a rejected outlier take must not
+            // be covered up. None when no channel carries quality data
+            // (legacy / loaded sessions).
+            num_sweeps: crate::recording_helpers::accepted_num_sweeps_for_save(
+                &self.channel_recordings,
+            ),
             coherence_threshold: None,
             bass_probe_freq_hz: Some(self.bass_anchor_capture.bass_freq_hz),
             bass_probe_duration_s: Some(self.bass_anchor_capture.bass_duration_s),
@@ -846,5 +912,136 @@ mod tests {
         model.sync_recording_channel_vecs();
         assert_eq!(model.mic_calibration_paths.len(), 1);
         assert_eq!(model.recording_config.channel_mappings.len(), 1);
+    }
+
+    // === Task 9: num_sweeps plumbing + quality-gate accept flow ===
+
+    use crate::recording_types::{RecordingResult, TakeQualitySummary};
+
+    fn done_channel_with_quality(
+        channel_index: usize,
+        name: &str,
+        state: ChannelRecordingState,
+        accepted: usize,
+    ) -> ChannelRecording {
+        let mut ch = ChannelRecording::new(channel_index, name.to_string());
+        ch.state = state;
+        ch.result = Some(RecordingResult {
+            channel: channel_index,
+            wav_path: None,
+            csv_path: None,
+            frequencies: vec![],
+            magnitude_db: vec![],
+            phase_deg: vec![],
+            impulse_response: None,
+            impulse_time_ms: None,
+            thd_percent: None,
+            harmonic_distortion_db: None,
+            excess_group_delay_ms: None,
+            rt60_ms: None,
+            clarity_c50_db: None,
+            clarity_c80_db: None,
+            spectrogram_db: None,
+            quality: Some(TakeQualitySummary {
+                trustworthy: true,
+                score: 0.9,
+                issues: vec![],
+                mean_coherence: None,
+                median_snr_db: None,
+                clip_fraction: 0.0,
+                drift_ppm: None,
+                drift_corrected: false,
+                dropped_samples: 0,
+                accepted_count: accepted,
+                rejected_count: 0,
+            }),
+        });
+        ch
+    }
+
+    #[test]
+    fn num_sweeps_defaults_to_engine_default() {
+        let model = RecordingScreenModel::default();
+        assert_eq!(
+            model.num_sweeps,
+            sotf_audio::signal_recorder::DEFAULT_NUM_SWEEPS
+        );
+    }
+
+    #[test]
+    fn build_recording_configuration_persists_truthful_num_sweeps() {
+        // Without capture quality data the field stays unknown (None) — the
+        // requested count is never persisted as if it were measured.
+        let mut model = RecordingScreenModel::default();
+        model.num_sweeps = 5;
+        assert_eq!(model.build_recording_configuration(None).num_sweeps, None);
+
+        // With captures, the persisted value is the minimum accepted-take
+        // count across Done channels, not the requested 5.
+        model.channel_recordings = vec![
+            done_channel_with_quality(0, "FL", ChannelRecordingState::Done, 4),
+            done_channel_with_quality(1, "FR", ChannelRecordingState::Done, 3),
+            // A parked (not yet accepted) take must not count.
+            done_channel_with_quality(2, "C", ChannelRecordingState::ReviewNeeded, 1),
+        ];
+        assert_eq!(
+            model.build_recording_configuration(None).num_sweeps,
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn accept_all_review_needed_marks_done_and_counts() {
+        let mut model = RecordingScreenModel::default();
+        model.channel_recordings = vec![
+            done_channel_with_quality(0, "FL", ChannelRecordingState::ReviewNeeded, 4),
+            done_channel_with_quality(1, "FR", ChannelRecordingState::Done, 4),
+            done_channel_with_quality(2, "C", ChannelRecordingState::Empty, 4),
+        ];
+        assert_eq!(model.review_needed_indices(), vec![0]);
+        assert_eq!(model.accept_all_review_needed(), 1);
+        assert_eq!(
+            model.channel_recordings[0].state,
+            ChannelRecordingState::Done
+        );
+        // The accepted take keeps its quality summary (OK* distinction).
+        assert!(model.channel_recordings[0]
+            .result
+            .as_ref()
+            .and_then(|r| r.quality.as_ref())
+            .is_some());
+        assert!(model.review_needed_indices().is_empty());
+    }
+
+    #[test]
+    fn accept_review_needed_for_scopes_to_speaker_and_position() {
+        let mut model = RecordingScreenModel::default();
+        let mut pos1 = done_channel_with_quality(0, "FL (Pos 2)", ChannelRecordingState::ReviewNeeded, 4);
+        pos1.mic_position_index = 1;
+        model.channel_recordings = vec![
+            done_channel_with_quality(0, "FL (Pos 1)", ChannelRecordingState::ReviewNeeded, 4),
+            pos1,
+            done_channel_with_quality(1, "FR (Pos 1)", ChannelRecordingState::ReviewNeeded, 4),
+        ];
+        assert_eq!(model.accept_review_needed_for(0, 1), 1);
+        assert_eq!(
+            model.channel_recordings[1].state,
+            ChannelRecordingState::Done
+        );
+        assert_eq!(model.review_needed_indices(), vec![0, 2]);
+    }
+
+    #[test]
+    fn session_quality_summary_delegates_to_helper() {
+        let mut model = RecordingScreenModel::default();
+        model.channel_recordings = vec![done_channel_with_quality(
+            0,
+            "FL",
+            ChannelRecordingState::Done,
+            4,
+        )];
+        let lines = model.session_quality_summary();
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].starts_with("FL: OK"), "{}", lines[0]);
     }
 }

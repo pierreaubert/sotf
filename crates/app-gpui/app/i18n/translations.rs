@@ -1479,6 +1479,12 @@ pub struct RecordingWorkflowTranslations {
     pub go_back_to_capture: &'static str,
     pub all_channels: &'static str,
     pub run_bass_anchor: &'static str,
+    pub needs_review: &'static str,
+    pub accept_anyway: &'static str,
+    pub session_quality_title: &'static str,
+    pub sweeps_per_channel: &'static str,
+    pub sweeps_per_channel_hint: &'static str,
+    pub positions_mlp_hint: &'static str,
 }
 
 impl RecordingWorkflowTranslations {
@@ -1509,6 +1515,12 @@ impl RecordingWorkflowTranslations {
                 go_back_to_capture: "Go back to the Capture step to record frequency responses",
                 all_channels: "All Channels",
                 run_bass_anchor: "Run Bass Anchor",
+                needs_review: "Needs review",
+                accept_anyway: "Accept anyway",
+                session_quality_title: "Take quality",
+                sweeps_per_channel: "Sweeps per channel",
+                sweeps_per_channel_hint: "Repeats per channel for outlier rejection. 2 is not offered: at least 3 sweeps are needed to reject outliers.",
+                positions_mlp_hint: "The first position should be the main listening position.",
             },
             Language::French => Self {
                 language,
@@ -1535,6 +1547,12 @@ impl RecordingWorkflowTranslations {
                 go_back_to_capture: "Revenez à l’étape Capture pour enregistrer les réponses en fréquence",
                 all_channels: "Tous les canaux",
                 run_bass_anchor: "Lancer l’ancrage des graves",
+                needs_review: "À vérifier",
+                accept_anyway: "Accepter quand même",
+                session_quality_title: "Qualité des prises",
+                sweeps_per_channel: "Balayages par canal",
+                sweeps_per_channel_hint: "Répétitions par canal pour exclure les valeurs aberrantes. 2 n’est pas proposé : il faut au moins 3 balayages.",
+                positions_mlp_hint: "La première position doit être la position d’écoute principale.",
             },
             Language::German => Self {
                 language,
@@ -1561,6 +1579,12 @@ impl RecordingWorkflowTranslations {
                 go_back_to_capture: "Gehen Sie zum Aufnahmeschritt zurück, um Frequenzgänge aufzunehmen",
                 all_channels: "Alle Kanäle",
                 run_bass_anchor: "Bassanker starten",
+                needs_review: "Überprüfung nötig",
+                accept_anyway: "Trotzdem übernehmen",
+                session_quality_title: "Take-Qualität",
+                sweeps_per_channel: "Sweeps pro Kanal",
+                sweeps_per_channel_hint: "Wiederholungen pro Kanal zur Ausreißerverwerfung. 2 wird nicht angeboten: mindestens 3 Sweeps sind nötig.",
+                positions_mlp_hint: "Die erste Position sollte die Haupthörposition sein.",
             },
             Language::Spanish => Self {
                 language,
@@ -1587,6 +1611,12 @@ impl RecordingWorkflowTranslations {
                 go_back_to_capture: "Vuelva al paso Captura para grabar respuestas de frecuencia",
                 all_channels: "Todos los canales",
                 run_bass_anchor: "Ejecutar anclaje de graves",
+                needs_review: "Necesita revisión",
+                accept_anyway: "Aceptar igualmente",
+                session_quality_title: "Calidad de las tomas",
+                sweeps_per_channel: "Barridos por canal",
+                sweeps_per_channel_hint: "Repeticiones por canal para rechazar valores atípicos. 2 no se ofrece: se necesitan al menos 3 barridos.",
+                positions_mlp_hint: "La primera posición debe ser la posición de escucha principal.",
             },
         }
     }
@@ -1597,6 +1627,42 @@ impl RecordingWorkflowTranslations {
             Language::French => format!("{seconds} secondes"),
             Language::German => format!("{seconds} Sekunden"),
             Language::Spanish => format!("{seconds} segundos"),
+        }
+    }
+
+    /// Status line shown after the user accepts parked ReviewNeeded takes.
+    pub fn accepted_takes(self, accepted: usize) -> String {
+        match self.language {
+            Language::English => {
+                format!("Accepted {accepted} take(s) despite quality warnings")
+            }
+            Language::French => {
+                format!("{accepted} prise(s) acceptée(s) malgré les avertissements de qualité")
+            }
+            Language::German => {
+                format!("{accepted} Take(s) trotz Qualitätswarnungen übernommen")
+            }
+            Language::Spanish => {
+                format!("{accepted} toma(s) aceptada(s) a pesar de las advertencias de calidad")
+            }
+        }
+    }
+
+    /// Move-position modal body: where the mics go and the ~60 cm rule.
+    pub fn move_position_body(self, next_seat: usize) -> String {
+        match self.language {
+            Language::English => format!(
+                "Reposition every configured microphone to seat {next_seat}, then click Continue. Stay within ~60 cm of the main listening position. Click Cancel to stop the session and save what you have so far."
+            ),
+            Language::French => format!(
+                "Placez chaque microphone configuré au siège {next_seat}, puis cliquez sur Continuer. Restez à ~60 cm de la position d’écoute principale. Cliquez sur Annuler pour arrêter la session et sauvegarder l’existant."
+            ),
+            Language::German => format!(
+                "Stellen Sie jedes konfigurierte Mikrofon an Sitzplatz {next_seat} und klicken Sie auf Weiter. Bleiben Sie innerhalb von ~60 cm um die Haupthörposition. Abbrechen beendet die Sitzung und speichert den bisherigen Stand."
+            ),
+            Language::Spanish => format!(
+                "Coloque cada micrófono configurado en el asiento {next_seat} y pulse Continuar. Manténgase a ~60 cm de la posición de escucha principal. Pulse Cancelar para detener la sesión y guardar lo realizado."
+            ),
         }
     }
 }

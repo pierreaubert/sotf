@@ -9,6 +9,7 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ScaleType, line};
+use sotf_audio_player::recording_helpers::clamp_num_sweeps;
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, Badge, BadgeVariant, Button, ButtonSize,
     ButtonVariant, HStack, Heading, Input, InputSize, NumberInput, NumberInputSize, Select,
@@ -165,6 +166,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
         let text = RecordingTranslations::for_language(state.app.ui_state.language);
+        let language = state.app.ui_state.language;
         let (
             theme,
             num_channels,
@@ -319,37 +321,53 @@ impl PlayerView {
         // Number of measurement positions. Each position runs a full
         // speaker × mic sweep; between positions a modal asks the user
         // to move the microphones to the next seat.
-        let positions_row = HStack::new()
-            .spacing(StackSpacing::Sm)
-            .align(StackAlign::Center)
+        let positions_row = VStack::new()
+            .spacing(StackSpacing::Xs)
             .child(
-                Text::new(text.positions)
-                    .size(TextSize::Xs)
-                    .color(theme.text_secondary),
-            )
-            .child({
-                let view = view.clone();
-                NumberInput::new("recording_num_positions")
-                    .value(num_positions as f64)
-                    .min(1.0)
-                    .max(8.0)
-                    .step(1.0)
-                    .size(NumberInputSize::Xs)
-                    .on_change({
+                HStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .align(StackAlign::Center)
+                    .child(
+                        Text::new(text.positions)
+                            .size(TextSize::Xs)
+                            .color(theme.text_secondary),
+                    )
+                    .child({
                         let view = view.clone();
-                        move |value, _window, cx| {
-                            let n = (value as usize).max(1);
-                            let _ = view.update(cx, |this, cx| {
-                                this.state.update(cx, |state, _| {
-                                    let rs = &mut state.app.measurement_state.recording_state;
-                                    rs.recording_config.num_positions = n;
-                                    rs.init_channel_recordings();
-                                    rs.sync_channel_speakers_length();
-                                });
-                                cx.notify();
-                            });
-                        }
-                    })
+                        NumberInput::new("recording_num_positions")
+                            .value(num_positions as f64)
+                            .min(1.0)
+                            .max(8.0)
+                            .step(1.0)
+                            .size(NumberInputSize::Xs)
+                            .on_change({
+                                let view = view.clone();
+                                move |value, _window, cx| {
+                                    let n = (value as usize).max(1);
+                                    let _ = view.update(cx, |this, cx| {
+                                        this.state.update(cx, |state, _| {
+                                            let rs =
+                                                &mut state.app.measurement_state.recording_state;
+                                            rs.recording_config.num_positions = n;
+                                            rs.init_channel_recordings();
+                                            rs.sync_channel_speakers_length();
+                                        });
+                                        cx.notify();
+                                    });
+                                }
+                            })
+                    }),
+            )
+            .when(num_positions > 1, |stack| {
+                // Anchoring guidance: delays/levels are computed relative to
+                // position 1, so it must be the main listening position.
+                stack.child(
+                    Text::caption(
+                        crate::app::i18n::RecordingWorkflowTranslations::for_language(language)
+                            .positions_mlp_hint,
+                    )
+                    .color(theme.text_muted),
+                )
             });
 
         // Render device dropdown first, converting to AnyElement to release borrow
@@ -640,6 +658,7 @@ impl PlayerView {
         let bass_dur = rec_state.bass_octave_duration_s;
         let pre_s = rec_state.pre_silence_s;
         let post_s_opt = rec_state.post_silence_s;
+        let num_sweeps = rec_state.num_sweeps;
         let view = cx.weak_entity();
 
         // Bass precision presets: (label, value in s/octave)
@@ -776,10 +795,55 @@ impl PlayerView {
             (total_per_ch * channels / 60.0).round() as u32
         };
 
+        // Sweeps-per-channel numeric input. 2 is never offered: outlier
+        // rejection needs at least 3 takes, so the setter routes through
+        // `clamp_num_sweeps` (1 or 3..=8).
+        let sweeps_row = {
+            let view = view.clone();
+            VStack::new()
+                .spacing(StackSpacing::Xs)
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .align(StackAlign::Center)
+                        .child(
+                            Text::new(recording_text.sweeps_per_channel)
+                                .size(TextSize::Xs)
+                                .color(theme.text_secondary),
+                        )
+                        .child(
+                            NumberInput::new("num_sweeps")
+                                .value(num_sweeps as f64)
+                                .min(1.0)
+                                .max(8.0)
+                                .step(1.0)
+                                .size(NumberInputSize::Xs)
+                                .on_change(move |value, _window, cx| {
+                                    let _ = view.update(cx, |this, cx| {
+                                        this.state.update(cx, |state, _| {
+                                            state
+                                                .app
+                                                .measurement_state
+                                                .recording_state
+                                                .num_sweeps =
+                                                clamp_num_sweeps(value.max(0.0) as u16);
+                                        });
+                                        cx.notify();
+                                    });
+                                }),
+                        ),
+                )
+                .child(
+                    Text::caption(recording_text.sweeps_per_channel_hint)
+                        .color(theme.text_muted),
+                )
+        };
+
         VStack::new()
             .spacing(StackSpacing::Sm)
             .child(Text::caption(recording_text.bass_precision_description))
             .child(bass_row)
+            .child(sweeps_row)
             .child(pre_row)
             .child(post_row)
             .child(Text::caption(format!(

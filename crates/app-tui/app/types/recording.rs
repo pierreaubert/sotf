@@ -19,13 +19,15 @@ pub fn recording_field_at(s: &RecordingTuiState, idx: usize) -> Option<Recording
         9 => Some(NumRecordingChannels),
         10 => Some(CtcStrategy),
         11 => Some(CtcLoopbackInput),
-        i if i < 12 + n => Some(MicCal(i - 12)),
-        i if i < 12 + 2 * n => Some(ChannelInput(i - 12 - n)),
+        12 => Some(NumPositions),
+        13 => Some(NumSweeps),
+        i if i < 14 + n => Some(MicCal(i - 14)),
+        i if i < 14 + 2 * n => Some(ChannelInput(i - 14 - n)),
         _ => None,
     }
 }
 
 /// Total number of selectable rows for the current state.
 pub fn recording_field_count(s: &RecordingTuiState) -> usize {
-    12 + 2 * s.model.recording_config.num_channels.max(1)
+    14 + 2 * s.model.recording_config.num_channels.max(1)
 }

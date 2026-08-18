@@ -475,6 +475,7 @@ fn build_speakers_from_recordings_groups_per_channel() {
                 clarity_c50_db: None,
                 clarity_c80_db: None,
                 spectrogram_db: None,
+                quality: None,
             });
             recordings.push(rec);
         }

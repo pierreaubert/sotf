@@ -130,6 +130,7 @@ pub(super) fn qa_recording_fake_capture(
                 clarity_c50_db: None,
                 clarity_c80_db: None,
                 spectrogram_db: None,
+                quality: None,
             });
             channel
         })

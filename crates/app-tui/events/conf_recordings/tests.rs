@@ -260,6 +260,7 @@ fn done_recording_result(mag_db: f32) -> RecordingResult {
         clarity_c50_db: None,
         clarity_c80_db: None,
         spectrogram_db: None,
+        quality: None,
     }
 }
 
@@ -444,4 +445,195 @@ fn save_recordings_writes_canonical_recordings_json() {
         cfg["signal_type"].as_str(),
         Some(app.recording.model.signal_type.as_str())
     );
+}
+
+fn quality_summary(trustworthy: bool, score: f32) -> sotf_audio_player::recording_types::TakeQualitySummary {
+    sotf_audio_player::recording_types::TakeQualitySummary {
+        trustworthy,
+        score,
+        issues: if trustworthy {
+            Vec::new()
+        } else {
+            vec!["low coherence".to_string()]
+        },
+        mean_coherence: Some(0.71),
+        median_snr_db: Some(18.2),
+        clip_fraction: 0.0,
+        drift_ppm: Some(-45.0),
+        drift_corrected: false,
+        dropped_samples: 0,
+        accepted_count: 4,
+        rejected_count: 1,
+    }
+}
+
+fn result_with_quality(
+    mag_db: f32,
+    quality: sotf_audio_player::recording_types::TakeQualitySummary,
+) -> RecordingResult {
+    let mut r = done_recording_result(mag_db);
+    r.quality = Some(quality);
+    r
+}
+
+#[test]
+fn poll_recording_parks_untrustworthy_take_for_review() {
+    // Process-global result slot: scenarios run sequentially in one test.
+    let mut app = make_app();
+    let mut ch = ChannelRecording::new(0, "FL".to_string());
+    ch.state = ChannelRecordingState::Recording;
+    app.recording.model.channel_recordings = vec![ch];
+    let slot = RECORDING_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+
+    // Untrustworthy take → ReviewNeeded, result kept, review status shown.
+    *slot.lock().unwrap() = Some(Ok((
+        vec![(0, result_with_quality(-10.0, quality_summary(false, 0.42)))],
+        None,
+    )));
+    assert!(poll_recording(&mut app));
+    assert_eq!(
+        app.recording.model.channel_recordings[0].state,
+        ChannelRecordingState::ReviewNeeded
+    );
+    assert!(app.recording.model.channel_recordings[0].result.is_some());
+    assert!(
+        app.recording.model.status_message.contains("needs review"),
+        "unexpected status: {}",
+        app.recording.model.status_message
+    );
+
+    // 'a' accepts the parked take despite the warnings.
+    let key = crossterm::event::KeyEvent {
+        code: crossterm::event::KeyCode::Char('a'),
+        modifiers: crossterm::event::KeyModifiers::NONE,
+        kind: crossterm::event::KeyEventKind::Press,
+        state: crossterm::event::KeyEventState::NONE,
+    };
+    app.recording.model.step = RecordingStep::Capture;
+    handle_recording_keys(&mut app, key);
+    assert_eq!(
+        app.recording.model.channel_recordings[0].state,
+        ChannelRecordingState::Done
+    );
+    assert!(
+        app.recording
+            .model
+            .status_message
+            .contains("Accepted 1 take(s) despite quality warnings"),
+        "unexpected status: {}",
+        app.recording.model.status_message
+    );
+
+    // Trustworthy take goes straight to Done with the complete message.
+    app.recording.model.channel_recordings[0].state = ChannelRecordingState::Recording;
+    *slot.lock().unwrap() = Some(Ok((
+        vec![(0, result_with_quality(-10.0, quality_summary(true, 0.95)))],
+        None,
+    )));
+    assert!(poll_recording(&mut app));
+    assert_eq!(
+        app.recording.model.channel_recordings[0].state,
+        ChannelRecordingState::Done
+    );
+    assert!(
+        app.recording
+            .model
+            .status_message
+            .contains("Channel FL recording complete"),
+        "unexpected status: {}",
+        app.recording.model.status_message
+    );
+
+    // Dropped samples surface a dropout warning in the status line.
+    app.recording.model.channel_recordings[0].state = ChannelRecordingState::Recording;
+    let mut q = quality_summary(true, 0.95);
+    q.dropped_samples = 128;
+    *slot.lock().unwrap() = Some(Ok((vec![(0, result_with_quality(-10.0, q))], None)));
+    assert!(poll_recording(&mut app));
+    assert!(
+        app.recording
+            .model
+            .status_message
+            .contains("128 samples dropped during capture"),
+        "unexpected status: {}",
+        app.recording.model.status_message
+    );
+}
+
+#[test]
+fn num_sweeps_field_adjust_and_edit_never_yield_two() {
+    let mut app = make_app();
+    // Field index 13 == NumSweeps (after NumPositions).
+    app.recording.selected_field = 13;
+    assert_eq!(app.recording.model.num_sweeps, 4);
+
+    adjust_recording_field(&mut app, 1);
+    assert_eq!(app.recording.model.num_sweeps, 5);
+    // Stepping down from 3 skips 2 (outlier rejection needs >= 3).
+    adjust_recording_field(&mut app, -1);
+    adjust_recording_field(&mut app, -1);
+    adjust_recording_field(&mut app, -1);
+    assert_eq!(app.recording.model.num_sweeps, 1);
+    adjust_recording_field(&mut app, 1);
+    assert_eq!(app.recording.model.num_sweeps, 3);
+
+    // Typing "2" is rejected loudly, not silently changed.
+    app.recording.edit_buffer = "2".to_string();
+    set_recording_field_from_string(&mut app);
+    assert_eq!(app.recording.model.num_sweeps, 3);
+    assert!(
+        app.recording
+            .model
+            .status_message
+            .contains("2 sweeps cannot reject outliers"),
+        "unexpected status: {}",
+        app.recording.model.status_message
+    );
+
+    // Values above the max clamp to 8.
+    app.recording.edit_buffer = "64".to_string();
+    set_recording_field_from_string(&mut app);
+    assert_eq!(app.recording.model.num_sweeps, 8);
+}
+
+#[test]
+fn num_positions_field_rebuilds_position_major_channel_list() {
+    let mut app = make_app();
+    // Field index 12 == NumPositions (after CtcLoopbackInput).
+    app.recording.selected_field = 12;
+    assert_eq!(app.recording.model.recording_config.num_positions, 1);
+    let speakers = app.recording.model.playback_config.channel_mappings.len();
+    let mics = app.recording.model.recording_config.channel_mappings.len().max(1);
+
+    adjust_recording_field(&mut app, 1);
+    assert_eq!(app.recording.model.recording_config.num_positions, 2);
+    assert_eq!(
+        app.recording.model.channel_recordings.len(),
+        speakers * mics * 2,
+        "second position doubles the channel list"
+    );
+    assert!(
+        app.recording
+            .model
+            .channel_recordings
+            .iter()
+            .any(|c| c.channel_name.contains("(Pos 2)")),
+        "position-suffixed channel names: {:?}",
+        app.recording
+            .model
+            .channel_recordings
+            .iter()
+            .map(|c| c.channel_name.clone())
+            .collect::<Vec<_>>()
+    );
+
+    // Clamped at 1..=8 in both directions.
+    app.recording.edit_buffer = "0".to_string();
+    set_recording_field_from_string(&mut app);
+    assert_eq!(app.recording.model.recording_config.num_positions, 1);
+    app.recording.edit_buffer = "99".to_string();
+    set_recording_field_from_string(&mut app);
+    assert_eq!(app.recording.model.recording_config.num_positions, 8);
 }

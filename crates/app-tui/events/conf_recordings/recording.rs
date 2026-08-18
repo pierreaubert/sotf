@@ -51,6 +51,13 @@ pub(crate) fn recording_field_value_string_kind(app: &App, field: &RecordingFiel
             .ctc_loopback_input_channel
             .map(|c| (c + 1).to_string())
             .unwrap_or_else(|| "1".to_string()),
+        NumSweeps => app.recording.model.num_sweeps.to_string(),
+        NumPositions => app
+            .recording
+            .model
+            .recording_config
+            .num_positions
+            .to_string(),
         ChannelInput(i) => app
             .recording
             .model

@@ -357,10 +357,24 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         .map(|ch| {
                             ch.state == ChannelRecordingState::Empty
                                 || ch.state == ChannelRecordingState::Error
+                                || ch.state == ChannelRecordingState::ReviewNeeded
                         })
                         .unwrap_or(false);
                     if can_record {
                         start_recording_channel(app, ch_idx);
+                    }
+                }
+                None
+            }
+            KeyCode::Char('a') => {
+                // Accept parked ReviewNeeded takes despite quality warnings.
+                if !app.recording.model.capture_in_progress() {
+                    let accepted = app.recording.model.accept_all_review_needed();
+                    if accepted > 0 {
+                        app.recording.model.status_message = format!(
+                            "Accepted {} take(s) despite quality warnings",
+                            accepted
+                        );
                     }
                 }
                 None

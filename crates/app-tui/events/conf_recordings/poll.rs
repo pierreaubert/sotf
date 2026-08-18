@@ -4,7 +4,7 @@ use super::consts::RECORDING_RESULT;
 use super::consts::SPL_CAPTURE_RESULT;
 use crate::app::App;
 use sotf_audio_player::recording_helpers::{
-    check_low_measured_level, low_measured_level_warning,
+    check_low_measured_level, dropout_warning, low_measured_level_warning, take_verdict_text,
 };
 use std::sync::{Arc, Mutex};
 
@@ -147,11 +147,34 @@ pub fn poll_recording(app: &mut App) -> bool {
         match result {
             Ok((rec_results, loopback)) => {
                 let mut completed_names = Vec::new();
+                let mut review_names = Vec::new();
+                let mut first_verdict: Option<String> = None;
                 let mut low_level_names = Vec::new();
+                let mut max_dropped: u64 = 0;
                 for (ch_idx, rec_result) in rec_results {
                     if let Some(ch) = app.recording.model.channel_recordings.get_mut(ch_idx) {
-                        ch.state = ChannelRecordingState::Done;
-                        completed_names.push(ch.channel_name.clone());
+                        // Per-take quality gate: an untrustworthy take is
+                        // parked as ReviewNeeded (user accepts with 'a' or
+                        // re-records with Enter) instead of silently
+                        // becoming a measurement.
+                        let needs_review = rec_result
+                            .quality
+                            .as_ref()
+                            .is_some_and(|q| !q.trustworthy);
+                        if needs_review {
+                            ch.state = ChannelRecordingState::ReviewNeeded;
+                            review_names.push(ch.channel_name.clone());
+                            if first_verdict.is_none() {
+                                first_verdict =
+                                    rec_result.quality.as_ref().map(take_verdict_text);
+                            }
+                        } else {
+                            ch.state = ChannelRecordingState::Done;
+                            completed_names.push(ch.channel_name.clone());
+                        }
+                        if let Some(q) = rec_result.quality.as_ref() {
+                            max_dropped = max_dropped.max(q.dropped_samples);
+                        }
                         // R10: post-capture level check via the shared helper
                         // (same semantics as GPUI). Note this measures the
                         // *transfer-function average level* over the
@@ -185,18 +208,32 @@ pub fn poll_recording(app: &mut App) -> bool {
                     });
                     app.recording.model.transfer_matrix_loopbacks.push(loopback);
                 }
-                if !completed_names.is_empty() {
-                    let mut msg = if completed_names.len() == 1 {
-                        format!("Channel {} recording complete", completed_names[0])
-                    } else {
-                        format!("Recorded {} CTC ear channels", completed_names.len())
-                    };
+                let mut msg = if !review_names.is_empty() {
+                    format!(
+                        "{} needs review: {} (a=accept anyway, Enter=re-record)",
+                        review_names.join(", "),
+                        first_verdict.unwrap_or_default()
+                    )
+                } else if completed_names.len() == 1 {
+                    format!("Channel {} recording complete", completed_names[0])
+                } else if !completed_names.is_empty() {
+                    format!("Recorded {} CTC ear channels", completed_names.len())
+                } else {
+                    String::new()
+                };
+                if !msg.is_empty() {
                     // The TUI has no dedicated widget for
                     // `noise_floor_warning`; surface it in the status line.
                     if let Some(warning) = &app.recording.model.noise_floor_warning {
                         msg = format!("{} — {}", msg, warning);
                     }
+                    if let Some(dropout) = dropout_warning(max_dropped) {
+                        log::warn!("Dropout warning: {}", dropout);
+                        msg = format!("{} — {}", msg, dropout);
+                    }
                     app.recording.model.status_message = msg;
+                } else if let Some(dropout) = dropout_warning(max_dropped) {
+                    app.recording.model.status_message = dropout;
                 }
             }
             Err(e) if e == sotf_audio::signal_recorder::CANCELLED_ERR => {

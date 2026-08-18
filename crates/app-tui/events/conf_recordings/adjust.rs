@@ -4,9 +4,11 @@ use super::consts::SPL_FIELD_OUT_CH;
 use super::consts::SPL_FIELD_REF_FREQ;
 use super::consts::SPL_FIELD_REPORTED;
 use super::consts::SPL_FIELD_TONE_AMP;
+use super::misc::init_recording_channels;
 use super::misc::update_channel_mappings_for_config;
 use crate::app::App;
 use crate::app::RecordingField;
+use sotf_audio_player::recording_helpers::nudge_num_sweeps;
 use sotf_audio_player::recording_types::CtcMatrixExportStrategy;
 
 /// Nudge the currently selected SPL form-field by `step` (1 == "one
@@ -158,6 +160,18 @@ pub(super) fn adjust_recording_field(app: &mut App, delta: i32) {
                 .model
                 .recording_config
                 .ctc_loopback_input_channel = Some((cur + delta).clamp(0, 127) as usize);
+        }
+        NumSweeps => {
+            app.recording.model.num_sweeps =
+                nudge_num_sweeps(app.recording.model.num_sweeps, delta);
+        }
+        NumPositions => {
+            // 1..=8 positions (GPUI uses the same range); the channel list
+            // is position-major, so rebuild it when the count changes.
+            let cur = app.recording.model.recording_config.num_positions as i32;
+            app.recording.model.recording_config.num_positions =
+                (cur + delta).clamp(1, 8) as usize;
+            init_recording_channels(app);
         }
         ChannelInput(i) => {
             if let Some(slot) = app

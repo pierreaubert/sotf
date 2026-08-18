@@ -3138,11 +3138,19 @@ fn dialog_server_and_phone_copy_is_complete_and_direct_literals_are_extracted() 
                 recording.go_back_to_capture,
                 recording.all_channels,
                 recording.run_bass_anchor,
+                recording.needs_review,
+                recording.accept_anyway,
+                recording.session_quality_title,
+                recording.sweeps_per_channel,
+                recording.sweeps_per_channel_hint,
+                recording.positions_mlp_hint,
             ]
             .iter()
             .all(|value| !value.trim().is_empty())
         );
         assert!(recording.seconds(10).contains("10"));
+        assert!(recording.accepted_takes(2).contains('2'));
+        assert!(recording.move_position_body(3).contains('3'));
 
         let context = ContextMenuTranslations::for_language(*language);
         assert!(

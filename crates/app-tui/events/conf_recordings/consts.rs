@@ -319,6 +319,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
 
     let reference_signal = signal;
     let temp_wav_path = temp_wav.path().to_path_buf();
+    let num_sweeps = app.recording.model.num_sweeps;
 
     // R8: reset the cancel flag so a stale request cannot abort this run,
     // then hand a clone to the capture thread (mirrors
@@ -327,6 +328,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     let cancel_flag = app.recording.model.sweep_cancel_requested.clone();
 
     std::thread::spawn(move || {
+        use sotf_audio_player::recording_helpers::summarize_take_quality;
         use sotf_audio_player::recording_types::RecordingResult;
         use sotf_audio_player::signal_recorder::{record_and_analyze, record_and_analyze_multi};
 
@@ -370,7 +372,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 in_dev,
                 &calibrations,
                 sweep_range,
-                1, // num_sweeps: repeat-count config wiring is Task 9
+                num_sweeps,
                 Some(cancel_flag.clone()),
             )
             .map(|mut results| {
@@ -392,7 +394,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 in_dev,
                 mic_calibration.as_deref(),
                 sweep_range,
-                1, // num_sweeps: repeat-count config wiring is Task 9
+                num_sweeps,
                 Some(cancel_flag),
             )
             .map(|result| vec![result])
@@ -407,9 +409,9 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                         let ch_idx = *capture_channel_indices.get(idx)?;
                         let wav_path = capture_wav_paths.get(idx)?;
                         let csv_path = capture_csv_paths.get(idx)?;
-                        // Task 7: engine returns CaptureAnalysis; the UI
-                        // consumes only the analysis for now (quality
-                        // surfacing is Task 9).
+                        // The engine returns CaptureAnalysis; summarize the
+                        // per-take quality before moving the analysis result.
+                        let quality = summarize_take_quality(&capture);
                         let analysis_result = capture.result;
                         Some((
                             ch_idx,
@@ -431,6 +433,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                                 clarity_c50_db: Some(analysis_result.clarity_c50_db),
                                 clarity_c80_db: Some(analysis_result.clarity_c80_db),
                                 spectrogram_db: Some(analysis_result.spectrogram_db),
+                                quality: Some(quality),
                             },
                         ))
                     })

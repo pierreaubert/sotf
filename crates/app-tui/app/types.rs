@@ -129,6 +129,12 @@ pub enum RecordingField {
     NumRecordingChannels,
     CtcStrategy,
     CtcLoopbackInput,
+    /// Number of repeated sweeps per channel (quality gate; 2 is never
+    /// offered because outlier rejection needs at least 3).
+    NumSweeps,
+    /// Number of measurement positions (multi-position workflow, Phase 3
+    /// item 10). Position 1 must be the main listening position.
+    NumPositions,
     /// Per-channel mic-calibration path (model-level `model.mic_calibration_paths[i]`,
     /// indexed by mic slot — the working copy the editing accessors write).
     MicCal(usize),

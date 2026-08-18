@@ -36,6 +36,7 @@ fn matrix_recording(
         clarity_c50_db: None,
         clarity_c80_db: None,
         spectrogram_db: None,
+        quality: None,
     });
     rec
 }
@@ -73,6 +74,7 @@ fn raw_matrix_recording(
         clarity_c50_db: None,
         clarity_c80_db: None,
         spectrogram_db: None,
+        quality: None,
     });
     rec
 }

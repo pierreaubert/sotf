@@ -527,6 +527,16 @@ impl PlayerView {
             .recording_state
             .noise_floor_warning
             .clone();
+        let recording_text = crate::app::i18n::RecordingWorkflowTranslations::for_language(
+            state.app.ui_state.language,
+        );
+        // Per-take quality recap (engine CaptureAnalysis summaries); empty
+        // until at least one take carries quality data.
+        let quality_lines = state
+            .app
+            .measurement_state
+            .recording_state
+            .session_quality_summary();
         let _ = state;
 
         let view = cx.entity().clone();
@@ -587,6 +597,33 @@ impl PlayerView {
                         ),
                 )
                 .child(self.render_channel_list(cx))
+                .when(!quality_lines.is_empty(), |stack| {
+                    let theme = theme.clone();
+                    stack.child(
+                        div()
+                            .p(d.pad_x)
+                            .rounded(d.r_md)
+                            .bg(theme.background)
+                            .border_1()
+                            .border_color(theme.border)
+                            .child(
+                                VStack::new()
+                                    .spacing(StackSpacing::Xs)
+                                    .child(
+                                        Text::label(recording_text.session_quality_title)
+                                            .color(theme.text_secondary),
+                                    )
+                                    .children(quality_lines.iter().map(|line| {
+                                        let color = if line.contains("REVIEW") {
+                                            theme.warning
+                                        } else {
+                                            theme.text_secondary
+                                        };
+                                        Text::caption(line.clone()).color(color)
+                                    })),
+                            ),
+                    )
+                })
                 .when(!status_message.is_empty(), |stack| {
                     stack.child(Text::new(status_message.clone()).size(TextSize::Xs))
                 })
@@ -657,15 +694,24 @@ impl PlayerView {
                 .into_any_element();
         }
 
-        // Build grouped data: Vec<(speaker_name, speaker_idx, first_vec_idx, Vec<(mic_idx, state)>)>
-        type SpeakerGroup = (String, usize, usize, Vec<(usize, ChannelRecordingState)>);
+        // Build grouped data:
+        // Vec<(speaker_name, speaker_idx, mic_position, first_vec_idx, Vec<(mic_idx, state)>)>
+        type SpeakerGroup = (
+            String,
+            usize,
+            usize,
+            usize,
+            Vec<(usize, ChannelRecordingState)>,
+        );
         let mut speaker_groups: Vec<SpeakerGroup> = Vec::new();
         for (vec_idx, rec) in recording_state.channel_recordings.iter().enumerate() {
             if let Some(group) = speaker_groups
                 .iter_mut()
-                .find(|(_, si, _, _)| *si == rec.channel_index)
+                .find(|(_, si, pos, _, _)| {
+                    *si == rec.channel_index && *pos == rec.mic_position_index
+                })
             {
-                group.3.push((rec.mic_index, rec.state));
+                group.4.push((rec.mic_index, rec.state));
             } else {
                 let speaker_name = rec
                     .channel_name
@@ -675,6 +721,7 @@ impl PlayerView {
                 speaker_groups.push((
                     speaker_name,
                     rec.channel_index,
+                    rec.mic_position_index,
                     vec_idx,
                     vec![(rec.mic_index, rec.state)],
                 ));
@@ -684,7 +731,7 @@ impl PlayerView {
         VStack::new()
             .spacing(StackSpacing::Xs)
             .children(speaker_groups.into_iter().map(
-                move |(speaker_name, _speaker_idx, first_vec_idx, mic_states)| {
+                move |(speaker_name, speaker_idx, mic_position, first_vec_idx, mic_states)| {
                     let theme = theme.clone();
                     let view = view.clone();
 
@@ -695,12 +742,17 @@ impl PlayerView {
                     let any_recording = mic_states
                         .iter()
                         .any(|(_, s)| *s == ChannelRecordingState::Recording);
+                    let any_review = mic_states
+                        .iter()
+                        .any(|(_, s)| *s == ChannelRecordingState::ReviewNeeded);
                     let any_error = mic_states
                         .iter()
                         .any(|(_, s)| *s == ChannelRecordingState::Error);
 
                     let (state_text, state_color) = if any_recording {
                         (translations.recording_state_recording, theme.warning)
+                    } else if any_review {
+                        (recording_text.needs_review, theme.warning)
                     } else if all_done {
                         (translations.recording_state_complete, theme.success)
                     } else if any_error {
@@ -714,6 +766,15 @@ impl PlayerView {
                             .size(px(8.0))
                             .rounded_full()
                             .bg(theme.warning)
+                            .into_any_element()
+                    } else if any_review {
+                        // intentional: 8px hollow dot — parked take awaiting
+                        // review (filled warning dot means "recording").
+                        div()
+                            .size(px(8.0))
+                            .rounded_full()
+                            .border_1()
+                            .border_color(theme.warning)
                             .into_any_element()
                     } else if all_done {
                         Icon::new(IconName::Check)
@@ -793,7 +854,49 @@ impl PlayerView {
                                             });
                                         }
                                     }),
-                                ),
+                                )
+                                .when(any_review, |row| {
+                                    row.child(
+                                        Button::new(
+                                            SharedString::from(format!(
+                                                "accept_take_{}",
+                                                first_vec_idx
+                                            )),
+                                            recording_text.accept_anyway,
+                                        )
+                                        .variant(ButtonVariant::Secondary)
+                                        .size(ButtonSize::Xs)
+                                        .disabled(is_recording || any_recording)
+                                        .theme(theme.to_button_theme())
+                                        .on_click({
+                                            let view = view.clone();
+                                            move |_, cx| {
+                                                view.update(cx, |this, cx| {
+                                                    this.state.update(cx, |state, _cx| {
+                                                        let accepted = state
+                                                            .app
+                                                            .measurement_state
+                                                            .recording_state
+                                                            .accept_review_needed_for(
+                                                                speaker_idx,
+                                                                mic_position,
+                                                            );
+                                                        if accepted > 0 {
+                                                            state
+                                                                .app
+                                                                .measurement_state
+                                                                .recording_state
+                                                                .status_message = recording_text
+                                                                .accepted_takes(accepted)
+                                                                .to_string();
+                                                        }
+                                                    });
+                                                    cx.notify();
+                                                });
+                                            }
+                                        }),
+                                    )
+                                }),
                         );
 
                     // Show per-mic sub-statuses when multi-mic and at least one is done
@@ -827,6 +930,16 @@ impl PlayerView {
                                                 Icon::new(IconName::Check)
                                                     .size(IconSize::Xs)
                                                     .color(theme.success)
+                                                    .into_any_element()
+                                            }
+                                            ChannelRecordingState::ReviewNeeded => {
+                                                // intentional: 8px hollow dot — take
+                                                // parked for review
+                                                div()
+                                                    .size(px(8.0))
+                                                    .rounded_full()
+                                                    .border_1()
+                                                    .border_color(theme.warning)
                                                     .into_any_element()
                                             }
                                             ChannelRecordingState::Error => Icon::new(IconName::X)
@@ -982,6 +1095,7 @@ impl PlayerView {
             recording_directory: Option<String>,
             mics: Vec<MicInfo>,
             ctc_strategy: crate::app::types::CtcMatrixExportStrategy,
+            num_sweeps: u16,
         }
 
         let params = {
@@ -1093,6 +1207,7 @@ impl PlayerView {
                 recording_directory: rec_state.recording_directory.clone(),
                 mics,
                 ctc_strategy: rec_state.recording_config.ctc_matrix_strategy,
+                num_sweeps: rec_state.num_sweeps,
             }
         };
 
@@ -1325,10 +1440,12 @@ impl PlayerView {
         let output_device = params.output_device.clone();
         let input_device = params.input_device.clone();
         let sample_rate = params.sample_rate;
+        let num_sweeps = params.num_sweeps;
 
         cx.spawn(async move |_, cx| {
             use sotf_audio_player::recording_helpers::{
-                check_low_measured_level, low_measured_level_warning,
+                check_low_measured_level, dropout_warning, low_measured_level_warning,
+                summarize_take_quality, take_verdict_text,
             };
             use sotf_audio_player::signal_recorder::SignalType;
 
@@ -1374,7 +1491,7 @@ impl PlayerView {
                     in_dev,
                     mic_calibrations[0].as_deref(),
                     sweep_range,
-                    1, // num_sweeps: repeat-count config wiring is Task 9
+                    num_sweeps,
                     Some(cancel_flag),
                 )
                 .map(|r| vec![r])
@@ -1392,7 +1509,7 @@ impl PlayerView {
                     in_dev,
                     &mic_calibrations,
                     sweep_range,
-                    1, // num_sweeps: repeat-count config wiring is Task 9
+                    num_sweeps,
                     Some(cancel_flag),
                 )
             };
@@ -1400,6 +1517,7 @@ impl PlayerView {
             #[cfg(target_os = "ios")]
             let results: Result<Vec<sotf_audio::signal_recorder::CaptureAnalysis>, String> = {
                 let _ = &cancel_flag;
+                let _ = num_sweeps;
                 Err("Recording not available on iOS".to_string())
             };
 
@@ -1410,13 +1528,18 @@ impl PlayerView {
                     let should_continue = match results {
                         Ok(analysis_results) => {
                             let mut any_low_signal = false;
+                            let mut any_review = false;
+                            let mut first_verdict: Option<String> = None;
+                            let mut max_dropped: u64 = 0;
 
                             for (mic_i, capture) in
                                 analysis_results.into_iter().enumerate()
                             {
-                                // Task 7: engine returns CaptureAnalysis; the
-                                // UI consumes only the analysis for now
-                                // (quality surfacing is Task 9).
+                                // Per-take quality gate: summarize before
+                                // moving the analysis result; untrustworthy
+                                // takes are parked as ReviewNeeded.
+                                let quality = summarize_take_quality(&capture);
+                                let needs_review = !quality.trustworthy;
                                 let analysis_result = capture.result;
                                 let mic = &mics[mic_i];
                                 let mic_name = &mics[mic_i].safe_name;
@@ -1460,6 +1583,7 @@ impl PlayerView {
                                     clarity_c50_db: Some(analysis_result.clarity_c50_db),
                                     clarity_c80_db: Some(analysis_result.clarity_c80_db),
                                     spectrogram_db: Some(analysis_result.spectrogram_db),
+                                    quality: Some(quality.clone()),
                                 };
 
                                 if mic.is_loopback {
@@ -1490,6 +1614,13 @@ impl PlayerView {
                                 let Some(vi) = mic.vec_idx else {
                                     continue;
                                 };
+                                max_dropped = max_dropped.max(quality.dropped_samples);
+                                if needs_review {
+                                    any_review = true;
+                                    if first_verdict.is_none() {
+                                        first_verdict = Some(take_verdict_text(&quality));
+                                    }
+                                }
                                 if let Some(recording) = state
                                     .app
                                     .measurement_state
@@ -1497,7 +1628,11 @@ impl PlayerView {
                                     .channel_recordings
                                     .get_mut(vi)
                                 {
-                                    recording.state = ChannelRecordingState::Done;
+                                    recording.state = if needs_review {
+                                        ChannelRecordingState::ReviewNeeded
+                                    } else {
+                                        ChannelRecordingState::Done
+                                    };
                                     recording.result = Some(rec_result);
                                 }
                             }
@@ -1512,14 +1647,37 @@ impl PlayerView {
                                 None
                             };
 
-                            state.app.measurement_state.recording_state.status_message =
-                                format!("{} recording complete", speaker_name);
+                            let mut msg = if any_review {
+                                format!(
+                                    "{} needs review: {} — accept anyway or re-record",
+                                    speaker_name,
+                                    first_verdict.unwrap_or_default()
+                                )
+                            } else {
+                                format!("{} recording complete", speaker_name)
+                            };
+                            if let Some(dropout) = dropout_warning(max_dropped) {
+                                log::warn!("Dropout warning: {}", dropout);
+                                msg = format!("{} — {}", msg, dropout);
+                            }
+                            state.app.measurement_state.recording_state.status_message = msg;
+
+                            if any_review {
+                                // Park auto-record: the user must accept or
+                                // re-record the warned take before moving on.
+                                state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .auto_record_remaining = false;
+                            }
 
                             state
                                 .app
                                 .measurement_state
                                 .recording_state
                                 .auto_record_remaining
+                                && !any_review
                         }
                         Err(e) if e == sotf_audio::signal_recorder::CANCELLED_ERR => {
                             // R8: user-requested cancel (Stop button) —
@@ -2326,6 +2484,9 @@ impl PlayerView {
                                 clarity_c50_db,
                                 clarity_c80_db,
                                 spectrogram_db: None,
+                                // Loaded files have no engine capture behind
+                                // them — quality data is unavailable.
+                                quality: None,
                             };
 
                             let mut rec = ChannelRecording::new(idx, channel_name);
@@ -2676,10 +2837,12 @@ impl PlayerView {
                             VStack::new()
                                 .spacing(StackSpacing::Md)
                                 .child(
-                                    Text::new(format!(
-                                        "Reposition every configured microphone to seat {}, then click Continue. Click Cancel to stop the session and save what you have so far.",
-                                        next_pos_one_based
-                                    ))
+                                    Text::new(
+                                        crate::app::i18n::RecordingWorkflowTranslations::for_language(
+                                            state.app.ui_state.language,
+                                        )
+                                        .move_position_body(next_pos_one_based),
+                                    )
                                     .size(TextSize::Sm)
                                     .color(theme.text_primary),
                                 ),

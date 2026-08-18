@@ -386,6 +386,9 @@ fn draw_metadata_services_screen(f: &mut Frame, area: Rect, app: &App) {
 pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
     let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     use ratatui::widgets::Tabs;
+    use sotf_audio_player::recording_helpers::{
+        position_guidance, take_quality_cell, take_verdict_text,
+    };
     use sotf_audio_player::recording_types::{
         ChannelRecording, ChannelRecordingState, RecordingStep,
     };
@@ -612,12 +615,23 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                     .map(|ch| (ch + 1).to_string())
                     .unwrap_or_else(|| "<none>".to_string()),
             ));
+            rows.push((
+                Some(12),
+                "Measurement positions".to_string(),
+                s.model.recording_config.num_positions.to_string(),
+            ));
+            rows.push((None, "── Measurement Quality ──".to_string(), String::new()));
+            rows.push((
+                Some(13),
+                "Sweeps per channel".to_string(),
+                s.model.num_sweeps.to_string(),
+            ));
             for ch in 0..n_channels {
-                rows.push((Some(12 + ch), mic_cal_label(ch), mic_cal_value(ch)));
+                rows.push((Some(14 + ch), mic_cal_label(ch), mic_cal_value(ch)));
             }
             for ch in 0..n_channels {
                 rows.push((
-                    Some(12 + n_channels + ch),
+                    Some(14 + n_channels + ch),
                     channel_input_label(ch),
                     channel_input_value(ch),
                 ));
@@ -752,10 +766,16 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 .split(content);
 
             // Status
-            let status_text = if s.model.status_message.is_empty() {
-                "Ready to record. Select a channel and press Enter.".to_string()
-            } else {
+            let num_positions = s.model.recording_config.num_positions.max(1);
+            let current_pos = s.model.current_position();
+            let status_text = if !s.model.status_message.is_empty() {
                 s.model.status_message.clone()
+            } else if num_positions > 1 && current_pos < num_positions {
+                // Multi-position workflow: tell the user where the mic(s)
+                // go next (first position must be the main listening one).
+                position_guidance(current_pos, num_positions)
+            } else {
+                "Ready to record. Select a channel and press Enter.".to_string()
             };
             let status = Paragraph::new(i18n.dynamic(status_text))
                 .style(Style::default().fg(app.theme.accent_primary))
@@ -771,6 +791,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 Cell::from("#"),
                 Cell::from(i18n.ui("Channel")),
                 Cell::from(i18n.ui("State")),
+                Cell::from(i18n.ui("Quality")),
             ])
             .style(
                 Style::default()
@@ -789,6 +810,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                         ChannelRecordingState::Empty => "[ ]",
                         ChannelRecordingState::Recording => "[REC]",
                         ChannelRecordingState::Done => "[OK]",
+                        ChannelRecordingState::ReviewNeeded => "[!?]",
                         ChannelRecordingState::Error => "[ERR]",
                     };
                     let style = if is_current {
@@ -797,6 +819,8 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                             .add_modifier(Modifier::BOLD)
                     } else if ch.state == ChannelRecordingState::Done {
                         Style::default().fg(app.theme.accent_success)
+                    } else if ch.state == ChannelRecordingState::ReviewNeeded {
+                        Style::default().fg(app.theme.accent_warning)
                     } else {
                         Style::default().fg(app.theme.fg_primary)
                     };
@@ -804,6 +828,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                         Cell::from(format!("{}", i + 1)),
                         Cell::from(ch.channel_name.clone()),
                         Cell::from(state_str),
+                        Cell::from(take_quality_cell(ch.state, ch.result.as_ref())),
                     ])
                     .style(style)
                 })
@@ -815,6 +840,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                     Constraint::Length(3),
                     Constraint::Length(12),
                     Constraint::Length(8),
+                    Constraint::Length(12),
                 ],
             )
             .header(header)
@@ -826,7 +852,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             f.render_widget(ch_table, inner[1]);
 
             let help = Paragraph::new(
-                i18n.ui(" Up/Down=select  Enter=record  A=auto-record all  Tab=evaluate"),
+                i18n.ui(" Up/Down=select  Enter=record  a=accept warned take  Tab=evaluate"),
             )
             .style(Style::default().fg(app.theme.fg_secondary));
             f.render_widget(help, inner[2]);
@@ -906,7 +932,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                     Row::new(vec![
                         Cell::from(ch.channel_name.clone()),
                         Cell::from(pts),
-                        Cell::from(i18n.ui("OK")),
+                        Cell::from(take_quality_cell(ch.state, ch.result.as_ref())),
                     ])
                     .style(style)
                 })
@@ -917,7 +943,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 [
                     Constraint::Length(12),
                     Constraint::Length(10),
-                    Constraint::Length(8),
+                    Constraint::Length(14),
                 ],
             )
             .header(header)
@@ -955,6 +981,26 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                             i18n.dynamic(format!(" Avg RT60: {:.0} ms", avg_rt60)),
                         ));
                     }
+                }
+                // Per-take quality verdict (Task 9, §4 item 1): score +
+                // warnings for the selected channel, so the user can see
+                // which positions to re-measure before saving. The verdict
+                // embeds engine-worded issue strings, hence the verbatim
+                // boundary.
+                if let Some(ref q) = result.quality {
+                    let color = if q.trustworthy {
+                        app.theme.accent_success
+                    } else {
+                        app.theme.accent_warning
+                    };
+                    details.push(Line::from(Span::styled(
+                        format!(
+                            " {}: {}",
+                            i18n.ui("Quality"),
+                            i18n.dynamic_or_verbatim(&take_verdict_text(q))
+                        ),
+                        Style::default().fg(color),
+                    )));
                 }
                 let detail_para = Paragraph::new(details).block(
                     Block::default()

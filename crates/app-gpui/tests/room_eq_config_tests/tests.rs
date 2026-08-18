@@ -43,6 +43,7 @@ fn test_room_eq_to_room_config_simple() {
             clarity_c50_db: None,
             clarity_c80_db: None,
             spectrogram_db: None,
+            quality: None,
         },
         is_group: false,
         group_drivers: Vec::new(),
@@ -94,6 +95,7 @@ fn test_load_from_recording_marks_ctc_fallback_as_measured() {
             clarity_c50_db: None,
             clarity_c80_db: None,
             spectrogram_db: None,
+            quality: None,
         });
         rec
     }
@@ -225,6 +227,7 @@ fn test_room_eq_to_room_config_advanced() {
             clarity_c50_db: None,
             clarity_c80_db: None,
             spectrogram_db: None,
+            quality: None,
         },
         is_group: false,
         group_drivers: Vec::new(),
@@ -305,6 +308,7 @@ fn test_room_eq_validation() {
             clarity_c50_db: None,
             clarity_c80_db: None,
             spectrogram_db: None,
+            quality: None,
         },
         is_group: false,
         group_drivers: Vec::new(),

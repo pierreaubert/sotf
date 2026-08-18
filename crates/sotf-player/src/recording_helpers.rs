@@ -8,9 +8,13 @@
 //! [`crate::ui_models::recording::RecordingScreenModel::build_recording_configuration`]
 //! next to the other save-time helpers.
 
-use crate::recording_types::RecordingSignalType;
+use crate::recording_types::{
+    ChannelRecording, ChannelRecordingState, RecordingResult, RecordingSignalType,
+    TakeQualitySummary,
+};
 use sotf_audio::signal_recorder::{
-    DEFAULT_MLS_ORDER, SignalParams, SignalType, sweep_params_from_config,
+    CaptureAnalysis, DEFAULT_MLS_ORDER, MIN_REPEAT_SWEEPS, SignalParams, SignalType,
+    sweep_params_from_config,
 };
 
 /// Canonical filename for the saved recording session JSON (B5).
@@ -197,6 +201,216 @@ pub fn capture_signal_params(
             post_silence_s,
         ),
     }
+}
+
+// ============================================================================
+// Per-take quality gate (Task 9, review §4 item 1)
+// ============================================================================
+//
+// Verdict logic (thresholds, wording) lives here so the TUI and GPUI shells
+// only render text and collect the user's accept/re-record choice. The
+// engine's verdict is advisory: the capture succeeded, so the take is parked
+// in `ChannelRecordingState::ReviewNeeded` until the user decides.
+
+/// Highest sweep count the UIs offer for `num_sweeps`.
+pub const MAX_NUM_SWEEPS: u16 = 8;
+
+/// Clamp a user-entered sweep count to the UI range: 1 (single sweep) or
+/// `MIN_REPEAT_SWEEPS..=MAX_NUM_SWEEPS`. **2 is never returned**: the engine
+/// bumps it to `MIN_REPEAT_SWEEPS` anyway because two takes have zero
+/// outlier-rejection power (commit 43d677d27), so offering it would lie
+/// about what runs.
+pub fn clamp_num_sweeps(value: u16) -> u16 {
+    match value.clamp(1, MAX_NUM_SWEEPS) {
+        2 => MIN_REPEAT_SWEEPS,
+        v => v,
+    }
+}
+
+/// Step the sweep count by `delta` for +/- adjusters, skipping 2 in both
+/// directions (see [`clamp_num_sweeps`]).
+pub fn nudge_num_sweeps(current: u16, delta: i32) -> u16 {
+    let next = current as i32 + delta;
+    if next <= 1 {
+        1
+    } else if next == 2 {
+        if delta > 0 { MIN_REPEAT_SWEEPS } else { 1 }
+    } else {
+        (next).min(MAX_NUM_SWEEPS as i32) as u16
+    }
+}
+
+/// Extract the UI-facing quality summary from an engine [`CaptureAnalysis`]
+/// (Task 7/8 wrapper). Pure field mapping — no decisions here.
+///
+/// `drift_ppm` stays an `Option`: `None` means the drift *estimation* was
+/// unavailable (low-confidence end windows), which must never be rendered
+/// as "0 ppm" (Task-7 review carry-forward).
+pub fn summarize_take_quality(capture: &CaptureAnalysis) -> TakeQualitySummary {
+    TakeQualitySummary {
+        trustworthy: capture.quality.trustworthy,
+        score: capture.quality.score,
+        issues: capture.quality.issues.clone(),
+        mean_coherence: capture.quality.mean_coherence,
+        median_snr_db: capture.quality.median_snr_db,
+        clip_fraction: capture.quality.clipping.fraction,
+        drift_ppm: capture.drift.map(|d| d.ppm),
+        drift_corrected: capture.drift_corrected,
+        dropped_samples: capture.dropped_samples,
+        accepted_count: capture.accepted_count,
+        rejected_count: capture.rejected_count,
+    }
+}
+
+/// One-line detailed verdict for a captured take — the issues plus every
+/// available supporting metric (mean coherence, median SNR, clip fraction,
+/// drift ppm, accepted/rejected takes). Shown when a take needs review and
+/// in per-channel details.
+///
+/// Missing drift is rendered as `drift n/a`, never `0 ppm`.
+pub fn take_verdict_text(q: &TakeQualitySummary) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if q.issues.is_empty() {
+        parts.push(format!("score {:.2}", q.score));
+    } else {
+        parts.push(format!("score {:.2} — {}", q.score, q.issues.join("; ")));
+    }
+    if let Some(coherence) = q.mean_coherence {
+        parts.push(format!("coherence {coherence:.2}"));
+    }
+    if let Some(snr) = q.median_snr_db {
+        parts.push(format!("SNR {snr:.1} dB"));
+    }
+    if q.clip_fraction > 0.0 {
+        parts.push(format!("clipped {:.2}%", q.clip_fraction * 100.0));
+    }
+    match q.drift_ppm {
+        Some(ppm) => parts.push(format!(
+            "drift {ppm:+.0} ppm{}",
+            if q.drift_corrected { " (corrected)" } else { "" }
+        )),
+        None => parts.push("drift n/a".to_string()),
+    }
+    if q.rejected_count > 0 {
+        parts.push(format!(
+            "{}/{} takes accepted",
+            q.accepted_count,
+            q.accepted_count + q.rejected_count
+        ));
+    }
+    parts.join(", ")
+}
+
+/// Compact per-channel quality cell for channel-list tables.
+///
+/// - `REVIEW <score>` — take is parked awaiting the user's decision;
+/// - `OK* <score>` — accepted despite quality warnings (distinct from clean);
+/// - `OK <score>` — clean take;
+/// - empty string when there is nothing to say yet.
+pub fn take_quality_cell(
+    state: ChannelRecordingState,
+    result: Option<&RecordingResult>,
+) -> String {
+    let quality = result.and_then(|r| r.quality.as_ref());
+    match (state, quality) {
+        (ChannelRecordingState::ReviewNeeded, Some(q)) => format!("REVIEW {:.2}", q.score),
+        // Accepted-with-warning: deliberately distinct from a clean Done.
+        (ChannelRecordingState::Done, Some(q)) if !q.trustworthy => {
+            format!("OK* {:.2}", q.score)
+        }
+        (ChannelRecordingState::Done, Some(q)) => format!("OK {:.2}", q.score),
+        // Done/ReviewNeeded without a quality summary means a legacy or
+        // loaded session — say so rather than implying a verdict.
+        (ChannelRecordingState::Done | ChannelRecordingState::ReviewNeeded, None) => {
+            "no data".to_string()
+        }
+        _ => String::new(),
+    }
+}
+
+/// Dropout warning (R6 / §4 item 1): `Some` text when the capture dropped
+/// input samples to ring-buffer overruns.
+pub fn dropout_warning(dropped_samples: u64) -> Option<String> {
+    (dropped_samples > 0).then(|| {
+        format!(
+            "{dropped_samples} samples dropped during capture — USB/driver underrun; \
+             results may be unreliable, consider re-measuring"
+        )
+    })
+}
+
+/// Multi-position guidance (Phase 3 item 10): one-line hint for the capture
+/// flow when `num_positions > 1`. `pos` is the 0-based position about to be
+/// recorded. The first position anchors delays/levels, so it must be the
+/// main listening position; later positions should stay within roughly 60 cm
+/// of it (Audyssey/Dirac guidance).
+pub fn position_guidance(pos: usize, total: usize) -> String {
+    if pos == 0 {
+        format!(
+            "Position 1 of {total}: place the mic(s) at the main listening position first"
+        )
+    } else {
+        format!(
+            "Move the mic(s) to position {} of {total} — stay within ~60 cm of the main listening position",
+            pos + 1
+        )
+    }
+}
+
+/// Session quality summary (§4 item 1 / Phase 2 item 5): one line per
+/// recorded channel with its score and warnings, so the user can see which
+/// positions to re-measure before leaving the screen. Channels are listed in
+/// recording order (position-major), which matches the on-screen channel
+/// list.
+pub fn session_quality_summary(channels: &[ChannelRecording]) -> Vec<String> {
+    channels
+        .iter()
+        .filter(|c| c.result.is_some())
+        .map(|c| {
+            let quality = c.result.as_ref().and_then(|r| r.quality.as_ref());
+            let mut line = match quality {
+                Some(q) if q.trustworthy => format!(
+                    "{}: OK (score {:.2}, {}/{} sweeps)",
+                    c.channel_name,
+                    q.score,
+                    q.accepted_count,
+                    q.accepted_count + q.rejected_count
+                ),
+                Some(q) => format!(
+                    "{}: REVIEW (score {:.2}) — {}",
+                    c.channel_name,
+                    q.score,
+                    take_verdict_text(q)
+                ),
+                None => format!("{}: recorded (no quality data)", c.channel_name),
+            };
+            if let Some(q) = quality
+                && q.dropped_samples > 0
+            {
+                line.push_str(&format!("; {} dropped samples", q.dropped_samples));
+            }
+            line
+        })
+        .collect()
+}
+
+/// Truthful `num_sweeps` to persist in `RecordingConfiguration` (Task 8
+/// metadata rule): the **minimum engine-reported accepted-take count** over
+/// completed channels (one bad channel must not be covered up by the
+/// requested count). `None` when no completed channel carries quality data
+/// (legacy / loaded sessions), preserving the old "unknown" semantics
+/// instead of persisting the requested count as if it were measured.
+pub fn accepted_num_sweeps_for_save(channels: &[ChannelRecording]) -> Option<u8> {
+    let mut min: Option<usize> = None;
+    for c in channels {
+        if c.state != ChannelRecordingState::Done {
+            continue;
+        }
+        if let Some(q) = c.result.as_ref().and_then(|r| r.quality.as_ref()) {
+            min = Some(min.map_or(q.accepted_count, |m: usize| m.min(q.accepted_count)));
+        }
+    }
+    min.map(|m| m.min(u8::MAX as usize) as u8)
 }
 
 #[cfg(test)]
@@ -421,5 +635,318 @@ mod tests {
             capture_signal_params(SignalType::Dirac, 20.0, 20000.0, 0.25, None, None, None),
             SignalParams::Dirac { amp } if amp == 0.25
         ));
+    }
+
+    // === Task 9: num_sweeps range, quality verdict text, session summary ===
+
+    #[test]
+    fn clamp_num_sweeps_never_returns_two() {
+        assert_eq!(clamp_num_sweeps(0), 1);
+        assert_eq!(clamp_num_sweeps(1), 1);
+        // 2 has zero outlier-rejection power; the engine bumps it to 3.
+        assert_eq!(clamp_num_sweeps(2), MIN_REPEAT_SWEEPS);
+        assert_eq!(clamp_num_sweeps(3), 3);
+        assert_eq!(clamp_num_sweeps(8), 8);
+        assert_eq!(clamp_num_sweeps(9), MAX_NUM_SWEEPS);
+        assert_eq!(clamp_num_sweeps(100), MAX_NUM_SWEEPS);
+    }
+
+    #[test]
+    fn nudge_num_sweeps_skips_two_in_both_directions() {
+        assert_eq!(nudge_num_sweeps(1, 1), 3);
+        assert_eq!(nudge_num_sweeps(1, -1), 1);
+        assert_eq!(nudge_num_sweeps(3, -1), 1);
+        assert_eq!(nudge_num_sweeps(3, 1), 4);
+        assert_eq!(nudge_num_sweeps(8, 1), 8);
+        assert_eq!(nudge_num_sweeps(4, -1), 3);
+    }
+
+    fn quality_summary(
+        trustworthy: bool,
+        issues: &[&str],
+        drift_ppm: Option<f64>,
+    ) -> TakeQualitySummary {
+        TakeQualitySummary {
+            trustworthy,
+            score: 0.42,
+            issues: issues.iter().map(|s| s.to_string()).collect(),
+            mean_coherence: Some(0.71),
+            median_snr_db: Some(18.2),
+            clip_fraction: 0.003,
+            drift_ppm,
+            drift_corrected: false,
+            dropped_samples: 0,
+            accepted_count: 4,
+            rejected_count: 1,
+        }
+    }
+
+    #[test]
+    fn take_verdict_text_lists_issues_and_metrics() {
+        let q = quality_summary(false, &["clipping detected"], Some(-45.0));
+        let text = take_verdict_text(&q);
+        assert!(text.contains("score 0.42"), "{text}");
+        assert!(text.contains("clipping detected"), "{text}");
+        assert!(text.contains("coherence 0.71"), "{text}");
+        assert!(text.contains("SNR 18.2 dB"), "{text}");
+        assert!(text.contains("clipped 0.30%"), "{text}");
+        assert!(text.contains("drift -45 ppm"), "{text}");
+        assert!(text.contains("4/5 takes accepted"), "{text}");
+    }
+
+    #[test]
+    fn take_verdict_text_distinguishes_drift_unavailable_from_zero() {
+        // Task-7 review carry-forward: drift None must render as unavailable,
+        // never as "0 ppm".
+        let none = take_verdict_text(&quality_summary(true, &[], None));
+        assert!(none.contains("drift n/a"), "{none}");
+        assert!(!none.contains("0 ppm"), "{none}");
+
+        let zero = take_verdict_text(&quality_summary(true, &[], Some(0.0)));
+        assert!(zero.contains("drift +0 ppm"), "{zero}");
+        assert!(!zero.contains("n/a"), "{zero}");
+    }
+
+    #[test]
+    fn take_verdict_text_marks_drift_correction() {
+        let mut q = quality_summary(true, &[], Some(30.0));
+        q.drift_corrected = true;
+        assert!(take_verdict_text(&q).contains("drift +30 ppm (corrected)"));
+    }
+
+    #[test]
+    fn take_quality_cell_marks_review_accepted_and_clean() {
+        use crate::recording_types::ChannelRecordingState::*;
+        let warn = quality_summary(false, &["low coherence"], None);
+        let clean = quality_summary(true, &[], Some(5.0));
+        let mk = |q: TakeQualitySummary| RecordingResult {
+            channel: 0,
+            wav_path: None,
+            csv_path: None,
+            frequencies: vec![],
+            magnitude_db: vec![],
+            phase_deg: vec![],
+            impulse_response: None,
+            impulse_time_ms: None,
+            thd_percent: None,
+            harmonic_distortion_db: None,
+            excess_group_delay_ms: None,
+            rt60_ms: None,
+            clarity_c50_db: None,
+            clarity_c80_db: None,
+            spectrogram_db: None,
+            quality: Some(q),
+        };
+        let warned = mk(warn);
+        let clean_res = mk(clean);
+        assert_eq!(
+            take_quality_cell(ReviewNeeded, Some(&warned)),
+            "REVIEW 0.42"
+        );
+        // Accepted-with-warning stays distinct from a clean Done.
+        assert_eq!(take_quality_cell(Done, Some(&warned)), "OK* 0.42");
+        assert_eq!(take_quality_cell(Done, Some(&clean_res)), "OK 0.42");
+        // Legacy / loaded results without quality data say so explicitly.
+        assert_eq!(take_quality_cell(Done, None), "no data");
+        assert!(take_quality_cell(Empty, None).is_empty());
+        assert!(take_quality_cell(Recording, None).is_empty());
+    }
+
+    #[test]
+    fn dropout_warning_only_when_samples_dropped() {
+        assert!(dropout_warning(0).is_none());
+        let w = dropout_warning(512).expect("warning for dropped samples");
+        assert!(w.contains("512"), "{w}");
+        assert!(w.contains("dropped during capture"), "{w}");
+        assert!(w.contains("re-measuring"), "{w}");
+    }
+
+    #[test]
+    fn session_quality_summary_one_line_per_recorded_channel() {
+        use crate::recording_types::ChannelRecordingState;
+        let mut clean = ChannelRecording::new(0, "FL".to_string());
+        clean.state = ChannelRecordingState::Done;
+        let mut clean_q = quality_summary(true, &[], None);
+        clean_q.score = 0.95;
+        clean_q.rejected_count = 0;
+        clean.result = Some(RecordingResult {
+            channel: 0,
+            wav_path: None,
+            csv_path: None,
+            frequencies: vec![],
+            magnitude_db: vec![],
+            phase_deg: vec![],
+            impulse_response: None,
+            impulse_time_ms: None,
+            thd_percent: None,
+            harmonic_distortion_db: None,
+            excess_group_delay_ms: None,
+            rt60_ms: None,
+            clarity_c50_db: None,
+            clarity_c80_db: None,
+            spectrogram_db: None,
+            quality: Some(clean_q),
+        });
+
+        let mut bad = ChannelRecording::new(1, "FR (Pos 2)".to_string());
+        bad.state = ChannelRecordingState::ReviewNeeded;
+        let mut bad_q = quality_summary(false, &["clipping detected"], None);
+        bad_q.dropped_samples = 128;
+        bad.result = Some(RecordingResult {
+            channel: 1,
+            wav_path: None,
+            csv_path: None,
+            frequencies: vec![],
+            magnitude_db: vec![],
+            phase_deg: vec![],
+            impulse_response: None,
+            impulse_time_ms: None,
+            thd_percent: None,
+            harmonic_distortion_db: None,
+            excess_group_delay_ms: None,
+            rt60_ms: None,
+            clarity_c50_db: None,
+            clarity_c80_db: None,
+            spectrogram_db: None,
+            quality: Some(bad_q),
+        });
+
+        // Channels without a result yet are not listed.
+        let pending = ChannelRecording::new(2, "C".to_string());
+
+        let lines = session_quality_summary(&[clean, bad, pending]);
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].starts_with("FL: OK (score 0.95"), "{}", lines[0]);
+        assert!(lines[0].contains("4/4 sweeps"), "{}", lines[0]);
+        assert!(lines[1].starts_with("FR (Pos 2): REVIEW"), "{}", lines[1]);
+        assert!(lines[1].contains("clipping detected"), "{}", lines[1]);
+        assert!(lines[1].contains("128 dropped samples"), "{}", lines[1]);
+    }
+
+    #[test]
+    fn accepted_num_sweeps_for_save_is_min_over_done_channels() {
+        use crate::recording_types::ChannelRecordingState;
+        let mk = |state, accepted| {
+            let mut ch = ChannelRecording::new(0, "L".to_string());
+            ch.state = state;
+            let mut q = quality_summary(true, &[], None);
+            q.accepted_count = accepted;
+            ch.result = Some(RecordingResult {
+                channel: 0,
+                wav_path: None,
+                csv_path: None,
+                frequencies: vec![],
+                magnitude_db: vec![],
+                phase_deg: vec![],
+                impulse_response: None,
+                impulse_time_ms: None,
+                thd_percent: None,
+                harmonic_distortion_db: None,
+                excess_group_delay_ms: None,
+                rt60_ms: None,
+                clarity_c50_db: None,
+                clarity_c80_db: None,
+                spectrogram_db: None,
+                quality: Some(q),
+            });
+            ch
+        };
+
+        // No captures → None (legacy "unknown" semantics preserved).
+        assert_eq!(accepted_num_sweeps_for_save(&[]), None);
+        let legacy = ChannelRecording::new(0, "L".to_string());
+        assert_eq!(accepted_num_sweeps_for_save(&[legacy]), None);
+
+        // Min across Done channels; ReviewNeeded takes do not count (the
+        // user has not accepted them yet).
+        let channels = vec![
+            mk(ChannelRecordingState::Done, 4),
+            mk(ChannelRecordingState::Done, 3),
+            mk(ChannelRecordingState::ReviewNeeded, 1),
+        ];
+        assert_eq!(accepted_num_sweeps_for_save(&channels), Some(3));
+    }
+
+    #[test]
+    fn summarize_take_quality_maps_capture_analysis_fields() {
+        use sotf_audio::signal_analysis::{
+            AnalysisResult, ClockDriftEstimate, ClippingInfo, MeasurementQualityReport,
+        };
+        let result = AnalysisResult {
+            frequencies: vec![],
+            spl_db: vec![],
+            phase_deg: vec![],
+            estimated_lag_samples: 0,
+            impulse_response: vec![],
+            impulse_time_ms: vec![],
+            excess_group_delay_ms: vec![],
+            thd_percent: vec![],
+            harmonic_distortion_db: vec![],
+            rt60_ms: vec![],
+            clarity_c50_db: vec![],
+            clarity_c80_db: vec![],
+            spectrogram_db: vec![],
+        };
+        let report = MeasurementQualityReport {
+            trustworthy: false,
+            score: 0.3,
+            quality_data_complete: true,
+            missing_metrics: vec![],
+            lag_confidence: 0.9,
+            mean_coherence: Some(0.66),
+            snr_db: vec![10.0, 20.0],
+            median_snr_db: Some(15.0),
+            clipping: ClippingInfo {
+                clipped_samples: 3,
+                non_finite_samples: 0,
+                total_samples: 1000,
+                fraction: 0.003,
+            },
+            issues: vec!["clipping detected".to_string()],
+        };
+        let capture = CaptureAnalysis {
+            result,
+            quality: report,
+            drift: Some(ClockDriftEstimate {
+                ppm: -45.0,
+                start_lag_samples: 10,
+                end_lag_samples: 20,
+                confidence: 0.8,
+            }),
+            drift_corrected: true,
+            dropped_samples: 7,
+            accepted_count: 3,
+            rejected_count: 1,
+        };
+
+        let q = summarize_take_quality(&capture);
+        assert!(!q.trustworthy);
+        assert_eq!(q.score, 0.3);
+        assert_eq!(q.issues, vec!["clipping detected".to_string()]);
+        assert_eq!(q.mean_coherence, Some(0.66));
+        assert_eq!(q.median_snr_db, Some(15.0));
+        assert_eq!(q.clip_fraction, 0.003);
+        assert_eq!(q.drift_ppm, Some(-45.0));
+        assert!(q.drift_corrected);
+        assert_eq!(q.dropped_samples, 7);
+        assert_eq!(q.accepted_count, 3);
+        assert_eq!(q.rejected_count, 1);
+
+        // Drift unavailable stays None — never collapses to 0 ppm.
+        let capture_no_drift = CaptureAnalysis {
+            drift: None,
+            ..capture
+        };
+        assert_eq!(summarize_take_quality(&capture_no_drift).drift_ppm, None);
+    }
+
+    #[test]
+    fn position_guidance_anchors_first_position_at_mlp() {
+        let first = position_guidance(0, 3);
+        assert!(first.contains("Position 1 of 3"), "{first}");
+        assert!(first.contains("main listening position"), "{first}");
+        let later = position_guidance(1, 3);
+        assert!(later.contains("position 2 of 3"), "{later}");
+        assert!(later.contains("60 cm"), "{later}");
     }
 }

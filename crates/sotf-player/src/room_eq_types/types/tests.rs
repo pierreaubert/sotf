@@ -172,6 +172,7 @@ fn compute_lr_slope_computes_negative_slope() {
             clarity_c50_db: None,
             clarity_c80_db: None,
             spectrogram_db: None,
+            quality: None,
         },
         is_group: false,
         group_drivers: Vec::new(),
