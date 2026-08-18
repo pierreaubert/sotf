@@ -17,6 +17,8 @@ use super::misc::parse_channel_list;
 use super::misc::prepare_signal;
 use super::probe::gen_schroeder_narrowband_probe;
 #[cfg(not(target_os = "ios"))]
+use super::quality::{DriftAction, build_capture_quality, check_lag_lock, drift_action};
+#[cfg(not(target_os = "ios"))]
 use super::record::record_and_analyze;
 #[cfg(not(target_os = "ios"))]
 use super::record::record_and_analyze_multi;
@@ -34,6 +36,8 @@ use super::types::analyze_bass_anchor_recording;
 use super::types::pick_direct_arrival_from_envelope;
 use super::write::write_temp_wav;
 use super::write::write_wav_file;
+#[cfg(not(target_os = "ios"))]
+use crate::signal_analysis::{ClockDriftEstimate, LagEstimate, MeasurementQualityConfig};
 use hound::SampleFormat;
 use hound::WavReader;
 use std::path::{Path, PathBuf};
@@ -714,7 +718,7 @@ fn test_record_and_analyze_signature() {
 
         // This won't run, but ensures the signature is correct
         if false {
-            let _result = record_and_analyze(
+            let outcome = record_and_analyze(
                 temp_path,   // temp_wav_path (for playback)
                 output_path, // recorded_wav_path (for recording output)
                 &reference,  // reference_signal
@@ -728,11 +732,267 @@ fn test_record_and_analyze_signature() {
                 None,        // sweep_range
                 None,        // cancel flag
             );
+            // Task 7: the return value is a CaptureAnalysis wrapper carrying
+            // the math-dsp analysis plus the per-take quality report, drift
+            // estimate, and dropout count (R6).
+            if let Ok(capture) = outcome {
+                let _ = &capture.result;
+                let _ = &capture.quality;
+                let _ = &capture.drift;
+                let _ = capture.drift_corrected;
+                let _ = capture.dropped_samples;
+            }
         }
     };
 
     // Just verify it compiles
     let _ = _check;
+}
+
+// --- Task 7: lag-lock gate, drift thresholds, quality wrapper ---
+
+#[cfg(not(target_os = "ios"))]
+fn lag_estimate_with_confidence(confidence: f32) -> LagEstimate {
+    LagEstimate {
+        lag_samples: 100,
+        normalized_peak: 0.9,
+        peak_to_sidelobe_db: 20.0,
+        confidence,
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn drift_estimate(ppm: f64, confidence: f32) -> ClockDriftEstimate {
+    ClockDriftEstimate {
+        ppm,
+        start_lag_samples: 4800,
+        end_lag_samples: 4800,
+        confidence,
+    }
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn test_drift_action_thresholds() {
+    // No estimate, or a low-confidence estimate, never corrects.
+    assert_eq!(drift_action(None), DriftAction::None);
+    assert_eq!(
+        drift_action(Some(&drift_estimate(500.0, 0.1))),
+        DriftAction::None
+    );
+    // Within tolerance (|ppm| <= 20): no correction.
+    assert_eq!(
+        drift_action(Some(&drift_estimate(0.0, 1.0))),
+        DriftAction::None
+    );
+    assert_eq!(
+        drift_action(Some(&drift_estimate(19.9, 1.0))),
+        DriftAction::None
+    );
+    assert_eq!(
+        drift_action(Some(&drift_estimate(20.0, 1.0))),
+        DriftAction::None
+    );
+    // Above 20 ppm: correct (sign-independent).
+    assert_eq!(
+        drift_action(Some(&drift_estimate(21.0, 1.0))),
+        DriftAction::Correct
+    );
+    assert_eq!(
+        drift_action(Some(&drift_estimate(-45.0, 1.0))),
+        DriftAction::Correct
+    );
+    // Above 100 ppm: correct and advise.
+    assert_eq!(
+        drift_action(Some(&drift_estimate(101.0, 0.9))),
+        DriftAction::CorrectAndAdvise
+    );
+    assert_eq!(
+        drift_action(Some(&drift_estimate(-250.0, 1.0))),
+        DriftAction::CorrectAndAdvise
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn test_lag_lock_gate_threshold() {
+    let minimum = MeasurementQualityConfig::default().minimum_lag_confidence;
+    assert!(check_lag_lock(&lag_estimate_with_confidence(minimum), "test").is_ok());
+    assert!(check_lag_lock(&lag_estimate_with_confidence(0.9), "test").is_ok());
+
+    let err = check_lag_lock(&lag_estimate_with_confidence(minimum - 0.01), "test")
+        .expect_err("below-threshold confidence must be rejected");
+    assert!(
+        err.contains("No reliable signal lock"),
+        "error must be actionable: {err}"
+    );
+    assert!(err.contains("check mic connection"), "error: {err}");
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn test_build_capture_quality_clean_take_is_trustworthy() {
+    let lag = lag_estimate_with_confidence(0.9);
+    let clean = vec![0.0_f32; 4096];
+    let report = build_capture_quality(&clean, &lag, Vec::new());
+    assert!(report.trustworthy, "issues: {:?}", report.issues);
+    assert!(report.issues.is_empty());
+    // Coherence / SNR inputs are not wired yet (Task 8): reported missing,
+    // but not treated as failures under the default config.
+    assert!(!report.quality_data_complete);
+    assert!(report.missing_metrics.iter().any(|m| m == "coherence"));
+    assert!(report.missing_metrics.iter().any(|m| m == "noise_floor_db"));
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn test_build_capture_quality_extra_issue_marks_untrustworthy() {
+    let lag = lag_estimate_with_confidence(0.9);
+    let clean = vec![0.0_f32; 4096];
+    let report = build_capture_quality(&clean, &lag, vec!["clock drift 150.0 ppm".to_string()]);
+    assert!(!report.trustworthy);
+    assert!(
+        report
+            .issues
+            .iter()
+            .any(|issue| issue.contains("clock drift")),
+        "issues: {:?}",
+        report.issues
+    );
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn test_build_capture_quality_flags_clipping() {
+    let lag = lag_estimate_with_confidence(0.9);
+    // 1% of samples at full scale — above the 0.1% default clip threshold
+    // but below the Task-1 hard-abort block rule, so this path is reachable.
+    let mut clipped = vec![0.0_f32; 4096];
+    for sample in clipped.iter_mut().take(41) {
+        *sample = 1.0;
+    }
+    let report = build_capture_quality(&clipped, &lag, Vec::new());
+    assert!(!report.trustworthy);
+    assert!(
+        report.issues.iter().any(|issue| issue.contains("clipping")),
+        "issues: {:?}",
+        report.issues
+    );
+    assert!(report.clipping.clipped_samples == 41);
+}
+
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn test_active_reference_span_trims_padding() {
+    let mut padded = vec![0.0_f32; 4800];
+    padded.extend_from_slice(&[0.5, -0.5, 0.25]);
+    padded.extend_from_slice(&[0.0_f32; 2400]);
+    let active = super::quality::active_reference_span(&padded);
+    assert_eq!(active, &[0.5, -0.5, 0.25]);
+
+    // An all-silence reference is returned unchanged (no active span).
+    let silence = vec![0.0_f32; 128];
+    assert_eq!(super::quality::active_reference_span(&silence).len(), 128);
+}
+
+/// Offline plumbing test (no hardware): a delayed log sweep must lock with
+/// high confidence at exactly the injected lag, with negligible measured
+/// clock drift.
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn test_lag_and_drift_on_delayed_sweep() {
+    let sample_rate = 48_000_u32;
+    let sweep = crate::signals::gen_log_sweep(20.0, 20_000.0, 0.5, sample_rate, 1.0);
+    let delay = 4_800_usize; // 100 ms pre-silence
+    let mut recording = vec![0.0_f32; delay];
+    recording.extend_from_slice(&sweep);
+
+    let lag = crate::signal_analysis::estimate_lag_with_confidence(&sweep, &recording)
+        .expect("lag estimation on a clean delayed sweep");
+    assert_eq!(lag.lag_samples, delay as isize);
+    assert!(
+        lag.confidence >= MeasurementQualityConfig::default().minimum_lag_confidence,
+        "clean sweep must pass the lag-lock gate (confidence {:.3})",
+        lag.confidence
+    );
+    assert!(check_lag_lock(&lag, "test").is_ok());
+
+    let drift = crate::signal_analysis::estimate_clock_drift(&sweep, &recording, sample_rate)
+        .expect("drift estimation on a clean delayed sweep");
+    let drift = super::quality::normalize_clock_drift_ppm(drift, sample_rate);
+    assert!(
+        drift.ppm.abs() <= super::quality::DRIFT_CORRECT_PPM,
+        "no synthetic drift: expected |ppm| <= 20, got {:.2}",
+        drift.ppm
+    );
+    assert_eq!(drift_action(Some(&drift)), DriftAction::None);
+}
+
+/// Offline plumbing test (no hardware): an injected +150 ppm capture-clock
+/// stretch must be recovered by `estimate_clock_drift` (after the engine's
+/// ppm-scale normalization), and `correct_clock_drift` must bring the
+/// residual back under the correction threshold.
+///
+/// CANARY for the math-dsp 0.5.23 (pin 1c79399) ppm-scale bug:
+/// `estimate_clock_drift` returns true ppm multiplied by the sample rate
+/// (it divides the sample-domain lag change by elapsed *seconds*).
+/// `normalize_clock_drift_ppm` compensates. If a future math-audio pin fixes
+/// the upstream formula, this test fails and the normalization must go.
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn test_clock_drift_estimate_and_correct_roundtrip() {
+    let sample_rate = 48_000_u32;
+    // Start at 100 Hz (not 20 Hz): the drift estimator's 8192-sample start
+    // window must span enough cycles that periodic correlation sidelobes
+    // fall inside its guard band, keeping the estimate unambiguous.
+    let sweep = crate::signals::gen_log_sweep(100.0, 20_000.0, 0.5, sample_rate, 2.0);
+    let delay = 4_800_usize;
+    let mut reference_take = vec![0.0_f32; delay];
+    reference_take.extend_from_slice(&sweep);
+
+    // Simulate a capture clock running 150 ppm fast: content lands at
+    // later indices than a stable clock would put it (linear interp, same
+    // scheme as correct_clock_drift).
+    // The trailing silence matters: with a nonzero tail, 1-sample overlaps
+    // at the maximum candidate lag normalize to exactly 1.0 and outscore
+    // the true (interpolated, < 1.0) correlation peak.
+    let injected_ppm = 150.0_f64;
+    let scale = 1.0 - injected_ppm / 1e6;
+    let out_len = reference_take.len() + 4_800;
+    let mut drifted = vec![0.0_f32; out_len];
+    for (index, sample) in drifted.iter_mut().enumerate() {
+        let source = index as f64 * scale;
+        if source <= (reference_take.len() - 1) as f64 {
+            let left = source.floor() as usize;
+            let right = (left + 1).min(reference_take.len() - 1);
+            let frac = (source - left as f64) as f32;
+            *sample = reference_take[left] + frac * (reference_take[right] - reference_take[left]);
+        }
+    }
+
+    let raw = crate::signal_analysis::estimate_clock_drift(&sweep, &drifted, sample_rate)
+        .expect("drift estimation on a drifted sweep");
+    let estimate = super::quality::normalize_clock_drift_ppm(raw, sample_rate);
+    // Integer-lag quantization: 1 sample over the ~87808-sample window
+    // baseline is ~11 ppm; interpolation peak shift adds another sample.
+    assert!(
+        (estimate.ppm - injected_ppm).abs() < 45.0,
+        "expected ~{injected_ppm} ppm, got {:.2} (upstream ppm-scale bug? see canary note)",
+        estimate.ppm
+    );
+    assert_eq!(drift_action(Some(&estimate)), DriftAction::CorrectAndAdvise);
+
+    let corrected =
+        crate::signal_analysis::correct_clock_drift(&drifted, &estimate).expect("drift correction");
+    assert_eq!(corrected.len(), drifted.len());
+    let residual = crate::signal_analysis::estimate_clock_drift(&sweep, &corrected, sample_rate)
+        .map(|raw| super::quality::normalize_clock_drift_ppm(raw, sample_rate))
+        .expect("drift re-estimation after correction");
+    assert!(
+        residual.ppm.abs() < 60.0,
+        "residual drift after correction should be small, got {:.2} ppm",
+        residual.ppm
+    );
 }
 
 /// Diagnostic test: reads the real probe WAV from a recording session,

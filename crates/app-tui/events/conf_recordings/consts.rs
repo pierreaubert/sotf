@@ -401,10 +401,14 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 let rec_results = analysis_results
                     .into_iter()
                     .enumerate()
-                    .filter_map(|(idx, analysis_result)| {
+                    .filter_map(|(idx, capture)| {
                         let ch_idx = *capture_channel_indices.get(idx)?;
                         let wav_path = capture_wav_paths.get(idx)?;
                         let csv_path = capture_csv_paths.get(idx)?;
+                        // Task 7: engine returns CaptureAnalysis; the UI
+                        // consumes only the analysis for now (quality
+                        // surfacing is Task 9).
+                        let analysis_result = capture.result;
                         Some((
                             ch_idx,
                             RecordingResult {

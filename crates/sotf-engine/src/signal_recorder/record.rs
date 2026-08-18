@@ -9,6 +9,13 @@ use super::misc::check_capture_clipping;
 #[cfg(not(target_os = "ios"))]
 use super::misc::drain_capture;
 #[cfg(not(target_os = "ios"))]
+use super::quality::CaptureAnalysis;
+#[cfg(not(target_os = "ios"))]
+use super::quality::{
+    DriftAction, build_capture_quality, check_lag_lock, drift_action, log_capture_quality,
+    normalize_clock_drift_ppm,
+};
+#[cfg(not(target_os = "ios"))]
 use super::types::{CancelFlag, cancel_requested};
 #[cfg(not(target_os = "ios"))]
 use super::write::write_selected_channel_to_ring;
@@ -80,6 +87,11 @@ pub(super) fn resample_reference_signal(
 /// Plays back a signal to a specific output channel while simultaneously
 /// recording from a specific input channel, then analyzes the result.
 ///
+/// After the capture passes the silence/clipping gates it goes through the
+/// per-take quality pipeline (see [`super::quality`]): a hard lag-lock gate,
+/// clock-drift estimation with optional correction, and a quality report —
+/// all returned in [`CaptureAnalysis`].
+///
 /// `cancel` is a cooperative cancellation flag (see [`CancelFlag`]): when
 /// set, the capture stops the streams and returns
 /// `Err(CANCELLED_ERR)` ("cancelled") instead of analyzing.
@@ -98,7 +110,7 @@ pub fn record_and_analyze(
     microphone_compensation_path: Option<&str>,
     sweep_range: Option<(f32, f32)>,
     cancel: Option<CancelFlag>,
-) -> Result<crate::signal_analysis::AnalysisResult, String> {
+) -> Result<CaptureAnalysis, String> {
     use crate::AudioEngineManager;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::thread::sleep;
@@ -541,6 +553,68 @@ pub fn record_and_analyze(
     // Refuse hard-clipped takes; warn on moderate clipping.
     check_capture_clipping(&recorded, "record_and_analyze")?;
 
+    // Bring the reference onto the capture's sample rate before the
+    // correlation-based gates (lag lock, clock drift) and the analysis.
+    let resampled_reference = (analysis_sample_rate != sample_rate)
+        .then(|| resample_reference_signal(reference_signal, sample_rate, analysis_sample_rate))
+        .transpose()?;
+    let analysis_reference = resampled_reference.as_deref().unwrap_or(reference_signal);
+
+    // Hard gate: no confident cross-correlation peak means the sweep never
+    // locked onto the capture — analyzing it would proceed at an arbitrary
+    // lag and feed garbage to roomeq (same spirit as the silence gate).
+    let lag = super::quality::estimate_lag_or_advise(
+        analysis_reference,
+        &recorded,
+        "record_and_analyze",
+    )?;
+    check_lag_lock(&lag, "record_and_analyze")?;
+
+    // Clock drift (R5): correct large drift before analysis, advise on
+    // severe drift, never fail the take on drift alone. The estimator windows
+    // the ends of the reference, so hand it the active sweep rather than the
+    // silence-padded playback reference.
+    let drift_reference = super::quality::active_reference_span(analysis_reference);
+    let drift = crate::signal_analysis::estimate_clock_drift(
+        drift_reference,
+        &recorded,
+        analysis_sample_rate,
+    )
+    .ok()
+    .map(|raw| normalize_clock_drift_ppm(raw, analysis_sample_rate));
+    let mut drift_corrected = false;
+    let mut quality_issues: Vec<String> = Vec::new();
+    let recorded = match (drift_action(drift.as_ref()), drift) {
+        (DriftAction::None, _) | (_, None) => recorded,
+        (action, Some(estimate)) => {
+            log::warn!(
+                "[record_and_analyze] Clock drift {:.1} ppm detected (split DAC/ADC clocks, e.g. USB mic) — correcting capture before analysis",
+                estimate.ppm,
+            );
+            if action == DriftAction::CorrectAndAdvise {
+                quality_issues.push(format!(
+                    "clock drift {:.1} ppm exceeds {:.0} ppm — long sweeps on split-clock \
+                     setups (separate DAC/ADC, e.g. USB mic) smear HF phase even after \
+                     correction; prefer a single audio device or a loopback reference",
+                    estimate.ppm,
+                    super::quality::DRIFT_SEVERE_PPM,
+                ));
+            }
+            match crate::signal_analysis::correct_clock_drift(&recorded, &estimate) {
+                Ok(corrected) => {
+                    drift_corrected = true;
+                    corrected
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[record_and_analyze] Clock-drift correction failed ({e}) — using the uncorrected capture"
+                    );
+                    recorded
+                }
+            }
+        }
+    };
+
     // Write recorded samples to WAV file as MONO (1 channel)
     log::info!(
         "[record_and_analyze] Writing {} mono samples to WAV file...",
@@ -585,10 +659,6 @@ pub fn record_and_analyze(
 
     // Analyze the recording
     log::debug!("[record_and_analyze] Analyzing recording...");
-    let resampled_reference = (analysis_sample_rate != sample_rate)
-        .then(|| resample_reference_signal(reference_signal, sample_rate, analysis_sample_rate))
-        .transpose()?;
-    let analysis_reference = resampled_reference.as_deref().unwrap_or(reference_signal);
     let analysis = analyze_recording(
         recorded_wav_path,
         analysis_reference,
@@ -601,13 +671,26 @@ pub fn record_and_analyze(
         output_csv_path
     );
 
-    Ok(analysis)
+    // Per-take quality report. Advisory only — the silence/clip/lag gates
+    // above already hard-failed unusable takes.
+    let quality = build_capture_quality(&recorded, &lag, quality_issues);
+    log_capture_quality(&quality, "record_and_analyze");
+
+    Ok(CaptureAnalysis {
+        result: analysis,
+        quality,
+        drift,
+        drift_corrected,
+        dropped_samples: dropped_samples as u64,
+    })
 }
 
 /// Record and analyze capturing multiple input channels simultaneously.
 ///
 /// Plays the signal on `output_channel` and records from all `input_channels` at once.
-/// Returns one `AnalysisResult` per input channel (same order as `input_channels`).
+/// Returns one [`CaptureAnalysis`] per input channel (same order as `input_channels`):
+/// the math-dsp analysis plus a per-mic quality report (lag-confidence gate,
+/// clock-drift estimate/correction, capture diagnostics — see [`super::quality`]).
 /// Each channel's WAV and CSV are written to `recorded_wav_paths` / `csv_paths`.
 ///
 /// `mic_calibrations` must be the same length as `input_channels` (use `None` for uncalibrated).
@@ -630,7 +713,7 @@ pub fn record_and_analyze_multi(
     mic_calibrations: &[Option<String>],
     sweep_range: Option<(f32, f32)>,
     cancel: Option<CancelFlag>,
-) -> Result<Vec<crate::signal_analysis::AnalysisResult>, String> {
+) -> Result<Vec<CaptureAnalysis>, String> {
     use crate::AudioEngineManager;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::thread::sleep;
@@ -974,6 +1057,58 @@ pub fn record_and_analyze_multi(
         // Refuse hard-clipped takes; warn on moderate clipping.
         check_capture_clipping(&recorded, &format!("record_and_analyze_multi mic {mic_i}"))?;
 
+        // Hard gate: no confident cross-correlation peak means the sweep
+        // never locked onto this mic's capture (same spirit as the silence
+        // gate above).
+        let lag_tag = format!("record_and_analyze_multi mic {mic_i}");
+        let lag = super::quality::estimate_lag_or_advise(analysis_reference, &recorded, &lag_tag)?;
+        check_lag_lock(&lag, &lag_tag)?;
+
+        // Clock drift (R5): correct large drift before analysis, advise on
+        // severe drift, never fail the take on drift alone. The estimator
+        // windows the ends of the reference, so hand it the active sweep
+        // rather than the silence-padded playback reference.
+        let drift_reference = super::quality::active_reference_span(analysis_reference);
+        let drift = crate::signal_analysis::estimate_clock_drift(
+            drift_reference,
+            &recorded,
+            analysis_sample_rate,
+        )
+        .ok()
+        .map(|raw| normalize_clock_drift_ppm(raw, analysis_sample_rate));
+        let mut drift_corrected = false;
+        let mut quality_issues: Vec<String> = Vec::new();
+        let recorded = match (drift_action(drift.as_ref()), drift) {
+            (DriftAction::None, _) | (_, None) => recorded,
+            (action, Some(estimate)) => {
+                log::warn!(
+                    "[{lag_tag}] Clock drift {:.1} ppm detected (split DAC/ADC clocks, e.g. USB mic) — correcting capture before analysis",
+                    estimate.ppm,
+                );
+                if action == DriftAction::CorrectAndAdvise {
+                    quality_issues.push(format!(
+                        "clock drift {:.1} ppm exceeds {:.0} ppm — long sweeps on split-clock \
+                         setups (separate DAC/ADC, e.g. USB mic) smear HF phase even after \
+                         correction; prefer a single audio device or a loopback reference",
+                        estimate.ppm,
+                        super::quality::DRIFT_SEVERE_PPM,
+                    ));
+                }
+                match crate::signal_analysis::correct_clock_drift(&recorded, &estimate) {
+                    Ok(corrected) => {
+                        drift_corrected = true;
+                        corrected
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "[{lag_tag}] Clock-drift correction failed ({e}) — using the uncorrected capture"
+                        );
+                        recorded
+                    }
+                }
+            }
+        };
+
         // Write WAV
         write_wav_file(
             &recorded_wav_paths[mic_i],
@@ -1010,7 +1145,17 @@ pub fn record_and_analyze_multi(
         )?;
         write_analysis_csv(&analysis, &csv_paths[mic_i], compensation.as_ref())?;
 
-        results.push(analysis);
+        // Per-take quality report (advisory; hard gates already ran above).
+        let quality = build_capture_quality(&recorded, &lag, quality_issues);
+        log_capture_quality(&quality, &lag_tag);
+
+        results.push(CaptureAnalysis {
+            result: analysis,
+            quality,
+            drift,
+            drift_corrected,
+            dropped_samples: dropped_samples as u64,
+        });
     }
 
     Ok(results)

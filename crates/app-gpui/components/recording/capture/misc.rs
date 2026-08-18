@@ -1396,7 +1396,7 @@ impl PlayerView {
             };
 
             #[cfg(target_os = "ios")]
-            let results: Result<Vec<sotf_audio::AnalysisResult>, String> = {
+            let results: Result<Vec<sotf_audio::signal_recorder::CaptureAnalysis>, String> = {
                 let _ = &cancel_flag;
                 Err("Recording not available on iOS".to_string())
             };
@@ -1409,9 +1409,13 @@ impl PlayerView {
                         Ok(analysis_results) => {
                             let mut any_low_signal = false;
 
-                            for (mic_i, analysis_result) in
+                            for (mic_i, capture) in
                                 analysis_results.into_iter().enumerate()
                             {
+                                // Task 7: engine returns CaptureAnalysis; the
+                                // UI consumes only the analysis for now
+                                // (quality surfacing is Task 9).
+                                let analysis_result = capture.result;
                                 let mic = &mics[mic_i];
                                 let mic_name = &mics[mic_i].safe_name;
 
