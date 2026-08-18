@@ -9,12 +9,12 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ScaleType, line};
-use sotf_audio_player::recording_helpers::clamp_num_sweeps;
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, Badge, BadgeVariant, Button, ButtonSize,
     ButtonVariant, HStack, Heading, Input, InputSize, NumberInput, NumberInputSize, Select,
     SelectOption, StackAlign, StackSpacing, Text, TextSize, VStack,
 };
+use sotf_audio_player::recording_helpers::clamp_num_sweeps;
 
 /// Standard channel group definitions
 const CHANNEL_GROUPS: &[(&str, &str)] = &[
@@ -834,8 +834,7 @@ impl PlayerView {
                         ),
                 )
                 .child(
-                    Text::caption(recording_text.sweeps_per_channel_hint)
-                        .color(theme.text_muted),
+                    Text::caption(recording_text.sweeps_per_channel_hint).color(theme.text_muted),
                 )
         };
 

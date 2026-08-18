@@ -4,7 +4,6 @@ use crate::app::types::{ChannelRecordingState, RecordingResult, RecordingSignalT
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::PlayerView;
-use sotf_audio_player::ui_models::recording::BatchNextAction;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
@@ -12,6 +11,7 @@ use gpui_ui_kit::{
     Progress, ProgressSize, ProgressVariant, Select, SelectOption, StackAlign, StackJustify,
     StackSpacing, Text, TextSize, VStack,
 };
+use sotf_audio_player::ui_models::recording::BatchNextAction;
 
 impl PlayerView {
     /// Render the capture step UI
@@ -706,12 +706,9 @@ impl PlayerView {
         );
         let mut speaker_groups: Vec<SpeakerGroup> = Vec::new();
         for (vec_idx, rec) in recording_state.channel_recordings.iter().enumerate() {
-            if let Some(group) = speaker_groups
-                .iter_mut()
-                .find(|(_, si, pos, _, _)| {
-                    *si == rec.channel_index && *pos == rec.mic_position_index
-                })
-            {
+            if let Some(group) = speaker_groups.iter_mut().find(|(_, si, pos, _, _)| {
+                *si == rec.channel_index && *pos == rec.mic_position_index
+            }) {
                 group.4.push((rec.mic_index, rec.state));
             } else {
                 let speaker_name = rec
@@ -873,26 +870,28 @@ impl PlayerView {
                                             let view = view.clone();
                                             move |_, cx| {
                                                 view.update(cx, |this, cx| {
-                                                    let accepted = this.state.update(cx, |state, _cx| {
-                                                        let accepted = state
-                                                            .app
-                                                            .measurement_state
-                                                            .recording_state
-                                                            .accept_review_needed_for(
-                                                                speaker_idx,
-                                                                mic_position,
-                                                            );
-                                                        if accepted > 0 {
-                                                            state
+                                                    let accepted =
+                                                        this.state.update(cx, |state, _cx| {
+                                                            let accepted = state
                                                                 .app
                                                                 .measurement_state
                                                                 .recording_state
-                                                                .status_message = recording_text
-                                                                .accepted_takes(accepted)
-                                                                .to_string();
-                                                        }
-                                                        accepted
-                                                    });
+                                                                .accept_review_needed_for(
+                                                                    speaker_idx,
+                                                                    mic_position,
+                                                                );
+                                                            if accepted > 0 {
+                                                                state
+                                                                    .app
+                                                                    .measurement_state
+                                                                    .recording_state
+                                                                    .status_message =
+                                                                    recording_text
+                                                                        .accepted_takes(accepted)
+                                                                        .to_string();
+                                                            }
+                                                            accepted
+                                                        });
                                                     if accepted > 0 {
                                                         // Resume a batch parked by the
                                                         // quality gate (task-9 review R1).
@@ -1228,9 +1227,13 @@ impl PlayerView {
                 let Some(fallback_dir) = fallback_dir else {
                     log::error!("No recording directory selected");
                     self.state.update(cx, |state, _| {
-                        state.app.measurement_state.recording_state.status_message =
+                        let rec_state = &mut state.app.measurement_state.recording_state;
+                        rec_state.status_message =
                             "Please select a recording directory in the Configuration step"
                                 .to_string();
+                        // Hard failure before spawn: end the batch, mirroring
+                        // the async error arms (task-9 review C8).
+                        rec_state.auto_record_remaining = false;
                     });
                     cx.notify();
                     return;
@@ -1255,8 +1258,10 @@ impl PlayerView {
                 e
             );
             self.state.update(cx, |state, _| {
-                state.app.measurement_state.recording_state.status_message =
-                    format!("Cannot create recording directory: {}", e);
+                let rec_state = &mut state.app.measurement_state.recording_state;
+                rec_state.status_message = format!("Cannot create recording directory: {}", e);
+                // Hard failure before spawn: end the batch (task-9 review C8).
+                rec_state.auto_record_remaining = false;
             });
             cx.notify();
             return;
@@ -1357,13 +1362,12 @@ impl PlayerView {
                             rec.state = ChannelRecordingState::Error;
                         }
                     }
-                    state
-                        .app
-                        .measurement_state
-                        .recording_state
-                        .current_recording_channel = None;
-                    state.app.measurement_state.recording_state.status_message =
-                        format!("Error: {}", e);
+                    let rec_state = &mut state.app.measurement_state.recording_state;
+                    rec_state.current_recording_channel = None;
+                    rec_state.status_message = format!("Error: {}", e);
+                    // Hard failure before spawn: end the batch, mirroring
+                    // the async error arms (task-9 review C8).
+                    rec_state.auto_record_remaining = false;
                 });
                 cx.notify();
                 return;
@@ -1386,13 +1390,12 @@ impl PlayerView {
                             rec.state = ChannelRecordingState::Error;
                         }
                     }
-                    state
-                        .app
-                        .measurement_state
-                        .recording_state
-                        .current_recording_channel = None;
-                    state.app.measurement_state.recording_state.status_message =
-                        format!("Error: {}", e);
+                    let rec_state = &mut state.app.measurement_state.recording_state;
+                    rec_state.current_recording_channel = None;
+                    rec_state.status_message = format!("Error: {}", e);
+                    // Hard failure before spawn: end the batch, mirroring
+                    // the async error arms (task-9 review C8).
+                    rec_state.auto_record_remaining = false;
                 });
                 cx.notify();
                 return;
@@ -2137,8 +2140,7 @@ impl PlayerView {
             // sweep metadata when the actual stimulus is a sweep generated
             // with the same values (see `capture_signal_params` at capture
             // time).
-            let recording_config =
-                rec_state.build_recording_configuration(Some(&recording_dir));
+            let recording_config = rec_state.build_recording_configuration(Some(&recording_dir));
 
             // Group every completed (channel × mic × position) take by
             // channel_index so each output channel produces exactly one
@@ -2831,18 +2833,16 @@ impl PlayerView {
                     )
                     .child(
                         div().px(d.card).py(d.card).child(
-                            VStack::new()
-                                .spacing(StackSpacing::Md)
-                                .child(
-                                    Text::new(
-                                        crate::app::i18n::RecordingWorkflowTranslations::for_language(
-                                            state.app.ui_state.language,
-                                        )
-                                        .move_position_body(next_pos_one_based),
+                            VStack::new().spacing(StackSpacing::Md).child(
+                                Text::new(
+                                    crate::app::i18n::RecordingWorkflowTranslations::for_language(
+                                        state.app.ui_state.language,
                                     )
-                                    .size(TextSize::Sm)
-                                    .color(theme.text_primary),
-                                ),
+                                    .move_position_body(next_pos_one_based),
+                                )
+                                .size(TextSize::Sm)
+                                .color(theme.text_primary),
+                            ),
                         ),
                     )
                     .child(
@@ -2864,7 +2864,7 @@ impl PlayerView {
                                     .text_color(theme.text_secondary)
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.border))
-                            .child(text.cancel_session)
+                                    .child(text.cancel_session)
                                     .on_click(move |_event, _window, cx| {
                                         view_cancel.update(cx, |this, cx| {
                                             this.cancel_position_modal(cx);
@@ -2881,7 +2881,7 @@ impl PlayerView {
                                     .text_color(theme.text_on_accent)
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.accent_muted))
-                            .child(text.continue_action)
+                                    .child(text.continue_action)
                                     .on_click(move |_event, _window, cx| {
                                         view.update(cx, |this, cx| {
                                             this.continue_position_modal(cx);
@@ -2941,7 +2941,8 @@ impl PlayerView {
 
     /// Continue button handler for the move-position modal. Closes the
     /// modal and resumes auto-record at the next position.
-    pub(super) fn continue_position_modal(&mut self, cx: &mut Context<Self>) {        let next_idx_opt = self.state.update(cx, |state, _| {
+    pub(super) fn continue_position_modal(&mut self, cx: &mut Context<Self>) {
+        let next_idx_opt = self.state.update(cx, |state, _| {
             let rec_state = &mut state.app.measurement_state.recording_state;
             rec_state.move_position_modal_open = false;
             let just_finished = rec_state.pending_next_position.take().unwrap_or(0);
