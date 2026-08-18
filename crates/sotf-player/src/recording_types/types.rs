@@ -35,9 +35,12 @@ pub enum ChannelRecordingState {
 /// Extracted from `sotf_audio::signal_recorder::CaptureAnalysis` by
 /// [`crate::recording_helpers::summarize_take_quality`] and stored on
 /// [`RecordingResult`] so the verdict survives from capture completion to
-/// the point where the user reviews it (and to the on-disk session JSON for
-/// post-mortem). `None` on a result means "captured before quality gating
-/// existed" or "loaded from an older session file" — never fabricate one.
+/// the point where the user reviews it. NOTE (task-9 review B1): this is
+/// **in-memory only** — the session save serializes `InlineMeasurement`
+/// (frequencies/magnitude/phase/paths), which drops the quality summary, so
+/// after save → reload every result comes back with `quality: None` and the
+/// UI renders "no data". `None` on a result means "captured before quality
+/// gating existed" or "loaded from a session file" — never fabricate one.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TakeQualitySummary {
     /// math-dsp verdict: false when any issue was raised (lag confidence,

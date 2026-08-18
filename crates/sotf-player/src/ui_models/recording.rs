@@ -77,6 +77,12 @@ pub struct RecordingScreenModel {
     pub channel_recordings: Vec<ChannelRecording>,
     pub transfer_matrix_loopbacks: Vec<TransferMatrixLoopbackRecording>,
     pub ctc_reference_sweep_path: Option<String>,
+    /// Actual duration (seconds) of the persisted `ctc_reference_sweep.wav`
+    /// stimulus, measured from the generated signal at capture time. The
+    /// octave-scaled sweep (B1) is self-timed, so `signal_duration_secs` does
+    /// NOT describe that WAV — persist this as `CtcConfig::sweep_duration_s`
+    /// (`None` when unknown) instead of the nominal knob value.
+    pub ctc_reference_sweep_duration_s: Option<f32>,
     pub current_recording_channel: Option<usize>,
     pub recording_progress: f32,
     /// Whether to automatically record all remaining channels.
@@ -179,6 +185,7 @@ impl Default for RecordingScreenModel {
             channel_recordings: Vec::new(),
             transfer_matrix_loopbacks: Vec::new(),
             ctc_reference_sweep_path: None,
+            ctc_reference_sweep_duration_s: None,
             current_recording_channel: None,
             recording_progress: 0.0,
             auto_record_remaining: false,
@@ -276,7 +283,11 @@ impl RecordingScreenModel {
 
         self.channel_recordings = out;
         self.transfer_matrix_loopbacks.clear();
+        // Reset the CTC reference sweep together with its measured duration
+        // (task 10: path and duration describe one artifact; never clear one
+        // without the other).
         self.ctc_reference_sweep_path = None;
+        self.ctc_reference_sweep_duration_s = None;
     }
 
     /// Position index (0-based) of the next pending recording.
@@ -393,6 +404,14 @@ impl RecordingScreenModel {
     /// warnings (see [`crate::recording_helpers::session_quality_summary`]).
     pub fn session_quality_summary(&self) -> Vec<String> {
         crate::recording_helpers::session_quality_summary(&self.channel_recordings)
+    }
+
+    /// Structured session quality lines (text + severity kind) for UIs that
+    /// color by verdict (see [`crate::recording_helpers::session_quality_lines`]).
+    pub fn session_quality_lines(
+        &self,
+    ) -> Vec<(String, crate::recording_helpers::SessionQualityLineKind)> {
+        crate::recording_helpers::session_quality_lines(&self.channel_recordings)
     }
 
     /// Request cancellation of the in-flight sweep capture. The engine

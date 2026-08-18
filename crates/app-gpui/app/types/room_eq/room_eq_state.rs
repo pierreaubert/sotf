@@ -90,6 +90,7 @@ impl RoomEqState {
             channel_recordings: recording_state.channel_recordings.clone(),
             transfer_matrix_loopbacks: recording_state.transfer_matrix_loopbacks.clone(),
             ctc_reference_sweep_path: recording_state.ctc_reference_sweep_path.clone(),
+            ctc_reference_sweep_duration_s: recording_state.ctc_reference_sweep_duration_s,
             probe_capture: recording_state.probe_capture.clone(),
             signal_duration_secs: recording_state.signal_duration_secs,
             recording_directory: recording_state.recording_directory.clone(),

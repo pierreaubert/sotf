@@ -47,12 +47,13 @@ pub struct RecordingState {
     /// are currently visible, or `None` when no dropdown is open.
     pub channel_speaker_autocomplete_open: Option<usize>,
 
-    /// Actual duration (seconds) of the persisted `ctc_reference_sweep.wav`
-    /// stimulus. Tracked GPUI-side because the octave-scaled sweep (B1) is
-    /// self-timed: `signal_duration_secs` no longer describes the reference
-    /// WAV, so the real length is recorded at capture time and persisted as
-    /// `CtcConfig::sweep_duration_s` at save time.
-    pub ctc_reference_sweep_duration_s: Option<f32>,
+    /// Monotonically increasing capture generation (task 10). Bumped on every
+    /// `start_recording_channel` / `stop_recording` / `reset_all_recordings`;
+    /// the capture task's completion closure compares its captured generation
+    /// against the current one and discards the results when they differ, so
+    /// an OLD task completing inside the ~50 ms cancel-poll window cannot
+    /// mark a NEW capture's channels `Done` with the old results.
+    pub capture_generation: u64,
 }
 
 impl Default for RecordingState {
@@ -79,7 +80,7 @@ impl Default for RecordingState {
             plot_channel_dropdown_open: false,
             plot_smoothing_dropdown_open: false,
             channel_speaker_autocomplete_open: None,
-            ctc_reference_sweep_duration_s: None,
+            capture_generation: 0,
         }
     }
 }
@@ -95,5 +96,15 @@ impl Deref for RecordingState {
 impl DerefMut for RecordingState {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.model
+    }
+}
+
+impl RecordingState {
+    /// Stale-completion guard (task 10): true when `generation` — captured by
+    /// a recording task at spawn time — still matches the current capture
+    /// generation. A stop/restart between spawn and completion bumps the
+    /// generation, so a late-finishing OLD task must not apply its results.
+    pub fn is_current_capture(&self, generation: u64) -> bool {
+        self.capture_generation == generation
     }
 }

@@ -123,6 +123,25 @@ struct RawSweepTakeMulti {
     dropped_samples: u64,
 }
 
+/// Apply a playback-stop result: a stop failure is fatal only when the
+/// capture was NOT cancelled. On cancel, the error is logged and ignored so
+/// the caller's `CANCELLED_ERR` always wins over a secondary "Failed to stop
+/// playback" (Task 10).
+#[cfg(not(target_os = "ios"))]
+pub(super) fn cancel_aware_stop(
+    stop_result: Result<(), impl std::fmt::Display>,
+    cancelled: bool,
+) -> Result<(), String> {
+    match stop_result {
+        Ok(()) => Ok(()),
+        Err(e) if cancelled => {
+            log::warn!("Ignoring playback-stop failure after cancellation: {e}");
+            Ok(())
+        }
+        Err(e) => Err(format!("Failed to stop playback: {e}")),
+    }
+}
+
 /// Perform one play/record capture cycle using AudioEngineManager for
 /// playback and cpal for recording.
 ///
@@ -515,10 +534,9 @@ fn capture_sweep_take(
         sleep(Duration::from_millis(1000));
     }
 
-    // Stop playback
-    manager
-        .stop()
-        .map_err(|e| format!("Failed to stop playback: {}", e))?;
+    // Stop playback. On cancel, a stop failure must not mask the
+    // cancellation: log-and-ignore so `CANCELLED_ERR` below always wins.
+    cancel_aware_stop(manager.stop(), cancelled)?;
 
     // Stop recording
     std::mem::drop(input_stream);
@@ -896,9 +914,9 @@ fn capture_sweep_take_multi(
     if !cancelled {
         sleep(Duration::from_millis(1000));
     }
-    manager
-        .stop()
-        .map_err(|e| format!("Failed to stop playback: {}", e))?;
+    // On cancel, a stop failure must not mask the cancellation:
+    // log-and-ignore so `CANCELLED_ERR` below always wins.
+    cancel_aware_stop(manager.stop(), cancelled)?;
     std::mem::drop(input_stream);
     sleep(Duration::from_millis(100));
 
@@ -964,6 +982,14 @@ type TakeDrift = (Option<ClockDriftEstimate>, bool, Option<(f64, String)>);
 /// Estimate clock drift on one take and, when warranted, time-rescale it
 /// before averaging/analysis. Returns the (possibly corrected) take and its
 /// [`TakeDrift`] bookkeeping. Drift alone never fails the take.
+///
+/// Two guards against garbage estimates (task-8 review A1):
+/// - estimates above [`super::quality::DRIFT_IMPLAUSIBLE_PPM`] are physically
+///   implausible for an audio clock and are never applied;
+/// - after a successful `correct_clock_drift` the corrected take must still
+///   lock onto the reference ([`correction_keeps_lock`]); if the lock
+///   collapses the estimate was wrong, not the clock, and the correction is
+///   discarded (the raw take is kept, the advisory still stands).
 #[cfg(not(target_os = "ios"))]
 fn correct_take_clock_drift(
     recorded: &[f32],
@@ -983,6 +1009,23 @@ fn correct_take_clock_drift(
     .map(|raw| normalize_clock_drift_ppm(raw, analysis_sample_rate));
     match (drift_action(drift.as_ref()), drift) {
         (DriftAction::None, _) | (_, None) => (recorded.to_vec(), (drift, false, None)),
+        (DriftAction::Implausible, Some(estimate)) => {
+            log::warn!(
+                "[{log_tag}] Clock-drift estimate {:.0} ppm is physically implausible for an \
+                 audio clock — skipping correction",
+                estimate.ppm,
+            );
+            let advisory = (
+                estimate.ppm.abs(),
+                format!(
+                    "clock drift estimate of {:.0} ppm is physically implausible for an audio \
+                     clock — correction skipped; check the capture for dropouts or a wrong \
+                     reference signal",
+                    estimate.ppm,
+                ),
+            );
+            (recorded.to_vec(), (Some(estimate), false, Some(advisory)))
+        }
         (action, Some(estimate)) => {
             log::warn!(
                 "[{log_tag}] Clock drift {:.1} ppm detected (split DAC/ADC clocks, e.g. USB mic) — correcting capture before analysis",
@@ -1001,7 +1044,22 @@ fn correct_take_clock_drift(
                 )
             });
             match crate::signal_analysis::correct_clock_drift(recorded, &estimate) {
-                Ok(corrected) => (corrected, (Some(estimate), true, advisory)),
+                Ok(corrected) => {
+                    if correction_keeps_lock(
+                        analysis_reference,
+                        recorded,
+                        &corrected,
+                        analysis_sample_rate,
+                    ) {
+                        (corrected, (Some(estimate), true, advisory))
+                    } else {
+                        log::warn!(
+                            "[{log_tag}] Clock-drift correction collapsed the lag lock — \
+                             discarding the correction and keeping the raw capture"
+                        );
+                        (recorded.to_vec(), (Some(estimate), false, advisory))
+                    }
+                }
                 Err(e) => {
                     log::warn!(
                         "[{log_tag}] Clock-drift correction failed ({e}) — using the uncorrected capture"
@@ -1011,6 +1069,51 @@ fn correct_take_clock_drift(
             }
         }
     }
+}
+
+/// Correct-then-verify (task-8 review A1): a correction is kept only when the
+/// corrected take still locks onto the reference like the raw take did:
+///
+/// - the lag-lock confidence must not collapse (less than half the raw
+///   take's) nor fall below the quality gate's minimum while the raw take
+///   passed it;
+/// - the bulk lag must stay put: a drift correction preserves the capture's
+///   start, so the lock point can move by at most a small tolerance
+///   (20 ms). A wild shift means the "correction" mangled the take.
+///
+/// A garbage drift estimate can stretch a clean take out of lock; this check
+/// catches that without relying on downstream MAD rejection. Confidence alone
+/// is not sufficient — the estimator reports spuriously high confidence on
+/// pure noise, but at a meaningless lag.
+#[cfg(not(target_os = "ios"))]
+pub(super) fn correction_keeps_lock(
+    reference: &[f32],
+    raw: &[f32],
+    corrected: &[f32],
+    sample_rate: u32,
+) -> bool {
+    use crate::signal_analysis::MeasurementQualityConfig;
+
+    // If the raw take never locked there is no good lock to destroy — leave
+    // the verdict to the downstream gates (single-take lag gate, MAD).
+    let Ok(raw_lock) = crate::signal_analysis::estimate_lag_with_confidence(reference, raw) else {
+        return true;
+    };
+    let corrected_lock =
+        match crate::signal_analysis::estimate_lag_with_confidence(reference, corrected) {
+            Ok(lock) => lock,
+            // The corrected take no longer locks at all — discard.
+            Err(_) => return false,
+        };
+    let minimum = MeasurementQualityConfig::default().minimum_lag_confidence;
+    if corrected_lock.confidence < raw_lock.confidence * 0.5 {
+        return false;
+    }
+    if corrected_lock.confidence < minimum && raw_lock.confidence >= minimum {
+        return false;
+    }
+    let lag_tolerance = (sample_rate / 50).max(1) as isize; // 20 ms
+    (corrected_lock.lag_samples - raw_lock.lag_samples).abs() <= lag_tolerance
 }
 
 /// REW-style synchronous averaging: align each accepted take at its lag,
@@ -1053,6 +1156,45 @@ fn raw_take_wav_path(recorded_wav_path: &Path, take_index: usize) -> PathBuf {
         .map(|stem| stem.to_string_lossy().into_owned())
         .unwrap_or_else(|| "recording".to_string());
     recorded_wav_path.with_file_name(format!("{stem}.take{}.wav", take_index + 1))
+}
+
+/// Remove pre-existing `{stem}.take*.wav` siblings of a capture WAV (task-8
+/// review A4): rerunning a session with fewer sweeps would otherwise leave
+/// higher-N raw takes from the previous run next to the new averaged WAV.
+/// Removal failures are logged and ignored.
+#[cfg(not(target_os = "ios"))]
+fn remove_stale_take_wavs(recorded_wav_path: &Path, log_tag: &str) {
+    let stem = recorded_wav_path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "recording".to_string());
+    let prefix = format!("{stem}.take");
+    let Some(parent) = recorded_wav_path.parent() else {
+        return;
+    };
+    let entries = match std::fs::read_dir(parent) {
+        Ok(entries) => entries,
+        Err(e) => {
+            log::warn!(
+                "[{log_tag}] Could not list {:?} for stale take-WAV cleanup: {e}",
+                parent
+            );
+            return;
+        }
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with(&prefix)
+            && name.ends_with(".wav")
+            && let Err(e) = std::fs::remove_file(entry.path())
+        {
+            log::warn!(
+                "[{log_tag}] Could not remove stale take WAV {:?}: {e}",
+                entry.path()
+            );
+        }
+    }
 }
 
 /// Write a mono capture WAV and verify the round-trip channel count.
@@ -1339,11 +1481,21 @@ pub(super) fn analyze_sweep_takes(
 
     // Repeat captures preserve every raw (pre-drift-correction) take next to
     // the averaged WAV so per-take raw data survives for post-mortem (the
-    // Task-7 single-take path intentionally keeps its old behavior).
+    // Task-7 single-take path intentionally keeps its old behavior). Stale
+    // `*.takeN.wav` siblings from a previous run with a higher take count
+    // are removed first so the directory cannot mix takes from two sessions
+    // (task-8 review A4); a failing raw-take write only warns — the averaged
+    // WAV/CSV/analysis are already valid at this point (task-8 review A3).
     if !single_take {
+        remove_stale_take_wavs(recorded_wav_path, log_tag);
         for (take_index, raw) in raw_takes.iter().enumerate() {
             let raw_path = raw_take_wav_path(recorded_wav_path, take_index);
-            write_wav_file(&raw_path, raw, analysis_sample_rate, 1)?;
+            if let Err(e) = write_wav_file(&raw_path, raw, analysis_sample_rate, 1) {
+                log::warn!(
+                    "[{log_tag}] Failed to preserve raw take WAV {:?} ({e}) — continuing; the averaged measurement is unaffected",
+                    raw_path
+                );
+            }
         }
         log::info!(
             "[{log_tag}] Preserved {} raw take WAV(s) next to {:?} (*.takeN.wav)",
@@ -1511,7 +1663,20 @@ pub fn record_and_analyze(
             cancel.as_ref(),
         )?;
         dropped_samples = dropped_samples.saturating_add(take.dropped_samples);
-        analysis_sample_rate = take.analysis_sample_rate;
+        // Guard against the device renegotiating its sample rate mid-set
+        // (task-8 review A5): takes at mixed rates would be averaged and
+        // deconvolved as if at one rate.
+        if take_index == 0 {
+            analysis_sample_rate = take.analysis_sample_rate;
+        } else if take.analysis_sample_rate != analysis_sample_rate {
+            return Err(format!(
+                "[record_and_analyze] Input device renegotiated its sample rate mid-capture \
+                 ({} Hz → {} Hz at take {}) — aborting the set; check the device connection",
+                analysis_sample_rate,
+                take.analysis_sample_rate,
+                take_index + 1,
+            ));
+        }
         takes.push(take.recorded);
     }
 
@@ -1622,7 +1787,20 @@ pub fn record_and_analyze_multi(
             cancel.as_ref(),
         )?;
         dropped_samples = dropped_samples.saturating_add(take.dropped_samples);
-        analysis_sample_rate = take.analysis_sample_rate;
+        // See `record_and_analyze`: guard against the device renegotiating
+        // its sample rate mid-set (task-8 review A5).
+        if take_index == 0 {
+            analysis_sample_rate = take.analysis_sample_rate;
+        } else if take.analysis_sample_rate != analysis_sample_rate {
+            return Err(format!(
+                "[record_and_analyze_multi] Input device renegotiated its sample rate \
+                 mid-capture ({} Hz → {} Hz at take {}) — aborting the set; check the \
+                 device connection",
+                analysis_sample_rate,
+                take.analysis_sample_rate,
+                take_index + 1,
+            ));
+        }
         for (mic_i, recorded) in take.recorded_per_mic.into_iter().enumerate() {
             takes_per_mic[mic_i].push(recorded);
         }

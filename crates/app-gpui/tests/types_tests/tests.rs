@@ -1053,6 +1053,26 @@ fn test_recording_state_review_needed_accept_flow() {
 }
 
 #[test]
+fn test_recording_capture_generation_guard() {
+    // Task 10: `capture_generation` invalidates stale capture completions —
+    // a task that spawned at generation N must be ignored once stop/restart
+    // has bumped the counter.
+    let mut state = RecordingState::default();
+    assert_eq!(state.capture_generation, 0);
+    assert!(state.is_current_capture(0));
+
+    // Simulate start_recording_channel bumping the generation at spawn.
+    state.capture_generation += 1;
+    assert!(!state.is_current_capture(0));
+    assert!(state.is_current_capture(1));
+
+    // stop_recording bumps again: the in-flight task's generation is stale.
+    state.capture_generation += 1;
+    assert!(!state.is_current_capture(1));
+    assert!(state.is_current_capture(2));
+}
+
+#[test]
 fn test_layout_mode_variants() {
     assert_ne!(LayoutMode::Compact, LayoutMode::Expanded);
 }

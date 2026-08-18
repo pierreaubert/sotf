@@ -67,7 +67,7 @@ pub(super) struct Cli {
     #[arg(long, default_value_t = sotf_audio_player::recording_helpers::DEFAULT_SWEEP_END_FREQ)]
     pub(super) end_freq: f32,
 
-    /// Amplitude (0.0-1.0)
+    /// Amplitude (0.0-1.0]
     #[arg(long)]
     pub(super) amp: Option<f32>,
 

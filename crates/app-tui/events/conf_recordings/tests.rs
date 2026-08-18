@@ -114,35 +114,39 @@ fn init_recording_channels_handles_empty_config() {
 }
 
 #[test]
-fn save_recordings_rejects_path_separators_in_name() {
+fn save_recordings_accepts_arbitrary_session_name_label() {
+    // The session name is a display label only: it never reaches any path
+    // (the session file is always `recordings.json`), so characters like
+    // path separators need no validation gate.
     let mut app = make_app();
-    app.recording.model.save_name = "../../evil".to_string();
-    save_recordings(&mut app);
-    assert!(app.recording.save.error.is_some());
-    assert!(
-        app.recording
-            .save
-            .error
-            .as_ref()
-            .unwrap()
-            .contains("path separators")
-    );
-}
+    let tmp = tempfile::tempdir().unwrap();
+    app.recording.output_directory = tmp.path().to_string_lossy().to_string();
+    app.recording.model.save_name = "../../evil\\name".to_string();
+    app.recording.model.playback_config.channel_mappings = vec![ChannelMapping::single(0, "FL")];
+    app.recording.model.playback_config.num_channels = 1;
+    let mut ch = ChannelRecording::new(0, "FL".to_string());
+    ch.state = ChannelRecordingState::Done;
+    ch.result = Some(done_recording_result(-10.0));
+    app.recording.model.channel_recordings = vec![ch];
 
-#[test]
-fn save_recordings_rejects_backslash_in_name() {
-    let mut app = make_app();
-    app.recording.model.save_name = "foo\\bar".to_string();
     save_recordings(&mut app);
-    assert!(app.recording.save.error.is_some());
     assert!(
-        app.recording
-            .save
-            .error
-            .as_ref()
-            .unwrap()
-            .contains("path separators")
+        app.recording.save.error.is_none(),
+        "save_recordings errored: {:?}",
+        app.recording.save.error
     );
+    let rx = app
+        .recording
+        .save
+        .receiver
+        .take()
+        .expect("save thread spawned");
+    let result = rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("save thread answered");
+    result.expect("save succeeded");
+
+    assert!(tmp.path().join("recordings.json").exists());
 }
 
 #[test]

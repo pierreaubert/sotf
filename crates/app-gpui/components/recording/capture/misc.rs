@@ -40,27 +40,43 @@ impl PlayerView {
     pub(super) fn render_signal_config_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
+        let recording_text = crate::app::i18n::RecordingWorkflowTranslations::for_language(
+            state.app.ui_state.language,
+        );
+        // Task 10: the duration knob is ignored for sweeps (the octave-scaled
+        // sweep is self-timed) — show a hint so users are not misled. The
+        // field stays: it still applies to non-sweep signal types.
+        let is_sweep =
+            state.app.measurement_state.recording_state.signal_type == RecordingSignalType::Sweep;
         let _ = state;
 
-        Card::new().content(
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                .align(StackAlign::Center)
-                .child(
-                    HStack::new()
-                        .spacing(StackSpacing::Sm)
-                        .align(StackAlign::Center)
-                        .child(Text::label(translations.recording_signal_type_label))
-                        .child(self.render_signal_type_dropdown(cx)),
-                )
-                .child(
-                    HStack::new()
-                        .spacing(StackSpacing::Sm)
-                        .align(StackAlign::Center)
-                        .child(Text::label(translations.recording_duration_label))
-                        .child(self.render_duration_dropdown(cx)),
-                ),
-        )
+        let fields = HStack::new()
+            .spacing(StackSpacing::Md)
+            .align(StackAlign::Center)
+            .child(
+                HStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .align(StackAlign::Center)
+                    .child(Text::label(translations.recording_signal_type_label))
+                    .child(self.render_signal_type_dropdown(cx)),
+            )
+            .child(
+                HStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .align(StackAlign::Center)
+                    .child(Text::label(translations.recording_duration_label))
+                    .child(self.render_duration_dropdown(cx)),
+            );
+
+        Card::new().content(if is_sweep {
+            VStack::new()
+                .spacing(StackSpacing::Xs)
+                .child(fields)
+                .child(Text::caption(recording_text.duration_ignored_for_sweeps))
+                .into_any_element()
+        } else {
+            fields.into_any_element()
+        })
     }
 
     /// Render signal type dropdown
@@ -532,12 +548,14 @@ impl PlayerView {
             state.app.ui_state.language,
         );
         // Per-take quality recap (engine CaptureAnalysis summaries); empty
-        // until at least one take carries quality data.
+        // until at least one take carries quality data. Structured (line,
+        // kind) pairs so the panel colors by verdict instead of substring-
+        // matching the rendered text (task-9 review B3).
         let quality_lines = state
             .app
             .measurement_state
             .recording_state
-            .session_quality_summary();
+            .session_quality_lines();
         let _ = state;
 
         let view = cx.entity().clone();
@@ -614,11 +632,12 @@ impl PlayerView {
                                         Text::label(recording_text.session_quality_title)
                                             .color(theme.text_secondary),
                                     )
-                                    .children(quality_lines.iter().map(|line| {
-                                        let color = if line.contains("REVIEW") {
-                                            theme.warning
-                                        } else {
-                                            theme.text_secondary
+                                    .children(quality_lines.iter().map(|(line, kind)| {
+                                        let color = match kind {
+                                            sotf_audio_player::recording_helpers::SessionQualityLineKind::Review => {
+                                                theme.warning
+                                            }
+                                            _ => theme.text_secondary,
                                         };
                                         Text::caption(line.clone()).color(color)
                                     })),
@@ -1284,19 +1303,16 @@ impl PlayerView {
             }
             rec_state.sweep_cancel_requested.clone()
         });
-        self.state.update(cx, |state, _| {
-            state
-                .app
-                .measurement_state
-                .recording_state
-                .current_recording_channel = Some(channel_idx);
-            state.app.measurement_state.recording_state.status_message =
-                format!("Recording {}...", params.speaker_name);
-            state
-                .app
-                .measurement_state
-                .recording_state
-                .recording_progress = 0.0;
+        let capture_generation = self.state.update(cx, |state, _| {
+            let rec_state = &mut state.app.measurement_state.recording_state;
+            // Task 10: bump the capture generation so a still-finishing OLD
+            // capture task (cancel-poll window) cannot apply its results to
+            // THIS capture's channels.
+            rec_state.capture_generation += 1;
+            rec_state.current_recording_channel = Some(channel_idx);
+            rec_state.status_message = format!("Recording {}...", params.speaker_name);
+            rec_state.recording_progress = 0.0;
+            rec_state.capture_generation
         });
         cx.notify();
 
@@ -1537,6 +1553,29 @@ impl PlayerView {
             // Update state with results
             let Some(state_entity) = weak_state.upgrade() else { return; };
             let next_action = state_entity.update(&mut cx.clone(), |state, _| {
+                    // Stale-completion guard (task 10): if the user stopped
+                    // and possibly restarted the capture while this task was
+                    // finishing (the engine polls the cancel flag at ~50 ms),
+                    // these results belong to a dead capture. Applying them
+                    // would mark the NEW capture's channels Done with the OLD
+                    // task's data, so drop them entirely.
+                    if !state
+                        .app
+                        .measurement_state
+                        .recording_state
+                        .is_current_capture(capture_generation)
+                    {
+                        log::warn!(
+                            "Discarding stale capture completion (task generation {}, current {})",
+                            capture_generation,
+                            state
+                                .app
+                                .measurement_state
+                                .recording_state
+                                .capture_generation
+                        );
+                        return BatchNextAction::Hold;
+                    }
                     let should_continue = match results {
                         Ok(analysis_results) => {
                             let mut any_low_signal = false;
@@ -1849,6 +1888,13 @@ impl PlayerView {
                 .measurement_state
                 .recording_state
                 .request_sweep_cancel();
+            // Task 10: invalidate any in-flight capture task — its late
+            // completion must not resurrect results onto the reset channels.
+            state
+                .app
+                .measurement_state
+                .recording_state
+                .capture_generation += 1;
             state
                 .app
                 .measurement_state
@@ -1887,6 +1933,13 @@ impl PlayerView {
     /// Reset all recordings to empty state
     pub(super) fn reset_all_recordings(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _| {
+            // Task 10: invalidate in-flight capture completions (see
+            // stop_recording).
+            state
+                .app
+                .measurement_state
+                .recording_state
+                .capture_generation += 1;
             for recording in &mut state
                 .app
                 .measurement_state

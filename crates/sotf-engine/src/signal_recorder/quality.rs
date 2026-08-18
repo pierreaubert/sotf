@@ -44,8 +44,8 @@ pub struct CaptureAnalysis {
     pub quality: MeasurementQualityReport,
     /// Estimated relative playback/capture clock drift, when the estimation
     /// itself succeeded (regardless of whether it was acted upon). For
-    /// repeat captures this is the first take's estimate (all takes share
-    /// the same clock pair; per-take estimates are logged).
+    /// repeat captures this is the first ACCEPTED take's estimate (all takes
+    /// share the same clock pair; per-take estimates are logged).
     pub drift: Option<ClockDriftEstimate>,
     /// True when the capture was time-rescaled via `correct_clock_drift`
     /// before analysis (and before the WAV on disk was written). For repeat
@@ -77,6 +77,14 @@ pub(super) const DRIFT_CORRECT_PPM: f64 = 20.0;
 /// sweeps on split-clock setups smear HF phase even after correction.
 #[cfg(not(target_os = "ios"))]
 pub(super) const DRIFT_SEVERE_PPM: f64 = 100.0;
+/// |ppm| above which a drift estimate is physically implausible for an audio
+/// clock (even a drifting USB clock stays within a few hundred ppm) and is
+/// therefore treated as a garbage estimate: no correction is applied and the
+/// take is flagged for review. Defense-in-depth only — the main protection
+/// against garbage estimates is the correct-then-verify lock check in
+/// `correct_take_clock_drift`.
+#[cfg(not(target_os = "ios"))]
+pub(super) const DRIFT_IMPLAUSIBLE_PPM: f64 = 2000.0;
 
 /// What to do about a measured clock drift.
 #[cfg(not(target_os = "ios"))]
@@ -88,6 +96,9 @@ pub(super) enum DriftAction {
     Correct,
     /// Correct, and add an advisory quality issue to the take report.
     CorrectAndAdvise,
+    /// Estimate is physically implausible (|ppm| > [`DRIFT_IMPLAUSIBLE_PPM`]):
+    /// do NOT correct; flag the take for review instead.
+    Implausible,
 }
 
 /// Trim leading/trailing padding (pre/post silence, fades) from a prepared
@@ -166,7 +177,9 @@ pub(super) fn drift_action(drift: Option<&ClockDriftEstimate>) -> DriftAction {
     match drift {
         Some(estimate) if estimate.confidence >= DRIFT_MIN_CONFIDENCE => {
             let ppm = estimate.ppm.abs();
-            if ppm > DRIFT_SEVERE_PPM {
+            if ppm > DRIFT_IMPLAUSIBLE_PPM {
+                DriftAction::Implausible
+            } else if ppm > DRIFT_SEVERE_PPM {
                 DriftAction::CorrectAndAdvise
             } else if ppm > DRIFT_CORRECT_PPM {
                 DriftAction::Correct

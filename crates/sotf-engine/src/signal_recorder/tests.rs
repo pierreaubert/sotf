@@ -1005,6 +1005,91 @@ fn test_clock_drift_estimate_and_correct_roundtrip() {
         "residual drift after correction should be small, got {:.2} ppm",
         residual.ppm
     );
+    // Correct-then-verify (task-8 review A1): a genuine correction keeps the
+    // lag lock, so the verify step must not discard it.
+    assert!(
+        super::record::correction_keeps_lock(&reference_take, &drifted, &corrected, sample_rate),
+        "a genuine drift correction must keep the lag lock"
+    );
+}
+
+// --- Task 10: residuals (cancel masking, drift correct-then-verify) ---
+
+/// Item 5: on in-loop cancel, a `manager.stop()` failure must not mask the
+/// cancellation — `CANCELLED_ERR` always wins.
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn cancel_aware_stop_lets_cancel_win_over_stop_failure() {
+    use super::record::cancel_aware_stop;
+
+    let err = cancel_aware_stop(Err("boom"), false).unwrap_err();
+    assert!(err.contains("Failed to stop playback"), "{err}");
+    assert!(err.contains("boom"), "{err}");
+
+    assert!(cancel_aware_stop(Err("boom"), true).is_ok());
+    assert!(cancel_aware_stop(Ok::<(), &str>(()), true).is_ok());
+    assert!(cancel_aware_stop(Ok::<(), &str>(()), false).is_ok());
+}
+
+/// A1: estimates above DRIFT_IMPLAUSIBLE_PPM are never applied.
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn drift_action_rejects_physically_implausible_estimates() {
+    let mk = |ppm: f64| ClockDriftEstimate {
+        ppm,
+        start_lag_samples: 0,
+        end_lag_samples: 0,
+        confidence: 0.9,
+    };
+    assert_eq!(drift_action(Some(&mk(5000.0))), DriftAction::Implausible);
+    assert_eq!(drift_action(Some(&mk(-2500.0))), DriftAction::Implausible);
+    // At/under the clamp the normal thresholds still apply.
+    assert_eq!(
+        drift_action(Some(&mk(2000.0))),
+        DriftAction::CorrectAndAdvise
+    );
+    assert_eq!(drift_action(Some(&mk(50.0))), DriftAction::Correct);
+    assert_eq!(drift_action(Some(&mk(5.0))), DriftAction::None);
+    // Low-confidence estimates are never acted upon, implausible or not.
+    let low_conf = ClockDriftEstimate {
+        confidence: 0.1,
+        ..mk(9000.0)
+    };
+    assert_eq!(drift_action(Some(&low_conf)), DriftAction::None);
+}
+
+/// A1: the correct-then-verify step discards a "correction" that collapses
+/// the lag lock and keeps one that preserves it.
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn correction_keeps_lock_detects_collapsed_lock() {
+    let sample_rate = 48_000_u32;
+    let reference = padded_sweep_reference(sample_rate);
+    let ir = test_room_ir();
+    let raw = simulate_sweep_take(&reference, &ir, 0.003, 0xC0FF_EE00);
+
+    // Identity "correction" keeps the lock.
+    let corrected_good = raw.clone();
+    assert!(super::record::correction_keeps_lock(
+        &reference,
+        &raw,
+        &corrected_good,
+        sample_rate,
+    ));
+
+    // A garbage correction (pure noise) collapses the lock — and shifts the
+    // apparent lag wildly, which is what actually catches it: the confidence
+    // estimator reports spuriously high scores on noise.
+    let mut state = 0xDEAD_BEEF_u64;
+    let corrected_garbage: Vec<f32> = (0..raw.len())
+        .map(|_| xorshift_noise(&mut state) * 0.5)
+        .collect();
+    assert!(!super::record::correction_keeps_lock(
+        &reference,
+        &raw,
+        &corrected_garbage,
+        sample_rate,
+    ));
 }
 
 // --- Task 8: repeat-sweep averaging, coherence, extended CSV ---
@@ -1115,6 +1200,10 @@ fn test_repeat_sweep_averaging_rejects_outlier_and_extends_csv() {
     let dir = tempdir().unwrap();
     let wav = dir.path().join("L.wav");
     let csv = dir.path().join("L.csv");
+    // Plant a stale higher-N sibling from a fictional previous run (task-8
+    // review A4): it must be removed when this 5-take run writes its takes.
+    let stale = dir.path().join("L.take9.wav");
+    std::fs::write(&stale, b"stale").unwrap();
     let capture = super::record::analyze_sweep_takes(
         &wav,
         &csv,
@@ -1128,6 +1217,11 @@ fn test_repeat_sweep_averaging_rejects_outlier_and_extends_csv() {
         "test",
     )
     .expect("repeat-sweep averaging on synthetic takes");
+
+    assert!(
+        !stale.exists(),
+        "stale L.take9.wav from a higher-N run must be cleaned up"
+    );
 
     // Outlier rejected; num_sweeps metadata is truthful.
     assert_eq!(capture.accepted_count, 4);
@@ -2200,6 +2294,51 @@ fn test_validate_signal_params_octave_sweep_valid() {
 }
 
 #[test]
+fn test_validate_signal_params_octave_sweep_invalid() {
+    // The UI-default octave-scaled sweep must go through the same Nyquist /
+    // ordering / amplitude validation as the plain Sweep arm (Task 10) —
+    // previously the `_ => {}` fallthrough made these no-ops.
+    let mk = |start_freq: f32, end_freq: f32, amp: f32| SignalParams::OctaveSweep {
+        start_freq,
+        end_freq,
+        amp,
+        bass_octave_duration_s: 3.0,
+        pre_silence_s: 2.0,
+        post_silence_s: 2.0,
+    };
+
+    // 24 kHz end at 44.1 kHz exceeds Nyquist (22050 Hz) — clear message.
+    let err = validate_signal_params(SignalType::Sweep, &mk(20.0, 24000.0, 0.5), 1.0, 44100)
+        .expect_err("24 kHz end must fail at 44.1 kHz sample rate");
+    assert!(
+        err.contains("End frequency") && err.contains("22050"),
+        "unexpected message: {err}"
+    );
+
+    // Reversed / zero-width range.
+    assert!(
+        validate_signal_params(SignalType::Sweep, &mk(2000.0, 1000.0, 0.5), 1.0, 48000).is_err()
+    );
+    assert!(
+        validate_signal_params(SignalType::Sweep, &mk(1000.0, 1000.0, 0.5), 1.0, 48000).is_err()
+    );
+
+    // Out-of-range amplitude.
+    assert!(
+        validate_signal_params(SignalType::Sweep, &mk(20.0, 20000.0, 0.0), 1.0, 48000).is_err()
+    );
+    assert!(
+        validate_signal_params(SignalType::Sweep, &mk(20.0, 20000.0, 1.5), 1.0, 48000).is_err()
+    );
+
+    // Zero sample rate must not silently pass.
+    assert!(validate_signal_params(SignalType::Sweep, &mk(20.0, 20000.0, 0.5), 1.0, 0).is_err());
+
+    // A valid configuration still passes.
+    assert!(validate_signal_params(SignalType::Sweep, &mk(20.0, 20000.0, 0.5), 1.0, 48000).is_ok());
+}
+
+#[test]
 fn test_validate_signal_params_mismatch_ok() {
     let sample_rate = 48000;
 
@@ -2289,6 +2428,30 @@ fn check_capture_clipping_aborts_only_on_heavily_clipped_block() {
 
     // Fully clean → Ok, no warning.
     assert!(check_capture_clipping(&[0.25f32; 4096], "test").is_ok());
+}
+
+#[cfg(not(target_os = "ios"))]
+#[test]
+fn check_capture_clipping_ignores_undersized_tail_block() {
+    // Task 10: a capture whose length is ≡ small mod CLIP_BLOCK_SAMPLES with
+    // clipped samples only in the tiny tail block must not hard-fail — with
+    // a 2-sample tail, one clipped sample is 50% of the block and would
+    // otherwise trip the 30% abort rule (false positive).
+    let mut buf = vec![0.0f32; CLIP_BLOCK_SAMPLES * 3 + 2];
+    *buf.last_mut().unwrap() = 1.0;
+    assert!(
+        check_capture_clipping(&buf, "test").is_ok(),
+        "one clipped sample in a 2-sample tail block must not abort"
+    );
+    let stats = analyze_clipping(&buf);
+    assert_eq!(stats.clipped_samples, 1);
+    assert_eq!(stats.max_block_clip_percent, 0.0);
+
+    // A heavily clipped tail is still caught when the tail is large enough
+    // to be statistically meaningful (>= CLIP_BLOCK_SAMPLES / 4).
+    let mut buf = vec![0.0f32; CLIP_BLOCK_SAMPLES * 2 + CLIP_BLOCK_SAMPLES / 2];
+    buf[CLIP_BLOCK_SAMPLES * 2..].fill(1.0);
+    assert!(check_capture_clipping(&buf, "test").is_err());
 }
 
 #[test]
@@ -2399,7 +2562,12 @@ fn actionable_capture_error_maps_permission_denial() {
         msg.contains("'audio' group"),
         "Linux permission advice: {msg}"
     );
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(target_os = "ios")]
+    assert!(
+        msg.contains("Privacy & Security"),
+        "iOS permission advice: {msg}"
+    );
+    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "linux")))]
     assert!(msg.contains("privacy"), "generic permission advice: {msg}");
     // Original error text is kept for debugging.
     assert!(msg.contains("original error"), "{msg}");

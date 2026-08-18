@@ -303,8 +303,13 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
             app.recording.model.status_message =
                 format!("Could not write CTC reference sweep: {}", e);
         } else {
+            // Task 10: the octave-scaled sweep is self-timed, so persist the
+            // *actual* stimulus duration alongside the reference path —
+            // `signal_duration_secs` no longer describes this WAV.
+            let actual_duration_s = signal.len() as f32 / sample_rate as f32;
             app.recording.model.ctc_reference_sweep_path =
                 Some(reference_path.to_string_lossy().to_string());
+            app.recording.model.ctc_reference_sweep_duration_s = Some(actual_duration_s);
         }
     }
 

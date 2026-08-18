@@ -311,6 +311,7 @@ pub(crate) fn init_recording_channels(app: &mut App) {
         app.recording.model.channel_recordings = recordings;
         app.recording.model.transfer_matrix_loopbacks.clear();
         app.recording.model.ctc_reference_sweep_path = None;
+        app.recording.model.ctc_reference_sweep_duration_s = None;
         app.recording.model.current_recording_channel =
             if expected_count > 0 { Some(0) } else { None };
     }
@@ -353,17 +354,6 @@ pub(crate) fn save_recordings(app: &mut App) {
         build_speakers_from_recordings, ctc_system_config_for_speaker_names,
         default_bass_management_crossovers, room_eq_channel_is_bass_output,
     };
-
-    // Validate save name early (before any I/O)
-    let name = if app.recording.model.save_name.is_empty() {
-        "recordings".to_string()
-    } else {
-        app.recording.model.save_name.clone()
-    };
-    if name.contains('/') || name.contains('\\') {
-        app.recording.save.error = Some("Save name must not contain path separators".to_string());
-        return;
-    }
 
     let completed: Vec<_> = app
         .recording
@@ -521,7 +511,14 @@ pub(crate) fn save_recordings(app: &mut App) {
             measurements: Some(measurements),
             reference_sweep: ctc_reference_sweep,
             sweep_duration_s: if raw {
-                Some(app.recording.model.signal_duration_secs as f64)
+                // Task 10: persist the actual generated-signal duration
+                // measured at capture time (None when unknown), not the
+                // nominal duration knob — the octave-scaled sweep is
+                // self-timed.
+                app.recording
+                    .model
+                    .ctc_reference_sweep_duration_s
+                    .map(f64::from)
             } else {
                 None
             },
@@ -567,8 +564,9 @@ pub(crate) fn save_recordings(app: &mut App) {
     };
 
     // B5: canonical session filename shared with GPUI and the Room EQ
-    // "FromFile" flow — the user-chosen session name is validated above
-    // but no longer appears in the file name.
+    // "FromFile" flow — the session name no longer appears in any file
+    // name (task 10 removed the vestigial save-name validation that
+    // guarded a path the name never reached).
     let path = std::path::PathBuf::from(&dir).join(RECORDINGS_FILENAME);
 
     // Serialize + write on a background thread — JSON for a

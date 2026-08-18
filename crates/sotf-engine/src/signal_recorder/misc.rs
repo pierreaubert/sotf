@@ -24,7 +24,9 @@ pub struct ClipStats {
     /// Clipped samples as a percentage of the whole buffer.
     pub clip_percent: f32,
     /// Highest clipped-sample percentage observed in any single
-    /// [`CLIP_BLOCK_SAMPLES`]-sample block.
+    /// [`CLIP_BLOCK_SAMPLES`]-sample block. Tail blocks shorter than
+    /// `CLIP_BLOCK_SAMPLES / 4` are skipped — with a tiny denominator one
+    /// clipped sample would otherwise trip the 30% abort rule.
     pub max_block_clip_percent: f32,
 }
 
@@ -43,6 +45,13 @@ pub fn analyze_clipping(samples: &[f32]) -> ClipStats {
     for block in samples.chunks(CLIP_BLOCK_SAMPLES) {
         let block_clipped = block.iter().filter(|s| s.abs() >= CLIP_THRESHOLD).count();
         clipped_samples += block_clipped;
+        // Skip undersized tail blocks for the per-block percentage: with a
+        // tiny denominator a handful of clipped samples (or even one) can
+        // exceed the 30% hard-fail threshold, false-failing an otherwise
+        // clean capture whose length happens to be ≡ small mod 2048.
+        if block.len() < CLIP_BLOCK_SAMPLES / 4 {
+            continue;
+        }
         let block_percent = block_clipped as f32 / block.len() as f32 * 100.0;
         max_block_clip_percent = max_block_clip_percent.max(block_percent);
     }

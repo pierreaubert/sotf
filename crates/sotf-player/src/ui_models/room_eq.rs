@@ -684,7 +684,13 @@ impl RoomEqScreenModel {
                     None
                 },
                 sweep_duration_s: if raw {
-                    Some(recording_state.signal_duration_secs as f64)
+                    // Truthful duration (task 10): the octave-scaled sweep is
+                    // self-timed, so persist the actual generated-signal
+                    // duration measured at capture time — `None` when unknown,
+                    // never the nominal `signal_duration_secs` knob value.
+                    recording_state
+                        .ctc_reference_sweep_duration_s
+                        .map(f64::from)
                 } else {
                     None
                 },

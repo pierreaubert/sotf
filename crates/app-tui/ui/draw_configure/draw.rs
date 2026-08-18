@@ -390,7 +390,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
         position_guidance, take_quality_cell, take_verdict_text,
     };
     use sotf_audio_player::recording_types::{
-        ChannelRecording, ChannelRecordingState, RecordingStep,
+        ChannelRecording, ChannelRecordingState, RecordingSignalType, RecordingStep,
     };
 
     let s = &app.recording;
@@ -561,9 +561,18 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 "Signal Type".to_string(),
                 s.model.signal_type.as_str().to_string(),
             ));
+            // Task 10: the duration knob is ignored for sweeps (the
+            // octave-scaled sweep is self-timed) — say so on the label so
+            // users are not misled. The field stays editable: it still
+            // applies to the non-sweep signal types.
+            let duration_label = if s.model.signal_type == RecordingSignalType::Sweep {
+                "Duration (s) (ignored for sweeps)"
+            } else {
+                "Duration (s)"
+            };
             rows.push((
                 Some(4),
-                "Duration (s)".to_string(),
+                duration_label.to_string(),
                 format!("{:.1}", s.model.signal_duration_secs),
             ));
             rows.push((

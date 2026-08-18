@@ -114,6 +114,44 @@ pub fn validate_signal_params(
                 return Err(format!("Amplitude {} must be in range (0, 1]", amp));
             }
         }
+        (
+            SignalType::Sweep,
+            SignalParams::OctaveSweep {
+                start_freq,
+                end_freq,
+                amp,
+                ..
+            },
+        ) => {
+            // Mirror the `Sweep` arm: the octave-scaled variant is the
+            // UI-default sweep, so it must not skip Nyquist / ordering /
+            // amplitude validation (the math-dsp generator does not clamp
+            // to Nyquist either).
+            if sample_rate == 0 {
+                return Err("Sample rate must be positive".to_string());
+            }
+            if *start_freq <= 0.0 || *start_freq >= nyquist {
+                return Err(format!(
+                    "Start frequency {} Hz must be in range (0, {} Hz)",
+                    start_freq, nyquist
+                ));
+            }
+            if *end_freq <= 0.0 || *end_freq >= nyquist {
+                return Err(format!(
+                    "End frequency {} Hz must be in range (0, {} Hz)",
+                    end_freq, nyquist
+                ));
+            }
+            if *start_freq >= *end_freq {
+                return Err(format!(
+                    "Start frequency {} Hz must be less than end frequency {} Hz",
+                    start_freq, end_freq
+                ));
+            }
+            if *amp <= 0.0 || *amp > 1.0 {
+                return Err(format!("Amplitude {} must be in range (0, 1]", amp));
+            }
+        }
         (_, SignalParams::Noise { amp }) if (*amp <= 0.0 || *amp > 1.0) => {
             return Err(format!("Amplitude {} must be in range (0, 1]", amp));
         }

@@ -1485,6 +1485,7 @@ pub struct RecordingWorkflowTranslations {
     pub sweeps_per_channel: &'static str,
     pub sweeps_per_channel_hint: &'static str,
     pub positions_mlp_hint: &'static str,
+    pub duration_ignored_for_sweeps: &'static str,
 }
 
 impl RecordingWorkflowTranslations {
@@ -1521,6 +1522,7 @@ impl RecordingWorkflowTranslations {
                 sweeps_per_channel: "Sweeps per channel",
                 sweeps_per_channel_hint: "Repeats per channel for outlier rejection. 2 is not offered: at least 3 sweeps are needed to reject outliers.",
                 positions_mlp_hint: "The first position should be the main listening position.",
+                duration_ignored_for_sweeps: "Ignored for sweeps — the octave-scaled sweep is self-timed.",
             },
             Language::French => Self {
                 language,
@@ -1553,6 +1555,7 @@ impl RecordingWorkflowTranslations {
                 sweeps_per_channel: "Balayages par canal",
                 sweeps_per_channel_hint: "Répétitions par canal pour exclure les valeurs aberrantes. 2 n’est pas proposé : il faut au moins 3 balayages.",
                 positions_mlp_hint: "La première position doit être la position d’écoute principale.",
+                duration_ignored_for_sweeps: "Ignorée pour les balayages — le balayage par octaves est auto-chronométré.",
             },
             Language::German => Self {
                 language,
@@ -1585,6 +1588,7 @@ impl RecordingWorkflowTranslations {
                 sweeps_per_channel: "Sweeps pro Kanal",
                 sweeps_per_channel_hint: "Wiederholungen pro Kanal zur Ausreißerverwerfung. 2 wird nicht angeboten: mindestens 3 Sweeps sind nötig.",
                 positions_mlp_hint: "Die erste Position sollte die Haupthörposition sein.",
+                duration_ignored_for_sweeps: "Wird bei Sweeps ignoriert — der oktavskalierte Sweep ist selbstgetaktet.",
             },
             Language::Spanish => Self {
                 language,
@@ -1617,6 +1621,7 @@ impl RecordingWorkflowTranslations {
                 sweeps_per_channel: "Barridos por canal",
                 sweeps_per_channel_hint: "Repeticiones por canal para rechazar valores atípicos. 2 no se ofrece: se necesitan al menos 3 barridos.",
                 positions_mlp_hint: "La primera posición debe ser la posición de escucha principal.",
+                duration_ignored_for_sweeps: "Se ignora en los barridos — el barrido por octavas se autocronometra.",
             },
         }
     }

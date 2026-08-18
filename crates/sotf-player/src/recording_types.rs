@@ -64,6 +64,11 @@ pub struct RecordingState {
     pub transfer_matrix_loopbacks: Vec<TransferMatrixLoopbackRecording>,
     /// Path to the reference sweep used for raw-sweep CTC solving.
     pub ctc_reference_sweep_path: Option<String>,
+    /// Actual duration (seconds) of the `ctc_reference_sweep_path` stimulus,
+    /// measured at capture time (`None` when unknown). The octave-scaled
+    /// sweep is self-timed, so `signal_duration_secs` does not describe the
+    /// reference WAV.
+    pub ctc_reference_sweep_duration_s: Option<f32>,
     /// Shared probe-capture (delay-detection) state.
     pub probe_capture: ProbeCaptureState,
     /// Duration of the excitation signal in seconds.
@@ -80,6 +85,7 @@ impl Default for RecordingState {
             channel_recordings: Vec::new(),
             transfer_matrix_loopbacks: Vec::new(),
             ctc_reference_sweep_path: None,
+            ctc_reference_sweep_duration_s: None,
             probe_capture: ProbeCaptureState::default(),
             signal_duration_secs: 5.0,
             recording_directory: None,

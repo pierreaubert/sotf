@@ -3126,6 +3126,12 @@ const DYNAMIC_TRANSLATIONS: &[DynamicTranslation] = &[
         "Tipo de señal",
     ),
     dynamic_translation("Duration (s)", "Durée (s)", "Dauer (s)", "Duración (s)"),
+    dynamic_translation(
+        "Duration (s) (ignored for sweeps)",
+        "Durée (s) (ignorée pour les balayages)",
+        "Dauer (s) (bei Sweeps ignoriert)",
+        "Duración (s) (ignorada para barridos)",
+    ),
     dynamic_translation("Level (dB)", "Niveau (dB)", "Pegel (dB)", "Nivel (dB)"),
     dynamic_translation(
         "Sweep Start (Hz)",

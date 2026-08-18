@@ -12,7 +12,8 @@ pub struct RecordingDeviceConfig {
     pub available_sample_rates: Vec<u32>,
     /// Mapping from physical input channels to recording channels
     pub channel_mappings: Vec<usize>,
-    /// Calibration file path for each input channel (parallel to channel_mappings)
+    /// Calibration file path per mic slot — indexed by mic index, NOT by
+    /// hardware input channel (parallel to channel_mappings)
     #[serde(default)]
     pub mic_calibration_paths: Vec<Option<String>>,
     /// Number of measurement positions (seats). Each position runs a full

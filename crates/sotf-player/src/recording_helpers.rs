@@ -357,40 +357,81 @@ pub fn position_guidance(pos: usize, total: usize) -> String {
     }
 }
 
+/// Severity of one [`session_quality_lines`] entry — the structured form of
+/// the summary line, so UIs color by kind instead of substring-matching the
+/// rendered English text (task-9 review B3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionQualityLineKind {
+    /// Clean take (trustworthy).
+    Ok,
+    /// Take with quality warnings (parked for review or accepted-with-warning).
+    Review,
+    /// Recorded channel without quality data (legacy / loaded session).
+    NoData,
+}
+
 /// Session quality summary (§4 item 1 / Phase 2 item 5): one line per
 /// recorded channel with its score and warnings, so the user can see which
 /// positions to re-measure before leaving the screen. Channels are listed in
 /// recording order (position-major), which matches the on-screen channel
 /// list.
-pub fn session_quality_summary(channels: &[ChannelRecording]) -> Vec<String> {
+///
+/// Only `Done` and `ReviewNeeded` channels are listed (task-9 review B2): a
+/// channel whose retake FAILED keeps its previous result in memory, and
+/// listing that stale quality would misrepresent the session.
+pub fn session_quality_lines(
+    channels: &[ChannelRecording],
+) -> Vec<(String, SessionQualityLineKind)> {
     channels
         .iter()
-        .filter(|c| c.result.is_some())
+        .filter(|c| {
+            matches!(
+                c.state,
+                ChannelRecordingState::Done | ChannelRecordingState::ReviewNeeded
+            ) && c.result.is_some()
+        })
         .map(|c| {
             let quality = c.result.as_ref().and_then(|r| r.quality.as_ref());
-            let mut line = match quality {
-                Some(q) if q.trustworthy => format!(
-                    "{}: OK (score {:.2}, {}/{} sweeps)",
-                    c.channel_name,
-                    q.score,
-                    q.accepted_count,
-                    q.accepted_count + q.rejected_count
+            let (mut line, kind) = match quality {
+                Some(q) if q.trustworthy => (
+                    format!(
+                        "{}: OK (score {:.2}, {}/{} sweeps)",
+                        c.channel_name,
+                        q.score,
+                        q.accepted_count,
+                        q.accepted_count + q.rejected_count
+                    ),
+                    SessionQualityLineKind::Ok,
                 ),
-                Some(q) => format!(
-                    "{}: REVIEW (score {:.2}) — {}",
-                    c.channel_name,
-                    q.score,
-                    take_verdict_text(q)
+                Some(q) => (
+                    format!(
+                        "{}: REVIEW (score {:.2}) — {}",
+                        c.channel_name,
+                        q.score,
+                        take_verdict_text(q)
+                    ),
+                    SessionQualityLineKind::Review,
                 ),
-                None => format!("{}: recorded (no quality data)", c.channel_name),
+                None => (
+                    format!("{}: recorded (no quality data)", c.channel_name),
+                    SessionQualityLineKind::NoData,
+                ),
             };
             if let Some(q) = quality
                 && q.dropped_samples > 0
             {
                 line.push_str(&format!("; {} dropped samples", q.dropped_samples));
             }
-            line
+            (line, kind)
         })
+        .collect()
+}
+
+/// Text-only view of [`session_quality_lines`] for plain-text UIs.
+pub fn session_quality_summary(channels: &[ChannelRecording]) -> Vec<String> {
+    session_quality_lines(channels)
+        .into_iter()
+        .map(|(line, _)| line)
         .collect()
 }
 
@@ -824,6 +865,47 @@ mod tests {
     }
 
     #[test]
+    fn session_quality_summary_excludes_error_channels_with_stale_results() {
+        // Task-9 review B2: a channel whose retake failed (state = Error)
+        // keeps its previous Done result in memory; the session summary must
+        // not list that stale quality.
+        use crate::recording_types::ChannelRecordingState;
+        let mut stale = ChannelRecording::new(0, "FL".to_string());
+        stale.state = ChannelRecordingState::Error;
+        stale.result = Some(RecordingResult {
+            channel: 0,
+            wav_path: None,
+            csv_path: None,
+            frequencies: vec![],
+            magnitude_db: vec![],
+            phase_deg: vec![],
+            impulse_response: None,
+            impulse_time_ms: None,
+            thd_percent: None,
+            harmonic_distortion_db: None,
+            excess_group_delay_ms: None,
+            rt60_ms: None,
+            clarity_c50_db: None,
+            clarity_c80_db: None,
+            spectrogram_db: None,
+            quality: Some(quality_summary(true, &[], None)),
+        });
+
+        assert!(session_quality_summary(&[stale.clone()]).is_empty());
+
+        // The structured view (task-9 review B3) reports the same filtering
+        // plus a typed kind per line.
+        stale.state = ChannelRecordingState::Done;
+        let lines = session_quality_lines(std::slice::from_ref(&stale));
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].1, SessionQualityLineKind::Ok);
+        stale.state = ChannelRecordingState::ReviewNeeded;
+        let lines = session_quality_lines(std::slice::from_ref(&stale));
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].1, SessionQualityLineKind::Ok);
+    }
+
+    #[test]
     fn accepted_num_sweeps_for_save_is_min_over_done_channels() {
         use crate::recording_types::ChannelRecordingState;
         let mk = |state, accepted| {
@@ -870,7 +952,7 @@ mod tests {
     #[test]
     fn summarize_take_quality_maps_capture_analysis_fields() {
         use sotf_audio::signal_analysis::{
-            AnalysisResult, ClockDriftEstimate, ClippingInfo, MeasurementQualityReport,
+            AnalysisResult, ClippingInfo, ClockDriftEstimate, MeasurementQualityReport,
         };
         let result = AnalysisResult {
             frequencies: vec![],
