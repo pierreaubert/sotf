@@ -117,6 +117,9 @@ pub(super) mod encryption_impl {
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
     use std::path::{Path, PathBuf};
     use std::process::Command;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_KEY_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
     fn ensure_owned_secure_dir(path: &Path) -> io::Result<()> {
         ensure_owned_secure_dir_for_uid(path, get_current_uid())
@@ -280,39 +283,48 @@ pub(super) mod encryption_impl {
 
         fn publish_hal_key_copy(key: &[u8; 32]) -> io::Result<()> {
             let path = get_hal_key_path();
-            if let Some(parent) = path.parent() {
-                // Reject a pre-created foreign-owned runtime directory before
-                // touching permissions or key material. Otherwise another
-                // local user can squat the first-run path and force the
-                // daemon into its disabled-key fallback.
-                ensure_owned_secure_dir(parent)?;
-            }
+            let Some(parent) = path.parent() else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "HAL key path has no parent directory",
+                ));
+            };
+            ensure_owned_secure_dir(parent)?;
 
-            // Create with mode 0o600 (owner read/write only). The
-            // ChaCha20-Poly1305 audio session key must never be
-            // world-readable. _coreaudiod (UID 202) reads it via the
-            // macOS `chmod +a` ACL applied separately by
-            // grant_coreaudiod_key_access(). Remove any pre-existing
-            // file first so we never inherit looser permissions from a
-            // prior daemon run that wrote 0o644.
-            let _ = fs::remove_file(&path);
+            // Write in the private directory, then atomically replace the
+            // destination. This removes the remove-then-create symlink race
+            // that could otherwise redirect key material to another file.
+            let temp_path = parent.join(format!(
+                ".session.key.tmp-{}-{}",
+                std::process::id(),
+                NEXT_KEY_TEMP_ID.fetch_add(1, Ordering::Relaxed)
+            ));
+            let result = (|| {
+                let mut file = OpenOptions::new()
+                    .create_new(true)
+                    .write(true)
+                    .mode(0o600)
+                    .open(&temp_path)?;
+                file.write_all(key)?;
+                file.sync_all()?;
+                fs::set_permissions(&temp_path, fs::Permissions::from_mode(0o600))?;
+                fs::rename(&temp_path, &path)?;
 
-            let mut file = OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .mode(0o600)
-                .open(&path)?;
-            file.write_all(key)?;
-            file.sync_all()?;
-            // Re-assert the mode in case the open call honored a
-            // permissive umask. This is the canonical post-write
-            // permission.
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+                let metadata = fs::symlink_metadata(&path)?;
+                if metadata.file_type().is_symlink() || metadata.uid() != get_current_uid() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "published HAL key is not owned by the daemon user",
+                    ));
+                }
+                Ok(())
+            })();
+            let _ = fs::remove_file(&temp_path);
+            result?;
             grant_coreaudiod_key_access(&path);
 
-            log::info!(
-                "Published HAL-readable encryption key at {} (mode 0600 + _coreaudiod ACL)",
+            log::debug!(
+                "Published HAL-readable encryption key (mode 0600 + _coreaudiod ACL): {}",
                 path.display()
             );
             Ok(())

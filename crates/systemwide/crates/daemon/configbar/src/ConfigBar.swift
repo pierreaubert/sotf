@@ -879,6 +879,8 @@ class AudioEngineClient {
         var fingerprint: String = ""
         var keyPath: String = ""
         var frameCount: UInt64 = 0
+        var transportState: String = "unknown"
+        var transportError: String? = nil
     }
 
     func setEncryption(enabled: Bool) -> Bool {
@@ -900,6 +902,8 @@ class AudioEngineClient {
         status.fingerprint = data["fingerprint"]?.value as? String ?? ""
         status.keyPath = data["key_path"]?.value as? String ?? ""
         status.frameCount = uint64Value(data["frame_count"]?.value) ?? 0
+        status.transportState = data["transport_state"]?.value as? String ?? "unknown"
+        status.transportError = data["transport_error"]?.value as? String
 
         return status
     }
@@ -3335,6 +3339,12 @@ struct ConfigurationView: View {
             guard acceptsStatusSnapshot(statusGeneration) else { return }
             if response?.success == true {
                 print("✅ Encryption \(enabled ? "enabled" : "disabled")")
+                if let data = response?.data,
+                   let state = data["transport_state"]?.value as? String,
+                   state != "synced" && state != "not_applicable" {
+                    encryptionError = data["transport_error"]?.value as? String
+                        ?? "Encryption state is pending HAL transport synchronization"
+                }
                 refreshEncryptionStatus()
             } else {
                 encryptionError = response?.error ?? "Failed to \(enabled ? "enable" : "disable") encryption"
@@ -3354,6 +3364,12 @@ struct ConfigurationView: View {
             guard acceptsStatusSnapshot(statusGeneration) else { return }
             if response?.success == true {
                 print("✅ Encryption key rotated")
+                if let data = response?.data,
+                   let state = data["transport_state"]?.value as? String,
+                   state != "synced" && state != "not_applicable" {
+                    encryptionError = data["transport_error"]?.value as? String
+                        ?? "Rotated key is pending HAL transport synchronization"
+                }
                 refreshEncryptionStatus()
             } else {
                 encryptionError = response?.error ?? "Failed to rotate encryption key"
@@ -3372,7 +3388,13 @@ struct ConfigurationView: View {
                         encryptionEnabled = status.enabled
                     }
                     encryptionFingerprint = status.fingerprint
-                    encryptionError = nil
+                    if status.transportState != "synced",
+                       status.transportState != "not_applicable" {
+                        encryptionError = status.transportError
+                            ?? "Encryption state is not synchronized with the HAL transport"
+                    } else {
+                        encryptionError = nil
+                    }
                 } else {
                     // Daemon might not be running
                     encryptionFingerprint = ""

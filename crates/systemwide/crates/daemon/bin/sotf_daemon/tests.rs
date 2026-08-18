@@ -2373,6 +2373,20 @@ mod command_roundtrip_tests {
 
     #[test]
     #[serial]
+    fn handle_encryption_status_reports_transport_state() {
+        let response = run_command(Command::EncryptionStatus);
+        assert!(response.success, "{response:?}");
+        let data = response.data.expect("encryption status data");
+        if cfg!(all(target_os = "macos", feature = "hal")) {
+            assert!(data.get("transport_state").is_some());
+        } else {
+            assert_eq!(data["transport_state"], "not_applicable");
+            assert!(data["transport_error"].is_null());
+        }
+    }
+
+    #[test]
+    #[serial]
     fn handle_load_plugins_empty_succeeds() {
         let resp = run_command(Command::LoadPlugins {
             plugins: vec![],

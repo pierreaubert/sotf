@@ -12,6 +12,11 @@
 
 ## Review-driven startup and IPC hardening
 
+- Publish the HAL-readable session key through an atomic same-directory
+  replacement instead of remove-then-create, closing the local symlink race
+  during key rotation and keeping the final file owner/mode verified.
+- Include explicit shared-transport encryption state in daemon command/status
+  responses; Configbar now surfaces pending or mismatched HAL synchronization.
 - Serialize daemon startup with a process-lifetime lock acquired before
   encryption-key rotation or stale-socket handling.
 - Make startup key rotation daemon-owned so every process lifetime uses a fresh

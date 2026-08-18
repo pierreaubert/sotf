@@ -92,6 +92,13 @@ capture drivers:
 - Encrypted real-time paths preallocate for the maximum supported HAL frame and
   channel geometry. They reject an oversized record or undersized staging
   allocation instead of growing a vector in the audio callback.
+- HAL key publication writes a mode-0600 temporary file in the owned runtime
+  directory and atomically renames it into place. The destination is never
+  removed before replacement, so a raced symlink cannot redirect key material.
+- Encryption commands and status expose transport synchronization explicitly:
+  `synced`, `pending`, `mismatch`, `unavailable`, or `not_applicable`. A daemon
+  key-state change is no longer presented as fully synchronized when the HAL
+  mapping is absent or advertises a different fingerprint.
 - Audio-path wall-clock heartbeat refresh and default debug tracing were
   removed. Swift IO tracing is available only when `SOTF_AUDIO_TRACE` is
   compiled in.

@@ -26,27 +26,44 @@ use crate::signal_analysis::{LagEstimate, MeasurementQualityConfig};
 ///
 /// `AnalysisResult` is a math-dsp type and cannot carry these fields, so
 /// they live in this wrapper. `quality` follows the math-dsp
-/// `MeasurementQualityConfig::default()` thresholds; `coherence` and the
-/// SNR metrics are not populated yet (repeat-sweep averaging is Task 8), so
-/// they appear in `quality.missing_metrics` rather than as issues.
+/// `MeasurementQualityConfig::default()` thresholds. With a single-sweep
+/// capture (`num_sweeps == 1`) coherence and the SNR metrics are not
+/// populated and appear in `quality.missing_metrics` rather than as issues;
+/// repeat captures (`num_sweeps > 1`) supply real coherence (when ≥ 4 takes
+/// are accepted) and a measured-spectrum/noise-floor pair.
 #[derive(Debug)]
 pub struct CaptureAnalysis {
-    /// Frequency-response / distortion / decay analysis of the capture.
+    /// Frequency-response / distortion / decay analysis of the capture. For
+    /// repeat captures this is the analysis of the drift-corrected,
+    /// lag-aligned, synchronously averaged accepted takes (REW-style
+    /// pre-deconvolution averaging).
     pub result: AnalysisResult,
     /// Per-take measurement-quality verdict (lag confidence, clipping,
     /// issues). `trustworthy == false` is advisory: the capture still
     /// succeeded; callers decide whether to confirm with the user.
     pub quality: MeasurementQualityReport,
     /// Estimated relative playback/capture clock drift, when the estimation
-    /// itself succeeded (regardless of whether it was acted upon).
+    /// itself succeeded (regardless of whether it was acted upon). For
+    /// repeat captures this is the first take's estimate (all takes share
+    /// the same clock pair; per-take estimates are logged).
     pub drift: Option<ClockDriftEstimate>,
     /// True when the capture was time-rescaled via `correct_clock_drift`
-    /// before analysis (and before the WAV on disk was written).
+    /// before analysis (and before the WAV on disk was written). For repeat
+    /// captures, true when ANY take was corrected.
     pub drift_corrected: bool,
-    /// Input samples dropped because the capture ring buffer filled (R6).
-    /// For multi-mic captures this is the shared overrun counter, identical
-    /// on every mic's report.
+    /// Input samples dropped because the capture ring buffer filled (R6),
+    /// accumulated over all takes. For multi-mic captures this is the shared
+    /// overrun counter, identical on every mic's report.
     pub dropped_samples: u64,
+    /// Takes accepted into the final measurement (Task 8): 1 for a
+    /// single-sweep capture, otherwise the number of takes that survived
+    /// median/MAD outlier rejection during averaging. This is the truthful
+    /// `num_sweeps` value callers should persist into
+    /// `autoeq::roomeq::RecordingConfiguration`.
+    pub accepted_count: usize,
+    /// Takes rejected as median/MAD outliers during repeat-sweep averaging
+    /// (always 0 for single-sweep captures).
+    pub rejected_count: usize,
 }
 
 /// Minimum drift-estimate confidence before drift is acted upon.
@@ -186,16 +203,20 @@ pub(super) fn check_lag_lock(lag: &LagEstimate, log_tag: &str) -> Result<(), Str
 
 /// Build the per-take quality report.
 ///
-/// Coherence is `None` until repeat-sweep averaging lands (Task 8). The
-/// measured spectrum on the deconvolution grid is not exposed by
-/// `analyze_recording` (its `AnalysisResult.spl_db` is log-interpolated onto
-/// a different grid), so SNR inputs are `None` too — deliberately through
-/// `assess_measurement_quality` rather than `…_from_silence`: passing a
-/// silence-derived noise floor without a matching measured spectrum makes
-/// math-dsp flag "noise floor supplied without a measured spectrum" as an
-/// issue, which would mark every take untrustworthy. With the default config
-/// (`require_snr: false`, `require_coherence: false`) the missing metrics are
-/// reported via `missing_metrics`, not as issues.
+/// Single-sweep captures pass `None` for all three spectral inputs (see
+/// below), keeping the Task-7 semantics. Repeat captures supply the real
+/// coherence from the robust average (only when non-empty — math-dsp treats
+/// `Some([])` as the issue "coherence data was supplied but empty") and the
+/// measured-spectrum / noise-floor pair on the shared deconvolution FFT
+/// grid, making the report complete.
+///
+/// The SNR inputs are deliberately a pair: passing a noise floor without a
+/// measured spectrum on the same grid (or vice versa, or with mismatched
+/// lengths) makes math-dsp flag it as an issue, which would mark every such
+/// take untrustworthy. A half-supplied or mismatched pair is therefore
+/// dropped here (with a warning) instead of poisoning the verdict. With the
+/// default config (`require_snr: false`, `require_coherence: false`) the
+/// missing metrics are reported via `missing_metrics`, not as issues.
 ///
 /// `extra_issues` (e.g. the severe-drift advisory) are appended and force
 /// `trustworthy = false`, keeping the flag consistent with a non-empty
@@ -204,14 +225,32 @@ pub(super) fn check_lag_lock(lag: &LagEstimate, log_tag: &str) -> Result<(), Str
 pub(super) fn build_capture_quality(
     recorded: &[f32],
     lag: &LagEstimate,
+    coherence: Option<&[f32]>,
+    measured_spectrum_db: Option<&[f32]>,
+    noise_floor_db: Option<&[f32]>,
     extra_issues: Vec<String>,
 ) -> MeasurementQualityReport {
+    let coherence = coherence.filter(|values| !values.is_empty());
+    let (measured_spectrum_db, noise_floor_db) = match (measured_spectrum_db, noise_floor_db) {
+        (Some(measured), Some(noise))
+            if !measured.is_empty() && measured.len() == noise.len() =>
+        {
+            (Some(measured), Some(noise))
+        }
+        (None, None) => (None, None),
+        _ => {
+            log::warn!(
+                "[build_capture_quality] measured spectrum and noise floor must be supplied as a matched, equal-length pair — dropping both from the quality report"
+            );
+            (None, None)
+        }
+    };
     let mut report = crate::signal_analysis::assess_measurement_quality(
         recorded,
         lag,
-        None,
-        None,
-        None,
+        coherence,
+        measured_spectrum_db,
+        noise_floor_db,
         MeasurementQualityConfig::default(),
     );
     if !extra_issues.is_empty() {

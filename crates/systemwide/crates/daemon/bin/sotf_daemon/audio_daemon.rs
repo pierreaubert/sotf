@@ -1707,18 +1707,27 @@ impl AudioDaemon {
         // HAL driver is not currently running; the daemon-side encryption state
         // remains set and will be synced when the driver reconnects.
         #[cfg(all(target_os = "macos", feature = "hal"))]
-        {
-            if let Err(e) = Self::apply_encryption_to_shared_memory(&key_manager, true) {
+        let (transport_state, transport_error) = match Self::apply_encryption_to_shared_memory(
+            &key_manager,
+            true,
+        ) {
+            Ok(()) => ("synced", None),
+            Err(error) => {
                 log::warn!(
-                    "Failed to sync encryption state to shared memory (HAL may not be running): {}",
-                    e
+                    "Encryption state is pending shared-memory sync (HAL may not be running): {}",
+                    error
                 );
+                ("pending", Some(error))
             }
-        }
+        };
+        #[cfg(not(all(target_os = "macos", feature = "hal")))]
+        let (transport_state, transport_error): (&str, Option<String>) = ("not_applicable", None);
 
         Response::ok(serde_json::json!({
             "enabled": key_manager.is_enabled(),
             "fingerprint": key_manager.fingerprint_hex(),
+            "transport_state": transport_state,
+            "transport_error": transport_error,
         }))
     }
 
@@ -1726,10 +1735,34 @@ impl AudioDaemon {
         let key_manager = self.key_manager.lock();
         let status = key_manager.status();
 
+        #[cfg(all(target_os = "macos", feature = "hal"))]
+        let (transport_state, transport_error) = match driver_hal::SharedAudioBuffer::open_default()
+        {
+            Ok(buffer) => {
+                let fingerprint_matches =
+                    !status.enabled || buffer.key_fingerprint() == *key_manager.fingerprint();
+                if buffer.is_encrypted() == status.enabled && fingerprint_matches {
+                    ("synced", None)
+                } else {
+                    (
+                        "mismatch",
+                        Some(
+                            "shared-memory encryption state differs from daemon state".to_string(),
+                        ),
+                    )
+                }
+            }
+            Err(error) => ("unavailable", Some(error.to_string())),
+        };
+        #[cfg(not(all(target_os = "macos", feature = "hal")))]
+        let (transport_state, transport_error): (&str, Option<String>) = ("not_applicable", None);
+
         Response::ok(serde_json::json!({
             "enabled": status.enabled,
             "fingerprint": status.fingerprint,
             "key_path": status.key_path,
+            "transport_state": transport_state,
+            "transport_error": transport_error,
         }))
     }
 
@@ -1742,17 +1775,24 @@ impl AudioDaemon {
                 // shared memory is available. Missing shared memory is normal when
                 // the HAL driver is not currently running.
                 #[cfg(all(target_os = "macos", feature = "hal"))]
-                {
-                    if let Err(e) = Self::apply_encryption_to_shared_memory(&key_manager, true) {
-                        log::warn!(
-                            "Failed to sync rotated encryption key to shared memory (HAL may not be running): {}",
-                            e
-                        );
-                    }
-                }
+                let (transport_state, transport_error) =
+                    match Self::apply_encryption_to_shared_memory(&key_manager, true) {
+                        Ok(()) => ("synced", None),
+                        Err(error) => {
+                            log::warn!(
+                                "Rotated encryption key is pending shared-memory sync (HAL may not be running): {}",
+                                error
+                            );
+                            ("pending", Some(error))
+                        }
+                    };
+                #[cfg(not(all(target_os = "macos", feature = "hal")))]
+                let (transport_state, transport_error): (&str, Option<String>) = ("not_applicable", None);
 
                 Response::ok(serde_json::json!({
                     "fingerprint": key_manager.fingerprint_hex(),
+                    "transport_state": transport_state,
+                    "transport_error": transport_error,
                 }))
             }
             Err(e) => Response::err(format!("Failed to rotate key: {}", e)),

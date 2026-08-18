@@ -307,6 +307,7 @@ fn systemwide_lab_scenario_matrix_over_unix_socket() {
         let encryption_status = daemon.send(r#"{"command":"encryption_status"}"#);
         assert_eq!(encryption_status["success"], true);
         assert_eq!(encryption_status["data"]["enabled"], true);
+        assert!(encryption_status["data"].get("transport_state").is_some());
         assert_eq!(
             encryption_status["data"]["fingerprint"],
             rotated["data"]["fingerprint"]
@@ -331,6 +332,7 @@ fn systemwide_lab_scenario_matrix_over_unix_socket() {
         let encryption_status = daemon.send(r#"{"command":"encryption_status"}"#);
         assert_eq!(encryption_status["success"], true);
         assert_eq!(encryption_status["data"]["enabled"], false);
+        assert_eq!(encryption_status["data"]["transport_state"], "not_applicable");
     }
 
     let reconfigured = daemon
