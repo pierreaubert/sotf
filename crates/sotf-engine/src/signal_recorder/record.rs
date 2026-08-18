@@ -1,6 +1,8 @@
 #[cfg(not(target_os = "ios"))]
 use super::consts::CANCELLED_ERR;
 #[cfg(not(target_os = "ios"))]
+use super::consts::MIN_REPEAT_SWEEPS;
+#[cfg(not(target_os = "ios"))]
 use super::misc::actionable_capture_error;
 #[cfg(not(target_os = "ios"))]
 use super::misc::capture_capacity;
@@ -1471,7 +1473,19 @@ pub fn record_and_analyze(
     use std::thread::sleep;
     use std::time::Duration;
 
-    let num_sweeps = num_sweeps.max(1) as usize;
+    // N=2 gives math-dsp's median/MAD rejection zero breakdown power (both
+    // takes always pass), so one corrupt take would poison the average —
+    // bump to the smallest count that can reject a single bad take.
+    let num_sweeps = match num_sweeps.max(1) {
+        1 => 1_usize,
+        2 => {
+            log::warn!(
+                "[record_and_analyze] num_sweeps=2 has no outlier rejection; using {MIN_REPEAT_SWEEPS}"
+            );
+            MIN_REPEAT_SWEEPS as usize
+        }
+        n => n as usize,
+    };
     let mut takes = Vec::with_capacity(num_sweeps);
     let mut dropped_samples = 0_u64;
     let mut analysis_sample_rate = sample_rate;
@@ -1570,7 +1584,17 @@ pub fn record_and_analyze_multi(
     assert_eq!(input_channels.len(), mic_calibrations.len());
 
     let num_mics = input_channels.len();
-    let num_sweeps = num_sweeps.max(1) as usize;
+    // See `record_and_analyze`: 2 takes have no outlier-rejection power.
+    let num_sweeps = match num_sweeps.max(1) {
+        1 => 1_usize,
+        2 => {
+            log::warn!(
+                "[record_and_analyze_multi] num_sweeps=2 has no outlier rejection; using {MIN_REPEAT_SWEEPS}"
+            );
+            MIN_REPEAT_SWEEPS as usize
+        }
+        n => n as usize,
+    };
 
     // Take loop: one play/record cycle per take, all mics simultaneously.
     let mut takes_per_mic: Vec<Vec<Vec<f32>>> = vec![Vec::with_capacity(num_sweeps); num_mics];

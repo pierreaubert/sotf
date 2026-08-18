@@ -20,6 +20,14 @@ pub const DEFAULT_MLS_ORDER: u8 = 16;
 /// `RecordingConfiguration.num_sweeps` default of 4.
 pub const DEFAULT_NUM_SWEEPS: u16 = 4;
 
+/// Minimum sweep count once the repeat path is engaged.
+///
+/// With two takes math-dsp's median/MAD outlier rejection always admits
+/// both (zero breakdown), so a single corrupt take would silently poison
+/// the averaged capture; three is the smallest count that can reject one
+/// bad take. Callers requesting 2 are bumped here with a warning.
+pub const MIN_REPEAT_SWEEPS: u16 = 3;
+
 /// Fixed seed for allpass probe generation — ensures the same probe is used
 /// for generation and matched-filter detection.
 pub const PROBE_SEED: u64 = 0xDEAD_BEEF_CAFE_1337;
