@@ -46,14 +46,9 @@ pub struct RecordingState {
     /// Index of the channel-speaker row whose autocomplete suggestions
     /// are currently visible, or `None` when no dropdown is open.
     pub channel_speaker_autocomplete_open: Option<usize>,
-
-    /// Monotonically increasing capture generation (task 10). Bumped on every
-    /// `start_recording_channel` / `stop_recording` / `reset_all_recordings`;
-    /// the capture task's completion closure compares its captured generation
-    /// against the current one and discards the results when they differ, so
-    /// an OLD task completing inside the ~50 ms cancel-poll window cannot
-    /// mark a NEW capture's channels `Done` with the old results.
-    pub capture_generation: u64,
+    // NOTE: `capture_generation` / `is_current_capture` live on the shared
+    // `RecordingScreenModel` (reached via Deref) so the TUI can use the same
+    // stale-completion guard.
 }
 
 impl Default for RecordingState {
@@ -80,7 +75,6 @@ impl Default for RecordingState {
             plot_channel_dropdown_open: false,
             plot_smoothing_dropdown_open: false,
             channel_speaker_autocomplete_open: None,
-            capture_generation: 0,
         }
     }
 }
@@ -96,15 +90,5 @@ impl Deref for RecordingState {
 impl DerefMut for RecordingState {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.model
-    }
-}
-
-impl RecordingState {
-    /// Stale-completion guard (task 10): true when `generation` — captured by
-    /// a recording task at spawn time — still matches the current capture
-    /// generation. A stop/restart between spawn and completion bumps the
-    /// generation, so a late-finishing OLD task must not apply its results.
-    pub fn is_current_capture(&self, generation: u64) -> bool {
-        self.capture_generation == generation
     }
 }

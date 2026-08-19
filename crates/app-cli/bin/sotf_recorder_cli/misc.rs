@@ -357,7 +357,7 @@ pub fn record_signal(
             .map(|s| s.as_str())
             .or(microphone_compensation.as_deref());
 
-        record_and_analyze(
+        let capture = record_and_analyze(
             temp_wav.path(),  // Use the temporary WAV file for playback
             &wav_path,        // Record to the final output WAV file
             &prepared_signal, // Use the prepared mono signal for analysis
@@ -373,7 +373,17 @@ pub fn record_signal(
             None,               // Optional cancel flag
         )?;
 
-        println!("  ✓ Recording complete");
+        // F2: surface the capture-quality verdict instead of an unconditional
+        // success line — an untrustworthy take must be visible in CLI output.
+        let quality =
+            sotf_audio_player::recording_helpers::summarize_take_quality(&capture);
+        let verdict = sotf_audio_player::recording_helpers::take_verdict_text(&quality);
+        if quality.trustworthy {
+            println!("  ✓ Recording complete — {}", verdict);
+        } else {
+            println!("  ⚠ Recording NEEDS REVIEW — {}", verdict);
+            println!("    Consider re-recording this channel before using the measurement.");
+        }
 
         // Add pause between channel recordings if there are more to process
         if idx + 1 < total_recordings {

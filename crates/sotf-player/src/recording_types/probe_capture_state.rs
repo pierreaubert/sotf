@@ -32,6 +32,8 @@ pub struct ProbeCaptureState {
     /// Absolute path to the persisted probe WAV once the capture
     /// succeeds. `None` until a successful run writes the file.
     pub wav_path: Option<String>,
+    /// Monotonic generation for stale-completion protection in both UIs.
+    pub capture_generation: u64,
 }
 
 impl Default for ProbeCaptureState {
@@ -44,11 +46,23 @@ impl Default for ProbeCaptureState {
             status: ProbeCaptureStatus::Idle,
             results: None,
             wav_path: None,
+            capture_generation: 0,
         }
     }
 }
 
 impl ProbeCaptureState {
+    /// Invalidate prior probe completions and return the new task generation.
+    pub fn next_capture_generation(&mut self) -> u64 {
+        self.capture_generation += 1;
+        self.capture_generation
+    }
+
+    /// Return whether a completion belongs to the current probe task.
+    pub fn is_current_capture(&self, generation: u64) -> bool {
+        self.capture_generation == generation
+    }
+
     /// Seed the state from a fresh set of probe results plus the
     /// filesystem path of the persisted recording. Sets the status
     /// to `Complete` so the UI renders the results table.

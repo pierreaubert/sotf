@@ -1089,6 +1089,15 @@ fn correction_keeps_lock_detects_collapsed_lock() {
     ));
 }
 
+#[cfg(not(target_os = "ios"))]
+#[test]
+fn discarded_drift_correction_has_user_visible_quality_advisory() {
+    let message = super::record::drift_correction_discard_message(50.0);
+    assert!(message.contains("50.0 ppm"));
+    assert!(message.contains("lag-lock verification failed"));
+    assert!(message.contains("raw capture was kept"));
+}
+
 // --- Task 8: repeat-sweep averaging, coherence, extended CSV ---
 
 /// Deterministic xorshift PRNG returning samples in [-1, 1).

@@ -25,10 +25,23 @@ pub fn poll_probe_capture(app: &mut App) -> bool {
     let Ok(mut guard) = slot.lock() else {
         return false;
     };
-    let Some(outcome) = guard.take() else {
+    let Some((generation, outcome)) = guard.take() else {
         return false;
     };
     drop(guard);
+    if !app
+        .recording
+        .model
+        .probe_capture
+        .is_current_capture(generation)
+    {
+        log::info!(
+            "Discarding stale probe capture result (generation {}, current {})",
+            generation,
+            app.recording.model.probe_capture.capture_generation
+        );
+        return false;
+    }
     match outcome {
         Ok((results, wav_path)) => {
             app.recording
@@ -64,10 +77,26 @@ pub fn poll_spl_calibration_capture(app: &mut App) -> bool {
     let Ok(mut guard) = slot.lock() else {
         return false;
     };
-    let Some(outcome) = guard.take() else {
+    let Some((generation, outcome)) = guard.take() else {
         return false;
     };
     drop(guard);
+    if !app
+        .recording
+        .model
+        .spl_calibration_capture
+        .is_current_capture(generation)
+    {
+        log::info!(
+            "Discarding stale SPL calibration result (generation {}, current {})",
+            generation,
+            app.recording
+                .model
+                .spl_calibration_capture
+                .capture_generation
+        );
+        return false;
+    }
     let cal = &mut app.recording.model.spl_calibration_capture;
     match outcome {
         Ok(res) => cal.apply_engine_result(res),
@@ -100,10 +129,23 @@ pub fn poll_bass_anchor_capture(app: &mut App) -> bool {
     let Ok(mut guard) = slot.lock() else {
         return false;
     };
-    let Some(outcome) = guard.take() else {
+    let Some((generation, outcome)) = guard.take() else {
         return false;
     };
     drop(guard);
+    if !app
+        .recording
+        .model
+        .bass_anchor_capture
+        .is_current_capture(generation)
+    {
+        log::info!(
+            "Discarding stale bass-anchor result (generation {}, current {})",
+            generation,
+            app.recording.model.bass_anchor_capture.capture_generation
+        );
+        return false;
+    }
     match outcome {
         Ok((results, wav_path)) => {
             app.recording
@@ -142,8 +184,19 @@ pub fn poll_recording(app: &mut App) -> bool {
         .clone();
 
     if let Ok(mut guard) = result_slot.lock()
-        && let Some(result) = guard.take()
+        && let Some((generation, result)) = guard.take()
     {
+        // F1: discard completions from an OLD capture that finished after a
+        // newer capture was spawned (cancel/re-record race, mid-session
+        // NumPositions rebuild). The newer capture owns the channel states.
+        if !app.recording.model.is_current_capture(generation) {
+            log::info!(
+                "Discarding stale recording result (generation {}, current {})",
+                generation,
+                app.recording.model.capture_generation
+            );
+            return false;
+        }
         match result {
             Ok((rec_results, loopback)) => {
                 let mut completed_names = Vec::new();

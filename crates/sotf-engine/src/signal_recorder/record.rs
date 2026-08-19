@@ -1055,6 +1055,14 @@ fn correct_take_clock_drift(
                             "[{log_tag}] Clock-drift correction collapsed the lag lock — \
                              discarding the correction and keeping the raw capture"
                         );
+                        let discard_message = drift_correction_discard_message(estimate.ppm);
+                        let advisory = match advisory {
+                            Some((severity, message)) => Some((
+                                severity.max(estimate.ppm.abs()),
+                                format!("{message}; {discard_message}"),
+                            )),
+                            None => Some((estimate.ppm.abs(), discard_message)),
+                        };
                         (recorded.to_vec(), (Some(estimate), false, advisory))
                     }
                 }
@@ -1067,6 +1075,18 @@ fn correct_take_clock_drift(
             }
         }
     }
+}
+
+/// Explain a rejected clock-drift correction in the quality report. This is
+/// deliberately separate from the log message: callers surface the returned
+/// `CaptureAnalysis::quality.issues` to the user, and a plain `Correct` drift
+/// action previously had no issue when lock verification discarded the fix.
+#[cfg(not(target_os = "ios"))]
+pub(super) fn drift_correction_discard_message(ppm: f64) -> String {
+    format!(
+        "clock drift correction at {:.1} ppm was discarded after lag-lock verification failed; the raw capture was kept and needs review",
+        ppm
+    )
 }
 
 /// Correct-then-verify (task-8 review A1): a correction is kept only when the

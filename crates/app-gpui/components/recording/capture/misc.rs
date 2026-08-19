@@ -1940,6 +1940,24 @@ impl PlayerView {
                 .measurement_state
                 .recording_state
                 .capture_generation += 1;
+            state
+                .app
+                .measurement_state
+                .recording_state
+                .probe_capture
+                .next_capture_generation();
+            state
+                .app
+                .measurement_state
+                .recording_state
+                .spl_calibration_capture
+                .next_capture_generation();
+            state
+                .app
+                .measurement_state
+                .recording_state
+                .bass_anchor_capture
+                .next_capture_generation();
             for recording in &mut state
                 .app
                 .measurement_state

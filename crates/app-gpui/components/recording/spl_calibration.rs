@@ -235,17 +235,18 @@ impl PlayerView {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
-        let cancel_flag = self.state.update(cx, |state, cx| {
+        let (capture_generation, cancel_flag) = self.state.update(cx, |state, cx| {
             let rec = &mut state.app.measurement_state.recording_state;
             rec.spl_cancel_requested
                 .store(false, std::sync::atomic::Ordering::Relaxed);
+            let capture_generation = rec.spl_calibration_capture.next_capture_generation();
             rec.spl_calibration_capture.status =
                 SplCalibrationCaptureStatus::Running { started_at_ms };
             rec.spl_calibration_capture.engine_result = None;
             rec.spl_calibration_capture.tone_amp =
                 10.0_f32.powf(rec.signal_level_db / 20.0).clamp(0.0, 1.0);
             cx.notify();
-            rec.spl_cancel_requested.clone()
+            (capture_generation, rec.spl_cancel_requested.clone())
         });
 
         let state_clone = self.state.clone();
@@ -287,11 +288,19 @@ impl PlayerView {
             .await;
 
             state_clone.update(&mut cx.clone(), |state, cx| {
-                let cal = &mut state
-                    .app
-                    .measurement_state
-                    .recording_state
-                    .spl_calibration_capture;
+                let rec = &mut state.app.measurement_state.recording_state;
+                if !rec
+                    .spl_calibration_capture
+                    .is_current_capture(capture_generation)
+                {
+                    log::info!(
+                        "Discarding stale GPUI SPL result (generation {}, current {})",
+                        capture_generation,
+                        rec.spl_calibration_capture.capture_generation
+                    );
+                    return;
+                }
+                let cal = &mut rec.spl_calibration_capture;
                 match result {
                     Ok(res) => cal.apply_engine_result(res),
                     Err(e) if e == sotf_audio::signal_recorder::CANCELLED_ERR => {

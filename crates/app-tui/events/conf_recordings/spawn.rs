@@ -58,6 +58,7 @@ pub(super) fn spawn_probe_capture(app: &mut App) {
         started_at_ms: now_ms(),
     };
     app.recording.model.probe_capture.results = None;
+    let capture_generation = app.recording.model.probe_capture.next_capture_generation();
 
     let slot = PROBE_CAPTURE_RESULT
         .get_or_init(|| Arc::new(Mutex::new(None)))
@@ -83,7 +84,7 @@ pub(super) fn spawn_probe_capture(app: &mut App) {
         )
         .map(|r| (r, wav_path_str));
         if let Ok(mut g) = slot.lock() {
-            *g = Some(result);
+            *g = Some((capture_generation, result));
         }
     });
 }
@@ -116,6 +117,11 @@ pub(super) fn spawn_spl_calibration_capture(app: &mut App) {
         started_at_ms: now_ms(),
     };
     cal.engine_result = None;
+    let capture_generation = app
+        .recording
+        .model
+        .spl_calibration_capture
+        .next_capture_generation();
 
     let slot = SPL_CAPTURE_RESULT
         .get_or_init(|| Arc::new(Mutex::new(None)))
@@ -137,7 +143,7 @@ pub(super) fn spawn_spl_calibration_capture(app: &mut App) {
             Some(cancel_flag),
         );
         if let Ok(mut g) = slot.lock() {
-            *g = Some(result);
+            *g = Some((capture_generation, result));
         }
     });
 }
@@ -202,6 +208,11 @@ pub(super) fn spawn_bass_anchor_capture(app: &mut App) {
         started_at_ms: now_ms(),
     };
     app.recording.model.bass_anchor_capture.results = None;
+    let capture_generation = app
+        .recording
+        .model
+        .bass_anchor_capture
+        .next_capture_generation();
 
     let slot = BASS_ANCHOR_CAPTURE_RESULT
         .get_or_init(|| Arc::new(Mutex::new(None)))
@@ -231,7 +242,7 @@ pub(super) fn spawn_bass_anchor_capture(app: &mut App) {
         )
         .map(|r| (r, wav_path_str));
         if let Ok(mut g) = slot.lock() {
-            *g = Some(result);
+            *g = Some((capture_generation, result));
         }
     });
 }

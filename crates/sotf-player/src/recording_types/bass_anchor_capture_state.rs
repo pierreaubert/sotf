@@ -32,6 +32,8 @@ pub struct BassAnchorCaptureState {
     /// Stereo (mic + loopback) when a loopback channel is configured;
     /// mono otherwise.
     pub wav_path: Option<String>,
+    /// Monotonic generation for stale-completion protection in both UIs.
+    pub capture_generation: u64,
 }
 
 impl Default for BassAnchorCaptureState {
@@ -47,11 +49,24 @@ impl Default for BassAnchorCaptureState {
             status: BassAnchorCaptureStatus::Idle,
             results: None,
             wav_path: None,
+            capture_generation: 0,
         }
     }
 }
 
 impl BassAnchorCaptureState {
+    /// Invalidate prior bass-anchor completions and return the new task
+    /// generation.
+    pub fn next_capture_generation(&mut self) -> u64 {
+        self.capture_generation += 1;
+        self.capture_generation
+    }
+
+    /// Return whether a completion belongs to the current bass-anchor task.
+    pub fn is_current_capture(&self, generation: u64) -> bool {
+        self.capture_generation == generation
+    }
+
     pub fn apply_results(&mut self, results: BassAnchorResults, wav_path: Option<String>) {
         self.results = Some(results);
         self.wav_path = wav_path;

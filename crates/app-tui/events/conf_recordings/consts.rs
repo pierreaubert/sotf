@@ -1,5 +1,7 @@
 use super::misc::ctc_raw_capture_channel_indices;
-use super::types::RecordingResultSlot;
+use super::types::{
+    BassAnchorCaptureResultSlot, ProbeCaptureResultSlot, RecordingResultSlot, SplCaptureResultSlot,
+};
 use crate::app::App;
 use sotf_audio_player::recording_types::CtcMatrixExportStrategy;
 use std::sync::{Arc, Mutex};
@@ -9,22 +11,8 @@ use std::sync::{Arc, Mutex};
 /// The shared-slot pattern mirrors `spawn_room_eq_optimization`
 /// (`OnceLock` + `Arc<Mutex>`), drained by [`poll_probe_capture`] on every
 /// main loop tick.
-#[allow(clippy::type_complexity)]
-pub(super) static PROBE_CAPTURE_RESULT: std::sync::OnceLock<
-    Arc<
-        Mutex<
-            Option<
-                Result<
-                    (
-                        sotf_audio_player::recording_types::DelayProbeResults,
-                        String,
-                    ),
-                    String,
-                >,
-            >,
-        >,
-    >,
-> = std::sync::OnceLock::new();
+pub(super) static PROBE_CAPTURE_RESULT: std::sync::OnceLock<ProbeCaptureResultSlot> =
+    std::sync::OnceLock::new();
 
 pub(super) const SPL_FIELD_REF_FREQ: usize = 0;
 
@@ -43,27 +31,11 @@ pub(super) const SPL_FIELD_REPORTED: usize = 6;
 pub(super) const SPL_FIELD_COUNT: usize = 7;
 
 /// Background slot for the SPL calibration capture.
-#[allow(clippy::type_complexity)]
-pub(super) static SPL_CAPTURE_RESULT: std::sync::OnceLock<
-    Arc<Mutex<Option<Result<sotf_audio::signal_recorder::SplCalibrationResult, String>>>>,
-> = std::sync::OnceLock::new();
+pub(super) static SPL_CAPTURE_RESULT: std::sync::OnceLock<SplCaptureResultSlot> =
+    std::sync::OnceLock::new();
 
-#[allow(clippy::type_complexity)]
-pub(super) static BASS_ANCHOR_CAPTURE_RESULT: std::sync::OnceLock<
-    Arc<
-        Mutex<
-            Option<
-                Result<
-                    (
-                        sotf_audio_player::recording_types::BassAnchorResults,
-                        String,
-                    ),
-                    String,
-                >,
-            >,
-        >,
-    >,
-> = std::sync::OnceLock::new();
+pub(super) static BASS_ANCHOR_CAPTURE_RESULT: std::sync::OnceLock<BassAnchorCaptureResultSlot> =
+    std::sync::OnceLock::new();
 
 pub(super) static RECORDING_RESULT: std::sync::OnceLock<RecordingResultSlot> =
     std::sync::OnceLock::new();
@@ -317,6 +289,13 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
         .get_or_init(|| Arc::new(Mutex::new(None)))
         .clone();
 
+    // F1: bump the capture generation so any OLD capture thread that
+    // completes after this spawn (e.g. inside the ~50 ms cancel-poll
+    // window, or orphaned by a mid-session NumPositions rebuild) has its
+    // result discarded by `poll_recording` instead of overwriting the new
+    // capture's channels.
+    let capture_generation = app.recording.model.next_capture_generation();
+
     // Clear stale result
     if let Ok(mut g) = result_slot.lock() {
         *g = None;
@@ -461,7 +440,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
             .map_err(|e| e.to_string());
 
         if let Ok(mut guard) = result_slot.lock() {
-            *guard = Some(mapped);
+            *guard = Some((capture_generation, mapped));
         }
 
         // Keep temp file alive until recording is done

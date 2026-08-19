@@ -91,6 +91,12 @@ pub struct RecordingScreenModel {
     /// (`record_and_analyze` / `record_and_analyze_multi`); polled by the
     /// engine at ~50 ms cadence (R8).
     pub sweep_cancel_requested: CancelFlag,
+    /// Monotonically increasing capture generation (task 10). Bumped every
+    /// time a new capture is spawned; completion handlers compare the
+    /// generation captured at spawn against the current one and discard
+    /// stale results, so a late-finishing OLD capture cannot overwrite a
+    /// NEW capture's state.
+    pub capture_generation: u64,
 
     /// Directory where recordings will be stored.
     /// Format: `user_selected_dir/recording-YYYYMMDD-HHMMSS/`.
@@ -190,6 +196,7 @@ impl Default for RecordingScreenModel {
             recording_progress: 0.0,
             auto_record_remaining: false,
             sweep_cancel_requested: CancelFlag::default(),
+            capture_generation: 0,
             recording_directory: None,
             recording_base_directory: None,
             probe_capture: ProbeCaptureState::default(),
@@ -463,6 +470,21 @@ impl RecordingScreenModel {
     pub fn reset_sweep_cancel(&self) {
         self.sweep_cancel_requested
             .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Stale-completion guard (task 10): true when `generation` — captured
+    /// by a capture task at spawn time — still matches the current capture
+    /// generation. A stop/restart between spawn and completion bumps the
+    /// generation, so a late-finishing OLD task must not apply its results.
+    pub fn is_current_capture(&self, generation: u64) -> bool {
+        self.capture_generation == generation
+    }
+
+    /// Bump the capture generation, invalidating every in-flight capture's
+    /// completion, and return the new generation for the task being spawned.
+    pub fn next_capture_generation(&mut self) -> u64 {
+        self.capture_generation += 1;
+        self.capture_generation
     }
 
     /// Ensure `channel_speakers` has one slot per physical playback
@@ -970,6 +992,22 @@ mod tests {
 
         model.channel_recordings[0].state = ChannelRecordingState::Done;
         assert!(!model.capture_in_progress());
+    }
+
+    #[test]
+    fn capture_generation_guard_invalidates_stale_completions() {
+        // Task 10 / F1: a completion carrying an old generation must be
+        // rejected once a newer capture has been spawned.
+        let mut model = RecordingScreenModel::default();
+        assert!(model.is_current_capture(0));
+
+        let gen_a = model.next_capture_generation();
+        assert!(model.is_current_capture(gen_a));
+        assert!(!model.is_current_capture(0));
+
+        let gen_b = model.next_capture_generation();
+        assert!(model.is_current_capture(gen_b));
+        assert!(!model.is_current_capture(gen_a));
     }
 
     #[test]

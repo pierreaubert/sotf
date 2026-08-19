@@ -1,12 +1,16 @@
 use super::adjust::adjust_recording_field;
-use super::consts::{BASS_ANCHOR_CAPTURE_RESULT, PROBE_CAPTURE_RESULT, RECORDING_RESULT};
+use super::consts::{
+    BASS_ANCHOR_CAPTURE_RESULT, PROBE_CAPTURE_RESULT, RECORDING_RESULT, SPL_CAPTURE_RESULT,
+};
 use super::handle::handle_recording_keys;
 use super::misc::ctc_raw_capture_channel_indices;
 use super::misc::init_recording_channels;
 use super::misc::save_recordings;
 use super::misc::set_recording_field_from_string;
 use super::misc::update_channel_mappings_for_config;
-use super::poll::{poll_bass_anchor_capture, poll_probe_capture, poll_recording};
+use super::poll::{
+    poll_bass_anchor_capture, poll_probe_capture, poll_recording, poll_spl_calibration_capture,
+};
 
 use crate::events::tests::make_app;
 use sotf_audio_player::recording_types::{
@@ -302,8 +306,9 @@ fn poll_probe_capture_treats_cancelled_as_idle() {
     let slot = PROBE_CAPTURE_RESULT
         .get_or_init(|| Arc::new(Mutex::new(None)))
         .clone();
-    *slot.lock().unwrap() = Some(Err(
-        sotf_audio::signal_recorder::CANCELLED_ERR.to_string()
+    *slot.lock().unwrap() = Some((
+        app.recording.model.probe_capture.capture_generation,
+        Err(sotf_audio::signal_recorder::CANCELLED_ERR.to_string()),
     ));
     assert!(poll_probe_capture(&mut app));
     assert!(matches!(
@@ -321,14 +326,90 @@ fn poll_bass_anchor_capture_treats_cancelled_as_idle() {
     let slot = BASS_ANCHOR_CAPTURE_RESULT
         .get_or_init(|| Arc::new(Mutex::new(None)))
         .clone();
-    *slot.lock().unwrap() = Some(Err(
-        sotf_audio::signal_recorder::CANCELLED_ERR.to_string()
+    *slot.lock().unwrap() = Some((
+        app.recording.model.bass_anchor_capture.capture_generation,
+        Err(sotf_audio::signal_recorder::CANCELLED_ERR.to_string()),
     ));
     assert!(poll_bass_anchor_capture(&mut app));
     assert!(matches!(
         app.recording.model.bass_anchor_capture.status,
         BassAnchorCaptureStatus::Idle
     ));
+}
+
+#[test]
+fn auxiliary_capture_polls_discard_stale_probe_result() {
+    use sotf_audio_player::recording_types::ProbeCaptureStatus;
+
+    let mut app = make_app();
+    app.recording.model.probe_capture.status = ProbeCaptureStatus::Running { started_at_ms: 0 };
+    let stale_generation = app.recording.model.probe_capture.capture_generation;
+    app.recording.model.probe_capture.next_capture_generation();
+    let slot = PROBE_CAPTURE_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    *slot.lock().unwrap() = Some((stale_generation, Err("old probe".to_string())));
+
+    assert!(!poll_probe_capture(&mut app));
+    assert!(matches!(
+        app.recording.model.probe_capture.status,
+        ProbeCaptureStatus::Running { .. }
+    ));
+    assert!(slot.lock().unwrap().is_none());
+}
+
+#[test]
+fn auxiliary_capture_polls_discard_stale_spl_result() {
+    use sotf_audio_player::recording_types::SplCalibrationCaptureStatus;
+
+    let mut app = make_app();
+    app.recording.model.spl_calibration_capture.status =
+        SplCalibrationCaptureStatus::Running { started_at_ms: 0 };
+    let stale_generation = app
+        .recording
+        .model
+        .spl_calibration_capture
+        .capture_generation;
+    app.recording
+        .model
+        .spl_calibration_capture
+        .next_capture_generation();
+    let slot = SPL_CAPTURE_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    *slot.lock().unwrap() = Some((stale_generation, Err("old SPL".to_string())));
+
+    assert!(!poll_spl_calibration_capture(&mut app));
+    assert!(matches!(
+        app.recording.model.spl_calibration_capture.status,
+        SplCalibrationCaptureStatus::Running { .. }
+    ));
+    assert!(slot.lock().unwrap().is_none());
+}
+
+#[test]
+fn auxiliary_capture_polls_discard_stale_bass_anchor_result() {
+    use sotf_audio_player::recording_types::BassAnchorCaptureStatus;
+
+    let mut app = make_app();
+    app.recording.model.bass_anchor_capture.status =
+        BassAnchorCaptureStatus::Running { started_at_ms: 0 };
+    let stale_generation = app.recording.model.bass_anchor_capture.capture_generation;
+    app.recording
+        .model
+        .bass_anchor_capture
+        .next_capture_generation();
+    let slot = BASS_ANCHOR_CAPTURE_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    *slot.lock().unwrap() = Some((stale_generation, Err("old bass anchor".to_string())));
+
+    assert!(!poll_bass_anchor_capture(&mut app));
+    assert!(matches!(
+        app.recording.model.bass_anchor_capture.status,
+        BassAnchorCaptureStatus::Running { .. }
+    ));
+    assert!(slot.lock().unwrap().is_none());
 }
 
 #[test]
@@ -344,7 +425,10 @@ fn poll_recording_sets_and_clears_low_level_warning() {
         .clone();
 
     // Very low transfer-function level → warning set and surfaced.
-    *slot.lock().unwrap() = Some(Ok((vec![(0, done_recording_result(-80.0))], None)));
+    *slot.lock().unwrap() = Some((
+        app.recording.model.capture_generation,
+        Ok((vec![(0, done_recording_result(-80.0))], None)),
+    ));
     assert!(poll_recording(&mut app));
     assert_eq!(
         app.recording.model.channel_recordings[0].state,
@@ -369,7 +453,10 @@ fn poll_recording_sets_and_clears_low_level_warning() {
 
     // Healthy level on the next take → warning cleared.
     app.recording.model.channel_recordings[0].state = ChannelRecordingState::Recording;
-    *slot.lock().unwrap() = Some(Ok((vec![(0, done_recording_result(-10.0))], None)));
+    *slot.lock().unwrap() = Some((
+        app.recording.model.capture_generation,
+        Ok((vec![(0, done_recording_result(-10.0))], None)),
+    ));
     assert!(poll_recording(&mut app));
     assert!(app.recording.model.noise_floor_warning.is_none());
 
@@ -377,7 +464,10 @@ fn poll_recording_sets_and_clears_low_level_warning() {
     // NOT Error with "Recording failed: cancelled". Same process-global
     // slot, kept sequential inside this test.
     app.recording.model.channel_recordings[0].state = ChannelRecordingState::Recording;
-    *slot.lock().unwrap() = Some(Err(sotf_audio::signal_recorder::CANCELLED_ERR.to_string()));
+    *slot.lock().unwrap() = Some((
+        app.recording.model.capture_generation,
+        Err(sotf_audio::signal_recorder::CANCELLED_ERR.to_string()),
+    ));
     assert!(poll_recording(&mut app));
     assert_eq!(
         app.recording.model.channel_recordings[0].state,
@@ -387,7 +477,10 @@ fn poll_recording_sets_and_clears_low_level_warning() {
 
     // A genuine failure still marks the channel Error.
     app.recording.model.channel_recordings[0].state = ChannelRecordingState::Recording;
-    *slot.lock().unwrap() = Some(Err("device gone".to_string()));
+    *slot.lock().unwrap() = Some((
+        app.recording.model.capture_generation,
+        Err("device gone".to_string()),
+    ));
     assert!(poll_recording(&mut app));
     assert_eq!(
         app.recording.model.channel_recordings[0].state,
@@ -492,10 +585,13 @@ fn poll_recording_parks_untrustworthy_take_for_review() {
         .clone();
 
     // Untrustworthy take → ReviewNeeded, result kept, review status shown.
-    *slot.lock().unwrap() = Some(Ok((
-        vec![(0, result_with_quality(-10.0, quality_summary(false, 0.42)))],
-        None,
-    )));
+    *slot.lock().unwrap() = Some((
+        app.recording.model.capture_generation,
+        Ok((
+            vec![(0, result_with_quality(-10.0, quality_summary(false, 0.42)))],
+            None,
+        )),
+    ));
     assert!(poll_recording(&mut app));
     assert_eq!(
         app.recording.model.channel_recordings[0].state,
@@ -532,10 +628,13 @@ fn poll_recording_parks_untrustworthy_take_for_review() {
 
     // Trustworthy take goes straight to Done with the complete message.
     app.recording.model.channel_recordings[0].state = ChannelRecordingState::Recording;
-    *slot.lock().unwrap() = Some(Ok((
-        vec![(0, result_with_quality(-10.0, quality_summary(true, 0.95)))],
-        None,
-    )));
+    *slot.lock().unwrap() = Some((
+        app.recording.model.capture_generation,
+        Ok((
+            vec![(0, result_with_quality(-10.0, quality_summary(true, 0.95)))],
+            None,
+        )),
+    ));
     assert!(poll_recording(&mut app));
     assert_eq!(
         app.recording.model.channel_recordings[0].state,
@@ -554,7 +653,10 @@ fn poll_recording_parks_untrustworthy_take_for_review() {
     app.recording.model.channel_recordings[0].state = ChannelRecordingState::Recording;
     let mut q = quality_summary(true, 0.95);
     q.dropped_samples = 128;
-    *slot.lock().unwrap() = Some(Ok((vec![(0, result_with_quality(-10.0, q))], None)));
+    *slot.lock().unwrap() = Some((
+        app.recording.model.capture_generation,
+        Ok((vec![(0, result_with_quality(-10.0, q))], None)),
+    ));
     assert!(poll_recording(&mut app));
     assert!(
         app.recording
@@ -563,6 +665,45 @@ fn poll_recording_parks_untrustworthy_take_for_review() {
             .contains("128 samples dropped during capture"),
         "unexpected status: {}",
         app.recording.model.status_message
+    );
+}
+
+#[test]
+fn poll_recording_discards_stale_generation_result() {
+    // F1: a result written by an OLD capture thread (generation captured at
+    // spawn) must be discarded once a newer capture has been spawned.
+    // Process-global result slot: scenarios run sequentially in one test.
+    let mut app = make_app();
+    let mut ch = ChannelRecording::new(0, "FL".to_string());
+    ch.state = ChannelRecordingState::Recording;
+    app.recording.model.channel_recordings = vec![ch];
+    let slot = RECORDING_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+
+    // Old capture's result arrives after a new capture was spawned.
+    let stale_generation = app.recording.model.capture_generation;
+    app.recording.model.next_capture_generation();
+    *slot.lock().unwrap() = Some((stale_generation, Ok((vec![(0, done_recording_result(-10.0))], None))));
+    // Stale result is drained but NOT applied: channel stays Recording and
+    // no completion status is published.
+    assert!(!poll_recording(&mut app));
+    assert_eq!(
+        app.recording.model.channel_recordings[0].state,
+        ChannelRecordingState::Recording
+    );
+    assert!(app.recording.model.channel_recordings[0].result.is_none());
+    assert!(slot.lock().unwrap().is_none(), "stale result drained");
+
+    // The in-flight capture's own result (current generation) is applied.
+    *slot.lock().unwrap() = Some((
+        app.recording.model.capture_generation,
+        Ok((vec![(0, done_recording_result(-10.0))], None)),
+    ));
+    assert!(poll_recording(&mut app));
+    assert_eq!(
+        app.recording.model.channel_recordings[0].state,
+        ChannelRecordingState::Done
     );
 }
 

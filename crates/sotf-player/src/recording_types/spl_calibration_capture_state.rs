@@ -40,6 +40,8 @@ pub struct SplCalibrationCaptureState {
     /// the user has entered a value. Combines with
     /// `engine_result.rms_sample_level` to compute `spl_offset_db`.
     pub reported_db_spl: Option<f32>,
+    /// Monotonic generation for stale-completion protection in both UIs.
+    pub capture_generation: u64,
 }
 
 impl Default for SplCalibrationCaptureState {
@@ -54,11 +56,23 @@ impl Default for SplCalibrationCaptureState {
             status: SplCalibrationCaptureStatus::Idle,
             engine_result: None,
             reported_db_spl: None,
+            capture_generation: 0,
         }
     }
 }
 
 impl SplCalibrationCaptureState {
+    /// Invalidate prior SPL completions and return the new task generation.
+    pub fn next_capture_generation(&mut self) -> u64 {
+        self.capture_generation += 1;
+        self.capture_generation
+    }
+
+    /// Return whether a completion belongs to the current SPL task.
+    pub fn is_current_capture(&self, generation: u64) -> bool {
+        self.capture_generation == generation
+    }
+
     pub fn apply_engine_result(&mut self, result: SplCalibrationResult) {
         self.engine_result = Some(result);
         self.status = SplCalibrationCaptureStatus::Complete;

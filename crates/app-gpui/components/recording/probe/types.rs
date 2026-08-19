@@ -360,14 +360,15 @@ impl PlayerView {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
-        let cancel_flag = self.state.update(cx, |state, cx| {
+        let (capture_generation, cancel_flag) = self.state.update(cx, |state, cx| {
             let rec = &mut state.app.measurement_state.recording_state;
             rec.probe_cancel_requested
                 .store(false, std::sync::atomic::Ordering::Relaxed);
+            let capture_generation = rec.probe_capture.next_capture_generation();
             rec.probe_capture.status = ProbeCaptureStatus::Running { started_at_ms };
             rec.probe_capture.results = None;
             cx.notify();
-            rec.probe_cancel_requested.clone()
+            (capture_generation, rec.probe_cancel_requested.clone())
         });
 
         let state_clone = self.state.clone();
@@ -414,7 +415,16 @@ impl PlayerView {
             .await;
 
             state_clone.update(&mut cx.clone(), |state, cx| {
-                let pc = &mut state.app.measurement_state.recording_state.probe_capture;
+                let rec = &mut state.app.measurement_state.recording_state;
+                if !rec.probe_capture.is_current_capture(capture_generation) {
+                    log::info!(
+                        "Discarding stale GPUI probe result (generation {}, current {})",
+                        capture_generation,
+                        rec.probe_capture.capture_generation
+                    );
+                    return;
+                }
+                let pc = &mut rec.probe_capture;
                 match result {
                     Ok(results) => {
                         pc.apply_results(
