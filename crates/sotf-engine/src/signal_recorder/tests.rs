@@ -931,7 +931,6 @@ fn test_lag_and_drift_on_delayed_sweep() {
 
     let drift = crate::signal_analysis::estimate_clock_drift(&sweep, &recording, sample_rate)
         .expect("drift estimation on a clean delayed sweep");
-    let drift = super::quality::normalize_clock_drift_ppm(drift, sample_rate);
     assert!(
         drift.ppm.abs() <= super::quality::DRIFT_CORRECT_PPM,
         "no synthetic drift: expected |ppm| <= 20, got {:.2}",
@@ -941,15 +940,15 @@ fn test_lag_and_drift_on_delayed_sweep() {
 }
 
 /// Offline plumbing test (no hardware): an injected +150 ppm capture-clock
-/// stretch must be recovered by `estimate_clock_drift` (after the engine's
-/// ppm-scale normalization), and `correct_clock_drift` must bring the
-/// residual back under the correction threshold.
+/// stretch must be recovered by `estimate_clock_drift`, and
+/// `correct_clock_drift` must bring the residual back under the correction
+/// threshold.
 ///
-/// CANARY for the math-dsp 0.5.23 (pin 1c79399) ppm-scale bug:
-/// `estimate_clock_drift` returns true ppm multiplied by the sample rate
-/// (it divides the sample-domain lag change by elapsed *seconds*).
-/// `normalize_clock_drift_ppm` compensates. If a future math-audio pin fixes
-/// the upstream formula, this test fails and the normalization must go.
+/// Regression guard for the math-dsp ppm-scale bug fixed in math-audio
+/// 0.5.26 (previously `estimate_clock_drift` returned true ppm multiplied
+/// by the sample rate — it divided the sample-domain lag change by elapsed
+/// *seconds*; the engine used to compensate via `normalize_clock_drift_ppm`,
+/// removed once the pin moved to the fixed release).
 #[test]
 #[cfg(not(target_os = "ios"))]
 fn test_clock_drift_estimate_and_correct_roundtrip() {
@@ -982,14 +981,13 @@ fn test_clock_drift_estimate_and_correct_roundtrip() {
         }
     }
 
-    let raw = crate::signal_analysis::estimate_clock_drift(&sweep, &drifted, sample_rate)
+    let estimate = crate::signal_analysis::estimate_clock_drift(&sweep, &drifted, sample_rate)
         .expect("drift estimation on a drifted sweep");
-    let estimate = super::quality::normalize_clock_drift_ppm(raw, sample_rate);
     // Integer-lag quantization: 1 sample over the ~87808-sample window
     // baseline is ~11 ppm; interpolation peak shift adds another sample.
     assert!(
         (estimate.ppm - injected_ppm).abs() < 45.0,
-        "expected ~{injected_ppm} ppm, got {:.2} (upstream ppm-scale bug? see canary note)",
+        "expected ~{injected_ppm} ppm, got {:.2} (ppm-scale regression? math-audio >= 0.5.26 required)",
         estimate.ppm
     );
     assert_eq!(drift_action(Some(&estimate)), DriftAction::CorrectAndAdvise);
@@ -998,7 +996,6 @@ fn test_clock_drift_estimate_and_correct_roundtrip() {
         crate::signal_analysis::correct_clock_drift(&drifted, &estimate).expect("drift correction");
     assert_eq!(corrected.len(), drifted.len());
     let residual = crate::signal_analysis::estimate_clock_drift(&sweep, &corrected, sample_rate)
-        .map(|raw| super::quality::normalize_clock_drift_ppm(raw, sample_rate))
         .expect("drift re-estimation after correction");
     assert!(
         residual.ppm.abs() < 60.0,

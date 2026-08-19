@@ -15,7 +15,6 @@ use super::quality::CaptureAnalysis;
 #[cfg(not(target_os = "ios"))]
 use super::quality::{
     DriftAction, build_capture_quality, check_lag_lock, drift_action, log_capture_quality,
-    normalize_clock_drift_ppm,
 };
 #[cfg(not(target_os = "ios"))]
 use super::types::{CancelFlag, cancel_requested};
@@ -1005,8 +1004,7 @@ fn correct_take_clock_drift(
         recorded,
         analysis_sample_rate,
     )
-    .ok()
-    .map(|raw| normalize_clock_drift_ppm(raw, analysis_sample_rate));
+    .ok();
     match (drift_action(drift.as_ref()), drift) {
         (DriftAction::None, _) | (_, None) => (recorded.to_vec(), (drift, false, None)),
         (DriftAction::Implausible, Some(estimate)) => {

@@ -147,28 +147,6 @@ fn active_span_bounds(reference: &[f32]) -> (usize, usize) {
     (start, end.max(start))
 }
 
-/// Normalize the ppm scale of a math-dsp `ClockDriftEstimate`.
-///
-/// math-dsp 0.5.23 (pin 1c79399) computes `ppm = lag_change /
-/// elapsed_seconds * 1e6` — i.e. true ppm multiplied by the sample rate —
-/// while `correct_clock_drift` and the thresholds above expect true ppm
-/// (`lag_change / elapsed_samples * 1e6`). This helper rescales the estimate
-/// to true ppm so both sides agree. Canary:
-/// `test_clock_drift_estimate_and_correct_roundtrip` in `tests.rs` injects a
-/// known drift; if a future math-audio pin fixes the upstream formula, that
-/// test fails and this normalization must be removed.
-#[cfg(not(target_os = "ios"))]
-pub(super) fn normalize_clock_drift_ppm(
-    raw: ClockDriftEstimate,
-    sample_rate: u32,
-) -> ClockDriftEstimate {
-    debug_assert!(sample_rate > 0);
-    ClockDriftEstimate {
-        ppm: raw.ppm / sample_rate as f64,
-        ..raw
-    }
-}
-
 /// Decide whether a clock-drift estimate warrants correction / flagging.
 /// Pure threshold logic, unit-tested without hardware. Drift alone never
 /// fails a take.
