@@ -303,7 +303,7 @@ symphonia-format-isomp4 = "0.6"
 dst-decoder = { git = "https://github.com/pierreaubert/symphonia-add-ons" }
 rdsd2pcm = { git = "https://github.com/pierreaubert/symphonia-add-ons" }
 encoding_rs = "0.8"
-rtrb = "0.3"
+rtrb = "0.4"
 midir = "0.10"
 
 # TUI framework
@@ -317,7 +317,7 @@ gpui = { version="0.2.2", git = "https://github.com/zed-industries/zed.git", tag
 gpui_macos = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0", features = ["font-kit"] }
 gpui_linux = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0" }
 gpui_windows = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0" }
-gpui_wgpu = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0" }
+gpui_wgpu = { version="0.1.1", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0" }
 
 # System and low-level
 objc = "0.2"
@@ -511,8 +511,14 @@ gpui = {
   branch = "main",
   package = "gpui"
 }
-gpui_macos = { 
+gpui_wgpu = {
+  version = "0.1.1",
   git = "https://github.com/pierreaubert/gpui-toolkit",
+  branch = "main",
+  package = "gpui_wgpu"
+}
+gpui_macos = { 
+  git = "https://github.com/pierreaubert/gpui-toolkit", 
   branch = "main", 
   package = "gpui_macos" 
 }
