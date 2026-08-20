@@ -141,7 +141,10 @@ qa-plugins-fuzzer: qa-plugins-fuzzer-simple qa-plugins-fuzzer-1ch qa-plugins-fuz
 
 [group('qa-plugins')]
 qa-plugins-fuzzer-simple:
-	@for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_*.wav; do \
+	@qa_clang_cache_dir="${TMPDIR:-/tmp}/sotf-clang-module-cache"; \
+	mkdir -p "$qa_clang_cache_dir"; \
+	export CLANG_MODULE_CACHE_PATH="$qa_clang_cache_dir"; \
+	for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_*.wav; do \
 		for plugin in gain eq compressor limiter gate delay loudness_monitor abcompare expander mbcomp mbexp matrix mutesolo denoiser spectrum pnd; do \
 			echo "=== Fuzzing plugin: $plugin with $file ==="; \
 			cargo run --release --bin plugin-fuzzer -- --file "$file" --plugin $plugin || exit 1; \
@@ -150,7 +153,10 @@ qa-plugins-fuzzer-simple:
 
 [group('qa-plugins')]
 qa-plugins-fuzzer-1ch:
-	@for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_ch1_*.wav; do \
+	@qa_clang_cache_dir="${TMPDIR:-/tmp}/sotf-clang-module-cache"; \
+	mkdir -p "$qa_clang_cache_dir"; \
+	export CLANG_MODULE_CACHE_PATH="$qa_clang_cache_dir"; \
+	for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_ch1_*.wav; do \
 		for plugin in mono_to_stereo; do \
 			echo "=== Fuzzing plugin: $plugin with $file ==="; \
 			cargo run --release --bin plugin-fuzzer -- --file "$file" --plugin $plugin || exit 1; \
@@ -159,7 +165,10 @@ qa-plugins-fuzzer-1ch:
 
 [group('qa-plugins')]
 qa-plugins-fuzzer-2ch:
-	@for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_ch2_*.wav; do \
+	@qa_clang_cache_dir="${TMPDIR:-/tmp}/sotf-clang-module-cache"; \
+	mkdir -p "$qa_clang_cache_dir"; \
+	export CLANG_MODULE_CACHE_PATH="$qa_clang_cache_dir"; \
+	for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_ch2_*.wav; do \
 		for plugin in fletcher upmixer xtc crossfeed; do \
 			echo "=== Fuzzing plugin: $plugin with $file ==="; \
 			cargo run --release --bin plugin-fuzzer -- --file "$file" --plugin $plugin || exit 1; \
@@ -168,7 +177,10 @@ qa-plugins-fuzzer-2ch:
 
 [group('qa-plugins')]
 qa-plugins-fuzzer-6ch:
-	@for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_ch6_*.wav; do \
+	@qa_clang_cache_dir="${TMPDIR:-/tmp}/sotf-clang-module-cache"; \
+	mkdir -p "$qa_clang_cache_dir"; \
+	export CLANG_MODULE_CACHE_PATH="$qa_clang_cache_dir"; \
+	for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_ch6_*.wav; do \
 		for plugin in downmix; do \
 			echo "=== Fuzzing plugin: $plugin with $file ==="; \
 			cargo run --release --bin plugin-fuzzer -- --file "$file" --plugin $plugin || exit 1; \
@@ -215,7 +227,7 @@ plugins-daw-gate csv:
 plugins-daw-allocation-gate:
 	cargo test -p sotf-plugins --test realtime_allocation_tests
 	cargo test -p sotf-engine --test engine_allocation_tests
-	cargo test -p sotf-engine --test playback_runtime_allocation_tests
+	cargo test -p sotf-engine --features playback-runtime-harness --test playback_runtime_allocation_tests
 
 [group('bench-plugins')]
 plugins-daw-hotpath-audit:

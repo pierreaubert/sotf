@@ -409,12 +409,13 @@ fn cross_process_plain_ring_stress_reconfigures_only_between_spsc_commits() {
         for step in 0..2_000 {
             let channels = writer.channel_count() as usize;
             if channels == 0 {
-                writer_error_count.fetch_add(1, Ordering::Relaxed);
+                // Reconfiguration temporarily withdraws the active geometry;
+                // the next iteration observes the new channel count.
                 continue;
             }
             let requested_frames = (step % 4) + 1;
             let input = sequential_audio(requested_frames, channels, step * 16);
-            let written = writer.write_audio(&input);
+            let written = writer.write_audio_with_channel_count(&input, channels);
             if written > requested_frames || written * channels > input.len() {
                 writer_error_count.fetch_add(1, Ordering::Relaxed);
             }
@@ -449,12 +450,8 @@ fn cross_process_plain_ring_stress_reconfigures_only_between_spsc_commits() {
         );
     }
 
-    writer_thread
-        .join()
-        .expect("writer thread must not panic");
-    reader_thread
-        .join()
-        .expect("reader thread must not panic");
+    writer_thread.join().expect("writer thread must not panic");
+    reader_thread.join().expect("reader thread must not panic");
     assert_eq!(writer_errors.load(Ordering::Relaxed), 0);
     assert_eq!(reader_errors.load(Ordering::Relaxed), 0);
 
@@ -473,7 +470,7 @@ fn cross_process_plain_ring_stress_reconfigures_only_between_spsc_commits() {
 #[test]
 fn cross_process_encrypted_ring_stress_reconfigures_without_stale_records() {
     let temp_file = create_mock_shared_memory_with_max_geometry(48_000, 16, 2, 64, 8);
-    let mut writer = SharedAudioBuffer::open(temp_file.path()).expect("open encrypted writer");
+    let writer = SharedAudioBuffer::open(temp_file.path()).expect("open encrypted writer");
     let reader = SharedAudioBuffer::open(temp_file.path()).expect("open encrypted reader");
     let mut controller = SharedAudioBuffer::open(temp_file.path()).expect("open controller");
     let writer_key = [0x21_u8; 32];
@@ -537,8 +534,12 @@ fn cross_process_encrypted_ring_stress_reconfigures_without_stale_records() {
         controller.reconfigure_quiesced(None, Some(16), Some(if step % 2 == 0 { 4 } else { 2 }));
     }
 
-    let _writer = writer_thread.join().expect("encrypted writer must not panic");
-    let _reader = reader_thread.join().expect("encrypted reader must not panic");
+    writer_thread
+        .join()
+        .expect("encrypted writer must not panic");
+    reader_thread
+        .join()
+        .expect("encrypted reader must not panic");
     assert_eq!(writer_errors.load(Ordering::Relaxed), 0);
     assert_eq!(reader_errors.load(Ordering::Relaxed), 0);
 
@@ -553,12 +554,8 @@ fn cross_process_encrypted_ring_stress_reconfigures_without_stale_records() {
     let (mut ciphertext, mut encrypted) = encrypted_staging_buffers();
     let expected = [0.25_f32, -0.5_f32];
     assert_eq!(
-        post_writer.write_audio_encrypted_into(
-            &expected,
-            &cipher,
-            &mut ciphertext,
-            &mut encrypted,
-        ),
+        post_writer
+            .write_audio_encrypted_into(&expected, &cipher, &mut ciphertext, &mut encrypted,),
         1
     );
     let mut actual = [0.0_f32; 2];
@@ -636,18 +633,8 @@ fn run_true_cross_process_ring_stress(mode: &str) {
     fs::remove_file(writer_ready.path()).expect("remove writer ready placeholder");
     fs::remove_file(reader_ready.path()).expect("remove reader ready placeholder");
 
-    let writer = spawn_process_ring_worker(
-        temp_file.path(),
-        writer_ready.path(),
-        mode,
-        "writer",
-    );
-    let reader = spawn_process_ring_worker(
-        temp_file.path(),
-        reader_ready.path(),
-        mode,
-        "reader",
-    );
+    let writer = spawn_process_ring_worker(temp_file.path(), writer_ready.path(), mode, "writer");
+    let reader = spawn_process_ring_worker(temp_file.path(), reader_ready.path(), mode, "reader");
     wait_for_worker_ready(&[writer_ready.path(), reader_ready.path()]);
 
     for step in 0..256 {
@@ -764,7 +751,10 @@ fn cross_process_ring_worker() {
             } else {
                 buffer.read_audio(&mut output)
             };
-            assert!(read <= output.len() / channels, "reader returned too many frames");
+            assert!(
+                read <= output.len() / channels,
+                "reader returned too many frames"
+            );
             assert!(output.iter().all(|sample| sample.is_finite()));
         } else {
             panic!("unknown worker role {role}");

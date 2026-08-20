@@ -536,10 +536,13 @@ fn concurrent_spsc_io_keeps_geometry_consistent_during_reconfigure() {
     assert_eq!(controller.buffer_frames(), 32);
     assert_eq!(controller.channel_count(), 8);
     assert_eq!(controller.header().configuring.load(Ordering::Acquire), 0);
-    assert_eq!(
-        controller.header().configuring_ack.load(Ordering::Acquire),
-        0
-    );
+    // `configuring_ack` is a legacy advisory flag written by an IO
+    // participant after it observes the request. A participant can be
+    // descheduled after that observation and publish the acknowledgement
+    // after the controller has cleared `configuring`; it is therefore not a
+    // quiescence token and must not be asserted clear in a concurrent test.
+    // The single-threaded handshake test above still verifies that a normal
+    // reconfiguration clears the compatibility flag.
 
     // Once the quiesce flag is cleared, a writer may legitimately publish a
     // fresh batch using the new geometry before the test stops it. The

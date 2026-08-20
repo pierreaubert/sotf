@@ -1,5 +1,6 @@
 ---
 source: crates/sotf-plugins/tests/render_plan_snapshots.rs
+assertion_line: 78
 expression: plan
 ---
 {
@@ -62,6 +63,30 @@ expression: plan
           "range": [
             0.0,
             20000.0
+          ],
+          "read_only": false,
+          "enabled": true
+        },
+        {
+          "param_index": 6,
+          "param_name": "Formant Preservation",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false,
+          "enabled": true
+        },
+        {
+          "param_index": 7,
+          "param_name": "Formant Strength",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
           ],
           "read_only": false,
           "enabled": true

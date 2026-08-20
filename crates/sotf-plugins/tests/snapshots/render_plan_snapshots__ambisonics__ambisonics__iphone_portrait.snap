@@ -1,5 +1,6 @@
 ---
 source: crates/sotf-plugins/tests/render_plan_snapshots.rs
+assertion_line: 48
 expression: plan
 ---
 {
@@ -44,6 +45,18 @@ expression: plan
       "range": [
         0.0,
         7.0
+      ],
+      "read_only": false,
+      "enabled": true
+    },
+    {
+      "param_index": 4,
+      "param_name": "Algorithm",
+      "control_type": "selector",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
       ],
       "read_only": false,
       "enabled": true

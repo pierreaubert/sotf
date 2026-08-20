@@ -1339,14 +1339,21 @@ impl PlaybackRuntime {
                 ThreadEvent::PlaybackDrained,
                 "ring buffer drained",
             );
-            return RuntimeDecision::Break;
+            // Keep the output worker alive for the next source. A normal EOF
+            // is a transport state transition, not a worker shutdown; the
+            // manager may issue another Play command immediately afterward.
+            self.drain.end_of_stream = false;
+            self.drain.drain_start = None;
+            return RuntimeDecision::Continue;
         }
 
         if let Some(start) = self.drain.drain_start
             && start.elapsed() > self.drain.drain_timeout
         {
             self.emit_drain_timeout_event("Playback stalled", "drain timeout error");
-            return RuntimeDecision::Break;
+            self.drain.end_of_stream = false;
+            self.drain.drain_start = None;
+            return RuntimeDecision::Continue;
         }
 
         std::thread::sleep(Duration::from_millis(5));

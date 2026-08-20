@@ -65,6 +65,30 @@ expression: plan
           ],
           "read_only": false,
           "enabled": true
+        },
+        {
+          "param_index": 6,
+          "param_name": "Formant Preservation",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false,
+          "enabled": true
+        },
+        {
+          "param_index": 7,
+          "param_name": "Formant Strength",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false,
+          "enabled": true
         }
       ]
     },

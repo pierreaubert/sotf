@@ -7,6 +7,12 @@ pub(super) struct EqFuzzer {
     pub(super) sample_rate: u32,
 }
 
+const FILTER_GAIN_LIMIT_DB: f64 = 24.0;
+
+fn compensated_gain(db_gain: f64, loudness_gain: f64) -> f64 {
+    (db_gain - loudness_gain).clamp(-FILTER_GAIN_LIMIT_DB, FILTER_GAIN_LIMIT_DB)
+}
+
 impl PluginFuzzer for EqFuzzer {
     fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
         use math_audio_iir_fir::{Biquad, BiquadFilterType, Peq, peq_loudness_gain};
@@ -60,7 +66,7 @@ impl PluginFuzzer for EqFuzzer {
 
         // Apply compensation by reducing all filter gains
         for filter in &mut filters {
-            filter.db_gain -= loudness_gain;
+            filter.db_gain = compensated_gain(filter.db_gain, loudness_gain);
         }
 
         // Build parameter description
@@ -87,5 +93,17 @@ impl PluginFuzzer for EqFuzzer {
         };
         let plugin = EqPlugin::from_params(channels, self.sample_rate, params).unwrap();
         (Box::new(ParametricPluginAdapter::new(plugin)), desc)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compensated_gain;
+
+    #[test]
+    fn loudness_compensation_keeps_filter_gain_in_eq_range() {
+        assert_eq!(compensated_gain(20.0, -10.0), 24.0);
+        assert_eq!(compensated_gain(-20.0, 10.0), -24.0);
+        assert_eq!(compensated_gain(3.0, 1.0), 2.0);
     }
 }

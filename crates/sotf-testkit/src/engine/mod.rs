@@ -141,4 +141,17 @@ mod tests {
     fn get_virtual_device_does_not_panic() {
         let _ = get_virtual_device();
     }
+
+    #[test]
+    fn skip_without_device_returns_only_when_device_is_missing() {
+        fn guarded_test(reached_body: &mut bool) {
+            crate::skip_without_device!();
+            *reached_body = true;
+        }
+
+        let mut reached_body = false;
+        guarded_test(&mut reached_body);
+
+        assert_eq!(reached_body, get_virtual_device().is_some());
+    }
 }

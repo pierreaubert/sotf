@@ -14,6 +14,20 @@ use std::sync::Arc;
 
 const HOST_BUILD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
+// The processing thread validates the host snapshot at the block boundary.
+// A host update from another manager-side source can win between the state
+// snapshot and that commit; rebuild against the new snapshot a small number
+// of times instead of surfacing this recoverable race to the caller.
+const MAX_STALE_HOST_UPDATE_RETRIES: usize = 2;
+
+fn is_stale_host_update(error: &ConfigError) -> bool {
+    matches!(
+        error,
+        ConfigError::ProcessingError { reason }
+            if reason == "stale prepared host update: active host changed before commit"
+    )
+}
+
 fn build_plugin_update_host_on_worker(
     plugins: Vec<super::super::PluginConfig>,
     sample_rate: u32,
@@ -101,7 +115,7 @@ pub(in crate::engine::manager_thread) fn store_plugin_build_diagnostics(
     clippy::too_many_arguments,
     reason = "manager command handler: one argument per engine subsystem involved"
 )]
-pub(in crate::engine::manager_thread) fn apply_plugin_update(
+fn apply_plugin_update_once(
     processing: &mut ProcessingThread,
 
     playback: &mut PlaybackThread,
@@ -157,7 +171,6 @@ pub(in crate::engine::manager_thread) fn apply_plugin_update(
         start_build.elapsed(),
         host.output_channels()
     );
-
     // Send update command to processing thread
 
     let current = state.load();
@@ -235,6 +248,45 @@ pub(in crate::engine::manager_thread) fn apply_plugin_update(
 
     config_queue.metrics.record_success(start.elapsed());
     Ok(())
+}
+
+/// Retry a host replacement when its control-thread snapshot becomes stale
+/// before the processing thread reaches its commit boundary.
+pub(in crate::engine::manager_thread) fn apply_plugin_update(
+    processing: &mut ProcessingThread,
+    playback: &mut PlaybackThread,
+    state: &Arc<ArcSwap<AudioEngineState>>,
+    config_queue: &mut ConfigUpdateQueue,
+    plugins: Vec<super::super::PluginConfig>,
+    sample_rate: u32,
+    input_channels: usize,
+    playback_channel_limit: usize,
+    oversampling_policy: EngineOversamplingPolicy,
+) -> Result<(), ConfigError> {
+    for attempt in 0..=MAX_STALE_HOST_UPDATE_RETRIES {
+        match apply_plugin_update_once(
+            processing,
+            playback,
+            state,
+            config_queue,
+            plugins.clone(),
+            sample_rate,
+            input_channels,
+            playback_channel_limit,
+            oversampling_policy,
+        ) {
+            Err(error)
+                if is_stale_host_update(&error) && attempt < MAX_STALE_HOST_UPDATE_RETRIES =>
+            {
+                log::debug!(
+                    "[Manager Thread] Prepared host became stale; retrying against the active host snapshot"
+                );
+            }
+            result => return result,
+        }
+    }
+
+    unreachable!("stale host update retry loop must return from the match");
 }
 
 /// Build a DawHost from a graph config and convert to a linear `Vec<PluginConfig>` isn't

@@ -832,6 +832,18 @@ impl DecoderState {
                     return Ok(DecoderLoopAction::Interrupted(cmd));
                 }
 
+                // Position updates are normally rate-limited to avoid flooding the
+                // manager thread. Emit one final update at EOF so playback state does
+                // not remain at the last periodic update while the output drains.
+                let final_position_sec = self
+                    .decoder
+                    .as_ref()
+                    .map(|decoder| decoder.position() as f64 / source_sample_rate as f64)
+                    .unwrap_or(0.0);
+                event_tx
+                    .try_send(ThreadEvent::PositionUpdate(final_position_sec))
+                    .ok();
+                self.last_position_update = Instant::now();
                 event_tx.try_send(ThreadEvent::DecoderEndOfStream).ok();
                 Ok(DecoderLoopAction::Stop)
             }

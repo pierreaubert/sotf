@@ -108,6 +108,10 @@ pub fn build_plugin_host_with_policy(
         }
     }
 
+    host.build().map_err(|error| {
+        PluginBuildDiagnostic::host(format!("Plugin host build failed: {error}"))
+    })?;
+
     log::info!(
         "[Processing Thread] Plugin chain loaded: {} plugins ({}ch -> {}ch), {} skipped",
         configs.len() - warnings.len(),

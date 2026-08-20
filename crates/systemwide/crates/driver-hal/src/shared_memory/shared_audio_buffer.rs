@@ -1105,14 +1105,12 @@ impl SharedAudioBuffer {
             }
         }
 
-        if to_read < sample_count {
-            buffer[to_read..].fill(0.0);
-        }
+        // Leave any incomplete interleaved-frame tail untouched. The
+        // AudioDriver contract only permits writing complete frames and the
+        // caller owns the tail when its buffer is not frame-aligned.
 
         let new_read_pos = read_pos + to_read as u64;
-        header
-            .read_position
-            .store(new_read_pos, Ordering::Release);
+        header.read_position.store(new_read_pos, Ordering::Release);
 
         let frames_read = to_read / channel_count.max(1);
         #[cfg(feature = "audio-trace")]
@@ -1169,8 +1167,8 @@ impl SharedAudioBuffer {
             return 0;
         }
 
-        let geometry_matches = self.header().channel_count.load(Ordering::Acquire) as usize
-            == expected_channel_count;
+        let geometry_matches =
+            self.header().channel_count.load(Ordering::Acquire) as usize == expected_channel_count;
         let frames_written = if geometry_matches {
             self.write_audio_under_commit(buffer)
         } else {
@@ -1413,8 +1411,7 @@ impl SharedAudioBuffer {
         encrypted_buf: &mut Vec<f32>,
         ciphertext_buf: &mut Vec<u8>,
     ) -> EncryptedRecordRead {
-        if self.reconfiguration_requested()
-            || !self.try_acquire_io_commit(CONFIGURING_READ_COMMIT)
+        if self.reconfiguration_requested() || !self.try_acquire_io_commit(CONFIGURING_READ_COMMIT)
         {
             return EncryptedRecordRead::Empty;
         }
@@ -1444,9 +1441,7 @@ impl SharedAudioBuffer {
         let original_read_pos = header.read_position.load(Ordering::Acquire);
         let (read_pos, available_slots) = self.compute_repair(write_pos, original_read_pos);
         if read_pos != original_read_pos {
-            header
-                .read_position
-                .store(write_pos, Ordering::Release);
+            header.read_position.store(write_pos, Ordering::Release);
             return EncryptedRecordRead::Empty;
         }
 
@@ -1457,9 +1452,7 @@ impl SharedAudioBuffer {
             ciphertext_buf,
         ) else {
             log::warn!("Invalid encrypted audio record header; flushing encrypted ring");
-            header
-                .read_position
-                .store(write_pos, Ordering::Release);
+            header.read_position.store(write_pos, Ordering::Release);
             return EncryptedRecordRead::InvalidHeader;
         };
 
@@ -1474,9 +1467,7 @@ impl SharedAudioBuffer {
                 record.sample_count,
                 channel_count
             );
-            header
-                .read_position
-                .store(write_pos, Ordering::Release);
+            header.read_position.store(write_pos, Ordering::Release);
             return EncryptedRecordRead::InvalidHeader;
         }
 
@@ -1492,9 +1483,7 @@ impl SharedAudioBuffer {
         if encrypted_buf.capacity() < record.slot_count
             || ciphertext_buf.capacity() < record.total_bytes
         {
-            header
-                .read_position
-                .store(write_pos, Ordering::Release);
+            header.read_position.store(write_pos, Ordering::Release);
             return EncryptedRecordRead::InvalidHeader;
         }
         if encrypted_buf.len() < record.slot_count {
@@ -1566,12 +1555,8 @@ impl SharedAudioBuffer {
             buffer.fill(0.0);
             return 0;
         }
-        let frames_read = self.read_audio_encrypted_under_commit(
-            buffer,
-            cipher,
-            encrypted_buf,
-            ciphertext_buf,
-        );
+        let frames_read =
+            self.read_audio_encrypted_under_commit(buffer, cipher, encrypted_buf, ciphertext_buf);
         self.release_io_commit(CONFIGURING_READ_COMMIT);
         frames_read
     }
@@ -1586,7 +1571,6 @@ impl SharedAudioBuffer {
         encrypted_buf: &mut Vec<f32>,
         ciphertext_buf: &mut Vec<u8>,
     ) -> usize {
-
         let channel_count = self.header().channel_count.load(Ordering::Acquire) as usize;
         if channel_count == 0 {
             buffer.fill(0.0);
@@ -1692,12 +1676,8 @@ impl SharedAudioBuffer {
             self.release_io_commit(CONFIGURING_WRITE_COMMIT);
             return 0;
         }
-        let frames_written = self.write_audio_encrypted_under_commit(
-            samples,
-            cipher,
-            ciphertext_buf,
-            encrypted_buf,
-        );
+        let frames_written =
+            self.write_audio_encrypted_under_commit(samples, cipher, ciphertext_buf, encrypted_buf);
         self.release_io_commit(CONFIGURING_WRITE_COMMIT);
         frames_written
     }
@@ -1713,7 +1693,6 @@ impl SharedAudioBuffer {
         ciphertext_buf: &mut Vec<u8>,
         encrypted_buf: &mut Vec<f32>,
     ) -> usize {
-
         let channel_count = self.header().channel_count.load(Ordering::Acquire) as usize;
         if channel_count == 0 {
             self.header()

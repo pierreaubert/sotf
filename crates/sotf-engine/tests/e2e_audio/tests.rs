@@ -19,6 +19,7 @@ use std::time::Duration;
 #[test]
 #[serial]
 fn test_loopback_tone() {
+    super::common::skip_without_device!();
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1). Set AEQ_E2E=1 to run.");
         return;
@@ -89,6 +90,7 @@ fn test_loopback_tone() {
 #[test]
 #[serial]
 fn test_loopback_sweep_accuracy() {
+    super::common::skip_without_device!();
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1)");
         return;
@@ -131,6 +133,7 @@ fn test_loopback_sweep_accuracy() {
 #[test]
 #[serial]
 fn test_loopback_pink_noise() {
+    super::common::skip_without_device!();
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1)");
         return;
@@ -195,6 +198,7 @@ fn test_loopback_pink_noise() {
 #[test]
 #[serial]
 fn test_loopback_multi_channel() {
+    super::common::skip_without_device!();
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1)");
         return;
@@ -282,6 +286,7 @@ fn test_loopback_multi_channel() {
 #[test]
 #[serial]
 fn test_loopback_multi_sample_rate() {
+    super::common::skip_without_device!();
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1)");
         return;
@@ -500,6 +505,7 @@ fn test_upmixer_insert_and_config_change_during_playback() {
 #[test]
 #[serial]
 fn test_upmixer_sequential_songs() {
+    super::common::skip_without_device!();
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1)");
         return;
@@ -603,6 +609,7 @@ fn test_upmixer_sequential_songs() {
 #[test]
 #[serial]
 fn test_upmixer_dynamic_add_remove() {
+    super::common::skip_without_device!();
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1)");
         return;
@@ -690,6 +697,7 @@ fn test_upmixer_dynamic_add_remove() {
 #[test]
 #[serial]
 fn test_stress_rapid_track_changes_with_natural_eos() {
+    super::common::skip_without_device!();
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1)");
         return;
@@ -824,6 +832,7 @@ fn test_stress_rapid_track_changes_with_natural_eos() {
 #[test]
 #[serial]
 fn test_stress_rapid_skip_with_plugin_changes() {
+    super::common::skip_without_device!();
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1)");
         return;

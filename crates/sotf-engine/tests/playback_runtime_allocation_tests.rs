@@ -1,7 +1,7 @@
 use serial_test::serial;
 use sotf_audio::engine::playback_runtime_harness::{
-    FrameWriterHarness, HarnessFrameWriteOutcome, PlaybackCallbackHarness, XorShift64,
-    generated_frame,
+    generated_frame, run_fuzzer, FrameWriterHarness, HarnessFrameWriteOutcome,
+    PlaybackCallbackHarness, XorShift64,
 };
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
@@ -106,6 +106,17 @@ fn playback_callback_harness_runs_consecutive_zero_allocation_windows() {
         .unwrap();
 
     assert_eq!(callback.join().unwrap(), WINDOWS * 32 * 5);
+}
+
+#[test]
+#[serial]
+fn playback_runtime_fuzzer_smoke() {
+    const CASES: usize = 64;
+
+    let stats = run_fuzzer(0x5eed, CASES).expect("playback runtime fuzzer should complete");
+
+    assert_eq!(stats.cases, CASES);
+    assert!(stats.sequences > 0);
 }
 
 #[test]

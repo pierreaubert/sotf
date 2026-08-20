@@ -389,13 +389,17 @@ pub(super) fn run_playback_ios(
                     if producer.slots() >= buffer_capacity {
                         log::info!("[Playback Thread iOS] Ring buffer drained");
                         event_tx.try_send(ThreadEvent::PlaybackDrained).ok();
-                        break;
+                        end_of_stream = false;
+                        drain_start = None;
+                        continue;
                     }
                     if let Some(start) = drain_start {
                         if start.elapsed() > drain_timeout {
                             log::warn!("[Playback Thread iOS] Drain timeout, signaling completion");
                             event_tx.try_send(ThreadEvent::PlaybackDrained).ok();
-                            break;
+                            end_of_stream = false;
+                            drain_start = None;
+                            continue;
                         }
                     }
                     std::thread::sleep(std::time::Duration::from_millis(5));

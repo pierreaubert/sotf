@@ -78,11 +78,13 @@ prod-hal-driver:
 test-hal-driver-swift:
 	#!/usr/bin/env bash
 	set -euo pipefail
+	CLANG_CACHE_DIR="${TMPDIR:-/tmp}/sotf-clang-module-cache"
+	mkdir -p "$CLANG_CACHE_DIR"
 	HAL_SWIFT_DIR="crates/systemwide/crates/driver-hal/swift"
 	BUILD_DIR="target/debug/SotFHALTests.bundle"
 	mkdir -p "$BUILD_DIR/Contents/MacOS" "$BUILD_DIR/Contents/Resources"
 	echo "Building and running Swift HAL tests..."
-	swiftc \
+	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" swiftc \
 		-o "$BUILD_DIR/Contents/MacOS/SotFHALTests" \
 		-module-name SotFHALTests \
 		-import-objc-header "$HAL_SWIFT_DIR/Sources/BridgingHeader.h" \

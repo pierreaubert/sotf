@@ -14,7 +14,7 @@ use super::misc::sanitize_user_plugins;
 use super::misc::transport_snapshot_and_faults;
 use super::misc::{
     build_driver_plugin_chain, build_driver_plugin_graph, is_safe_output_device_name,
-    list_audio_devices, parameter_descriptor_to_json,
+    parameter_descriptor_to_json,
 };
 use super::pipeline_reconfigure_outcome::handle_driver_config_change;
 use super::pipeline_reconfigure_outcome::reconfigure_audio_pipeline;
@@ -865,13 +865,23 @@ mod ipc_safety_tests {
         DriverStatus::new(true, true, true, 48_000, 2, 512, "Fake HAL", true)
     }
 
-    fn has_physical_output_device() -> bool {
-        list_audio_devices()
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|device| device["name"].as_str())
-            .any(is_safe_output_device_name)
-    }
+fn has_physical_output_device() -> bool {
+    use cpal::traits::{DeviceTrait, HostTrait};
+    use sotf_audio::devices::is_null_device;
+
+    cpal::default_host()
+        .output_devices()
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(|device| {
+            device
+                .description()
+                .ok()
+                .map(|description| description.name().to_string())
+        })
+        .any(|name| is_safe_output_device_name(&name) && !is_null_device(&name))
+}
 
     fn fault_codes(faults: &[Value]) -> Vec<&str> {
         faults
@@ -1698,16 +1708,11 @@ mod ipc_safety_tests {
 
     #[test]
     #[serial_test::serial]
-    fn testkit_concurrent_add_plugin_preserves_both_mutations() {
-        let has_physical_output = list_audio_devices()
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|device| device["name"].as_str())
-            .any(is_safe_output_device_name);
-        if !has_physical_output {
-            eprintln!("skipping live engine mutation test: no physical output device");
-            return;
-        }
+fn testkit_concurrent_add_plugin_preserves_both_mutations() {
+    if !has_physical_output_device() {
+        eprintln!("skipping live engine mutation test: no physical output device");
+        return;
+    }
 
         let state = fake_driver_state();
         let daemon = Arc::new(test_daemon_with_driver(state));

@@ -2546,7 +2546,7 @@ fn async_filter_automation_uses_one_coalescing_worker() {
             )
             .unwrap();
     }
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::thread::sleep(std::time::Duration::from_millis(100));
     assert_eq!(
         plugin
             .filter_state

@@ -66,6 +66,8 @@ test_macos() {
         -D warnings
 
     local configbar_dir="crates/systemwide/crates/daemon/configbar"
+    local module_cache="${TMPDIR:-/tmp}/sotf-clang-module-cache"
+    mkdir -p "$module_cache"
     local swift_build_dir="${CARGO_TARGET_DIR:-target}/systemwide-swift-package"
     mkdir -p "$swift_build_dir"
 

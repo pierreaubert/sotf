@@ -36,4 +36,4 @@ qa-engine-96:
 
 [group('fuzzer')]
 qa-engine-fuzzer:
-	cargo run -p sotf-engine --bin playback-runtime-fuzzer --release
+	cargo run -p sotf-engine --features playback-runtime-harness --bin playback-runtime-fuzzer --release

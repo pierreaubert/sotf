@@ -47,6 +47,18 @@ expression: plan
       ],
       "read_only": false,
       "enabled": true
+    },
+    {
+      "param_index": 4,
+      "param_name": "Algorithm",
+      "control_type": "selector",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false,
+      "enabled": true
     }
   ],
   "main_groups": [

@@ -9,7 +9,7 @@ use crate::plugin::{
     Plugin, PluginCompileMetadata, PluginCompiledOp, PluginCostClass, PluginInfo, PluginResult,
     ProcessContext,
 };
-use crate::speaker_config::ChannelLayout;
+use crate::speaker_config::{ChannelLayout, ChannelRole};
 use math_audio_dsp::ebur128::{EbuR128, Mode};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -232,6 +232,7 @@ pub struct LoudnessMonitor {
     channel_layout: Option<ChannelLayout>,
     loudness_channels: usize,
     loudness_gains: Vec<f32>,
+    loudness_channel_indices: Vec<usize>,
     weighted_scratch: Vec<f32>,
     /// When true, also maintain a full inter-channel Pearson r matrix and
     /// write it into `LoudnessData.correlation_matrix` on each update.
@@ -348,6 +349,27 @@ impl LoudnessMonitor {
                     .collect()
             })
             .unwrap_or_default();
+        let loudness_channel_indices = channel_layout
+            .as_ref()
+            .map(|layout| {
+                (0..channels as usize)
+                    .map(|index| {
+                        if loudness_channels != 7 {
+                            return index;
+                        }
+                        match layout.role_at(index) {
+                            Some(ChannelRole::FrontLeft) => 0,
+                            Some(ChannelRole::FrontRight) => 1,
+                            Some(ChannelRole::FrontCenter) => 2,
+                            Some(ChannelRole::Lfe) => 3,
+                            Some(ChannelRole::SideLeft | ChannelRole::BackLeft) => 4,
+                            Some(ChannelRole::SideRight | ChannelRole::BackRight) => 5,
+                            _ => index.min(loudness_channels.saturating_sub(1)),
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         Ok(Self {
             ebur128: ebur,
             peak_meter,
@@ -356,6 +378,7 @@ impl LoudnessMonitor {
             channel_layout,
             loudness_channels,
             loudness_gains,
+            loudness_channel_indices,
             // Fixed-size chunking keeps arbitrary callback sizes allocation
             // free while bounding control-time scratch allocation.
             weighted_scratch: vec![0.0; loudness_channels * 256],
@@ -486,7 +509,12 @@ impl LoudnessMonitor {
                 .zip(scratch.chunks_exact_mut(self.loudness_channels))
             {
                 for channel in 0..input_channels {
-                    output_frame[channel] = input_frame[channel] * self.loudness_gains[channel];
+                    let output_channel = self.loudness_channel_indices[channel];
+                    output_frame[output_channel] = if self.loudness_channels == 7 {
+                        input_frame[channel]
+                    } else {
+                        input_frame[channel] * self.loudness_gains[channel]
+                    };
                 }
             }
             self.ebur128

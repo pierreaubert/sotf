@@ -45,19 +45,35 @@ test_features_windows := '--features="qa, onnx, gpu-2d, gpu-3d, iamf, dev-api, s
 
 [group('test')]
 check:
-	cargo check --workspace  --lib --bins --tests --examples {{test_features}}
+	#!/usr/bin/env bash
+	set -euo pipefail
+	CLANG_CACHE_DIR="${TMPDIR:-/tmp}/sotf-clang-module-cache"
+	mkdir -p "$CLANG_CACHE_DIR"
+	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" cargo check --workspace --lib --bins --tests --examples {{test_features}}
 
 [group('test')]
 test:
-	cargo test --workspace  --lib --bins --tests --examples {{test_features}}
+	#!/usr/bin/env bash
+	set -euo pipefail
+	CLANG_CACHE_DIR="${TMPDIR:-/tmp}/sotf-clang-module-cache"
+	mkdir -p "$CLANG_CACHE_DIR"
+	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" cargo test --workspace --lib --bins --tests --examples {{test_features}}
 
 [group('test')]
 test-negative:
-	cargo test --test negative --release {{release_test_features}}
+	#!/usr/bin/env bash
+	set -euo pipefail
+	CLANG_CACHE_DIR="${TMPDIR:-/tmp}/sotf-clang-module-cache"
+	mkdir -p "$CLANG_CACHE_DIR"
+	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" cargo test --test negative --release {{release_test_features}}
 
 [group('test')]
 test-proptest:
-	PROPTEST_CASES=10000 cargo test --test proptest_tests --release {{release_test_features}}
+	#!/usr/bin/env bash
+	set -euo pipefail
+	CLANG_CACHE_DIR="${TMPDIR:-/tmp}/sotf-clang-module-cache"
+	mkdir -p "$CLANG_CACHE_DIR"
+	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" PROPTEST_CASES=10000 cargo test --test proptest_tests --release {{release_test_features}}
 
 [group('test')]
 ntest:
@@ -65,7 +81,16 @@ ntest:
 
 [group('test')]
 itest:
-	PROPTEST_CASES=10000 CARGO_PROFILE_RELEASE_LTO=off cargo nextest run --release --no-fail-fast --workspace --tests {{release_test_features}}
+	#!/usr/bin/env bash
+	set -euo pipefail
+	# Keep scheduler-sensitive measurements out of the highly parallel
+	# workspace pass. They are run immediately below, serially, so the test
+	# set remains complete without timing thresholds depending on unrelated
+	# test load.
+	EXCLUDE='not (test(test_play_to_audible_latency) | test(test_loudness_compensation_zero_alloc) | test(test_upmixer_plugin_timing))'
+	SERIAL='test(test_play_to_audible_latency) | test(test_loudness_compensation_zero_alloc) | test(test_upmixer_plugin_timing)'
+	PROPTEST_CASES=10000 CARGO_PROFILE_RELEASE_LTO=off cargo nextest run --release --no-fail-fast --workspace --tests {{release_test_features}} -E "$EXCLUDE"
+	PROPTEST_CASES=10000 CARGO_PROFILE_RELEASE_LTO=off cargo nextest run --release --no-fail-fast --workspace --tests {{release_test_features}} --test-threads=1 -E "$SERIAL"
 
 [group('test')]
 atest: test-negative test-proptest ntest itest
@@ -106,7 +131,7 @@ test-realtime-safety:
 	cargo test -p sotf-plugins --test realtime_allocation_tests
 	cargo test -p sotf-plugins --test rt_safety_tests
 	cargo test -p sotf-engine --test engine_allocation_tests
-	cargo test -p sotf-engine --test playback_runtime_allocation_tests
+	cargo test -p sotf-engine --features playback-runtime-harness --test playback_runtime_allocation_tests
 
 [group('test')]
 test-pr: test-unit-core test-integration-engine test-integration-player test-device-fakes test-realtime-safety

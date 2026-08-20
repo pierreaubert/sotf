@@ -834,6 +834,11 @@ fn test_loudness_compensation_zero_alloc() {
         let _ = plugin.get_data();
     }
 
+    // Prime the control-path reset as well. The first reset may initialize
+    // dependency state; the allocation contract below covers steady-state
+    // resets after that one-time setup.
+    plugin.reset();
+
     assert_no_allocs("LoudnessCompensationPlugin", || {
         for _ in 0..1000 {
             plugin.process_in_place(&mut buffer, &ctx).unwrap();

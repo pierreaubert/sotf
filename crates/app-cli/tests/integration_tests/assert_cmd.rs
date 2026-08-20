@@ -40,7 +40,7 @@ fn fixture_wav() -> PathBuf {
     std::env::var("CARGO_TARGET_TMPDIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| std::env::temp_dir().join("sotf-recorder-tests"))
-        .join("tone_send0_rec0_48000.wav")
+        .join("replay_gain_tone_48000.wav")
 }
 
 /// Generate a deterministic mono tone WAV fixture under the target temp dir.

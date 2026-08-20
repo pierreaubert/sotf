@@ -14,10 +14,11 @@ impl PluginFuzzer for FletcherMunsonFuzzer {
         let reference_level_db = rng.random_range(60.0..100.0);
 
         let params = LoudnessCompensationPluginParams {
-            mode: 2, // Auto
-            playback_volume_db,
-            reference_level_db,
-            ..Default::default()
+        mode: 2, // Auto
+        playback_volume_db,
+        reference_level_db,
+        auto_calibrated: true,
+        ..Default::default()
         };
         let plugin = LoudnessCompensationPlugin::from_params(channels, params)
             .expect("Failed to create FletcherMunsonPlugin (LoudnessCompensation Auto)");
