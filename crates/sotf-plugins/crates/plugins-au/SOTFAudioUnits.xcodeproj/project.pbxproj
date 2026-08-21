@@ -3879,50 +3879,50 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				6B865694139292EF0681AF3F /* AAEAudioUnit */,
-				F939A8B289BC5A606FAEBD0C /* ABCompareAudioUnit */,
-				D3C7DEE3F25EF79CA59543E0 /* AECAudioUnit */,
-				B1787818C785C54BD416C645 /* AmbisonicsAudioUnit */,
-				B4B90279ACC7C95FDA8D6340 /* BandMergeAudioUnit */,
-				7DC079CAD07218B623A370C1 /* BandSplitAudioUnit */,
-				4A68CC50B42FBAEFE2BA6A46 /* BeamformerAudioUnit */,
-				DAE5B79841C5C8F6A2E89413 /* BinauralAudioUnit */,
-				8911ED4AAC3593C8AF342205 /* ChannelMuteSoloAudioUnit */,
-				79F449AFDA4FB44349FFD943 /* CompressorAudioUnit */,
-				165A6DA0D10831557C845C14 /* ConvolutionAudioUnit */,
-				9D2F167A6E67C956BD8AD9D3 /* CrossfeedAudioUnit */,
-				568F94A182E080C60E865B90 /* CrossoverAudioUnit */,
-				36D08457F5A75BBF79E7556A /* DeEsserAudioUnit */,
-				74198072FE128D962B7AF07E /* DeclickAudioUnit */,
-				C88189D3A29E75A0A32155A7 /* DelayAudioUnit */,
-				46A1C2DA717CBF22EBF0D4AF /* DenoiserAudioUnit */,
-				A0D23D82C5767D117A799E18 /* DitherAudioUnit */,
-				C77D2A52DB54B31E2FA60FF7 /* DownmixAudioUnit */,
-				63843F596563880D8358DF34 /* DynamicEQAudioUnit */,
-				7BEB67E9BB65AFCF96BAC5D6 /* EQAudioUnit */,
-				250545CB741B7A9F2AE9E7AF /* ExpanderAudioUnit */,
-				B2E9850B01781946DC2046A9 /* FletcherMunsonAudioUnit */,
-				D1A4212137548F299946D49F /* GainAudioUnit */,
-				915E564E4F3A2DBFE6217258 /* GateAudioUnit */,
-				97BD9D5165B8B2E669B59EF2 /* HissReducerAudioUnit */,
-				378FD01D4213BBDF3E24B54F /* LimiterAudioUnit */,
-				C62BB722C7643C72DB417784 /* LinearPhaseEQAudioUnit */,
-				4B9F3A7107E5A0D4D27FBCDA /* LoudnessCompensationAudioUnit */,
-				7562CD3DB32BDF3E90D1BFC2 /* LoudnessMonitorAudioUnit */,
-				A151C0A7D5C9D55E3D5C17C6 /* MatrixAudioUnit */,
-				5322AD540C919DE35DDBBC5E /* MonoToStereoAudioUnit */,
-				ED71FE7CB132053E8C8D3269 /* MultibandCompressorAudioUnit */,
-				C3138030D676DC64C4E0B80B /* MultibandExpanderAudioUnit */,
-				46984B965648ABAA25BC681D /* PNDAudioUnit */,
 				E0C3ABF2793D897D35FBA20F /* SOTFAudioUnits */,
+				7BEB67E9BB65AFCF96BAC5D6 /* EQAudioUnit */,
+				79F449AFDA4FB44349FFD943 /* CompressorAudioUnit */,
+				378FD01D4213BBDF3E24B54F /* LimiterAudioUnit */,
+				915E564E4F3A2DBFE6217258 /* GateAudioUnit */,
+				D1A4212137548F299946D49F /* GainAudioUnit */,
+				C88189D3A29E75A0A32155A7 /* DelayAudioUnit */,
+				250545CB741B7A9F2AE9E7AF /* ExpanderAudioUnit */,
+				9D2F167A6E67C956BD8AD9D3 /* CrossfeedAudioUnit */,
 				FBB7DBD56BB8B16FFDF8A260 /* SaturationAudioUnit */,
-				3699048E88D1806561E7EBD9 /* SpectralCompressorAudioUnit */,
-				3E2B68185B9E5316B8130CC2 /* SpectrumAnalyzerAudioUnit */,
-				AEFBA070783F4C3FDC372E42 /* SpeechDenoiserAudioUnit */,
+				46A1C2DA717CBF22EBF0D4AF /* DenoiserAudioUnit */,
+				C77D2A52DB54B31E2FA60FF7 /* DownmixAudioUnit */,
+				5322AD540C919DE35DDBBC5E /* MonoToStereoAudioUnit */,
 				D423F4A83E25AAFFAD243825 /* StereoImagerAudioUnit */,
 				256A4F7E78E7E8D31A87D424 /* TransientShaperAudioUnit */,
+				36D08457F5A75BBF79E7556A /* DeEsserAudioUnit */,
+				63843F596563880D8358DF34 /* DynamicEQAudioUnit */,
+				ED71FE7CB132053E8C8D3269 /* MultibandCompressorAudioUnit */,
+				C3138030D676DC64C4E0B80B /* MultibandExpanderAudioUnit */,
+				165A6DA0D10831557C845C14 /* ConvolutionAudioUnit */,
+				B2E9850B01781946DC2046A9 /* FletcherMunsonAudioUnit */,
+				4B9F3A7107E5A0D4D27FBCDA /* LoudnessCompensationAudioUnit */,
+				8911ED4AAC3593C8AF342205 /* ChannelMuteSoloAudioUnit */,
 				A9BE216FA7F136BBE6AC10A9 /* UpmixerAudioUnit */,
 				4BFADA0A1A9815921BC05DBA /* XTCAudioUnit */,
+				DAE5B79841C5C8F6A2E89413 /* BinauralAudioUnit */,
+				A151C0A7D5C9D55E3D5C17C6 /* MatrixAudioUnit */,
+				46984B965648ABAA25BC681D /* PNDAudioUnit */,
+				F939A8B289BC5A606FAEBD0C /* ABCompareAudioUnit */,
+				568F94A182E080C60E865B90 /* CrossoverAudioUnit */,
+				6B865694139292EF0681AF3F /* AAEAudioUnit */,
+				7DC079CAD07218B623A370C1 /* BandSplitAudioUnit */,
+				B4B90279ACC7C95FDA8D6340 /* BandMergeAudioUnit */,
+				D3C7DEE3F25EF79CA59543E0 /* AECAudioUnit */,
+				4A68CC50B42FBAEFE2BA6A46 /* BeamformerAudioUnit */,
+				C62BB722C7643C72DB417784 /* LinearPhaseEQAudioUnit */,
+				3699048E88D1806561E7EBD9 /* SpectralCompressorAudioUnit */,
+				7562CD3DB32BDF3E90D1BFC2 /* LoudnessMonitorAudioUnit */,
+				3E2B68185B9E5316B8130CC2 /* SpectrumAnalyzerAudioUnit */,
+				B1787818C785C54BD416C645 /* AmbisonicsAudioUnit */,
+				74198072FE128D962B7AF07E /* DeclickAudioUnit */,
+				97BD9D5165B8B2E669B59EF2 /* HissReducerAudioUnit */,
+				AEFBA070783F4C3FDC372E42 /* SpeechDenoiserAudioUnit */,
+				A0D23D82C5767D117A799E18 /* DitherAudioUnit */,
 			);
 		};
 /* End PBXProject section */
@@ -6293,7 +6293,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.7.10;
+				MARKETING_VERSION = 0.7.11;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -6531,7 +6531,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.7.10;
+				MARKETING_VERSION = 0.7.11;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

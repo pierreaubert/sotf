@@ -1109,7 +1109,10 @@ open class GenericRustAudioUnit: AUAudioUnit {
             }
 
             var parameterFlags: AudioUnitParameterOptions = [.flag_IsReadable, .flag_IsWritable]
-            if info.pointee.steps == 0 && info.pointee.realtime {
+            // The FFI ParameterInfo contract exposes automation granularity via
+            // `steps`; continuous parameters are the ones that can be ramped.
+            let realtime = info.pointee.steps == 0
+            if realtime {
                 parameterFlags.insert(.flag_CanRamp)
             }
             let param = AUParameterTree.createParameter(
@@ -1131,7 +1134,7 @@ open class GenericRustAudioUnit: AUAudioUnit {
                 maxValue: info.pointee.max_value,
                 logarithmic: info.pointee.logarithmic,
                 steps: info.pointee.steps,
-                realtime: info.pointee.realtime
+                realtime: realtime
             ))
         }
 
@@ -1230,8 +1233,7 @@ open class GenericRustAudioUnit: AUAudioUnit {
                   info.pointee.min_value == metadata[index].minValue,
                   info.pointee.max_value == metadata[index].maxValue,
                   info.pointee.logarithmic == metadata[index].logarithmic,
-                  info.pointee.steps == metadata[index].steps,
-                  info.pointee.realtime == metadata[index].realtime else {
+                  info.pointee.steps == metadata[index].steps else {
                 return false
             }
         }

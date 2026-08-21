@@ -7,7 +7,7 @@ import AudioToolbox
 
 public class GPUIAUView: NSView {
 
-    private var gpuiContext: UnsafeMutableRawPointer?
+    nonisolated(unsafe) private var gpuiContext: UnsafeMutableRawPointer?
     private var renderTimer: Timer?
     private let pluginType: String
     /// Atomic parameter cache for thread-safe UI rendering.
@@ -330,11 +330,8 @@ private let gpuiResetParamCallback: ResetParamCallback = { userdata, paramIndex 
     guard paramIndex < allParams.count else { return }
     let param = allParams[paramIndex]
     // Reset to AU default value
-    if let handle = au.pluginHandle {
-        let info = plugin_get_parameter_info(OpaquePointer(handle), paramIndex)
-        if let info = info {
-            param.value = AUValue(info.pointee.default_value)
+        if let defaultValue = au.defaultValueForParameter(at: paramIndex) {
+            param.value = defaultValue
         }
-    }
 }
 #endif

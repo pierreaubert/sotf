@@ -41,6 +41,10 @@ pub(super) fn write_wav_file(
 }
 
 /// Run a sweep loopback on a specific channel+rate and return (mean_spl, variation)
+fn sweep_end_frequency(sample_rate: u32) -> f32 {
+    (sample_rate as f32 * 0.45).min(20_000.0)
+}
+
 pub(super) fn sweep_loopback(
     device: &str,
     sample_rate: u32,
@@ -51,7 +55,11 @@ pub(super) fn sweep_loopback(
     let output_dir = test_output_dir();
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let sweep = gen_log_sweep(20.0, 20000.0, 0.5, sample_rate, 3.0);
+    // Keep both the generated sweep and the analyzed response below Nyquist.
+    // The engine QA matrix includes 16 kHz, where a fixed 20 kHz sweep would
+    // alias and the historical 10 kHz statistics window exceeded Nyquist.
+    let sweep_end_freq = sweep_end_frequency(sample_rate);
+    let sweep = gen_log_sweep(20.0, sweep_end_freq, 0.5, sample_rate, 3.0);
     let temp_wav = output_dir.join(format!("e2e_{tag}_playback.wav"));
     let recorded_wav = output_dir.join(format!("e2e_{tag}_recorded.wav"));
     let csv_file = output_dir.join(format!("e2e_{tag}_analysis.csv"));
@@ -69,12 +77,13 @@ pub(super) fn sweep_loopback(
         Some(device),
         Some(device),
         None,
-        Some((20.0, 20000.0)),
+        Some((20.0, sweep_end_freq)),
         1, // num_sweeps
         None,
     )?;
 
-    // Parse CSV and compute statistics in 100 Hz – 10 kHz
+    // Parse CSV and compute statistics in 100 Hz through the valid sweep band.
+    let analysis_max_freq = sweep_end_freq.min(10_000.0);
     let csv =
         std::fs::read_to_string(&csv_file).map_err(|e| format!("Failed to read CSV: {}", e))?;
     let mut spl_values = Vec::new();
@@ -82,14 +91,16 @@ pub(super) fn sweep_loopback(
         let parts: Vec<&str> = line.split(',').collect();
         if parts.len() >= 2
             && let (Ok(freq), Ok(spl)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>())
-            && (100.0..=10000.0).contains(&freq)
+            && (100.0..=analysis_max_freq).contains(&freq)
         {
             spl_values.push(spl);
         }
     }
 
     if spl_values.is_empty() {
-        return Err("No SPL data in 100-10kHz range".to_string());
+        return Err(format!(
+            "No SPL data in 100-{analysis_max_freq:.0} Hz range"
+        ));
     }
 
     let mean = spl_values.iter().sum::<f32>() / spl_values.len() as f32;
@@ -141,4 +152,17 @@ pub(super) fn upmixer_plugin(speaker_config: &str) -> PluginConfig {
             "speaker_config": speaker_config,
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sweep_end_frequency;
+
+    #[test]
+    fn sweep_end_frequency_stays_below_nyquist() {
+        assert_eq!(sweep_end_frequency(16_000), 7_200.0);
+        assert!(sweep_end_frequency(16_000) < 8_000.0);
+        assert_eq!(sweep_end_frequency(48_000), 20_000.0);
+        assert_eq!(sweep_end_frequency(96_000), 20_000.0);
+    }
 }

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>org.spinorama.sotf-daemon</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Applications/sotf-systemwide.app/Contents/Helpers/sotf-daemon</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>5</integer>
+	<key>ProcessType</key>
+	<string>Adaptive</string>
+	<key>LimitLoadToSessionType</key>
+	<array>
+		<string>Aqua</string>
+	</array>
+	<key>StandardOutPath</key>
+	<string>/tmp/sotf-daemon.launchd.log</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/sotf-daemon.launchd.log</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>RUST_LOG</key>
+		<string>info</string>
+	</dict>
+</dict>
+</plist>
