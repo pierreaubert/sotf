@@ -12,6 +12,18 @@ public enum ConfigBarDaemonAdoption {
     }
 }
 
+/// Shared decision logic for the IPC health watchdog. Probes are taken every
+/// few seconds; a single failure can be a transient hiccup while the daemon
+/// restarts under launchd, so a restart is only requested after repeated
+/// consecutive failures.
+public enum ConfigBarDaemonWatchdog {
+    public static let restartThreshold = 2
+
+    public static func shouldRestart(consecutiveFailures: Int) -> Bool {
+        consecutiveFailures >= restartThreshold
+    }
+}
+
 /// Dispatch a potentially blocking daemon operation away from SwiftUI's main
 /// thread and deliver its result back on the main queue.
 public enum ConfigBarAsyncOperation {

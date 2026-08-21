@@ -341,4 +341,15 @@ final class ConfigBarModelTests: XCTestCase {
         XCTAssertEqual(daemonRequests, 1)
         XCTAssertTrue(state.confirmed)
     }
+
+    // MARK: - Daemon watchdog policy
+
+    func testWatchdogToleratesTransientProbeFailureButRestartsOnRepeatedOnes() {
+        XCTAssertFalse(ConfigBarDaemonWatchdog.shouldRestart(consecutiveFailures: 0))
+        XCTAssertFalse(ConfigBarDaemonWatchdog.shouldRestart(consecutiveFailures: 1))
+        XCTAssertTrue(ConfigBarDaemonWatchdog.shouldRestart(
+            consecutiveFailures: ConfigBarDaemonWatchdog.restartThreshold
+        ))
+        XCTAssertTrue(ConfigBarDaemonWatchdog.shouldRestart(consecutiveFailures: 5))
+    }
 }

@@ -102,6 +102,19 @@ capture drivers:
 - Audio-path wall-clock heartbeat refresh and default debug tracing were
   removed. Swift IO tracing is available only when `SOTF_AUDIO_TRACE` is
   compiled in.
+- The production daemon process is owned by the `org.spinorama.sotf-daemon`
+  LaunchAgent (`builds/macos/org.spinorama.sotf-daemon.plist`), registered by
+  the installer for the console user with `RunAtLoad` plus `KeepAlive`.
+  Quitting the menu bar app releases only monitoring ownership; systemwide
+  audio keeps running. Configbar restart actions bounce the daemon through
+  `launchctl kickstart`, falling back to a spawned child process only in
+  development/lab environments where the agent is not registered. The daemon
+  log is appended to, never truncated, so a previous run's history survives
+  restarts and intermittent failures remain diagnosable.
+- The Configbar watchdog probes IPC health (`isDaemonReachable`) rather than
+  only checking child-process liveness, so a hung-but-alive daemon that still
+  holds the socket is detected and restarted after two consecutive failed
+  probes.
 
 On Linux, the daemon continues to use the cross-platform `NullDriver` unless a
 test selects the deterministic lab driver. On Windows, only `driver-common` and
@@ -450,7 +463,8 @@ sequenceDiagram
         Dm->>Dm: adopt existing launchd/debug daemon
     else no live daemon responds
         Dm->>Dm: remove only a verified stale Unix socket
-        Dm->>Daemon: spawn process
+        Dm->>Daemon: launchctl kickstart org.spinorama.sotf-daemon
+        Note over Dm,Daemon: dev/lab fallback: spawn child process when agent is absent
     end
     Daemon->>Driver: initialize()
     Driver->>Shm: create_or_open_default(48000, 512, 2)
@@ -728,6 +742,12 @@ sequenceDiagram
 
 Important details:
 
+- The daemon is a per-user LaunchAgent (`org.spinorama.sotf-daemon`). The
+  preinstall script boots the agent out of the gui domain *before* quiescing
+  the daemon; otherwise `KeepAlive` would respawn it mid-install and race the
+  payload replacement. The app postinstall registers the freshly shipped
+  plist (`/Library/Application Support/SotF/org.spinorama.sotf-daemon.plist`)
+  into `~/Library/LaunchAgents` and bootstraps it for the console user.
 - The installer does not rely on `launchctl kickstart` for `coreaudiod`; that
   is restricted on modern macOS.
 - Runtime cleanup targets the secure daemon socket, legacy socket, `audio.shm`,

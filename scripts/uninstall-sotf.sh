@@ -164,6 +164,10 @@ fi
 
 log_info "[2/6] Unloading LaunchAgents..."
 
+# Boot out the daemon agent from the gui domain first; the plist uses
+# KeepAlive so plain unload may not stop a launchd-managed daemon.
+launchctl bootout "gui/$(id -u)/${DAEMON_BUNDLE_ID}" 2>/dev/null || true
+
 # Unload Systemwide LaunchAgent
 if [ -f "${SYSTEMWIDE_PLIST}" ]; then
     launchctl unload "${SYSTEMWIDE_PLIST}" 2>/dev/null || true
@@ -202,6 +206,12 @@ for plist in "${SYSTEMWIDE_PLIST}" "${DAEMON_PLIST}" "${LEGACY_TOOLBAR_PLIST}" "
         log_success "Removed $(basename "$plist")"
     fi
 done
+
+# Remove the staged LaunchAgent plist shipped by the installer package
+if [ -f "/Library/Application Support/SotF/org.spinorama.sotf-daemon.plist" ]; then
+    sudo rm -f "/Library/Application Support/SotF/org.spinorama.sotf-daemon.plist"
+    log_success "Removed staged daemon LaunchAgent plist"
+fi
 
 log_info "[4/6] Removing applications..."
 

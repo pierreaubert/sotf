@@ -975,6 +975,8 @@ class DaemonManager {
     private var isShuttingDown = false
     private var startupProbeInFlight = false
     private var restartRequested = false
+    private var watchdogProbeInFlight = false
+    private var consecutiveProbeFailures = 0
 
     /// Callback when daemon status changes
     var onStatusChange: ((Bool) -> Void)?
@@ -1055,11 +1057,50 @@ class DaemonManager {
                 // was in flight. Do not launch a second daemon in that race.
                 guard self.daemonProcess?.isRunning != true else { return }
 
+                // Production daemons are owned by the
+                // org.spinorama.sotf-daemon LaunchAgent. Bounce through
+                // launchd first; spawning a child is a development/lab
+                // fallback for when the agent is not registered.
+                if self.kickstartAgent() {
+                    print("DaemonManager: Requested launchd kickstart for \(self.agentLabel)")
+                    self.onStatusChange?(true)
+                    self.startWatchdog()
+                    return
+                }
+
                 self.launchDaemon()
             }
         }
     }
 
+    private var agentLabel: String { "org.spinorama.sotf-daemon" }
+
+    /// Ask launchd to (re)start the daemon agent. Returns false when the
+    /// agent is not registered in this gui session, so callers can fall back
+    /// to managing a child process themselves.
+    @discardableResult
+    private func kickstartAgent() -> Bool {
+        runLaunchctl(["kickstart", "-k", "gui/\(getuid())/\(agentLabel)"])
+    }
+
+    private func runLaunchctl(_ arguments: [String]) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = arguments
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
+
+    /// Development/lab fallback: spawn the daemon as a child process. Used
+    /// only when the org.spinorama.sotf-daemon LaunchAgent is not registered
+    /// (for example SOTF_DAEMON_PATH override runs).
     private func launchDaemon() {
         guard !isShuttingDown else { return }
 
@@ -1076,11 +1117,14 @@ class DaemonManager {
         process.executableURL = URL(fileURLWithPath: daemonPath)
         process.arguments = []
 
-        // Redirect output to log file
+        // Redirect output to log file. Append to any existing log instead of
+        // truncating it so a previous run's history survives a restart.
         let appSupportDir = daemonLogURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
         let logPath = daemonLogURL.path
-        FileManager.default.createFile(atPath: logPath, contents: nil)
+        if !FileManager.default.fileExists(atPath: logPath) {
+            FileManager.default.createFile(atPath: logPath, contents: nil)
+        }
         let logHandle = FileHandle(forWritingAtPath: logPath)
         logHandle?.seekToEndOfFile()
         process.standardOutput = logHandle
@@ -1120,12 +1164,21 @@ class DaemonManager {
         }
     }
 
-    /// Restart the managed daemon after an outage without killing or
-    /// disturbing a live daemon adopted from launchd or another owner.
+    /// Restart the daemon after an outage. Production daemons are owned by
+    /// the org.spinorama.sotf-daemon LaunchAgent, so the preferred action is
+    /// a launchd kickstart. A child spawned by this manager (development
+    /// fallback) is restarted through its termination handler.
     func restartDaemon() {
         isShuttingDown = false
-        restartRequested = true
         stopWatchdog()
+
+        if daemonProcess?.isRunning != true && kickstartAgent() {
+            print("DaemonManager: Restart via launchd kickstart for \(agentLabel)")
+            startWatchdog()
+            return
+        }
+
+        restartRequested = true
 
         guard let process = daemonProcess, process.isRunning else {
             restartRequested = false
@@ -1154,23 +1207,15 @@ class DaemonManager {
         daemonProcess?.isRunning == true ? "Restart" : "Reconnect"
     }
 
-    /// Stop the daemon
+    /// Stop managing the daemon without terminating it. Systemwide audio
+    /// processing outlives the menu bar app by design: production daemons
+    /// are owned by the org.spinorama.sotf-daemon LaunchAgent, and a child
+    /// spawned by the development fallback is intentionally left running so
+    /// quitting Configbar never cuts systemwide audio.
     func stopDaemon() {
+        print("DaemonManager: Releasing daemon ownership (daemon keeps running)")
         isShuttingDown = true
         stopWatchdog()
-
-        if let process = daemonProcess, process.isRunning {
-            print("DaemonManager: Stopping daemon (PID: \(process.processIdentifier))...")
-            process.terminate()
-
-            // Give it a moment to clean up
-            DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
-                if process.isRunning {
-                    print("DaemonManager: Daemon did not exit after SIGTERM; sending SIGINT fallback...")
-                    process.interrupt()
-                }
-            }
-        }
         daemonProcess = nil
     }
 
@@ -1179,18 +1224,38 @@ class DaemonManager {
         return daemonProcess?.isRunning ?? false
     }
 
-    /// Start watchdog timer to monitor daemon health
+    /// Start watchdog timer to monitor daemon health. The watchdog probes
+    /// IPC health instead of only checking process liveness, so a hung
+    /// daemon that still holds the socket is detected and restarted too.
     private func startWatchdog() {
         stopWatchdog()
 
         watchdogTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             guard let self = self, !self.isShuttingDown else { return }
+            guard self.watchdogProbeInFlight == false else { return }
+            self.watchdogProbeInFlight = true
 
-            // Safe check: use optional chaining to avoid force unwrap race
-            let isRunning = self.daemonProcess?.isRunning ?? false
-            if !isRunning {
-                print("DaemonManager: Watchdog detected daemon not running, restarting...")
-                self.startDaemon()
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let reachable = AudioEngineClient().isDaemonReachable()
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.watchdogProbeInFlight = false
+                    guard !self.isShuttingDown else { return }
+
+                    if reachable {
+                        self.consecutiveProbeFailures = 0
+                        return
+                    }
+
+                    self.consecutiveProbeFailures += 1
+                    // Two consecutive failures mean the daemon is either
+                    // gone or wedged; startDaemon() re-probes before acting.
+                    if ConfigBarDaemonWatchdog.shouldRestart(consecutiveFailures: self.consecutiveProbeFailures) {
+                        print("DaemonManager: Watchdog detected unreachable daemon, restarting...")
+                        self.consecutiveProbeFailures = 0
+                        self.startDaemon()
+                    }
+                }
             }
         }
     }
@@ -1202,7 +1267,7 @@ class DaemonManager {
     }
 
     deinit {
-        stopDaemon()
+        stopWatchdog()
     }
 }
 

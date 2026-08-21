@@ -835,6 +835,20 @@ remove_bundle() {
     fi
 }
 
+DAEMON_AGENT_LABEL="org.spinorama.sotf-daemon"
+
+bootout_daemon_launch_agent() {
+    local user_info
+    local console_uid
+
+    user_info="$(console_user_and_uid)"
+    if [ -n "$user_info" ]; then
+        console_uid="${user_info##*:}"
+        echo "Booting out $DAEMON_AGENT_LABEL for gui/$console_uid"
+        /bin/launchctl bootout "gui/$console_uid/$DAEMON_AGENT_LABEL" >/dev/null 2>&1 || true
+    fi
+}
+
 echo "Installing SotF HAL Driver..."
 
 # Check for driver source
@@ -847,6 +861,7 @@ fi
 sudo /usr/bin/install -d -o root -g wheel -m 755 "${TARGET_DIR}"
 
 quit_systemwide_app
+bootout_daemon_launch_agent
 quiesce_sotf_daemon
 
 sudo /usr/bin/killall "${HELPER_NAME}" 2>/dev/null || true
@@ -1056,12 +1071,19 @@ create_pkg() {
     rm -rf "$pkg_root" "$pkg_scripts" "$hal_pkg_scripts" "$pkg_components"
     mkdir -p "$pkg_root/Applications"
     mkdir -p "$pkg_root/Library/Audio/Plug-Ins/HAL"
+    mkdir -p "$pkg_root/Library/Application Support/SotF"
     mkdir -p "$pkg_scripts"
     mkdir -p "$hal_pkg_scripts"
     mkdir -p "$pkg_components"
 
     # Copy app to pkg root
     cp -R "$APP_BUNDLE" "$pkg_root/Applications/"
+
+    # Ship the daemon LaunchAgent plist so postinstall can register it
+    # for the console user. launchd owns the daemon lifecycle; the menu
+    # bar app only adopts it.
+    cp "$PROJECT_ROOT/builds/macos/org.spinorama.sotf-daemon.plist" \
+        "$pkg_root/Library/Application Support/SotF/"
 
     # Copy HAL driver to pkg root
     if $BUILD_HAL && [ -d "$DRIVER_BUNDLE" ]; then
@@ -1074,7 +1096,41 @@ create_pkg() {
 #!/bin/bash
 # Post-installation script for SotF Systemwide app
 
+set -euo pipefail
+
+AGENT_LABEL="org.spinorama.sotf-daemon"
+AGENT_SRC="/Library/Application Support/SotF/org.spinorama.sotf-daemon.plist"
+
 echo "SotF installation complete!"
+
+# Register the daemon LaunchAgent for the console user. launchd owns the
+# daemon from here on; quitting the menu bar app does not stop systemwide
+# audio processing.
+CONSOLE_USER="$(/usr/bin/stat -f "%Su" /dev/console 2>/dev/null || true)"
+if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ]; then
+    echo "No console user; skipping LaunchAgent registration"
+    exit 0
+fi
+CONSOLE_UID="$(/usr/bin/id -u "$CONSOLE_USER")"
+USER_HOME="$(/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
+[ -n "$USER_HOME" ] || USER_HOME="/Users/$CONSOLE_USER"
+AGENT_DST="$USER_HOME/Library/LaunchAgents/$AGENT_LABEL.plist"
+
+/bin/mkdir -p "$USER_HOME/Library/LaunchAgents"
+/bin/rm -f "$AGENT_DST"
+/usr/sbin/chown "$CONSOLE_USER" "$USER_HOME/Library/LaunchAgents"
+/usr/bin/ditto "$AGENT_SRC" "$AGENT_DST"
+/usr/sbin/chown "$CONSOLE_USER" "$AGENT_DST"
+/bin/chmod 644 "$AGENT_DST"
+
+# Replace any live instance of the label with the freshly installed plist.
+"/bin/launchctl" bootout "gui/$CONSOLE_UID/$AGENT_LABEL" >/dev/null 2>&1 || true
+if "/bin/launchctl" bootstrap "gui/$CONSOLE_UID" "$AGENT_DST"; then
+    echo "Registered $AGENT_LABEL LaunchAgent for $CONSOLE_USER (gui/$CONSOLE_UID)"
+else
+    echo "Warning: could not bootstrap $AGENT_LABEL; the menu bar app will retry via kickstart"
+fi
+
 exit 0
 POSTINSTALL
     chmod +x "$pkg_scripts/postinstall"
@@ -1119,6 +1175,8 @@ LAUNCHSCRIPT
     cat > "$pkg_scripts/preinstall" << 'PREINSTALL'
 #!/bin/bash
 # Pre-installation script for SotF Systemwide app
+
+DAEMON_AGENT_LABEL="org.spinorama.sotf-daemon"
 
 daemon_is_running() {
     /usr/bin/pgrep -x "sotf-daemon" >/dev/null 2>&1
@@ -1254,7 +1312,20 @@ quit_systemwide_app() {
     /bin/sleep 1
 }
 
+bootout_daemon_launch_agent() {
+    local user_info
+    local console_uid
+
+    user_info="$(console_user_and_uid)"
+    if [ -n "$user_info" ]; then
+        console_uid="${user_info##*:}"
+        echo "Booting out $DAEMON_AGENT_LABEL for gui/$console_uid"
+        /bin/launchctl bootout "gui/$console_uid/$DAEMON_AGENT_LABEL" >/dev/null 2>&1 || true
+    fi
+}
+
 quit_systemwide_app
+bootout_daemon_launch_agent
 quiesce_sotf_daemon
 
 # Remove old menu bar app names so Systemwide replaces Toolbar/ConfigBar cleanly

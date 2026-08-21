@@ -17,8 +17,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Release only monitoring ownership. The daemon keeps running: it is
+        // owned by the org.spinorama.sotf-daemon LaunchAgent in production,
+        // and systemwide audio must survive a Configbar quit.
         statusBarController?.stopMonitoring()
-        statusBarController?.stopDaemon()
         print("SotF Systemwide menu bar app terminated")
     }
 }
