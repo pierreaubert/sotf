@@ -13,6 +13,7 @@ use crate::speaker_config::{ChannelLayout, ChannelRole};
 use math_audio_dsp::ebur128::{EbuR128, Mode};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 const TRUE_PEAK_TAPS: usize = 12;
@@ -82,11 +83,18 @@ impl WholeProgramIntegrated {
 }
 
 fn gated_loudness(blocks: &[f64]) -> f64 {
+    gated_loudness_iter(blocks.iter().copied())
+}
+
+fn gated_loudness_iter<I>(blocks: I) -> f64
+where
+    I: Iterator<Item = f64> + Clone,
+{
     let absolute_gate = loudness_to_energy(ABSOLUTE_GATE_LUFS);
     let (absolute_sum, absolute_count) = blocks
-        .iter()
-        .filter(|&&energy| energy > absolute_gate)
-        .fold((0.0, 0_u64), |(sum, count), &energy| {
+        .clone()
+        .filter(|&energy| energy > absolute_gate)
+        .fold((0.0, 0_u64), |(sum, count), energy| {
             (sum + energy, count + 1)
         });
     if absolute_count == 0 {
@@ -95,15 +103,191 @@ fn gated_loudness(blocks: &[f64]) -> f64 {
     let relative_gate =
         absolute_sum / absolute_count as f64 * 10.0_f64.powf(RELATIVE_GATE_DB / 10.0);
     let (relative_sum, relative_count) = blocks
-        .iter()
-        .filter(|&&energy| energy > relative_gate)
-        .fold((0.0, 0_u64), |(sum, count), &energy| {
+        .filter(|&energy| energy > relative_gate)
+        .fold((0.0, 0_u64), |(sum, count), energy| {
             (sum + energy, count + 1)
         });
     if relative_count == 0 {
         f64::NEG_INFINITY
     } else {
         energy_to_loudness(relative_sum / relative_count as f64)
+    }
+}
+
+/// Rolling integrated loudness for an explicit layout.
+///
+/// `math-dsp::EbuR128` owns this history for its built-in channel map. An
+/// explicit layout uses one mono meter per non-LFE channel instead, so the
+/// aggregate 400 ms energies need an equivalent bounded history here.
+struct RollingIntegrated {
+    gating_blocks: VecDeque<f64>,
+    cached_loudness: f64,
+    dirty: bool,
+}
+
+impl RollingIntegrated {
+    fn new(capacity: usize) -> Self {
+        Self {
+            gating_blocks: VecDeque::with_capacity(capacity),
+            cached_loudness: f64::NEG_INFINITY,
+            dirty: false,
+        }
+    }
+
+    fn push(&mut self, energy: f64) {
+        if self.gating_blocks.len() == self.gating_blocks.capacity() {
+            self.gating_blocks.pop_front();
+        }
+        self.gating_blocks.push_back(energy);
+        self.dirty = true;
+    }
+
+    fn refresh(&mut self) {
+        if !self.dirty {
+            return;
+        }
+        self.cached_loudness = gated_loudness_iter(self.gating_blocks.iter().copied());
+        self.dirty = false;
+    }
+
+    fn reset(&mut self) {
+        self.gating_blocks.clear();
+        self.cached_loudness = f64::NEG_INFINITY;
+        self.dirty = false;
+    }
+}
+
+/// Loudness meters for an explicit layout wider than 5.1.
+///
+/// The dependency's EBU meter has a fixed positional channel map and assigns
+/// zero weight to channels beyond index five. A mono meter has an unambiguous
+/// unity internal weight, so applying the semantic BS.1770 amplitude gain
+/// before each per-channel meter preserves the layout's energy without
+/// relying on that positional map.
+struct ExplicitLoudnessMeters {
+    meters: Vec<EbuR128>,
+    source_indices: Vec<usize>,
+    gains: Vec<f32>,
+    scratch: Vec<f32>,
+    rolling_integrated: Option<RollingIntegrated>,
+}
+
+impl ExplicitLoudnessMeters {
+    fn new(
+        layout: &ChannelLayout,
+        sample_rate: u32,
+        integrated_mode: IntegratedLoudnessMode,
+    ) -> Result<Self, String> {
+        let mut meters = Vec::new();
+        let mut source_indices = Vec::new();
+        let mut gains = Vec::new();
+        for index in 0..layout.channels.len() {
+            let role = layout
+                .role_at(index)
+                .ok_or_else(|| format!("explicit channel layout is missing channel {index}"))?;
+            if role == ChannelRole::Lfe {
+                continue;
+            }
+            meters.push(
+                EbuR128::new(1, sample_rate, Mode::M | Mode::S)
+                    .map_err(|error| format!("{error:?}"))?,
+            );
+            source_indices.push(index);
+            gains.push(role.bs1770_weight().sqrt());
+        }
+
+        Ok(Self {
+            meters,
+            source_indices,
+            gains,
+            // Explicit-layout chunks are bounded to 256 frames by the
+            // separate sample-peak meter in LoudnessMonitor::add_frames.
+            scratch: vec![0.0; 256],
+            rolling_integrated: (integrated_mode == IntegratedLoudnessMode::Rolling)
+                .then(|| RollingIntegrated::new(EXACT_GATING_BLOCK_CAPACITY)),
+        })
+    }
+
+    fn add_chunk(&mut self, input: &[f32], input_channels: usize) -> Result<(), String> {
+        let frames = input.len() / input_channels;
+        if frames > self.scratch.len() {
+            return Err(format!(
+                "explicit loudness chunk has {frames} frames; maximum is {}",
+                self.scratch.len()
+            ));
+        }
+        for ((meter, &source_index), &gain) in self
+            .meters
+            .iter_mut()
+            .zip(&self.source_indices)
+            .zip(&self.gains)
+        {
+            for frame in 0..frames {
+                self.scratch[frame] = input[frame * input_channels + source_index] * gain;
+            }
+            meter
+                .add_frames_f32(&self.scratch[..frames])
+                .map_err(|error| {
+                    format!("EBU R128 explicit loudness add_frames failed: {error:?}")
+                })?;
+        }
+        Ok(())
+    }
+
+    fn aggregate_loudness<F>(&self, query: F) -> Result<f64, String>
+    where
+        F: Fn(&EbuR128) -> Result<f64, String>,
+    {
+        let mut energy = 0.0;
+        for meter in &self.meters {
+            let loudness = query(meter)?;
+            if loudness.is_nan() {
+                return Ok(f64::NAN);
+            }
+            if loudness.is_finite() {
+                energy += loudness_to_energy(loudness);
+            }
+        }
+        if energy > 0.0 {
+            Ok(energy_to_loudness(energy))
+        } else {
+            Ok(f64::NEG_INFINITY)
+        }
+    }
+
+    fn momentary(&self) -> Result<f64, String> {
+        self.aggregate_loudness(EbuR128::loudness_momentary)
+    }
+
+    fn shortterm(&self) -> Result<f64, String> {
+        self.aggregate_loudness(EbuR128::loudness_shortterm)
+    }
+
+    fn push_integrated_block(&mut self, energy: f64) {
+        if let Some(integrated) = &mut self.rolling_integrated {
+            integrated.push(energy);
+        }
+    }
+
+    fn refresh_integrated(&mut self) {
+        if let Some(integrated) = &mut self.rolling_integrated {
+            integrated.refresh();
+        }
+    }
+
+    fn integrated(&self) -> Option<f64> {
+        self.rolling_integrated
+            .as_ref()
+            .map(|integrated| integrated.cached_loudness)
+    }
+
+    fn reset(&mut self) {
+        for meter in &mut self.meters {
+            meter.reset();
+        }
+        if let Some(integrated) = &mut self.rolling_integrated {
+            integrated.reset();
+        }
     }
 }
 
@@ -224,6 +408,7 @@ pub struct LoudnessInfo {
 
 pub struct LoudnessMonitor {
     ebur128: EbuR128,
+    explicit_loudness: Option<ExplicitLoudnessMeters>,
     /// Raw, unscaled meter used only for sample/true peaks when an explicit
     /// layout requires role-dependent loudness scaling.
     peak_meter: Option<EbuR128>,
@@ -316,9 +501,13 @@ impl LoudnessMonitor {
         }
         // math-dsp's 5/6-channel meters embed a fixed assumed order. Use a
         // seven-channel unity-weight meter for explicit 5.0/5.1 layouts, then
-        // supply role weights through sample scaling. Other widths already
-        // have unity internal weights.
-        let loudness_channels = if channel_layout.is_some() && matches!(channels, 5 | 6) {
+        // supply role weights through sample scaling. Wider explicit layouts
+        // use one mono meter per non-LFE channel because the dependency's
+        // fixed map drops channels at index six and above.
+        let explicit_wide_layout = channel_layout.is_some() && channels > 6;
+        let loudness_channels = if explicit_wide_layout {
+            1
+        } else if channel_layout.is_some() && matches!(channels, 5 | 6) {
             7
         } else {
             channels as usize
@@ -330,6 +519,11 @@ impl LoudnessMonitor {
         };
         let ebur = EbuR128::new(loudness_channels as u32, sr, loudness_mode)
             .map_err(|e| format!("{:?}", e))?;
+        let explicit_loudness = channel_layout
+            .as_ref()
+            .filter(|_| explicit_wide_layout)
+            .map(|layout| ExplicitLoudnessMeters::new(layout, sr, integrated_mode))
+            .transpose()?;
         let peak_meter = channel_layout
             .as_ref()
             .map(|_| EbuR128::new(channels, sr, Mode::SAMPLE_PEAK))
@@ -349,29 +543,34 @@ impl LoudnessMonitor {
                     .collect()
             })
             .unwrap_or_default();
-        let loudness_channel_indices = channel_layout
-            .as_ref()
-            .map(|layout| {
-                (0..channels as usize)
-                    .map(|index| {
-                        if loudness_channels != 7 {
-                            return index;
-                        }
-                        match layout.role_at(index) {
-                            Some(ChannelRole::FrontLeft) => 0,
-                            Some(ChannelRole::FrontRight) => 1,
-                            Some(ChannelRole::FrontCenter) => 2,
-                            Some(ChannelRole::Lfe) => 3,
-                            Some(ChannelRole::SideLeft | ChannelRole::BackLeft) => 4,
-                            Some(ChannelRole::SideRight | ChannelRole::BackRight) => 5,
-                            _ => index.min(loudness_channels.saturating_sub(1)),
-                        }
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let loudness_channel_indices = if explicit_wide_layout {
+            Vec::new()
+        } else {
+            channel_layout
+                .as_ref()
+                .map(|layout| {
+                    (0..channels as usize)
+                        .map(|index| {
+                            if loudness_channels != 7 {
+                                return index;
+                            }
+                            match layout.role_at(index) {
+                                Some(ChannelRole::FrontLeft) => 0,
+                                Some(ChannelRole::FrontRight) => 1,
+                                Some(ChannelRole::FrontCenter) => 2,
+                                Some(ChannelRole::Lfe) => 3,
+                                Some(ChannelRole::SideLeft | ChannelRole::BackLeft) => 4,
+                                Some(ChannelRole::SideRight | ChannelRole::BackRight) => 5,
+                                _ => index.min(loudness_channels.saturating_sub(1)),
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
         Ok(Self {
             ebur128: ebur,
+            explicit_loudness,
             peak_meter,
             channels,
             sample_rate: sr,
@@ -471,10 +670,8 @@ impl LoudnessMonitor {
             if self.frames_into_sub_block == self.sub_block_frames {
                 self.frames_into_sub_block = 0;
                 self.completed_sub_blocks = self.completed_sub_blocks.saturating_add(1);
-                if self.completed_sub_blocks >= 4
-                    && let Some(exact) = &mut self.whole_program_integrated
-                {
-                    let momentary = self.ebur128.loudness_momentary().map_err(|error| {
+                if self.completed_sub_blocks >= 4 {
+                    let momentary = self.query_momentary().map_err(|error| {
                         format!("EBU R128 integrated block query failed: {error:?}")
                     })?;
                     let energy = if momentary.is_finite() {
@@ -482,7 +679,12 @@ impl LoudnessMonitor {
                     } else {
                         0.0
                     };
-                    exact.push(energy);
+                    if let Some(exact) = &mut self.whole_program_integrated {
+                        exact.push(energy);
+                    }
+                    if let Some(explicit) = &mut self.explicit_loudness {
+                        explicit.push_integrated_block(energy);
+                    }
                 }
             }
         }
@@ -490,6 +692,9 @@ impl LoudnessMonitor {
             // At most one bounded two-pass scan per callback, irrespective of
             // how many 100 ms boundaries an offline block crossed.
             exact.refresh();
+        }
+        if let Some(explicit) = &mut self.explicit_loudness {
+            explicit.refresh_integrated();
         }
         self.frames_seen = self
             .frames_seen
@@ -499,7 +704,9 @@ impl LoudnessMonitor {
 
     fn add_loudness_chunk(&mut self, input: &[f32]) -> Result<(), String> {
         let input_channels = self.channels as usize;
-        if self.peak_meter.is_some() {
+        if let Some(explicit) = &mut self.explicit_loudness {
+            explicit.add_chunk(input, input_channels)
+        } else if self.peak_meter.is_some() {
             let frames = input.len() / input_channels;
             let scratch_len = frames * self.loudness_channels;
             let scratch = &mut self.weighted_scratch[..scratch_len];
@@ -527,14 +734,31 @@ impl LoudnessMonitor {
         }
     }
 
+    fn query_momentary(&self) -> Result<f64, String> {
+        self.explicit_loudness.as_ref().map_or_else(
+            || self.ebur128.loudness_momentary(),
+            |explicit| explicit.momentary(),
+        )
+    }
+
+    fn query_shortterm(&self) -> Result<f64, String> {
+        self.explicit_loudness.as_ref().map_or_else(
+            || self.ebur128.loudness_shortterm(),
+            |explicit| explicit.shortterm(),
+        )
+    }
+
     /// Update LoudnessData in-place to avoid allocations
     pub fn update_loudness_data(&mut self, d: &mut LoudnessData) {
-        let momentary = self.ebur128.loudness_momentary();
-        let shortterm = self.ebur128.loudness_shortterm();
+        let momentary = self.query_momentary();
+        let shortterm = self.query_shortterm();
         let integrated = match &self.whole_program_integrated {
             Some(exact) if exact.capacity_exceeded => Ok(f64::NEG_INFINITY),
             Some(exact) => Ok(exact.cached_loudness),
-            None => self.ebur128.loudness_global(),
+            None => match &self.explicit_loudness {
+                Some(explicit) => Ok(explicit.integrated().unwrap_or(f64::NEG_INFINITY)),
+                None => self.ebur128.loudness_global(),
+            },
         };
         let momentary_ok = momentary.is_ok();
         let shortterm_ok = shortterm.is_ok();
@@ -643,6 +867,9 @@ impl LoudnessMonitor {
 
     pub fn reset(&mut self) -> Result<(), String> {
         self.ebur128.reset();
+        if let Some(explicit) = &mut self.explicit_loudness {
+            explicit.reset();
+        }
         if let Some(peak_meter) = &mut self.peak_meter {
             peak_meter.reset();
         }
