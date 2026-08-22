@@ -1498,7 +1498,11 @@ public class StatusBarController: NSObject, ObservableObject {
         guard let button = statusItem.button else { return }
 
         let issue = !daemonRunning || currentState == .error
-        let streaming = currentState.isStreaming && !issue
+        let pillAppearance = ConfigBarMenuBarPillAppearance.resolve(
+            isPlaying: currentState == .playing,
+            isRecording: currentState == .recording,
+            hasIssue: issue
+        )
 
         // Let AppKit apply the menu-bar appearance tint to the template image;
         // forcing black made the error icon disappear in dark appearance.
@@ -1506,7 +1510,14 @@ public class StatusBarController: NSObject, ObservableObject {
         if let layer = button.layer {
             layer.cornerRadius = 5
             layer.masksToBounds = false
-            layer.backgroundColor = streaming ? NSColor.systemGreen.cgColor : NSColor.clear.cgColor
+            switch pillAppearance {
+            case .playing:
+                layer.backgroundColor = NSColor.systemGreen.cgColor
+            case .recording:
+                layer.backgroundColor = NSColor.systemOrange.cgColor
+            case .transparent:
+                layer.backgroundColor = NSColor.clear.cgColor
+            }
         }
 
         setRecordingDotVisible(currentState == .recording && !issue, on: button)

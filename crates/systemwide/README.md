@@ -105,6 +105,11 @@ HAL/Configbar simulator coverage described in
 Device-loss, sleep/wake, helper-resurrection, and captured-audio scenarios still
 require additional simulator and installed-system evidence.
 
+The macOS package reports its active lifecycle step in Installer. Package
+script output is also retained at `/Library/Logs/SotF/installer.log`; on a
+script failure, a SotF dialog offers to open that log in Console. The system
+PackageKit record remains available at `/var/log/install.log`.
+
 ## Runtime safety contract
 
 - A daemon acquires process-lifetime ownership locks for its canonicalized

@@ -1,5 +1,24 @@
 import Foundation
 
+/// UI-independent policy for the native menu-bar pill. Recording takes
+/// precedence if callers ever observe overlapping playback/capture flags.
+public enum ConfigBarMenuBarPillAppearance: Equatable {
+    case transparent
+    case playing
+    case recording
+
+    public static func resolve(
+        isPlaying: Bool,
+        isRecording: Bool,
+        hasIssue: Bool
+    ) -> Self {
+        guard !hasIssue else { return .transparent }
+        if isRecording { return .recording }
+        if isPlaying { return .playing }
+        return .transparent
+    }
+}
+
 /// Shared decision logic for startup adoption. A reachable socket belongs to
 /// the daemon already listening on it; the Configbar must not replace that
 /// process unless it is the process it launched itself.

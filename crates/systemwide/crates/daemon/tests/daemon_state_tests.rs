@@ -263,6 +263,43 @@ fn daemon_pkg_preinstall_quiesces_running_daemon_before_upgrade() {
 }
 
 #[test]
+fn systemwide_pkg_ships_launch_agent_and_exposes_installer_progress_and_logs() {
+    let source = include_str!("../../../../../scripts/build-systemwide.sh");
+
+    assert!(
+        source.contains("local hal_pkg_root=\"$DMG_DIR/pkg-root-hal\"")
+            && source.contains("--root \"$pkg_root\"")
+            && source.contains("--root \"$hal_pkg_root\""),
+        "app support files and the HAL bundle must be built from separate complete component roots"
+    );
+    assert!(
+        source.contains("$pkg_root/Library/Application Support/SotF/")
+            && source.contains(
+                "AGENT_SRC=\"/Library/Application Support/SotF/org.spinorama.sotf-daemon.plist\""
+            ),
+        "the LaunchAgent plist consumed by postinstall must be present in the app component payload"
+    );
+    assert!(
+        source.contains("<title>SotF Systemwide $VERSION</title>"),
+        "the native Installer title should include the release version"
+    );
+    assert!(
+        source.contains("installer:PHASE:%s")
+            && source.contains("installer:STATUS:%s")
+            && source.contains("installer_step \"Stopping the current SotF audio service\"")
+            && source.contains("installer_step \"Restarting CoreAudio with the new SotF audio driver\""),
+        "package scripts should tell Installer which lifecycle step is active"
+    );
+    assert!(
+        source.contains("/Library/Logs/SotF/installer.log")
+            && source.contains("SotF installation failed")
+            && source.contains("Open Logs")
+            && source.contains("/usr/bin/open -a Console \"$INSTALL_LOG\""),
+        "script failures should retain diagnostics and offer to open them"
+    );
+}
+
+#[test]
 fn standalone_hal_installer_quiesces_running_system_before_replacing_driver() {
     let source = include_str!("../../../../../scripts/build-systemwide.sh");
     let install_start = source
@@ -400,7 +437,7 @@ fn configbar_hal_stream_status_wording_matches_signal_scope() {
 }
 
 #[test]
-fn configbar_menu_bar_icon_uses_health_tint_streaming_background_and_recording_dot() {
+fn configbar_menu_bar_icon_uses_playing_recording_and_idle_pill_convention() {
     let configbar = include_str!("../configbar/src/ConfigBar.swift");
 
     assert!(
@@ -410,10 +447,11 @@ fn configbar_menu_bar_icon_uses_health_tint_streaming_background_and_recording_d
         "menu bar should let AppKit tint the template icon for the active appearance"
     );
     assert!(
-        configbar.contains(
-            "layer.backgroundColor = streaming ? NSColor.systemGreen.cgColor : NSColor.clear.cgColor"
-        ),
-        "streaming audio should use a green menu bar icon background"
+        configbar.contains("ConfigBarMenuBarPillAppearance.resolve")
+            && configbar.contains("layer.backgroundColor = NSColor.systemGreen.cgColor")
+            && configbar.contains("layer.backgroundColor = NSColor.systemOrange.cgColor")
+            && configbar.contains("layer.backgroundColor = NSColor.clear.cgColor"),
+        "the menu-bar pill should be green for playback, orange for recording, and transparent while idle"
     );
     assert!(
         configbar.contains("setRecordingDotVisible(currentState == .recording && !issue")

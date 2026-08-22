@@ -1,3 +1,14 @@
+# 0.7.12
+
+Preparation for release
+
+# 0.7.11
+
+## Features
+
+- Added a A/B testing app
+- Added a Howtolisten like app
+
 # 0.7.10
 
 ## Audio engine

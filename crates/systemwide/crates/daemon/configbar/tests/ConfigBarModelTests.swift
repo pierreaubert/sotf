@@ -2,6 +2,41 @@ import XCTest
 @testable import ConfigBarModels
 
 final class ConfigBarModelTests: XCTestCase {
+    func testMenuBarPillConventionSeparatesPlayingRecordingAndIdle() {
+        XCTAssertEqual(
+            ConfigBarMenuBarPillAppearance.resolve(
+                isPlaying: true,
+                isRecording: false,
+                hasIssue: false
+            ),
+            .playing
+        )
+        XCTAssertEqual(
+            ConfigBarMenuBarPillAppearance.resolve(
+                isPlaying: false,
+                isRecording: true,
+                hasIssue: false
+            ),
+            .recording
+        )
+        XCTAssertEqual(
+            ConfigBarMenuBarPillAppearance.resolve(
+                isPlaying: false,
+                isRecording: false,
+                hasIssue: false
+            ),
+            .transparent
+        )
+        XCTAssertEqual(
+            ConfigBarMenuBarPillAppearance.resolve(
+                isPlaying: true,
+                isRecording: false,
+                hasIssue: true
+            ),
+            .transparent
+        )
+    }
+
 
     // MARK: - Helpers
 

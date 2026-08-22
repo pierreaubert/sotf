@@ -245,10 +245,18 @@ validate_pkg_payload() {
 
     /usr/sbin/pkgutil --expand "$pkg_path" "$expanded_dir"
 
+    local app_bom="$expanded_dir/SotFSystemwide.pkg/Bom"
+    if [ ! -f "$app_bom" ] ||
+        ! /usr/bin/lsbom -s "$app_bom" | grep -qx "./Library/Application Support/SotF/org.spinorama.sotf-daemon.plist"; then
+        rm -rf "$expanded_parent"
+        log_error "Systemwide component payload is missing the daemon LaunchAgent plist"
+        exit 1
+    fi
+
     if $BUILD_HAL; then
         local hal_bom="$expanded_dir/SotFHAL.pkg/Bom"
         if [ ! -f "$hal_bom" ] ||
-           ! /usr/bin/lsbom -s "$hal_bom" | grep -qx "./$DRIVER_NAME/Contents/MacOS/SotFHAL"; then
+            ! /usr/bin/lsbom -s "$hal_bom" | grep -qx "./Library/Audio/Plug-Ins/HAL/$DRIVER_NAME/Contents/MacOS/SotFHAL"; then
             rm -rf "$expanded_parent"
             log_error "HAL component payload is missing $DRIVER_NAME/Contents/MacOS/SotFHAL"
             exit 1
@@ -1064,17 +1072,79 @@ create_pkg() {
 
     local pkg_path="$DMG_DIR/sotf-systemwide-$VERSION-macos-universal.pkg"
     local pkg_root="$DMG_DIR/pkg-root"
+    local hal_pkg_root="$DMG_DIR/pkg-root-hal"
     local pkg_scripts="$DMG_DIR/pkg-scripts"
     local hal_pkg_scripts="$DMG_DIR/pkg-scripts-hal"
     local pkg_components="$DMG_DIR/pkg-components"
+    local launch_scripts="$DMG_DIR/launch-scripts"
 
-    rm -rf "$pkg_root" "$pkg_scripts" "$hal_pkg_scripts" "$pkg_components"
+    rm -rf "$pkg_root" "$hal_pkg_root" "$pkg_scripts" "$hal_pkg_scripts" "$pkg_components" "$launch_scripts"
     mkdir -p "$pkg_root/Applications"
-    mkdir -p "$pkg_root/Library/Audio/Plug-Ins/HAL"
     mkdir -p "$pkg_root/Library/Application Support/SotF"
+    mkdir -p "$hal_pkg_root/Library/Audio/Plug-Ins/HAL"
     mkdir -p "$pkg_scripts"
     mkdir -p "$hal_pkg_scripts"
     mkdir -p "$pkg_components"
+    mkdir -p "$launch_scripts"
+
+    # Package scripts share progress reporting, durable diagnostics, and a
+    # best-effort failure dialog with an Open Logs action.
+    cat > "$DMG_DIR/installer-common.sh" << 'INSTALLER_COMMON'
+#!/bin/bash
+
+INSTALL_LOG="/Library/Logs/SotF/installer.log"
+SOTF_INSTALL_STEP="Starting SotF installation"
+
+/bin/mkdir -p "$(/usr/bin/dirname "$INSTALL_LOG")"
+/bin/chmod 755 "$(/usr/bin/dirname "$INSTALL_LOG")"
+/usr/bin/touch "$INSTALL_LOG"
+/bin/chmod 644 "$INSTALL_LOG"
+exec > >(/usr/bin/tee -a "$INSTALL_LOG") 2>&1
+
+installer_step() {
+    SOTF_INSTALL_STEP="$1"
+    printf 'installer:PHASE:%s\n' "$SOTF_INSTALL_STEP"
+    printf 'installer:STATUS:%s\n' "$SOTF_INSTALL_STEP"
+    printf '[%s] %s\n' "$(/bin/date '+%Y-%m-%d %H:%M:%S')" "$SOTF_INSTALL_STEP"
+}
+
+installer_failure() {
+    local line="$1"
+    local status="$2"
+    local console_user
+    local console_uid
+    local button
+
+    trap - ERR
+    set +e
+    printf '[%s] FAILED during "%s" at line %s (exit %s)\n' \
+        "$(/bin/date '+%Y-%m-%d %H:%M:%S')" "$SOTF_INSTALL_STEP" "$line" "$status"
+
+    console_user="$(/usr/bin/stat -f '%Su' /dev/console 2>/dev/null || true)"
+    if [ -n "$console_user" ] && [ "$console_user" != "root" ]; then
+        console_uid="$(/usr/bin/id -u "$console_user" 2>/dev/null || true)"
+        if [ -n "$console_uid" ]; then
+            button="$(/bin/launchctl asuser "$console_uid" \
+                /usr/bin/sudo -u "$console_user" /usr/bin/osascript \
+                -e 'button returned of (display alert "SotF installation failed" message "The installer could not complete the current step. Open the SotF installer log for details." as critical buttons {"Close", "Open Logs"} default button "Open Logs")' \
+                2>/dev/null || true)"
+            if [ "$button" = "Open Logs" ]; then
+                /bin/launchctl asuser "$console_uid" \
+                    /usr/bin/sudo -u "$console_user" /usr/bin/open -a Console "$INSTALL_LOG" \
+                    >/dev/null 2>&1 || true
+            fi
+        fi
+    fi
+    exit "$status"
+}
+
+set -E
+trap 'installer_failure "$LINENO" "$?"' ERR
+INSTALLER_COMMON
+    chmod 755 "$DMG_DIR/installer-common.sh"
+    cp "$DMG_DIR/installer-common.sh" "$pkg_scripts/installer-common.sh"
+    cp "$DMG_DIR/installer-common.sh" "$hal_pkg_scripts/installer-common.sh"
+    cp "$DMG_DIR/installer-common.sh" "$launch_scripts/installer-common.sh"
 
     # Copy app to pkg root
     cp -R "$APP_BUNDLE" "$pkg_root/Applications/"
@@ -1087,21 +1157,23 @@ create_pkg() {
 
     # Copy HAL driver to pkg root
     if $BUILD_HAL && [ -d "$DRIVER_BUNDLE" ]; then
-        /usr/bin/ditto "$DRIVER_BUNDLE" "$pkg_root/Library/Audio/Plug-Ins/HAL/$DRIVER_NAME"
+        /usr/bin/ditto "$DRIVER_BUNDLE" "$hal_pkg_root/Library/Audio/Plug-Ins/HAL/$DRIVER_NAME"
     fi
 
     # Create app postinstall script. HAL driver lifecycle is handled by the
     # HAL component package so CoreAudio restarts after the driver payload lands.
-    cat > "$pkg_scripts/postinstall" << 'POSTINSTALL'
+cat > "$pkg_scripts/postinstall" << 'POSTINSTALL'
 #!/bin/bash
 # Post-installation script for SotF Systemwide app
 
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/installer-common.sh"
 
 AGENT_LABEL="org.spinorama.sotf-daemon"
 AGENT_SRC="/Library/Application Support/SotF/org.spinorama.sotf-daemon.plist"
 
-echo "SotF installation complete!"
+installer_step "Registering the SotF background audio service"
 
 # Register the daemon LaunchAgent for the console user. launchd owns the
 # daemon from here on; quitting the menu bar app does not stop systemwide
@@ -1125,6 +1197,7 @@ AGENT_DST="$USER_HOME/Library/LaunchAgents/$AGENT_LABEL.plist"
 
 # Replace any live instance of the label with the freshly installed plist.
 "/bin/launchctl" bootout "gui/$CONSOLE_UID/$AGENT_LABEL" >/dev/null 2>&1 || true
+installer_step "Starting the SotF background audio service"
 if "/bin/launchctl" bootstrap "gui/$CONSOLE_UID" "$AGENT_DST"; then
     echo "Registered $AGENT_LABEL LaunchAgent for $CONSOLE_USER (gui/$CONSOLE_UID)"
 else
@@ -1135,14 +1208,15 @@ exit 0
 POSTINSTALL
     chmod +x "$pkg_scripts/postinstall"
 
-    # Create auto-launch scripts directory
-    local launch_scripts="$DMG_DIR/launch-scripts"
-    mkdir -p "$launch_scripts"
-
     # Create postinstall script for auto-launch component
-    cat > "$launch_scripts/postinstall" << 'LAUNCHSCRIPT'
+cat > "$launch_scripts/postinstall" << 'LAUNCHSCRIPT'
 #!/bin/bash
 # Launch SotF Systemwide after installation
+
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/installer-common.sh"
+installer_step "Launching SotF Systemwide"
 
 # Get the user who initiated the installation
 CONSOLE_USER=$(stat -f "%Su" /dev/console)
@@ -1172,9 +1246,14 @@ LAUNCHSCRIPT
         "$pkg_components/SotFAutoLaunch.pkg"
 
     # Create preinstall script to quiesce daemon and remove old versions
-    cat > "$pkg_scripts/preinstall" << 'PREINSTALL'
+cat > "$pkg_scripts/preinstall" << 'PREINSTALL'
 #!/bin/bash
 # Pre-installation script for SotF Systemwide app
+
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/installer-common.sh"
+installer_step "Stopping the current SotF audio service"
 
 DAEMON_AGENT_LABEL="org.spinorama.sotf-daemon"
 
@@ -1328,6 +1407,8 @@ quit_systemwide_app
 bootout_daemon_launch_agent
 quiesce_sotf_daemon
 
+installer_step "Removing legacy SotF applications"
+
 # Remove old menu bar app names so Systemwide replaces Toolbar/ConfigBar cleanly
 for app in "/Applications/SotF Toolbar.app" "/Applications/SotF ConfigBar.app"; do
     if [ -d "$app" ]; then
@@ -1347,6 +1428,9 @@ PREINSTALL
 #!/bin/bash
 # Pre-installation script for SotF HAL driver
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/installer-common.sh"
+installer_step "Preparing the CoreAudio driver update"
 
 TARGET_DIR="/Library/Audio/Plug-Ins/HAL"
 HELPER_NAME="Core-Audio-Driver-Service.helper"
@@ -1375,12 +1459,16 @@ HAL_PREINSTALL
 #!/bin/bash
 # Post-installation script for SotF HAL driver
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/installer-common.sh"
+installer_step "Securing and verifying the SotF audio driver"
 
 TARGET_BUNDLE="/Library/Audio/Plug-Ins/HAL/SotFHAL.driver"
 EXECUTABLE="${TARGET_BUNDLE}/Contents/MacOS/SotFHAL"
 HELPER_NAME="Core-Audio-Driver-Service.helper"
 
 restart_coreaudio() {
+    installer_step "Restarting CoreAudio with the new SotF audio driver"
     echo "Restarting CoreAudio to load SotF HAL driver..."
     /usr/bin/killall "${HELPER_NAME}" 2>/dev/null || true
 
@@ -1437,18 +1525,18 @@ HAL_POSTINSTALL
 
     # App component
     pkgbuild \
-        --root "$pkg_root/Applications" \
-        --install-location "/Applications" \
+        --root "$pkg_root" \
+        --install-location "/" \
         --identifier "$SYSTEMWIDE_BUNDLE_ID" \
         --version "$VERSION" \
         --scripts "$pkg_scripts" \
         "$pkg_components/SotFSystemwide.pkg"
 
     # HAL driver component (if built)
-    if $BUILD_HAL && [ -d "$pkg_root/Library/Audio/Plug-Ins/HAL/$DRIVER_NAME" ]; then
+    if $BUILD_HAL && [ -d "$hal_pkg_root/Library/Audio/Plug-Ins/HAL/$DRIVER_NAME" ]; then
         pkgbuild \
-            --root "$pkg_root/Library/Audio/Plug-Ins/HAL" \
-            --install-location "/Library/Audio/Plug-Ins/HAL" \
+            --root "$hal_pkg_root" \
+            --install-location "/" \
             --identifier "$HAL_BUNDLE_ID" \
             --version "$VERSION" \
             --scripts "$hal_pkg_scripts" \
@@ -1459,7 +1547,7 @@ HAL_POSTINSTALL
     cat > "$DMG_DIR/distribution.xml" << DISTXML
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-    <title>SotF - Sound of the Future</title>
+    <title>SotF Systemwide $VERSION</title>
     <organization>org.spinorama</organization>
     <domains enable_localSystem="true"/>
     <options customize="allow" require-scripts="true" rootVolumeOnly="true"/>
@@ -1608,8 +1696,8 @@ CONCLUSION
     validate_pkg_payload "$pkg_path"
 
     # Cleanup
-    rm -rf "$pkg_root" "$pkg_scripts" "$hal_pkg_scripts" "$pkg_components"
-    rm -f "$DMG_DIR/distribution.xml" "$DMG_DIR/welcome.html" "$DMG_DIR/conclusion.html"
+    rm -rf "$pkg_root" "$hal_pkg_root" "$pkg_scripts" "$hal_pkg_scripts" "$pkg_components"
+    rm -f "$DMG_DIR/distribution.xml" "$DMG_DIR/welcome.html" "$DMG_DIR/conclusion.html" "$DMG_DIR/installer-common.sh"
 
     log_success "Package created at $pkg_path"
     echo "$pkg_path"

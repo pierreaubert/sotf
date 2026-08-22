@@ -12,6 +12,15 @@
 
 ## Review-driven startup and IPC hardening
 
+- Fix the macOS distribution package so the daemon LaunchAgent plist is part
+  of the installed app component instead of being staged outside its pkg root.
+- Show the release version in the native Installer title, publish descriptive
+  lifecycle phases while scripts run, and retain diagnostics in
+  `/Library/Logs/SotF/installer.log`. Script failures now offer an **Open Logs**
+  dialog action in the console user's session.
+- Align the macOS menu-bar pill convention: green while music is playing,
+  orange while recording, and transparent/icon-only while idle, disconnected,
+  or reporting an error.
 - Acquire sorted, deduplicated ownership locks for the control socket, HAL
   shared memory, HAL-readable key, and daemon-private key before startup key
   rotation, preventing split-socket daemons from sharing one transport.
