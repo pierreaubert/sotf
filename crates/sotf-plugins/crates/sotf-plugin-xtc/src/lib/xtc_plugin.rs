@@ -32,9 +32,10 @@ use sotf_host::plugin::{
 };
 use sotf_host::simd::{deinterleave_stereo, flush_denormals_inplace, window_mul_simd};
 use std::any::Any;
+use std::sync::mpsc::{SyncSender, TrySendError};
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicU64, Ordering},
 };
 
 #[inline(always)]
@@ -184,7 +185,9 @@ pub(super) struct XtcFilterState {
     /// per instance; rapid automation overwrites this slot instead of spawning
     /// unbounded expensive jobs on Rayon's global pool.
     pub(super) filter_request: Arc<Mutex<Option<FilterUpdateRequest>>>,
-    pub(super) filter_worker_running: Arc<AtomicBool>,
+    /// Bounded notification channel for the persistent filter worker. Request
+    /// payloads stay in `filter_request`, so notifications coalesce as well.
+    filter_worker_waker: Option<SyncSender<()>>,
     pub(super) filter_worker_launches: Arc<AtomicU64>,
 
     /// Previous filter snapshot for crossfading (Block mode)
@@ -511,7 +514,7 @@ impl XtcPlugin {
                 retired_filter_snapshot_2: Arc::new(ArcSwapOption::empty()),
                 filter_update_generation: Arc::new(AtomicU64::new(0)),
                 filter_request: Arc::new(Mutex::new(None)),
-                filter_worker_running: Arc::new(AtomicBool::new(false)),
+                filter_worker_waker: None,
                 filter_worker_launches: Arc::new(AtomicU64::new(0)),
                 prev_filters: None,
                 crossfade_progress: 1.0, // Start fully faded to current
@@ -806,18 +809,16 @@ impl XtcPlugin {
                 .filter_request
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(request);
-            if self
-                .filter_state
-                .filter_worker_running
-                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                .is_err()
-            {
-                return;
+            if let Some(waker) = self.filter_state.filter_worker_waker.as_ref() {
+                match waker.try_send(()) {
+                    Ok(()) | Err(TrySendError::Full(())) => return,
+                    Err(TrySendError::Disconnected(())) => {
+                        self.filter_state.filter_worker_waker = None;
+                    }
+                }
             }
 
             let request_mailbox = self.filter_state.filter_request.clone();
-            let worker_running = self.filter_state.filter_worker_running.clone();
-            let worker_running_on_error = worker_running.clone();
             let worker_launches = self.filter_state.filter_worker_launches.clone();
             let pending_filter_update = self.filter_state.pending_filter_update.clone();
             let retired_filter_update = self.filter_state.retired_filter_update.clone();
@@ -825,49 +826,44 @@ impl XtcPlugin {
             let retired_filter_snapshot = self.filter_state.retired_filter_snapshot.clone();
             let retired_filter_snapshot_2 = self.filter_state.retired_filter_snapshot_2.clone();
             let requested_generation = self.filter_state.filter_update_generation.clone();
+            let (worker_waker, worker_wakeups) = std::sync::mpsc::sync_channel(1);
             let spawn_result = std::thread::Builder::new()
                 .name("xtc-filter-worker".to_string())
                 .spawn(move || {
-                    worker_launches.fetch_add(1, Ordering::Relaxed);
-                    loop {
-                        // Reclaim audio-thread state before producing another
-                        // publication. The callback only transfers ownership
-                        // into these slots; it never destroys filter objects.
-                        retired_filter_update.store(None);
-                        retired_filter_update_2.store(None);
-                        retired_filter_snapshot.store(None);
-                        retired_filter_snapshot_2.store(None);
-                        let request = request_mailbox
-                            .lock()
-                            .unwrap_or_else(|poisoned| poisoned.into_inner())
-                            .take();
-                        if let Some(request) = request {
+                    while worker_wakeups.recv().is_ok() {
+                        loop {
+                            // A bounded wakeup only says that the latest-only
+                            // mailbox may contain work. Drain stale wakeups so
+                            // each iteration computes at most the newest request.
+                            while worker_wakeups.try_recv().is_ok() {}
+
+                            // Reclaim audio-thread state before producing another
+                            // publication. The callback only transfers ownership
+                            // into these slots; it never destroys filter objects.
+                            retired_filter_update.store(None);
+                            retired_filter_update_2.store(None);
+                            retired_filter_snapshot.store(None);
+                            retired_filter_snapshot_2.store(None);
+                            let request = request_mailbox
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                .take();
+                            let Some(request) = request else {
+                                break;
+                            };
                             if let Some(update) = Self::compute_filter_update(&request)
                                 && requested_generation.load(Ordering::Acquire)
                                     == request.generation
                             {
                                 pending_filter_update.store(Some(Arc::new(update)));
                             }
-                            continue;
                         }
-
-                        worker_running.store(false, Ordering::Release);
-                        let has_raced_request = request_mailbox
-                            .lock()
-                            .unwrap_or_else(|poisoned| poisoned.into_inner())
-                            .is_some();
-                        if has_raced_request
-                            && worker_running
-                                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                                .is_ok()
-                        {
-                            continue;
-                        }
-                        break;
                     }
                 });
-            if spawn_result.is_err() {
-                worker_running_on_error.store(false, Ordering::Release);
+            if spawn_result.is_ok() {
+                worker_launches.fetch_add(1, Ordering::Relaxed);
+                let _ = worker_waker.try_send(());
+                self.filter_state.filter_worker_waker = Some(worker_waker);
             }
         }
     }

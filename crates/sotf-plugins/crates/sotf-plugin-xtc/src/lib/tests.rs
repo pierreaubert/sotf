@@ -2546,7 +2546,40 @@ fn async_filter_automation_uses_one_coalescing_worker() {
             )
             .unwrap();
     }
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    assert_eq!(
+        plugin
+            .filter_state
+            .filter_worker_launches
+            .load(Ordering::Relaxed),
+        1
+    );
+
+    let requested_generation = plugin
+        .filter_state
+        .filter_update_generation
+        .load(Ordering::Acquire);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while plugin
+        .filter_state
+        .pending_filter_update
+        .load_full()
+        .is_none_or(|update| update.generation != requested_generation)
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "filter worker did not publish the latest automation request"
+        );
+        std::thread::yield_now();
+    }
+
+    // The worker remains blocked on its bounded wake channel between bursts,
+    // so later automation reuses it instead of relying on a timing grace period.
+    plugin
+        .set_parameter(
+            ParameterId::from("speaker_angle_deg"),
+            ParameterValue::Float(45.0),
+        )
+        .unwrap();
     assert_eq!(
         plugin
             .filter_state
