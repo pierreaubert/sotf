@@ -58,6 +58,66 @@ fn render_loudness(layout: ChannelLayout, role_samples: &[(ChannelRole, f32)]) -
         .clone()
 }
 
+fn render_layout_role(config_id: &str, role: ChannelRole) -> LoudnessData {
+    let layout = ChannelLayout::from_speaker_config(
+        sotf_host::speaker_config::get_speaker_config(config_id).unwrap(),
+    )
+    .unwrap();
+    let channels = layout.channels.len();
+    let role_index = layout
+        .channels
+        .iter()
+        .find(|assignment| assignment.role == role)
+        .unwrap()
+        .index;
+    let frames = 48_000 * 4;
+    let mut plugin = LoudnessMonitorPlugin::with_channel_layout(layout).unwrap();
+    plugin.initialize(48_000).unwrap();
+    let mut input = vec![0.0; frames * channels];
+    for (frame_index, frame) in input.chunks_exact_mut(channels).enumerate() {
+        frame[role_index] = if frame_index.is_multiple_of(2) {
+            0.25
+        } else {
+            -0.25
+        };
+    }
+    let mut output = vec![0.0; input.len()];
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, frames))
+        .unwrap();
+    plugin
+        .get_data()
+        .unwrap()
+        .downcast_ref::<LoudnessData>()
+        .unwrap()
+        .clone()
+}
+
+#[test]
+fn explicit_wide_layouts_apply_semantic_bs1770_weights() {
+    use ChannelRole::*;
+
+    let front = render_layout_role("7.1.4", FrontLeft);
+    let height = render_layout_role("7.1.4", TopFrontLeft);
+    let surround = render_layout_role("7.1.4", SideLeft);
+    let lfe = render_layout_role("7.1.4", Lfe);
+    let wide = render_layout_role("9.1.6", WideLeft);
+    let rear_height = render_layout_role("9.1.6", TopBackLeft);
+
+    assert!((front.integrated_lufs - height.integrated_lufs).abs() < 0.05);
+    assert!((front.integrated_lufs - wide.integrated_lufs).abs() < 0.05);
+    assert!((front.integrated_lufs - rear_height.integrated_lufs).abs() < 0.05);
+    let expected_surround_offset = 10.0 * 1.41_f64.log10();
+    assert!(
+        (surround.integrated_lufs - front.integrated_lufs - expected_surround_offset).abs() < 0.05,
+        "front={} surround={} expected offset={expected_surround_offset}",
+        front.integrated_lufs,
+        surround.integrated_lufs
+    );
+    assert!(lfe.integrated_lufs.is_infinite() && lfe.integrated_lufs.is_sign_negative());
+    assert!(lfe.peak > 0.2);
+}
+
 #[test]
 fn loudness_input_only_tap_updates_measurement_without_output_copy() {
     let frames = 4_800;
