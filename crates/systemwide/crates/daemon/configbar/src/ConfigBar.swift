@@ -298,7 +298,7 @@ class AudioEngineClient {
             var responseData = Data()
             var buffer = [UInt8](repeating: 0, count: 4096)
             let bufferCount = buffer.count
-            let maxResponseSize = 1024 * 1024 // Plugin metadata can exceed 64KB
+            let maxResponseSize = ConfigBarIPC.maximumResponseBytes(for: command)
             let responseTimeoutMicros: useconds_t = 1000000 // Keep UI-facing calls from hanging the app
 
             // Set socket to non-blocking for timeout handling

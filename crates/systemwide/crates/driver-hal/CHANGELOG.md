@@ -2,6 +2,9 @@
 
 ## Cross-process atomic and real-time hardening
 
+- Add a real Swift-to-Rust concurrent reconfiguration stress test that
+  alternates 2/8 channels and 48/96 kHz through the production quiesce/ack
+  shared-memory protocol while Swift continuously reads frames.
 - Converted the Rust/Swift shared header contract to matching atomic field
   access, using C11 acquire/release helpers from Swift.
 - Added shared-header size and field-offset contract tests on both sides.

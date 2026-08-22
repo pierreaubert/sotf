@@ -105,6 +105,29 @@ final class ConfigBarIPCTests: XCTestCase {
         wait(for: [mainQueueRemainsResponsive, operationFinished], timeout: 2.0)
     }
 
+    func testResponseLimitsAreCommandSpecific() {
+        XCTAssertEqual(
+            ConfigBarIPC.maximumResponseBytes(for: ["command": "status"]),
+            ConfigBarIPC.defaultMaxResponseBytes
+        )
+        XCTAssertEqual(
+            ConfigBarIPC.maximumResponseBytes(for: ["command": "get_snapshot"]),
+            ConfigBarIPC.structuredMaxResponseBytes
+        )
+        XCTAssertEqual(
+            ConfigBarIPC.maximumResponseBytes(for: ["command": "get_available_plugins"]),
+            ConfigBarIPC.pluginCatalogMaxResponseBytes
+        )
+        XCTAssertLessThan(
+            ConfigBarIPC.defaultMaxResponseBytes,
+            ConfigBarIPC.structuredMaxResponseBytes
+        )
+        XCTAssertLessThan(
+            ConfigBarIPC.structuredMaxResponseBytes,
+            ConfigBarIPC.pluginCatalogMaxResponseBytes
+        )
+    }
+
     func testLineFramerHandlesFragmentedAndMultipleLines() throws {
         var framer = ConfigBarLineFramer(maxLineBytes: 64)
 

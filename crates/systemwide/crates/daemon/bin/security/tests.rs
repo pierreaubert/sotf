@@ -4,8 +4,8 @@ use super::get::get_current_uid;
 use super::get::get_hal_key_path;
 use super::get::get_secure_socket_path;
 use super::misc::{
-    daemon_session_key_path_from_env, ensure_secure_socket_dir, hal_session_key_path_from_env,
-    secure_socket_path_from_env, validate_user_load_path,
+    MAX_USER_AUDIO_FILE_BYTES, daemon_session_key_path_from_env, ensure_secure_socket_dir,
+    hal_session_key_path_from_env, secure_socket_path_from_env, validate_user_load_path,
 };
 use super::peer_class::classify_peer;
 use super::peer_class::peer_allows_command;
@@ -99,11 +99,27 @@ fn test_current_uid() {
 }
 
 #[test]
-fn test_user_load_path_rejects_symlinks_and_non_files() {
+fn test_user_load_path_enforces_local_regular_file_policy() {
     let root = tempfile::tempdir().expect("temp runtime");
     let file = root.path().join("audio.wav");
     std::fs::write(&file, b"fixture").expect("write fixture");
-    assert!(validate_user_load_path(&file).is_ok());
+    assert_eq!(
+        validate_user_load_path(&file).expect("accept owned regular file"),
+        std::fs::canonicalize(&file).expect("canonical fixture")
+    );
+
+    assert!(validate_user_load_path(std::path::Path::new("relative.wav")).is_err());
+
+    let empty = root.path().join("empty.wav");
+    std::fs::File::create(&empty).expect("create empty fixture");
+    assert!(validate_user_load_path(&empty).is_err());
+
+    let oversized = root.path().join("oversized.wav");
+    std::fs::File::create(&oversized)
+        .expect("create oversized fixture")
+        .set_len(MAX_USER_AUDIO_FILE_BYTES + 1)
+        .expect("set sparse fixture length");
+    assert!(validate_user_load_path(&oversized).is_err());
 
     let directory = root.path().join("directory");
     std::fs::create_dir(&directory).expect("create directory");
@@ -115,6 +131,61 @@ fn test_user_load_path_rejects_symlinks_and_non_files() {
         std::os::unix::fs::symlink(&file, &link).expect("create symlink");
         assert!(validate_user_load_path(&link).is_err());
     }
+}
+
+#[cfg(all(target_os = "macos", feature = "hal"))]
+#[test]
+#[serial]
+fn atomic_key_publication_replaces_symlink_without_touching_target() {
+    let root = tempfile::tempdir().expect("temp key runtime");
+    let key_path = root.path().join("session.key");
+    let target = root.path().join("attacker-target");
+    std::fs::write(&target, b"preserve target").expect("write target");
+    std::os::unix::fs::symlink(&target, &key_path).expect("plant key symlink");
+
+    let key = [0x7a; 32];
+    encryption_impl::KeyManager::publish_key_atomically(&key_path, &key)
+        .expect("atomically replace key symlink");
+
+    let metadata = std::fs::symlink_metadata(&key_path).expect("read published key metadata");
+    assert!(metadata.is_file());
+    assert!(!metadata.file_type().is_symlink());
+    assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+    assert_eq!(std::fs::read(&key_path).expect("read published key"), key);
+    assert_eq!(
+        std::fs::read(&target).expect("read preserved target"),
+        b"preserve target"
+    );
+}
+
+#[cfg(all(target_os = "macos", feature = "hal"))]
+#[test]
+#[serial]
+fn atomic_key_publication_replaces_existing_key_without_partial_state() {
+    let root = tempfile::tempdir().expect("temp key runtime");
+    let key_path = root.path().join("session.key");
+    let first_key = [0x11; 32];
+    let second_key = [0x22; 32];
+
+    encryption_impl::KeyManager::publish_key_atomically(&key_path, &first_key)
+        .expect("publish first key");
+    encryption_impl::KeyManager::publish_key_atomically(&key_path, &second_key)
+        .expect("replace key");
+
+    assert_eq!(
+        std::fs::read(&key_path).expect("read replacement key"),
+        second_key
+    );
+    assert!(
+        std::fs::read_dir(root.path())
+            .expect("list key runtime")
+            .all(|entry| !entry
+                .expect("read entry")
+                .file_name()
+                .to_string_lossy()
+                .contains(".tmp-")),
+        "atomic publication must clean temporary files"
+    );
 }
 
 #[test]

@@ -83,6 +83,14 @@ test-hal-driver-swift:
 	HAL_SWIFT_DIR="crates/systemwide/crates/driver-hal/swift"
 	BUILD_DIR="target/debug/SotFHALTests.bundle"
 	mkdir -p "$BUILD_DIR/Contents/MacOS" "$BUILD_DIR/Contents/Resources"
+	WORKER_TARGET_DIR="${CARGO_TARGET_DIR:-target}"
+	cargo build -p driver-hal --features swift-stress-worker --bin hal-transport-worker
+	if [[ "$WORKER_TARGET_DIR" = /* ]]; then
+		WORKER_PATH="$WORKER_TARGET_DIR/debug/hal-transport-worker"
+	else
+		WORKER_PATH="$(pwd)/$WORKER_TARGET_DIR/debug/hal-transport-worker"
+	fi
+	test -x "$WORKER_PATH"
 	echo "Building and running Swift HAL tests..."
 	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" swiftc \
 		-o "$BUILD_DIR/Contents/MacOS/SotFHALTests" \
@@ -103,7 +111,8 @@ test-hal-driver-swift:
 	cp "crates/systemwide/crates/driver-hal/shared_memory_layout.json" \
 		"$BUILD_DIR/Contents/Resources/shared_memory_layout.json"
 	chmod 755 "$BUILD_DIR/Contents/MacOS/SotFHALTests"
-	"$BUILD_DIR/Contents/MacOS/SotFHALTests"
+	SOTF_RUST_HAL_TRANSPORT_WORKER="$WORKER_PATH" \
+		"$BUILD_DIR/Contents/MacOS/SotFHALTests"
 
 # Build all macOS daemon components (daemon + Systemwide app + HAL driver)
 [group('build-macos')]

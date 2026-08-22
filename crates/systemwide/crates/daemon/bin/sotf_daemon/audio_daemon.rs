@@ -42,8 +42,9 @@ use sotf_audio::manager::AudioEngineManager;
 use sotf_audio::plugins::PluginType;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, Write};
+use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use super::consts::MAX_IPC_CLIENTS;
@@ -254,6 +255,107 @@ pub(super) fn rack_plugins_to_linear_graph(
         .map_err(|error| format!("Rack state cannot be represented as a graph: {error}"))
 }
 
+pub(super) const METERING_LATENCY_BUDGET_MICROS: u64 = 5_000;
+const PIPELINE_LATENCY_BUDGET_MICROS: u64 = 1_000_000;
+const METERING_RESPONSE_BUDGET_BYTES: usize = 64 * 1024;
+pub(super) const PIPELINE_RESPONSE_BUDGET_BYTES: usize = 256 * 1024;
+
+#[derive(Debug, Default)]
+struct OperationTelemetry {
+    requests: AtomicU64,
+    total_micros: AtomicU64,
+    max_micros: AtomicU64,
+    max_response_bytes: AtomicU64,
+    budget_exceeded: AtomicU64,
+}
+
+impl OperationTelemetry {
+    fn record(
+        &self,
+        elapsed: std::time::Duration,
+        response_bytes: usize,
+        latency_budget_micros: u64,
+        response_budget_bytes: usize,
+    ) {
+        let elapsed_micros = elapsed.as_micros().min(u64::MAX as u128) as u64;
+        let response_bytes = response_bytes.min(u64::MAX as usize) as u64;
+        self.requests.fetch_add(1, Ordering::Relaxed);
+        self.total_micros
+            .fetch_add(elapsed_micros, Ordering::Relaxed);
+        self.max_micros.fetch_max(elapsed_micros, Ordering::Relaxed);
+        self.max_response_bytes
+            .fetch_max(response_bytes, Ordering::Relaxed);
+        if elapsed_micros > latency_budget_micros || response_bytes > response_budget_bytes as u64 {
+            self.budget_exceeded.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn snapshot(&self) -> Value {
+        let requests = self.requests.load(Ordering::Relaxed);
+        let total_micros = self.total_micros.load(Ordering::Relaxed);
+        serde_json::json!({
+            "requests": requests,
+            "average_micros": total_micros.checked_div(requests).unwrap_or(0),
+            "max_micros": self.max_micros.load(Ordering::Relaxed),
+            "max_response_bytes": self.max_response_bytes.load(Ordering::Relaxed),
+            "budget_exceeded": self.budget_exceeded.load(Ordering::Relaxed),
+        })
+    }
+}
+
+#[derive(Debug, Default)]
+pub(super) struct RuntimeTelemetry {
+    metering: OperationTelemetry,
+    pipeline_reload: OperationTelemetry,
+}
+
+impl RuntimeTelemetry {
+    pub(super) fn record_command(
+        &self,
+        command: &str,
+        elapsed: std::time::Duration,
+        response_bytes: usize,
+    ) {
+        match command {
+            "get_metering" | "get_loudness" => self.metering.record(
+                elapsed,
+                response_bytes,
+                METERING_LATENCY_BUDGET_MICROS,
+                METERING_RESPONSE_BUDGET_BYTES,
+            ),
+            "load_plugins"
+            | "load_plugin_artifact"
+            | "add_plugin"
+            | "remove_plugin"
+            | "update_plugin"
+            | "reorder_plugins"
+            | "reorder_graph_nodes"
+            | "set_input_channels"
+            | "set_output_channels"
+            | "set_pipeline_channels" => self.pipeline_reload.record(
+                elapsed,
+                response_bytes,
+                PIPELINE_LATENCY_BUDGET_MICROS,
+                PIPELINE_RESPONSE_BUDGET_BYTES,
+            ),
+            _ => {}
+        }
+    }
+
+    pub(super) fn snapshot(&self) -> Value {
+        serde_json::json!({
+            "metering": self.metering.snapshot(),
+            "pipeline_reload": self.pipeline_reload.snapshot(),
+            "budgets": {
+                "metering_latency_micros": METERING_LATENCY_BUDGET_MICROS,
+                "metering_response_bytes": METERING_RESPONSE_BUDGET_BYTES,
+                "pipeline_latency_micros": PIPELINE_LATENCY_BUDGET_MICROS,
+                "pipeline_response_bytes": PIPELINE_RESPONSE_BUDGET_BYTES,
+            }
+        })
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct AudioDaemon {
     pub(super) manager: Arc<Mutex<AudioEngineManager>>,
@@ -265,6 +367,8 @@ pub(super) struct AudioDaemon {
     pub(super) key_manager: Arc<Mutex<KeyManager>>,
     /// Serializes read-modify-apply pipeline mutations across IPC clients.
     pub(super) pipeline_mutation: Arc<Mutex<()>>,
+    /// Low-overhead IPC latency and serialized-size regression telemetry.
+    pub(super) runtime_telemetry: Arc<RuntimeTelemetry>,
 }
 
 /// Try to reserve one bounded client-handler slot without taking a mutex in
@@ -301,6 +405,7 @@ impl AudioDaemon {
             system_state: Arc::new(Mutex::new(SystemwideState::default())),
             key_manager: Arc::new(Mutex::new(KeyManager::default())),
             pipeline_mutation: Arc::new(Mutex::new(())),
+            runtime_telemetry: Arc::new(RuntimeTelemetry::default()),
         }
     }
 
@@ -624,6 +729,7 @@ impl AudioDaemon {
             "topology": if user_graph.is_some() { "graph" } else { "rack" },
             "plugins": user_plugins,
             "graph": user_graph,
+            "runtime_telemetry": self.runtime_telemetry.snapshot(),
         }))
     }
 
@@ -738,13 +844,15 @@ impl AudioDaemon {
     }
 
     pub(super) fn handle_load(&self, path: &str) -> Response {
-        let path = std::path::Path::new(path);
-        if let Err(error) = validate_user_load_path(path) {
-            return Response::err(format!("Refusing to load audio file: {error}"));
-        }
+        let path = match validate_user_load_path(std::path::Path::new(path)) {
+            Ok(path) => path,
+            Err(error) => {
+                return Response::err(format!("Refusing to load audio file: {error}"));
+            }
+        };
 
         let mut manager = self.manager.lock();
-        match manager.load_file(path) {
+        match manager.load_file(&path) {
             Ok(_) => Response::ok_empty(),
             Err(e) => Response::err(format!("Failed to load file: {}", e)),
         }
@@ -1595,6 +1703,15 @@ impl AudioDaemon {
             Err(e) => return Response::err(e),
         };
 
+        if self.manager.lock().get_state() == sotf_audio::manager::StreamingState::Idle {
+            log::info!("No running driver engine; starting driver playback");
+            return self.handle_load_plugins_with_channels(
+                plan.spec.user_plugins.clone(),
+                plan.spec.input_channels,
+                plan.spec.output_channels,
+            );
+        }
+
         let result = {
             let manager = self.manager.lock();
             manager.update_plugin_chain(&plan.runtime_plugins)
@@ -1608,14 +1725,6 @@ impl AudioDaemon {
                 self.system_state.lock().commit_applied(&plan);
                 log::info!("Driver plugin chain hot-updated successfully");
                 Response::ok_empty()
-            }
-            Err(e) if e == "No engine running" => {
-                log::info!("No running driver engine; starting driver playback");
-                self.handle_load_plugins_with_channels(
-                    plan.spec.user_plugins.clone(),
-                    plan.spec.input_channels,
-                    plan.spec.output_channels,
-                )
             }
             Err(e) => {
                 log::error!("Failed to hot-update plugin chain: {}", e);
@@ -1787,7 +1896,8 @@ impl AudioDaemon {
                         }
                     };
                 #[cfg(not(all(target_os = "macos", feature = "hal")))]
-                let (transport_state, transport_error): (&str, Option<String>) = ("not_applicable", None);
+                let (transport_state, transport_error): (&str, Option<String>) =
+                    ("not_applicable", None);
 
                 Response::ok(serde_json::json!({
                     "fingerprint": key_manager.fingerprint_hex(),
@@ -1929,14 +2039,17 @@ impl AudioDaemon {
                     break;
                 }
                 Ok(IpcLine::Line(command_line)) => {
+                    let mut command_telemetry = None;
                     let response = match serde_json::from_str::<Command>(&command_line) {
                         Ok(cmd) => {
+                            let command_name = cmd.name();
+                            let command_started = std::time::Instant::now();
                             // Defense-in-depth: gate which commands the
                             // peer's UID class may invoke. The macOS HAL
                             // (UID 202) is authenticated but should only
                             // be allowed to query status -- NOT issue
                             // arbitrary plugin loads, shutdowns, etc.
-                            if !peer_allows_command(peer_class, cmd.name()) {
+                            let response = if !peer_allows_command(peer_class, cmd.name()) {
                                 log::warn!(
                                     "Rejecting command '{}' from peer class {:?}: not allowed",
                                     cmd.name(),
@@ -1948,7 +2061,9 @@ impl AudioDaemon {
                                 ))
                             } else {
                                 self.handle_command(cmd)
-                            }
+                            };
+                            command_telemetry = Some((command_name, command_started.elapsed()));
+                            response
                         }
                         Err(e) => Response::err(format!("Invalid command: {}", e)),
                     };
@@ -1960,6 +2075,10 @@ impl AudioDaemon {
                     // panic the client thread -- emit a static, safe
                     // fallback instead.
                     let json = serialize_response_safely(&response);
+                    if let Some((command_name, elapsed)) = command_telemetry {
+                        self.runtime_telemetry
+                            .record_command(command_name, elapsed, json.len());
+                    }
                     if let Err(e) = writeln!(stream, "{}", json) {
                         log::error!("Failed to write response: {}", e);
                         break;
@@ -2026,11 +2145,24 @@ impl AudioDaemon {
         listener.set_nonblocking(true)?;
         self.spawn_initial_driver_playback();
         let active_clients = Arc::new(AtomicUsize::new(0));
+        let mut client_threads: Vec<(std::thread::JoinHandle<()>, UnixStream)> = Vec::new();
 
         loop {
             if !*self.running.lock() {
                 println!("Shutdown requested, exiting");
                 break;
+            }
+
+            let mut client_index = 0;
+            while client_index < client_threads.len() {
+                if client_threads[client_index].0.is_finished() {
+                    let (thread, _shutdown_stream) = client_threads.swap_remove(client_index);
+                    if thread.join().is_err() {
+                        log::warn!("IPC client handler panicked");
+                    }
+                } else {
+                    client_index += 1;
+                }
             }
 
             match listener.accept() {
@@ -2064,13 +2196,21 @@ impl AudioDaemon {
                         continue;
                     }
 
+                    let shutdown_stream = match stream.try_clone() {
+                        Ok(stream) => stream,
+                        Err(error) => {
+                            log::warn!("Failed to clone IPC client for shutdown: {error}");
+                            continue;
+                        }
+                    };
                     let daemon = self.clone();
                     let client_slot = ClientSlot(Arc::clone(&active_clients));
 
-                    std::thread::spawn(move || {
+                    let thread = std::thread::spawn(move || {
                         let _client_slot = client_slot;
                         daemon.handle_client(stream, peer_class);
                     });
+                    client_threads.push((thread, shutdown_stream));
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     std::thread::sleep(std::time::Duration::from_millis(50));
@@ -2082,6 +2222,18 @@ impl AudioDaemon {
                     log::error!("Failed to accept connection: {}", e);
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 }
+            }
+        }
+
+        // Actively unblock and join every daemon-owned client handler. Persistent
+        // polling connections otherwise outlive the accept loop until their
+        // idle timeout and can retain daemon resources during restart.
+        for (_thread, stream) in &client_threads {
+            let _ = stream.shutdown(Shutdown::Both);
+        }
+        for (thread, _shutdown_stream) in client_threads {
+            if thread.join().is_err() {
+                log::warn!("IPC client handler panicked during shutdown");
             }
         }
 

@@ -83,7 +83,7 @@ pub(super) fn get_peer_uid(fd: std::os::unix::io::RawFd) -> Result<u32, String> 
 /// Daemon-private key path. Lab runtime overrides keep this out of the real
 /// user configuration directory.
 #[cfg_attr(not(all(target_os = "macos", feature = "hal")), allow(dead_code))]
-pub(super) fn get_key_path() -> PathBuf {
+pub(crate) fn get_key_path() -> PathBuf {
     daemon_session_key_path_from_env(
         std::env::var_os("SOTF_DAEMON_SESSION_KEY_PATH"),
         std::env::var_os("SOTF_SYSTEMWIDE_RUNTIME_DIR"),
@@ -257,48 +257,31 @@ pub(super) mod encryption_impl {
             let mut file = File::open(path)?;
             let mut key = [0u8; 32];
             file.read_exact(&mut key)?;
-            log::info!("Loaded encryption key from {}", path.display());
+            log::debug!("Loaded existing daemon encryption key");
             Ok(key)
         }
 
-        fn create_new_key(path: &std::path::Path) -> io::Result<[u8; 32]> {
-            if let Some(parent) = path.parent() {
-                ensure_owned_secure_dir(parent)?;
-            }
-
-            let key = try_generate_key()?;
-
-            let mut file = OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .mode(0o600)
-                .open(path)?;
-            file.write_all(&key)?;
-            file.sync_all()?;
-
-            log::info!("Created new encryption key at {}", path.display());
-            Ok(key)
-        }
-
-        fn publish_hal_key_copy(key: &[u8; 32]) -> io::Result<()> {
-            let path = get_hal_key_path();
+        pub(crate) fn publish_key_atomically(path: &Path, key: &[u8; 32]) -> io::Result<()> {
             let Some(parent) = path.parent() else {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    "HAL key path has no parent directory",
+                    "encryption key path has no parent directory",
                 ));
             };
             ensure_owned_secure_dir(parent)?;
-
-            // Write in the private directory, then atomically replace the
-            // destination. This removes the remove-then-create symlink race
-            // that could otherwise redirect key material to another file.
+            let file_name = path.file_name().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "encryption key path has no file name",
+                )
+            })?;
             let temp_path = parent.join(format!(
-                ".session.key.tmp-{}-{}",
+                ".{}.tmp-{}-{}",
+                file_name.to_string_lossy(),
                 std::process::id(),
                 NEXT_KEY_TEMP_ID.fetch_add(1, Ordering::Relaxed)
             ));
+
             let result = (|| {
                 let mut file = OpenOptions::new()
                     .create_new(true)
@@ -308,25 +291,38 @@ pub(super) mod encryption_impl {
                 file.write_all(key)?;
                 file.sync_all()?;
                 fs::set_permissions(&temp_path, fs::Permissions::from_mode(0o600))?;
-                fs::rename(&temp_path, &path)?;
+                fs::rename(&temp_path, path)?;
 
-                let metadata = fs::symlink_metadata(&path)?;
-                if metadata.file_type().is_symlink() || metadata.uid() != get_current_uid() {
+                let metadata = fs::symlink_metadata(path)?;
+                if metadata.file_type().is_symlink()
+                    || !metadata.is_file()
+                    || metadata.uid() != get_current_uid()
+                    || metadata.permissions().mode() & 0o777 != 0o600
+                {
                     return Err(io::Error::new(
                         io::ErrorKind::PermissionDenied,
-                        "published HAL key is not owned by the daemon user",
+                        "published encryption key failed ownership/type/mode validation",
                     ));
                 }
+                File::open(parent)?.sync_all()?;
                 Ok(())
             })();
             let _ = fs::remove_file(&temp_path);
-            result?;
-            grant_coreaudiod_key_access(&path);
+            result
+        }
 
-            log::debug!(
-                "Published HAL-readable encryption key (mode 0600 + _coreaudiod ACL): {}",
-                path.display()
-            );
+        fn create_new_key(path: &std::path::Path) -> io::Result<[u8; 32]> {
+            let key = try_generate_key()?;
+            Self::publish_key_atomically(path, &key)?;
+            log::debug!("Created new daemon encryption key");
+            Ok(key)
+        }
+
+        fn publish_hal_key_copy(key: &[u8; 32]) -> io::Result<()> {
+            let path = get_hal_key_path();
+            Self::publish_key_atomically(&path, key)?;
+            grant_coreaudiod_key_access(&path);
+            log::debug!("Published HAL-readable encryption key copy");
             Ok(())
         }
 
@@ -344,10 +340,8 @@ pub(super) mod encryption_impl {
             self.fingerprint = fingerprint;
             self.cipher = Some(cipher);
 
-            log::info!(
-                "Encryption key rotated successfully, fingerprint: {}",
-                self.fingerprint_hex()
-            );
+            log::info!("Encryption key rotated successfully");
+            log::debug!("Rotated key fingerprint: {}", self.fingerprint_hex());
             Ok(())
         }
 
@@ -371,10 +365,10 @@ pub(super) mod encryption_impl {
             }
             self.enabled = enabled;
             log::info!(
-                "Encryption {}: fingerprint={}",
-                if enabled { "enabled" } else { "disabled" },
-                self.fingerprint_hex()
+                "Encryption {}",
+                if enabled { "enabled" } else { "disabled" }
             );
+            log::debug!("Active key fingerprint: {}", self.fingerprint_hex());
         }
 
         pub fn status(&self) -> EncryptionStatus {

@@ -1,18 +1,34 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-/// Validate a user-supplied audio path before handing it to the engine.
+/// Largest local audio artifact accepted by the daemon load command.
 ///
-/// IPC is restricted to trusted peer UIDs, but the daemon still must not
-/// silently follow a swapped symlink or accept a directory/device as an
-/// audio file. The engine opens the path after this check, so this is a
-/// deliberate same-user trust boundary rather than a claim of race-free
-/// filesystem sandboxing.
-pub(crate) fn validate_user_load_path(path: &Path) -> std::io::Result<()> {
+/// A generous fixed ceiling keeps parser and decoder work bounded without
+/// constraining normal lossless albums or long measurement captures.
+pub(crate) const MAX_USER_AUDIO_FILE_BYTES: u64 = 64 * 1024 * 1024 * 1024;
+
+/// Validate and canonicalize a user-supplied audio path before handing it to
+/// the engine.
+///
+/// IPC is restricted to the owner UID, and the load command intentionally
+/// accepts only absolute, same-owner regular files in the daemon's local
+/// filesystem namespace. The engine opens the returned canonical path, so
+/// intermediate symlink aliases are resolved once and final-component
+/// symlinks, devices, directories, empty files, and oversized artifacts are
+/// rejected. A same-UID process can still replace its own file after
+/// validation; that is the documented trust boundary rather than a filesystem
+/// sandbox.
+pub(crate) fn validate_user_load_path(path: &Path) -> std::io::Result<PathBuf> {
     if path.as_os_str().is_empty() || path.as_os_str().to_string_lossy().contains('\0') {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "audio path must be non-empty and contain no NUL bytes",
+        ));
+    }
+    if !path.is_absolute() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "audio path must be absolute",
         ));
     }
 
@@ -23,20 +39,50 @@ pub(crate) fn validate_user_load_path(path: &Path) -> std::io::Result<()> {
             format!("audio path {} is not a regular file", path.display()),
         ));
     }
+    if metadata.len() == 0 || metadata.len() > MAX_USER_AUDIO_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "audio path {} has unsupported size {} bytes (allowed: 1..={MAX_USER_AUDIO_FILE_BYTES})",
+                path.display(),
+                metadata.len()
+            ),
+        ));
+    }
+
+    let canonical_path = std::fs::canonicalize(path)?;
+    let canonical_metadata = std::fs::symlink_metadata(&canonical_path)?;
+    if canonical_metadata.file_type().is_symlink() || !canonical_metadata.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "canonical audio path {} is not a regular file",
+                canonical_path.display()
+            ),
+        ));
+    }
 
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
 
-        if metadata.uid() != super::get::get_current_uid() {
+        let current_uid = super::get::get_current_uid();
+        if metadata.uid() != current_uid || canonical_metadata.uid() != current_uid {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
                 format!("audio path {} is not owned by this user", path.display()),
             ));
         }
+        if metadata.dev() != canonical_metadata.dev() || metadata.ino() != canonical_metadata.ino()
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!("audio path {} changed during validation", path.display()),
+            ));
+        }
     }
 
-    Ok(())
+    Ok(canonical_path)
 }
 
 pub(super) fn non_empty_path(value: Option<OsString>) -> Option<PathBuf> {

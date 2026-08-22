@@ -13,12 +13,19 @@ description = "Shared memory interface for Swift HAL driver communication"
 name = "driver_hal"
 crate-type = ["lib"]
 
+[[bin]]
+name = "hal-transport-worker"
+path = "src/bin/hal_transport_worker.rs"
+required-features = ["swift-stress-worker"]
+
 [features]
 default = []
 # Enable per-call trace logs on the audio path. Disabled by default because
 # the macro expansion (even gated by RUST_LOG) still constructs Arguments and
 # is hostile to real-time audio threads.
 audio-trace = []
+# Test-only executable used by the macOS Swift/Rust cross-process gate.
+swift-stress-worker = []
 
 [dependencies]
 driver-common = { workspace = true }

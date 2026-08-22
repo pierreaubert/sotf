@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+metal_toolchain="${SOTF_METAL_TOOLCHAIN:-${TOOLCHAINS:-com.apple.dt.toolchain.Metal.32023.883}}"
+
+if [[ "${1:-}" == "-sdk" && "${2:-}" == "macosx" && ( "${3:-}" == "metal" || "${3:-}" == "metallib" ) ]]; then
+    exec /usr/bin/xcrun --toolchain "$metal_toolchain" "${@:3}"
+fi
+
+exec /usr/bin/xcrun "$@"

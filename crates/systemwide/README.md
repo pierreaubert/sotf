@@ -98,26 +98,37 @@ component/IPC tests, and package-scoped strict Clippy natively under
 Docker volumes; the source tree is mounted read-only.
 
 Neither gate installs the HAL bundle or changes the system output device. The
-ignored installed-HAL tests remain a manual macOS smoke layer. The full
-`systemwide-lab` HAL-simulator and audio-fixture harness described in
-[ARCHITECTURE.md](ARCHITECTURE.md#debugging-without-installing-and-manual-testing)
-is still planned and does not yet have a `just systemwide-lab` recipe.
+ignored installed-HAL tests remain a manual macOS smoke layer. Run
+`just systemwide-lab` for the implemented isolated real-daemon scenarios and
+HAL/Configbar simulator coverage described in
+[ARCHITECTURE.md](ARCHITECTURE.md#debugging-without-installing-and-manual-testing).
+Device-loss, sleep/wake, helper-resurrection, and captured-audio scenarios still
+require additional simulator and installed-system evidence.
 
 ## Runtime safety contract
 
-- Only one daemon may own a runtime socket. A sibling `.lock` file serializes
-  startup before key rotation and stale-socket cleanup.
+- A daemon acquires process-lifetime ownership locks for its canonicalized
+  control socket, HAL shared memory, HAL-readable key copy, and daemon-private
+  key before construction, key rotation, or stale-socket cleanup. Distinct
+  control sockets therefore cannot share and rotate one active transport.
 - Runtime parents are checked for ownership and tightened to `0700` when they
   are user-owned; the explicit legacy `/tmp/autoeq_audio.sock` mode is the
   only shared-sticky-directory exception and never uses a symlink.
 - SIGINT/SIGTERM performs the same shutdown path as an IPC shutdown: clear HAL
-  readiness, stop the engine, join the watcher, and remove only the daemon's
-  verified Unix socket.
+  readiness, stop the engine, close retained client sockets, join every client
+  handler and the watcher, and remove only the daemon's verified Unix socket.
 - Shared-memory protocol version 6 uses requested geometry plus a quiesce/ack
   handshake. Rust and Swift IO paths honor the configuring gate and preserve
   interleaved frame alignment.
 - The daemon rotates the shared-audio key once per process lifetime before
-  opening the transport.
+  opening the transport. It atomically publishes a daemon-private copy and a
+  mode-0600 HAL-readable copy because sandboxed CoreAudio cannot read the
+  private path; both remain inside the same-UID trust boundary.
+- Audio load requests accept only canonicalized, same-owner, non-symlink
+  regular files from 1 byte through 64 GiB and verify device/inode before the
+  engine opens them.
+- `dump_state` reports metering and pipeline-reload request latency, response
+  size, and budget-exceed telemetry for release diagnostics.
 - Rust and Swift access the shared-memory header with matching acquire/release
   atomics and a tested C layout.
 - CoreAudio callback staging is preallocated to the maximum supported HAL

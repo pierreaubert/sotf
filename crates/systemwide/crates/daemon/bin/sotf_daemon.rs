@@ -55,22 +55,35 @@ mod types;
 use audio_daemon::AudioDaemon;
 use misc::acquire_daemon_instance_lock;
 use security::{ensure_secure_socket_dir, get_secure_socket_path};
+#[cfg(all(target_os = "macos", feature = "hal"))]
+use security::{get_hal_key_path, get_key_path};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();
 
-    // Serialize startup before touching the session key or stale socket. A
-    // losing second daemon must not rotate the active daemon's audio key.
+    // Serialize ownership before touching a session key, shared memory, or a
+    // stale socket. The control socket is independently configurable, so it
+    // cannot be the identity of the HAL transport owner.
     let secure_socket_path = get_secure_socket_path();
-    ensure_secure_socket_dir(&secure_socket_path).map_err(|error| {
-        format!(
-            "failed to prepare secure socket directory {}: {error}",
-            secure_socket_path.display()
-        )
-    })?;
-    let _instance_lock = acquire_daemon_instance_lock(&secure_socket_path)?;
+    let mut ownership_resources = vec![secure_socket_path.clone()];
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    ownership_resources.extend([
+        driver_hal::get_shared_memory_path(),
+        get_hal_key_path(),
+        get_key_path(),
+    ]);
+
+    for resource_path in &ownership_resources {
+        ensure_secure_socket_dir(resource_path).map_err(|error| {
+            format!(
+                "failed to prepare runtime resource directory for {}: {error}",
+                resource_path.display()
+            )
+        })?;
+    }
+    let _instance_lock = acquire_daemon_instance_lock(&ownership_resources)?;
 
     let daemon = AudioDaemon::new();
 
@@ -159,8 +172,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "   Enabled:     {}",
             if status.enabled { "Yes" } else { "No" }
         );
-        println!("   Fingerprint: {}", status.fingerprint);
-        println!("   Key path:    {}", status.key_path);
+        log::debug!("Encryption fingerprint: {}", status.fingerprint);
+        log::debug!("Encryption key path: {}", status.key_path);
     }
 
     println!();

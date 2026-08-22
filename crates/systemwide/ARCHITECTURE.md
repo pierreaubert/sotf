@@ -47,20 +47,26 @@ The July 2026 systemwide review follow-up tightened the existing macOS and
 cross-platform fallback paths without claiming new native Linux or Windows
 capture drivers:
 
-- Daemon startup is serialized by a process-lifetime lock beside the selected
-  Unix socket. The winning process acquires that lock before stale-socket
-  handling or encryption-key rotation, so a second process cannot disturb the
-  active daemon's transport state.
+- Daemon startup acquires process-lifetime ownership locks for every selected
+  runtime resource: the control socket, HAL shared-memory file, HAL-readable
+  key copy, and daemon-private key. Canonicalized lock paths are sorted and
+  deduplicated before acquisition. The winning process owns the complete
+  transport before stale-socket handling or encryption-key rotation, so a
+  second daemon cannot disturb an active transport merely by selecting a
+  different control socket.
 - The daemon owns startup key rotation. Every daemon lifetime starts with a
   fresh AEAD key before shared-memory audio begins, which makes resetting the
   frame counter safe; the mmap layer no longer rotates keys behind
   `KeyManager`'s cached state.
 - The daemon's per-client handlers remain synchronous because they call
-  synchronous engine and driver APIs, but Configbar dispatches all mutations
-  through a serial background queue so UI actions never block the main thread.
-  Status and metering polls share one reconnecting JSON-line connection rather
-  than creating a daemon thread for every poll. The unused Tokio runtime was
-  removed, and immutable available-plugin metadata is cached once per process.
+  synchronous engine and driver APIs. Their threads and socket clones are
+  retained, completed handlers are reaped, and shutdown closes every retained
+  socket and joins every handler before process exit. Configbar dispatches all
+  mutations through a serial background queue so UI actions never block the
+  main thread. Status and metering polls share one reconnecting JSON-line
+  connection rather than creating a daemon thread for every poll. The unused
+  Tokio runtime was removed, and immutable available-plugin metadata is cached
+  once per process.
 - The shared-memory protocol is version 6. Geometry changes use a requested
   channel count plus a quiesce/ack handshake. The atomic `configuring` word is
   also a commit bitset: bit 0 blocks new IO commits, while bits 1 and 2 reserve
@@ -92,13 +98,27 @@ capture drivers:
 - Encrypted real-time paths preallocate for the maximum supported HAL frame and
   channel geometry. They reject an oversized record or undersized staging
   allocation instead of growing a vector in the audio callback.
-- HAL key publication writes a mode-0600 temporary file in the owned runtime
-  directory and atomically renames it into place. The destination is never
-  removed before replacement, so a raced symlink cannot redirect key material.
+- Both the daemon-private key and HAL-readable key copy are published through
+  mode-0600, same-directory temporary files and atomically renamed into place.
+  The destination is never removed before replacement, so a raced symlink
+  cannot redirect key material; file ownership, type, and mode are verified and
+  the parent directory is synced after publication. The second copy is required
+  because the sandboxed CoreAudio HAL process cannot read the daemon-private
+  path; it contains the same per-session key and is protected by the same
+  per-user ownership and publication rules.
 - Encryption commands and status expose transport synchronization explicitly:
   `synced`, `pending`, `mismatch`, `unavailable`, or `not_applicable`. A daemon
   key-state change is no longer presented as fully synchronized when the HAL
   mapping is absent or advertises a different fingerprint.
+- User-selected audio files must be absolute, same-owner, non-symlink regular
+  files between 1 byte and 64 GiB. The daemon canonicalizes and verifies the
+  device/inode before handing the path to the engine. Same-UID replacement
+  remains inside the per-user trust boundary; this is not a capability grant to
+  mutually hostile processes running as the same account.
+- `dump_state` publishes bounded operation telemetry for metering and pipeline
+  reload commands: request count, total/max latency, largest serialized
+  response, and budget-exceed counts. Current diagnostic budgets are 5 ms / 64
+  KiB for metering and 1 s / 256 KiB for pipeline reloads.
 - Audio-path wall-clock heartbeat refresh and default debug tracing were
   removed. Swift IO tracing is available only when `SOTF_AUDIO_TRACE` is
   compiled in.
@@ -486,7 +506,9 @@ sequenceDiagram
 Key observations:
 
 - Toolbar startup owns only processes it spawned; a live daemon found on the
-  socket is adopted and left running.
+  socket is adopted and left running. Adoption authenticates the peer as the
+  same UID; like the runtime files, it treats processes under that UID as one
+  trust domain and does not claim isolation from a malicious same-UID process.
 - Daemon startup owns driver initialization and initial playback.
 - Configbar status and metering polling run off the main thread through one
   serialized, reconnecting client connection. Mutations use a separate serial
@@ -502,14 +524,17 @@ Key observations:
 The daemon creates or adopts a user-owned runtime directory, tightens existing
 directory permissions to `0700`, and rejects foreign-owned non-sticky parents.
 The explicit legacy socket exception is the system sticky directory only; the
-legacy path is never unlinked as part of normal daemon cleanup. Startup is
-serialized by the sibling lock and `bind_unix_socket` still re-checks stale
-entries, so Configbar does not need to kill unrelated daemons or race a second
-bind.
+legacy path is never unlinked as part of normal daemon cleanup. Startup locks
+the canonicalized control socket, shared-memory transport, HAL key copy, and
+private key before `AudioDaemon` construction or key rotation;
+`bind_unix_socket` still re-checks stale entries. Configbar therefore does not
+need to kill unrelated daemons or race a second bind, and split-path lab
+configuration cannot create two owners for one transport.
 
 SIGINT and SIGTERM clear the daemon running flag. The shutdown path clears HAL
-`engine_ready`, stops the engine, joins the config watcher, and removes the
-daemon-owned socket after revalidating that the entry is still a Unix socket.
+`engine_ready`, stops the engine, closes retained client sockets, joins every
+client handler and the config watcher, and removes the daemon-owned socket after
+revalidating that the entry is still a Unix socket.
 When a pipeline transition fails after stopping the engine, the supervisor
 restores the last applied plan where possible and exposes a recovery diagnostic
 in the next status/snapshot response.
@@ -672,7 +697,8 @@ Key observations:
   state.
 - If cipher reload fails, encrypted reads remain silent rather than emitting
   unauthenticated audio; retry is throttled to avoid filesystem work on the hot
-  path.
+  path. HAL regressions cover an on-disk/shared-memory fingerprint mismatch and
+  require the stale cached cipher to be rejected.
 
 ## Use Case: Driver Reconfiguration
 
@@ -1035,7 +1061,9 @@ configuration with invalid-request rollback, HAL encryption enablement and key
 rotation, diagnostic dumps, shutdown, and clean restart. The daemon returns an
 explicit capability error when a non-HAL build cannot provide a session cipher.
 The same gate runs daemon state, HAL protocol/streaming, and Configbar model
-tests.
+tests. The Swift HAL suite also launches a test-only Rust transport worker while
+Swift continuously reads, alternating 2/8 channels and 48/96 kHz through the
+real cross-language quiesce/ack protocol.
 
 ### Scenario Matrix
 
@@ -1083,10 +1111,10 @@ Current automated contract/component gates:
 These gates do not install the CoreAudio HAL bundle. `just systemwide-lab`
 adds the isolated real-daemon scenarios described above, using a temporary
 runtime directory and the deterministic lab driver. It covers the implemented
-configuration, artifact, encryption, diagnostic, shutdown, and restart cases;
-the remaining device-loss, sleep/wake, helper-resurrection, and captured-audio
-rows in the scenario matrix still require simulator coverage and installed-
-system evidence. Manual lab launches must likewise use a temporary
+configuration, artifact, encryption, diagnostic, shutdown, client-drain, and
+restart cases; the remaining device-loss, sleep/wake, helper-resurrection, and
+captured-audio rows in the scenario matrix still require simulator coverage and
+installed-system evidence. Manual lab launches must likewise use a temporary
 `SOTF_SYSTEMWIDE_RUNTIME_DIR` to avoid the real per-user runtime.
 
 | Variable | Effect |

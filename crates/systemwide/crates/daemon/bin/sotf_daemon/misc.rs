@@ -3,38 +3,115 @@ use serde_json::Value;
 use sotf_audio::PluginConfig;
 use std::os::unix::net::{UnixListener, UnixStream};
 
-/// Process-lifetime lock that serializes daemon startup for one user.
+/// Process-lifetime locks serialize ownership of every runtime resource that
+/// can affect the HAL transport.
 ///
-/// The lock is acquired before encryption-key rotation or stale-socket
-/// cleanup, so a second daemon cannot disturb the active daemon's transport
-/// state before discovering that the IPC socket is already in use.
+/// The control socket is only one resource. Shared memory and both session-key
+/// copies can be overridden independently, so locking beside the socket alone
+/// allows a daemon with a different socket to rotate another daemon's key.
+/// Canonical lock paths and sorted acquisition also prevent alias-based bypasses
+/// and overlapping-resource deadlocks.
+#[derive(Debug)]
 pub(super) struct DaemonInstanceLock {
-    _file: std::fs::File,
+    _files: Vec<std::fs::File>,
 }
 
 pub(super) fn acquire_daemon_instance_lock(
-    secure_socket_path: &std::path::Path,
+    resource_paths: &[std::path::PathBuf],
 ) -> std::io::Result<DaemonInstanceLock> {
-    let lock_path = secure_socket_path.with_extension("lock");
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(&lock_path)?;
+    if resource_paths.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "daemon ownership requires at least one runtime resource",
+        ));
+    }
 
-    file.try_lock().map_err(|error| {
-        std::io::Error::new(
-            std::io::ErrorKind::AddrInUse,
-            format!(
-                "another sotf-daemon instance holds {}: {}",
-                lock_path.display(),
-                error
-            ),
-        )
-    })?;
+    let mut lock_paths = Vec::with_capacity(resource_paths.len());
+    for resource_path in resource_paths {
+        let parent = resource_path.parent().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "runtime resource {} has no parent directory",
+                    resource_path.display()
+                ),
+            )
+        })?;
+        let file_name = resource_path.file_name().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "runtime resource {} has no file name",
+                    resource_path.display()
+                ),
+            )
+        })?;
+        let canonical_parent = std::fs::canonicalize(parent).map_err(|error| {
+            std::io::Error::new(
+                error.kind(),
+                format!(
+                    "failed to resolve runtime resource parent {}: {error}",
+                    parent.display()
+                ),
+            )
+        })?;
+        let mut lock_name = file_name.to_os_string();
+        lock_name.push(".owner.lock");
+        lock_paths.push(canonical_parent.join(lock_name));
+    }
+    lock_paths.sort();
+    lock_paths.dedup();
 
-    Ok(DaemonInstanceLock { _file: file })
+    let mut files = Vec::with_capacity(lock_paths.len());
+    for lock_path in lock_paths {
+        let mut options = std::fs::OpenOptions::new();
+        options.create(true).truncate(false).read(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options
+                .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK)
+                .mode(0o600);
+        }
+
+        let file = options.open(&lock_path).map_err(|error| {
+            std::io::Error::new(
+                error.kind(),
+                format!(
+                    "failed to open ownership lock {}: {error}",
+                    lock_path.display()
+                ),
+            )
+        })?;
+        if !file.metadata()?.is_file() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!(
+                    "ownership lock {} is not a regular file",
+                    lock_path.display()
+                ),
+            ));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        }
+
+        file.try_lock().map_err(|error| {
+            std::io::Error::new(
+                std::io::ErrorKind::AddrInUse,
+                format!(
+                    "another sotf-daemon instance owns runtime resource lock {}: {}",
+                    lock_path.display(),
+                    error
+                ),
+            )
+        })?;
+        files.push(file);
+    }
+
+    Ok(DaemonInstanceLock { _files: files })
 }
 
 pub(super) fn env_path_is_set(key: &str) -> bool {
@@ -524,9 +601,52 @@ pub(super) fn list_audio_devices() -> Result<Vec<serde_json::Value>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{bind_unix_socket, socket_is_unix_socket};
+    use super::{acquire_daemon_instance_lock, bind_unix_socket, socket_is_unix_socket};
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn daemon_ownership_lock_rejects_overlapping_runtime_resources() {
+        let directory = tempdir().expect("create temporary directory");
+        let shared_memory = directory.path().join("audio.shm");
+        let session_key = directory.path().join("session.key");
+        let alternate_socket = directory.path().join("alternate.sock");
+
+        let first = acquire_daemon_instance_lock(&[shared_memory.clone(), session_key.clone()])
+            .expect("acquire first transport ownership");
+        let error = acquire_daemon_instance_lock(&[alternate_socket, session_key.clone()])
+            .expect_err("overlapping session key must have one owner");
+        assert_eq!(error.kind(), std::io::ErrorKind::AddrInUse);
+
+        drop(first);
+        acquire_daemon_instance_lock(&[shared_memory, session_key])
+            .expect("ownership must be released when the daemon lock drops");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn daemon_ownership_lock_rejects_a_symlink_lock_file() {
+        let directory = tempdir().expect("create temporary directory");
+        let resource = directory.path().join("audio.shm");
+        let target = directory.path().join("attacker-target");
+        let lock_path = directory.path().join("audio.shm.owner.lock");
+        fs::write(&target, b"preserve target").expect("create symlink target");
+        std::os::unix::fs::symlink(&target, &lock_path).expect("plant lock symlink");
+
+        let error = acquire_daemon_instance_lock(&[resource])
+            .expect_err("ownership lock must not follow a symlink");
+        assert_ne!(error.kind(), std::io::ErrorKind::AddrInUse);
+        assert_eq!(
+            fs::read(&target).expect("read preserved target"),
+            b"preserve target"
+        );
+        assert!(
+            fs::symlink_metadata(&lock_path)
+                .expect("read preserved lock symlink")
+                .file_type()
+                .is_symlink()
+        );
+    }
 
     #[test]
     fn bind_unix_socket_accepts_a_fresh_path_and_reports_socket_type() {

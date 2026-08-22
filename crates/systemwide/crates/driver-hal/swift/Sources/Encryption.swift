@@ -220,7 +220,7 @@ final class AudioCipher {
 
             // Copy samples to output
             let sampleCount = plaintext.count / MemoryLayout<Float>.size
-            plaintext.withUnsafeBytes { ptBytes in
+            _ = plaintext.withUnsafeBytes { ptBytes in
                 memcpy(output, ptBytes.baseAddress, plaintext.count)
             }
 

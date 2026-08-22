@@ -1,8 +1,8 @@
 #![allow(clippy::field_reassign_with_default)]
 use super::audio_daemon::try_acquire_client_slot;
 use super::audio_daemon::{
-    AudioDaemon, pipeline_timing_after_config_request, rack_plugins_to_linear_graph,
-    reorder_linear_graph,
+    AudioDaemon, METERING_LATENCY_BUDGET_MICROS, PIPELINE_RESPONSE_BUDGET_BYTES, RuntimeTelemetry,
+    pipeline_timing_after_config_request, rack_plugins_to_linear_graph, reorder_linear_graph,
 };
 use super::command::Command;
 use super::configured::configured_output_device_from_value;
@@ -865,23 +865,23 @@ mod ipc_safety_tests {
         DriverStatus::new(true, true, true, 48_000, 2, 512, "Fake HAL", true)
     }
 
-fn has_physical_output_device() -> bool {
-    use cpal::traits::{DeviceTrait, HostTrait};
-    use sotf_audio::devices::is_null_device;
+    fn has_physical_output_device() -> bool {
+        use cpal::traits::{DeviceTrait, HostTrait};
+        use sotf_audio::devices::is_null_device;
 
-    cpal::default_host()
-        .output_devices()
-        .ok()
-        .into_iter()
-        .flatten()
-        .filter_map(|device| {
-            device
-                .description()
-                .ok()
-                .map(|description| description.name().to_string())
-        })
-        .any(|name| is_safe_output_device_name(&name) && !is_null_device(&name))
-}
+        cpal::default_host()
+            .output_devices()
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(|device| {
+                device
+                    .description()
+                    .ok()
+                    .map(|description| description.name().to_string())
+            })
+            .any(|name| is_safe_output_device_name(&name) && !is_null_device(&name))
+    }
 
     fn fault_codes(faults: &[Value]) -> Vec<&str> {
         faults
@@ -900,6 +900,7 @@ fn has_physical_output_device() -> bool {
             system_state: Arc::new(Mutex::new(SystemwideState::default())),
             key_manager: Arc::new(Mutex::new(KeyManager::for_test())),
             pipeline_mutation: Arc::new(Mutex::new(())),
+            runtime_telemetry: Arc::new(RuntimeTelemetry::default()),
         }
     }
 
@@ -1346,7 +1347,9 @@ fn has_physical_output_device() -> bool {
                 .as_deref()
                 .is_some_and(|error| error.contains("No physical output device found"))
         {
-            eprintln!("skipping live graph/rack mutation test: engine has no usable physical output");
+            eprintln!(
+                "skipping live graph/rack mutation test: engine has no usable physical output"
+            );
             return;
         }
         assert!(seed.success, "failed to seed rack pipeline: {seed:?}");
@@ -1362,7 +1365,10 @@ fn has_physical_output_device() -> bool {
             bypassed: Some(true),
             base_generation: Some(rack_generation),
         });
-        assert!(promoted.success, "failed to promote rack state: {promoted:?}");
+        assert!(
+            promoted.success,
+            "failed to promote rack state: {promoted:?}"
+        );
 
         let promoted_state = daemon.system_state.lock();
         let graph = promoted_state
@@ -1388,8 +1394,13 @@ fn has_physical_output_device() -> bool {
         assert!(reordered.success, "failed to reorder graph: {reordered:?}");
 
         let reordered_state = daemon.system_state.lock();
-        let graph = reordered_state.user_graph().expect("graph must remain active");
-        assert_eq!(graph.nodes.iter().map(|node| node.id).collect::<Vec<_>>(), vec![1, 0]);
+        let graph = reordered_state
+            .user_graph()
+            .expect("graph must remain active");
+        assert_eq!(
+            graph.nodes.iter().map(|node| node.id).collect::<Vec<_>>(),
+            vec![1, 0]
+        );
         assert_eq!(graph.nodes[0].parameters["filters"], serde_json::json!([]));
         assert_eq!(graph.nodes[0].input_channels, 4);
         assert!(graph.nodes[0].bypassed);
@@ -1407,10 +1418,12 @@ fn has_physical_output_device() -> bool {
             base_generation: Some(graph_generation),
         });
         assert!(!stale.success);
-        assert!(stale
-            .error
-            .as_deref()
-            .is_some_and(|error| error.contains("generation conflict")));
+        assert!(
+            stale
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("generation conflict"))
+        );
     }
 
     #[test]
@@ -1477,6 +1490,27 @@ fn has_physical_output_device() -> bool {
     }
 
     #[test]
+    fn runtime_telemetry_records_latency_and_response_budget_regressions() {
+        let telemetry = RuntimeTelemetry::default();
+        telemetry.record_command(
+            "get_metering",
+            std::time::Duration::from_micros(METERING_LATENCY_BUDGET_MICROS + 1),
+            128,
+        );
+        telemetry.record_command(
+            "load_plugins",
+            std::time::Duration::from_micros(10),
+            PIPELINE_RESPONSE_BUDGET_BYTES + 1,
+        );
+
+        let snapshot = telemetry.snapshot();
+        assert_eq!(snapshot["metering"]["requests"], 1);
+        assert_eq!(snapshot["metering"]["budget_exceeded"], 1);
+        assert_eq!(snapshot["pipeline_reload"]["requests"], 1);
+        assert_eq!(snapshot["pipeline_reload"]["budget_exceeded"], 1);
+    }
+
+    #[test]
     fn testkit_dump_state_includes_snapshot_and_plugins() {
         let state = fake_driver_state();
         let daemon = test_daemon_with_driver(state);
@@ -1486,6 +1520,7 @@ fn has_physical_output_device() -> bool {
         assert_eq!(response["success"], true);
         assert_eq!(response["data"]["snapshot"]["schema_version"], 1);
         assert!(response["data"]["plugins"].as_array().is_some());
+        assert!(response["data"]["runtime_telemetry"]["budgets"].is_object());
     }
 
     #[test]
@@ -1708,11 +1743,11 @@ fn has_physical_output_device() -> bool {
 
     #[test]
     #[serial_test::serial]
-fn testkit_concurrent_add_plugin_preserves_both_mutations() {
-    if !has_physical_output_device() {
-        eprintln!("skipping live engine mutation test: no physical output device");
-        return;
-    }
+    fn testkit_concurrent_add_plugin_preserves_both_mutations() {
+        if !has_physical_output_device() {
+            eprintln!("skipping live engine mutation test: no physical output device");
+            return;
+        }
 
         let state = fake_driver_state();
         let daemon = Arc::new(test_daemon_with_driver(state));
@@ -2229,12 +2264,12 @@ mod command_roundtrip_tests {
             "driver_ready",
             "platform_supported",
         ];
-        let actual_fields: std::collections::BTreeSet<&str> =
-            data.as_object()
-                .expect("driver config is an object")
-                .keys()
-                .map(String::as_str)
-                .collect();
+        let actual_fields: std::collections::BTreeSet<&str> = data
+            .as_object()
+            .expect("driver config is an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
         let expected_field_set: std::collections::BTreeSet<&str> =
             expected_fields.into_iter().collect();
         assert_eq!(actual_fields, expected_field_set);
@@ -2440,6 +2475,7 @@ mod command_roundtrip_tests {
             system_state: Arc::new(Mutex::new(SystemwideState::default())),
             key_manager: Arc::new(Mutex::new(KeyManager::default())),
             pipeline_mutation: Arc::new(Mutex::new(())),
+            runtime_telemetry: Arc::new(RuntimeTelemetry::default()),
         };
         let resp = daemon.handle_command(Command::Status);
         assert!(resp.success, "{:?}", resp.error);

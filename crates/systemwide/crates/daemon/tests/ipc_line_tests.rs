@@ -12,7 +12,7 @@ use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 static DAEMON_PROCESS_LOCK: Mutex<()> = Mutex::new(());
 
@@ -152,6 +152,71 @@ fn second_daemon_cannot_take_ownership_of_a_live_runtime() {
     daemon.shutdown();
 }
 
+#[cfg(all(target_os = "macos", feature = "hal"))]
+#[test]
+#[serial]
+fn second_daemon_with_distinct_socket_cannot_rotate_shared_transport_key() {
+    let daemon = DaemonFixture::start();
+    let first_encryption = daemon.send(r#"{"command":"encryption_status"}"#);
+    assert_eq!(first_encryption["success"], true, "{first_encryption}");
+    let first_fingerprint = first_encryption["data"]["fingerprint"]
+        .as_str()
+        .expect("HAL daemon publishes a key fingerprint")
+        .to_string();
+    let hal_key_path = daemon._temp_dir.path().join("session.key");
+    let first_hal_key = std::fs::read(&hal_key_path).expect("read first HAL key");
+    let second_socket_path = daemon._temp_dir.path().join("alternate-daemon.sock");
+
+    let mut second = Command::new(env!("CARGO_BIN_EXE_sotf-daemon"))
+        .env("SOTF_DAEMON_SOCKET_PATH", &second_socket_path)
+        .env("SOTF_SYSTEMWIDE_RUNTIME_DIR", daemon._temp_dir.path())
+        .env("SOTF_SYSTEMWIDE_DRIVER", "null")
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn second sotf-daemon");
+
+    let mut second_status = None;
+    for _ in 0..100 {
+        if let Some(status) = second.try_wait().expect("poll second daemon") {
+            second_status = Some(status);
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    if second_status.is_none() {
+        let _ = second.kill();
+        let _ = second.wait();
+        panic!("second daemon must exit while the first owns the HAL transport");
+    }
+
+    assert!(
+        !second_status.expect("second daemon exit status").success(),
+        "second daemon unexpectedly acquired the shared HAL transport"
+    );
+    assert!(
+        !second_socket_path.exists(),
+        "losing daemon must exit before binding its distinct control socket"
+    );
+    assert_eq!(
+        std::fs::read(&hal_key_path).expect("read HAL key after rejected startup"),
+        first_hal_key,
+        "losing daemon must not rotate the active HAL key"
+    );
+
+    let first_after = daemon.send(r#"{"command":"encryption_status"}"#);
+    assert_eq!(first_after["success"], true, "{first_after}");
+    assert_eq!(
+        first_after["data"]["fingerprint"].as_str(),
+        Some(first_fingerprint.as_str()),
+        "active daemon fingerprint must remain unchanged"
+    );
+    let first_status = daemon.send(r#"{"command":"status"}"#);
+    assert_eq!(first_status["success"], true);
+
+    daemon.shutdown();
+}
+
 #[test]
 #[serial]
 fn daemon_get_metering_roundtrip_over_unix_socket() {
@@ -207,6 +272,86 @@ fn daemon_shutdown_over_unix_socket_stops_process() {
     }
 
     panic!("daemon did not exit after shutdown");
+}
+
+#[test]
+#[serial]
+fn daemon_shutdown_drains_clients_and_allows_immediate_restart() {
+    let mut daemon = DaemonFixture::start();
+    let mut idle_clients = Vec::new();
+    for _ in 0..32 {
+        idle_clients.push(
+            UnixStream::connect(&daemon.socket_path).expect("connect persistent idle client"),
+        );
+    }
+    for _ in 0..32 {
+        drop(UnixStream::connect(&daemon.socket_path).expect("connect churn client"));
+    }
+
+    let started = Instant::now();
+    let mut shutdown = UnixStream::connect(&daemon.socket_path).expect("connect shutdown client");
+    writeln!(shutdown, r#"{{"command":"shutdown"}}"#).expect("write shutdown");
+    drop(shutdown);
+
+    for _ in 0..100 {
+        if daemon.child.try_wait().ok().flatten().is_some() {
+            assert!(
+                started.elapsed() < Duration::from_secs(2),
+                "daemon shutdown waited for client idle timeouts"
+            );
+            assert!(
+                !daemon.socket_path.exists(),
+                "shutdown with active clients must remove the socket"
+            );
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        daemon.child.try_wait().ok().flatten().is_some(),
+        "daemon did not exit while persistent clients were connected"
+    );
+    drop(idle_clients);
+
+    let mut restarted = Command::new(env!("CARGO_BIN_EXE_sotf-daemon"))
+        .env("SOTF_DAEMON_SOCKET_PATH", &daemon.socket_path)
+        .env("SOTF_SYSTEMWIDE_RUNTIME_DIR", daemon._temp_dir.path())
+        .env("SOTF_SYSTEMWIDE_DRIVER", "null")
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("restart sotf-daemon");
+
+    for _ in 0..100 {
+        if daemon.socket_path.exists() {
+            break;
+        }
+        if let Some(status) = restarted.try_wait().expect("poll restarted daemon") {
+            let mut stderr = String::new();
+            if let Some(mut pipe) = restarted.stderr.take() {
+                let _ = pipe.read_to_string(&mut stderr);
+            }
+            panic!("restarted daemon exited early ({status}): {stderr}");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        daemon.socket_path.exists(),
+        "restarted daemon did not reclaim its runtime"
+    );
+    let status = daemon.send(r#"{"command":"status"}"#);
+    assert_eq!(status["success"], true, "{status}");
+    let _ = daemon.send(r#"{"command":"shutdown"}"#);
+
+    for _ in 0..100 {
+        if restarted.try_wait().ok().flatten().is_some() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let _ = restarted.kill();
+    let _ = restarted.wait();
+    panic!("restarted daemon did not shut down");
 }
 
 #[test]
@@ -348,7 +493,10 @@ fn systemwide_lab_scenario_matrix_over_unix_socket() {
         let encryption_status = daemon.send(r#"{"command":"encryption_status"}"#);
         assert_eq!(encryption_status["success"], true);
         assert_eq!(encryption_status["data"]["enabled"], false);
-        assert_eq!(encryption_status["data"]["transport_state"], "not_applicable");
+        assert_eq!(
+            encryption_status["data"]["transport_state"],
+            "not_applicable"
+        );
     }
 
     let reconfigured = daemon

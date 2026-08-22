@@ -438,7 +438,90 @@ final class HALDriverTests {
             return false
         }
 
+        guard runRustSwiftReconfigurationStress(
+            sharedAudio: sharedAudio,
+            sharedMemoryPath: shmPath
+        ) else {
+            return false
+        }
+
         halLog("    PASS")
+        return true
+    }
+
+    private static func runRustSwiftReconfigurationStress(
+        sharedAudio: SharedAudioBuffer,
+        sharedMemoryPath: String
+    ) -> Bool {
+        guard let workerPath = ProcessInfo.processInfo.environment[
+            "SOTF_RUST_HAL_TRANSPORT_WORKER"
+        ], FileManager.default.isExecutableFile(atPath: workerPath) else {
+            halLog("    FAIL: SOTF_RUST_HAL_TRANSPORT_WORKER is not executable")
+            return false
+        }
+
+        let process = Process()
+        let diagnostics = Pipe()
+        process.executableURL = URL(fileURLWithPath: workerPath)
+        process.arguments = [sharedMemoryPath, "200"]
+        process.standardOutput = diagnostics
+        process.standardError = diagnostics
+
+        do {
+            try process.run()
+        } catch {
+            halLog("    FAIL: could not start Rust transport worker: \(error)")
+            return false
+        }
+
+        let deadline = Date().addingTimeInterval(15)
+        var framesRead = 0
+        while process.isRunning && Date() < deadline {
+            let channels = max(Int(sharedAudio.getActiveChannelCount()), 1)
+            var samples = [Float](repeating: 0, count: 64 * channels)
+            let read = samples.withUnsafeMutableBufferPointer { buffer in
+                sharedAudio.readAudio(
+                    buffer.baseAddress!,
+                    frameCount: 64,
+                    channelCount: channels
+                )
+            }
+            framesRead += max(read, 0)
+            usleep(50)
+        }
+
+        if process.isRunning {
+            process.terminate()
+            process.waitUntilExit()
+            halLog("    FAIL: Rust transport worker timed out")
+            return false
+        }
+        process.waitUntilExit()
+
+        let output = diagnostics.fileHandleForReading.readDataToEndOfFile()
+        let outputText = String(data: output, encoding: .utf8) ?? ""
+        guard process.terminationStatus == 0 else {
+            halLog(
+                "    FAIL: Rust transport worker exited \(process.terminationStatus): "
+                + outputText
+            )
+            return false
+        }
+        guard framesRead > 0,
+              sharedAudio.getActiveChannelCount() == 2
+                || sharedAudio.getActiveChannelCount() == 8,
+              sharedAudio.getActiveSampleRate() == 48_000
+                || sharedAudio.getActiveSampleRate() == 96_000
+        else {
+            halLog(
+                "    FAIL: cross-language stress produced no frames or invalid geometry "
+                + "(frames=\(framesRead), rate=\(sharedAudio.getActiveSampleRate()), "
+                + "channels=\(sharedAudio.getActiveChannelCount()))"
+            )
+            return false
+        }
+
+        halLog("    Rust/Swift stress: \(framesRead) frames read across 200 reconfigurations")
         return true
     }
 

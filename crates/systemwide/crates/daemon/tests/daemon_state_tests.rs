@@ -97,9 +97,9 @@ fn daemon_plugin_reload_uses_hot_update_path() {
         "plugin add/remove/update/reorder should hot-update the running engine"
     );
     assert!(
-        reload_body.contains("No engine running")
+        reload_body.contains("StreamingState::Idle")
             && reload_body.contains("handle_load_plugins_with_channels"),
-        "full driver playback restart should be reserved for the no-engine fallback"
+        "full driver playback restart should be reserved for the typed idle-engine fallback"
     );
 }
 
@@ -107,8 +107,8 @@ fn daemon_plugin_reload_uses_hot_update_path() {
 fn daemon_serializes_startup_before_rotating_the_audio_key() {
     let source = daemon_source();
     let lock = source
-        .find("acquire_daemon_instance_lock(&secure_socket_path)")
-        .expect("daemon startup should acquire the per-user instance lock");
+        .find("acquire_daemon_instance_lock(&ownership_resources)")
+        .expect("daemon startup should acquire the complete runtime ownership lock set");
     let construct = source
         .find("let daemon = AudioDaemon::new()")
         .expect("daemon should be constructed after locking");
@@ -118,7 +118,7 @@ fn daemon_serializes_startup_before_rotating_the_audio_key() {
 
     assert!(
         lock < construct && construct < rotate,
-        "instance lock must precede KeyManager construction and key rotation"
+        "runtime ownership locks must precede KeyManager construction and key rotation"
     );
 }
 

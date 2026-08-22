@@ -12,7 +12,7 @@ public struct ConfigBarLineFramer {
     public let maxLineBytes: Int
     public private(set) var bufferedData = Data()
 
-    public init(maxLineBytes: Int = 1024 * 1024) {
+    public init(maxLineBytes: Int = 64 * 1024) {
         precondition(maxLineBytes > 0)
         self.maxLineBytes = maxLineBytes
     }
@@ -42,6 +42,23 @@ public struct ConfigBarLineFramer {
 }
 
 public enum ConfigBarIPC {
+    public static let defaultMaxResponseBytes = 64 * 1024
+    public static let structuredMaxResponseBytes = 256 * 1024
+    public static let pluginCatalogMaxResponseBytes = 1024 * 1024
+
+    /// Bound response allocation according to the requested endpoint instead
+    /// of granting every command the plugin catalog's 1 MiB budget.
+    public static func maximumResponseBytes(for command: [String: Any]) -> Int {
+        switch command["command"] as? String {
+        case "get_available_plugins":
+            return pluginCatalogMaxResponseBytes
+        case "dump_state", "get_snapshot", "get_plugins":
+            return structuredMaxResponseBytes
+        default:
+            return defaultMaxResponseBytes
+        }
+    }
+
     public typealias SendFunction = (
         Int32,
         UnsafeRawPointer?,

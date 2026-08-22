@@ -12,6 +12,18 @@
 
 ## Review-driven startup and IPC hardening
 
+- Acquire sorted, deduplicated ownership locks for the control socket, HAL
+  shared memory, HAL-readable key, and daemon-private key before startup key
+  rotation, preventing split-socket daemons from sharing one transport.
+- Track, drain, and join all IPC handler threads during shutdown; stress tests
+  cover idle and rapidly reconnecting clients followed by immediate restart.
+- Atomically publish both key copies, reject symlink redirection, and keep key
+  paths and fingerprints out of normal production logs.
+- Validate user audio load paths as bounded, canonical, same-owner regular files
+  and verify their device/inode before engine handoff.
+- Replace string-matched idle-engine control flow with typed streaming state.
+- Add command latency/serialized-response telemetry and explicit metering and
+  pipeline-reload diagnostic budgets to `dump_state`.
 - Publish the HAL-readable session key through an atomic same-directory
   replacement instead of remove-then-create, closing the local symlink race
   during key rotation and keeping the final file owner/mode verified.
@@ -31,6 +43,8 @@
   shape while retaining legacy aliases, and add a wire-shape regression test.
 - Add a checked-in shared-memory ABI manifest consumed by Rust and packaged for
   Swift HAL validation, plus plain/encrypted reconfiguration stress coverage.
+- Bound Configbar IPC responses by command class: 64 KiB normally, 256 KiB for
+  snapshots/plugin state/dumps, and 1 MiB only for the plugin catalog.
 
 ## Diagnostics and recovery UX (QA-SYS-003)
 
