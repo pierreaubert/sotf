@@ -395,6 +395,13 @@ the cross-client pipeline mutation mutex now keeps read-modify-apply sequences
 atomic. This is still a candidate for a future controller/reducer extraction,
 not a reason for clients to replay cached state.
 
+Configbar IPC uses command-specific bounded response deadlines. Read-only
+status and metering calls retain a one-second deadline, while synchronous
+device and pipeline mutations allow up to five seconds because stopping and
+recreating a CoreAudio output stream can legitimately cross one second. This
+prevents the toolbar from reporting a failed hardware selection after the
+daemon has already committed and started that device.
+
 ### State Mutation Audit
 
 Recent live failures were all state-control failures, not isolated DSP bugs:

@@ -45,6 +45,8 @@ public enum ConfigBarIPC {
     public static let defaultMaxResponseBytes = 64 * 1024
     public static let structuredMaxResponseBytes = 256 * 1024
     public static let pluginCatalogMaxResponseBytes = 1024 * 1024
+    public static let defaultResponseTimeoutMicros: useconds_t = 1_000_000
+    public static let pipelineMutationResponseTimeoutMicros: useconds_t = 5_000_000
 
     /// Bound response allocation according to the requested endpoint instead
     /// of granting every command the plugin catalog's 1 MiB budget.
@@ -56,6 +58,29 @@ public enum ConfigBarIPC {
             return structuredMaxResponseBytes
         default:
             return defaultMaxResponseBytes
+        }
+    }
+
+    /// Pipeline mutations can synchronously stop and recreate CoreAudio output.
+    /// Keep polling commands on the short deadline, but allow bounded headroom
+    /// for hardware device startup before treating the daemon reply as lost.
+    public static func responseTimeoutMicros(for command: [String: Any]) -> useconds_t {
+        switch command["command"] as? String {
+        case "set_device",
+             "load_plugins",
+             "load_plugin_artifact",
+             "add_plugin",
+             "remove_plugin",
+             "update_plugin",
+             "reorder_plugins",
+             "reorder_graph",
+             "set_input_channels",
+             "set_output_channels",
+             "set_pipeline_channels",
+             "set_rack_plugin_state":
+            return pipelineMutationResponseTimeoutMicros
+        default:
+            return defaultResponseTimeoutMicros
         }
     }
 

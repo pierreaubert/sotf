@@ -299,7 +299,7 @@ class AudioEngineClient {
             var buffer = [UInt8](repeating: 0, count: 4096)
             let bufferCount = buffer.count
             let maxResponseSize = ConfigBarIPC.maximumResponseBytes(for: command)
-            let responseTimeoutMicros: useconds_t = 1000000 // Keep UI-facing calls from hanging the app
+            let responseTimeoutMicros = ConfigBarIPC.responseTimeoutMicros(for: command)
 
             // Set socket to non-blocking for timeout handling
             let flags = fcntl(socketFD, F_GETFL, 0)

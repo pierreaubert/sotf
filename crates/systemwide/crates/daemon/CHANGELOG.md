@@ -52,6 +52,10 @@
   shape while retaining legacy aliases, and add a wire-shape regression test.
 - Add a checked-in shared-memory ABI manifest consumed by Rust and packaged for
   Swift HAL validation, plus plain/encrypted reconfiguration stress coverage.
+- Keep status and metering IPC replies on a one-second deadline while allowing
+  five seconds for synchronous device and pipeline mutations, so slower
+  CoreAudio output startup is not reported as a failed selection after the
+  daemon applied it.
 - Bound Configbar IPC responses by command class: 64 KiB normally, 256 KiB for
   snapshots/plugin state/dumps, and 1 MiB only for the plugin catalog.
 

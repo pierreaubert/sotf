@@ -128,6 +128,44 @@ final class ConfigBarIPCTests: XCTestCase {
         )
     }
 
+    func testResponseTimeoutsAreCommandSpecific() {
+        XCTAssertEqual(
+            ConfigBarIPC.responseTimeoutMicros(for: ["command": "status"]),
+            ConfigBarIPC.defaultResponseTimeoutMicros
+        )
+        XCTAssertEqual(
+            ConfigBarIPC.responseTimeoutMicros(for: ["command": "get_metering"]),
+            ConfigBarIPC.defaultResponseTimeoutMicros
+        )
+
+        let pipelineMutationCommands = [
+            "set_device",
+            "load_plugins",
+            "load_plugin_artifact",
+            "add_plugin",
+            "remove_plugin",
+            "update_plugin",
+            "reorder_plugins",
+            "reorder_graph",
+            "set_input_channels",
+            "set_output_channels",
+            "set_pipeline_channels",
+            "set_rack_plugin_state",
+        ]
+        for command in pipelineMutationCommands {
+            XCTAssertEqual(
+                ConfigBarIPC.responseTimeoutMicros(for: ["command": command]),
+                ConfigBarIPC.pipelineMutationResponseTimeoutMicros,
+                command
+            )
+        }
+
+        XCTAssertLessThan(
+            ConfigBarIPC.defaultResponseTimeoutMicros,
+            ConfigBarIPC.pipelineMutationResponseTimeoutMicros
+        )
+    }
+
     func testLineFramerHandlesFragmentedAndMultipleLines() throws {
         var framer = ConfigBarLineFramer(maxLineBytes: 64)
 
