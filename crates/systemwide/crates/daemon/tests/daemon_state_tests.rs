@@ -287,7 +287,8 @@ fn systemwide_pkg_ships_launch_agent_and_exposes_installer_progress_and_logs() {
         source.contains("installer:PHASE:%s")
             && source.contains("installer:STATUS:%s")
             && source.contains("installer_step \"Stopping the current SotF audio service\"")
-            && source.contains("installer_step \"Restarting CoreAudio with the new SotF audio driver\""),
+            && source
+                .contains("installer_step \"Restarting CoreAudio with the new SotF audio driver\""),
         "package scripts should tell Installer which lifecycle step is active"
     );
     assert!(

@@ -21,6 +21,11 @@ pub async fn run_sotf_lan_discovery(
     pairing_enabled: bool,
     cancel: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), String> {
+    if std::env::var_os("SOTF_SERVER_DISABLE_DISCOVERY").is_some() {
+        log::info!("[SOTF Discovery] Disabled by environment");
+        return Ok(());
+    }
+
     let descriptor = SotfServiceDescriptor::with_pairing(&settings, local_ip, pairing_enabled);
 
     #[cfg(target_os = "macos")]

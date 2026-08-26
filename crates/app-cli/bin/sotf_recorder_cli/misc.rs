@@ -294,13 +294,8 @@ pub fn record_signal(
             validate_signal_params(signal_type, &params, duration, sample_rate)?;
             let raw_signal = generate_signal(signal_type, &params, duration, sample_rate)?;
             // Apply inverse compensation: boost where mic is weak, cut where mic is loud
-            let compensated = compensation.apply_to_sweep(
-                &raw_signal,
-                start_freq,
-                end_freq,
-                sample_rate,
-                true,
-            );
+            let compensated =
+                compensation.apply_to_sweep(&raw_signal, start_freq, end_freq, sample_rate, true);
             println!("  ✓ Applied pre-compensation to playback signal");
             prepare_signal(compensated, sample_rate)
         }
@@ -375,8 +370,7 @@ pub fn record_signal(
 
         // F2: surface the capture-quality verdict instead of an unconditional
         // success line — an untrustworthy take must be visible in CLI output.
-        let quality =
-            sotf_audio_player::recording_helpers::summarize_take_quality(&capture);
+        let quality = sotf_audio_player::recording_helpers::summarize_take_quality(&capture);
         let verdict = sotf_audio_player::recording_helpers::take_verdict_text(&quality);
         if quality.trustworthy {
             println!("  ✓ Recording complete — {}", verdict);

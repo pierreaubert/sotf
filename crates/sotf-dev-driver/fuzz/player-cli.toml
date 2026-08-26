@@ -1,0 +1,20 @@
+schema_version = 1
+version = 1
+target = "player-cli"
+fixture_profiles = ["default", "fixture-wav"]
+
+[[actions]]
+id = "show-help"
+family = "argv"
+weight = 100
+[actions.payload]
+type = "process_argv"
+argv = ["--help"]
+
+[[actions]]
+id = "bounded-wait"
+family = "timing"
+weight = 20
+[actions.payload]
+type = "wait"
+duration_ms = 10

@@ -31,6 +31,12 @@ timeout = "10s"
 seed_demo_audio = true
 tags = ["gpui"]
 
+[[scenario]]
+name = "gpui-shell-navigation-ui"
+path = "crates/sotf-dev-driver/scenarios/shell_navigation_keyboard.scn"
+timeout = "30s"
+tags = ["gpui", "ui", "accessibility", "navigation"]
+
 # ── Screens ─────────────────────────────────────────────────────────────────
 
 [[scenario]]
@@ -52,16 +58,63 @@ timeout = "10s"
 tags = ["gpui"]
 
 [[scenario]]
-name = "gpui-recording"
-path = "crates/sotf-dev-driver/scenarios/recording.scn"
-timeout = "10s"
-tags = ["gpui"]
+name = "gpui-recording-ui"
+path = "crates/sotf-dev-driver/scenarios/recording_fake_capture.scn"
+timeout = "30s"
+tags = ["gpui", "recording", "ui", "fixture"]
+
+[scenario.fake_recording]
+channels = 2
+points = 48
 
 [[scenario]]
-name = "gpui-room-eq"
-path = "crates/sotf-dev-driver/scenarios/room_eq.scn"
-timeout = "10s"
-tags = ["gpui"]
+name = "gpui-recording-device-loss-retry"
+path = "crates/sotf-dev-driver/scenarios/recording_cancel_retry_error.scn"
+timeout = "45s"
+tags = ["gpui", "recording", "error", "retry"]
+
+[scenario.fake_recording]
+channels = 2
+points = 48
+fault = "device-loss"
+
+[[scenario]]
+name = "gpui-recording-clipping-retry"
+path = "crates/sotf-dev-driver/scenarios/recording_cancel_retry_error.scn"
+timeout = "45s"
+tags = ["gpui", "recording", "error", "retry"]
+
+[scenario.fake_recording]
+channels = 2
+points = 48
+fault = "clipping"
+
+[[scenario]]
+name = "gpui-recording-io-failure-retry"
+path = "crates/sotf-dev-driver/scenarios/recording_cancel_retry_error.scn"
+timeout = "45s"
+tags = ["gpui", "recording", "error", "retry"]
+
+[scenario.fake_recording]
+channels = 2
+points = 48
+fault = "io-failure"
+
+[[scenario]]
+name = "gpui-room-eq-ui"
+path = "crates/sotf-dev-driver/scenarios/roomeq_wizard_ui_happy.scn"
+timeout = "180s"
+tags = ["gpui", "roomeq", "ui", "fixture", "wizard"]
+
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true
 
 [[scenario]]
 name = "gpui-headphone-eq"
@@ -82,6 +135,12 @@ timeout = "10s"
 tags = ["gpui"]
 
 [[scenario]]
+name = "gpui-listening-how-to-listen"
+path = "crates/sotf-dev-driver/scenarios/listening_how_to_listen.scn"
+timeout = "30s"
+tags = ["gpui", "listening", "ui", "accessibility", "persistence"]
+
+[[scenario]]
 name = "gpui-devices"
 path = "crates/sotf-dev-driver/scenarios/gpui_devices.scn"
 timeout = "10s"
@@ -98,6 +157,13 @@ name = "gpui-playlists"
 path = "crates/sotf-dev-driver/scenarios/gpui_playlists.scn"
 timeout = "10s"
 tags = ["gpui"]
+
+[[scenario]]
+name = "gpui-queue-manage-reorder"
+path = "crates/sotf-dev-driver/scenarios/queue_manage_reorder.scn"
+timeout = "30s"
+seed_demo_audio = true
+tags = ["gpui", "queue", "ui", "reorder", "undo", "seeded"]
 
 [[scenario]]
 name = "gpui-level-meters"

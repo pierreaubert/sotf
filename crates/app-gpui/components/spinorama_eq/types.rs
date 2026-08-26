@@ -32,6 +32,20 @@ type OptimizationOutcome = (
     Option<String>,
 );
 
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 const SPINORAMA_FETCH_RETRIES: usize = 3;
 const SPINORAMA_RETRY_DELAY: Duration = Duration::from_secs(2);
 
@@ -91,16 +105,18 @@ impl PlayerView {
         // Check if we need to auto-fetch speakers before reading state
         let needs_fetch = {
             let state = self.state.read(cx);
-            state
-                .app
-                .measurement_state
-                .spinorama_eq_state
-                .needs_speaker_refresh()
-                && !state
-                    .app
-                    .measurement_state
-                    .spinorama_eq_state
-                    .loading_speakers
+            let spinorama = &state.app.measurement_state.spinorama_eq_state;
+            // QA fixtures intentionally leave discovery to the scenario's
+            // explicit Refresh action, so their queued response is not spent
+            // by the initial render.
+            #[cfg(feature = "dev-api")]
+            let fixture_controls_discovery = spinorama.qa_discovery_fixture.is_some();
+            #[cfg(not(feature = "dev-api"))]
+            let fixture_controls_discovery = false;
+
+            spinorama.needs_speaker_refresh()
+                && !spinorama.loading_speakers
+                && !fixture_controls_discovery
         };
 
         if needs_fetch {
@@ -234,7 +250,7 @@ impl PlayerView {
             .min_h_0()
             .bg(theme.background)
             .child(self.render_spinorama_header(cx))
-            .child(
+            .child(dev_track!(
                 div()
                     .id("spinorama-eq-content")
                     .flex_1()
@@ -242,7 +258,8 @@ impl PlayerView {
                     .overflow_y_scroll()
                     .p(d.card)
                     .child(content),
-            )
+                "spinorama.content"
+            ))
     }
 
     /// Render the spinorama EQ screen header with step indicators
@@ -303,7 +320,7 @@ impl PlayerView {
 
         let navigation = HStack::new()
             .spacing(StackSpacing::Sm)
-            .child(
+            .child(dev_track!(
                 Button::new("back", back_label)
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Sm)
@@ -315,8 +332,9 @@ impl PlayerView {
                         });
                         cx.notify();
                     })),
-            )
-            .child(
+                "spinorama.back"
+            ))
+            .child(dev_track!(
                 Button::new("next", next_label)
                     .variant(ButtonVariant::Primary)
                     .size(ButtonSize::Sm)
@@ -328,7 +346,8 @@ impl PlayerView {
                         });
                         cx.notify();
                     })),
-            );
+                "spinorama.next"
+            ));
         let navigation = navigation.build().flex_none();
 
         // Home button for navigation back to Library
@@ -384,25 +403,83 @@ impl PlayerView {
 
     pub(crate) fn fetch_spinorama_speakers(&mut self, cx: &mut Context<Self>) {
         log::info!("Fetching spinorama speakers from API...");
+        #[cfg(feature = "dev-api")]
+        if let Some((speakers, delay_ms, should_fail, failure_message)) =
+            self.state.update(cx, |state, _| {
+                state
+                    .app
+                    .measurement_state
+                    .spinorama_eq_state
+                    .qa_discovery_fixture
+                    .as_mut()
+                    .map(|fixture| {
+                        let should_fail = fixture.catalog_failures_remaining > 0;
+                        fixture.catalog_failures_remaining =
+                            fixture.catalog_failures_remaining.saturating_sub(1);
+                        (
+                            fixture.catalog.clone(),
+                            fixture.catalog_delay_ms,
+                            should_fail,
+                            fixture.catalog_failure_message.clone(),
+                        )
+                    })
+            })
+        {
+            let request_id = self.state.update(cx, |state, _| {
+                let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
+                spinorama.loading_speakers = true;
+                spinorama.error_message = None;
+                spinorama.begin_speaker_list_request()
+            });
+            let weak_state = self.state.downgrade();
+            cx.spawn(async move |_, cx| {
+                smol::Timer::after(std::time::Duration::from_millis(delay_ms)).await;
+                let Some(state_entity) = weak_state.upgrade() else {
+                    return;
+                };
+                state_entity.update(cx, |state, cx| {
+                    let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
+                    if spinorama.speaker_list_request_id != request_id {
+                        return;
+                    }
+                    spinorama.loading_speakers = false;
+                    if should_fail {
+                        spinorama.error_message = Some(failure_message);
+                        // Avoid immediately scheduling an identical automatic
+                        // request: leave the actionable error visible until
+                        // the user explicitly retries with Refresh.
+                        spinorama.speakers_cached_at = Some(std::time::Instant::now());
+                    } else {
+                        spinorama.available_speakers = speakers;
+                        spinorama.speakers_cached_at = Some(std::time::Instant::now());
+                        spinorama.update_suggestions();
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
+            cx.notify();
+            return;
+        }
         // Note: loading_speakers is set to true before spawning to prevent duplicate fetches
-        self.state.update(cx, |state, _cx| {
-            state
-                .app
-                .measurement_state
-                .spinorama_eq_state
-                .loading_speakers = true;
-            state.app.measurement_state.spinorama_eq_state.error_message = None;
+        let request_id = self.state.update(cx, |state, _cx| {
+            let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
+            spinorama.loading_speakers = true;
+            spinorama.error_message = None;
+            spinorama.begin_speaker_list_request()
         });
         cx.notify();
 
         // Per-request oneshot channel — no shared global state.
         let (tx, rx) = smol::channel::bounded::<Result<Vec<String>, String>>(1);
         std::thread::spawn(move || {
-            let result = spinorama_runtime().block_on(async {
-                fetch_json_with_spinorama_retries::<Vec<String>>(
-                    "https://api.spinorama.org/v1/speakers".to_string(),
-                )
-                .await
+            let result = spinorama_runtime().and_then(|runtime| {
+                runtime.block_on(async {
+                    fetch_json_with_spinorama_retries::<Vec<String>>(
+                        "https://api.spinorama.org/v1/speakers".to_string(),
+                    )
+                    .await
+                })
             });
             let _ = tx.send_blocking(result);
         });
@@ -430,40 +507,29 @@ impl PlayerView {
                 Ok(speakers) => {
                     log::info!("Fetched {} speakers from spinorama.org", speakers.len());
                     state_entity.update(cx, |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .spinorama_eq_state
-                            .available_speakers = speakers;
-                        state
-                            .app
-                            .measurement_state
-                            .spinorama_eq_state
-                            .loading_speakers = false;
-                        state
-                            .app
-                            .measurement_state
-                            .spinorama_eq_state
-                            .speakers_cached_at = Some(std::time::Instant::now());
-                        state
-                            .app
-                            .measurement_state
-                            .spinorama_eq_state
-                            .update_suggestions();
+                        let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
+                        if spinorama.speaker_list_request_id != request_id {
+                            log::debug!("Discarding stale Spinorama speaker catalog completion");
+                            return;
+                        }
+                        spinorama.available_speakers = speakers;
+                        spinorama.loading_speakers = false;
+                        spinorama.speakers_cached_at = Some(std::time::Instant::now());
+                        spinorama.update_suggestions();
                         cx.notify();
                     });
                 }
                 Err(e) => {
                     log::error!("Failed to fetch speakers: {}", e);
                     state_entity.update(cx, |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .spinorama_eq_state
-                            .loading_speakers = false;
+                        let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
+                        if spinorama.speaker_list_request_id != request_id {
+                            log::debug!("Discarding stale Spinorama speaker catalog failure");
+                            return;
+                        }
+                        spinorama.loading_speakers = false;
                         let msg = format!("Failed to fetch speakers: {}", e);
-                        state.app.measurement_state.spinorama_eq_state.error_message =
-                            Some(msg.clone());
+                        spinorama.error_message = Some(msg.clone());
                         // Surface the error via toast as well — the step_1
                         // inline banner only shows when the user is
                         // actively on the speaker-search screen.
@@ -543,19 +609,51 @@ impl PlayerView {
 
     pub(super) fn fetch_spinorama_versions(&mut self, speaker: &str, cx: &mut Context<Self>) {
         log::info!("Fetching versions for speaker: {}", speaker);
+        #[cfg(feature = "dev-api")]
+        if let Some(versions) = self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .spinorama_eq_state
+            .qa_discovery_fixture
+            .as_ref()
+            .and_then(|fixture| fixture.versions.get(speaker).cloned())
+        {
+            let version = versions.first().cloned();
+            self.state.update(cx, |state, _| {
+                let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
+                if spinorama.selected_speaker.as_deref() != Some(speaker) {
+                    return;
+                }
+                spinorama.available_versions = versions;
+                spinorama.loading_versions = false;
+                spinorama.error_message = None;
+                if let Some(version) = &version {
+                    spinorama.selected_version = version.clone();
+                }
+            });
+            cx.notify();
+            if let Some(version) = version {
+                self.fetch_spinorama_measurements(speaker, &version, cx);
+            }
+            return;
+        }
         let speaker_name = speaker.to_string();
 
         // Per-request oneshot channel.
         let (tx, rx) = smol::channel::bounded::<Result<Vec<String>, String>>(1);
         let speaker_for_fetch = speaker_name.clone();
         std::thread::spawn(move || {
-            let result = spinorama_runtime().block_on(async {
-                let encoded_speaker = urlencoding::encode(&speaker_for_fetch);
-                let url = format!(
-                    "https://api.spinorama.org/v1/speaker/{}/versions",
-                    encoded_speaker
-                );
-                fetch_json_with_spinorama_retries::<Vec<String>>(url).await
+            let result = spinorama_runtime().and_then(|runtime| {
+                runtime.block_on(async {
+                    let encoded_speaker = urlencoding::encode(&speaker_for_fetch);
+                    let url = format!(
+                        "https://api.spinorama.org/v1/speaker/{}/versions",
+                        encoded_speaker
+                    );
+                    fetch_json_with_spinorama_retries::<Vec<String>>(url).await
+                })
             });
             let _ = tx.send_blocking(result);
         });
@@ -648,6 +746,68 @@ impl PlayerView {
             speaker,
             version
         );
+        #[cfg(feature = "dev-api")]
+        if let Some((measurements, response)) = self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .spinorama_eq_state
+            .qa_discovery_fixture
+            .as_ref()
+            .and_then(|fixture| {
+                let key = (speaker.to_string(), version.to_string());
+                fixture.measurements.get(&key).cloned().map(|measurements| {
+                    let response = measurements.iter().find_map(|measurement| {
+                        fixture
+                            .responses
+                            .get(&(key.0.clone(), key.1.clone(), measurement.clone()))
+                            .cloned()
+                    });
+                    (measurements, response)
+                })
+            })
+        {
+            let selected = measurements
+                .iter()
+                .find(|measurement| measurement.as_str() == "CEA2034")
+                .cloned()
+                .or_else(|| measurements.first().cloned());
+            self.state.update(cx, |state, _| {
+                let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
+                if spinorama.selected_speaker.as_deref() != Some(speaker)
+                    || spinorama.selected_version != version
+                {
+                    return;
+                }
+                spinorama.available_measurements = measurements;
+                spinorama.loading_measurements = false;
+                spinorama.loading_spinorama_curves = false;
+                spinorama.has_phase_data = false;
+                spinorama.error_message = None;
+                if let Some(response) = &response {
+                    let frequencies = response.frequencies.clone();
+                    let on_axis = response.spl.clone();
+                    spinorama.spinorama_curves = crate::app::types::SpinoramaCurves {
+                        frequencies,
+                        listening_window: on_axis.clone(),
+                        early_reflections: on_axis.clone(),
+                        sound_power: on_axis.clone(),
+                        early_reflections_di: vec![0.0; on_axis.len()],
+                        sound_power_di: vec![0.0; on_axis.len()],
+                        estimated_in_room: on_axis.clone(),
+                        on_axis,
+                        horizontal_directivity: Vec::new(),
+                        vertical_directivity: Vec::new(),
+                    };
+                }
+                if let Some(selected) = &selected {
+                    spinorama.selected_measurement = selected.clone();
+                }
+            });
+            cx.notify();
+            return;
+        }
 
         self.state.update(cx, |state, _cx| {
             state
@@ -691,14 +851,16 @@ impl PlayerView {
         let (measurements_tx, measurements_rx) =
             smol::channel::bounded::<Result<Vec<String>, String>>(1);
         std::thread::spawn(move || {
-            let result = spinorama_runtime().block_on(async {
-                let encoded_speaker = urlencoding::encode(&speaker_name);
-                let encoded_version = urlencoding::encode(&version_name);
-                let url = format!(
-                    "https://api.spinorama.org/v1/speaker/{}/version/{}/measurements",
-                    encoded_speaker, encoded_version
-                );
-                fetch_json_with_spinorama_retries::<Vec<String>>(url).await
+            let result = spinorama_runtime().and_then(|runtime| {
+                runtime.block_on(async {
+                    let encoded_speaker = urlencoding::encode(&speaker_name);
+                    let encoded_version = urlencoding::encode(&version_name);
+                    let url = format!(
+                        "https://api.spinorama.org/v1/speaker/{}/version/{}/measurements",
+                        encoded_speaker, encoded_version
+                    );
+                    fetch_json_with_spinorama_retries::<Vec<String>>(url).await
+                })
             });
             let _ = measurements_tx.send_blocking(result);
         });
@@ -950,6 +1112,22 @@ impl PlayerView {
             return;
         }
 
+        #[cfg(feature = "dev-api")]
+        let fixture_response = self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .spinorama_eq_state
+            .qa_discovery_fixture
+            .as_ref()
+            .and_then(|fixture| {
+                fixture
+                    .responses
+                    .get(&(speaker_name.clone(), version.clone(), measurement.clone()))
+                    .cloned()
+            });
+
         let cancel_flag = self.state.update(cx, |state, _cx| {
             state
                 .app
@@ -1083,14 +1261,36 @@ impl PlayerView {
         let progress_tx_for_thread = progress_tx.clone();
         let outcome_tx_for_thread = outcome_tx.clone();
         std::thread::spawn(move || {
+            #[cfg(feature = "dev-api")]
+            let fixture_measurement = fixture_response.map(|response| {
+                MeasurementInput::Curve(autoeq::Curve {
+                    freq: ndarray::Array1::from_vec(response.frequencies),
+                    spl: ndarray::Array1::from_vec(response.spl),
+                    ..Default::default()
+                })
+            });
             // Build the optimization config
             let config = SpeakerOptimizationConfig {
                 config_type: SpeakerConfigType::Single,
-                main_measurement: Some(MeasurementInput::Spinorama {
-                    speaker: speaker_name.clone(),
-                    version: effective_version,
-                    measurement: effective_measurement,
-                    curve_name: effective_curve_name.clone(),
+                main_measurement: Some({
+                    #[cfg(feature = "dev-api")]
+                    if let Some(measurement) = fixture_measurement {
+                        measurement
+                    } else {
+                        MeasurementInput::Spinorama {
+                            speaker: speaker_name.clone(),
+                            version: effective_version,
+                            measurement: effective_measurement,
+                            curve_name: effective_curve_name.clone(),
+                        }
+                    }
+                    #[cfg(not(feature = "dev-api"))]
+                    MeasurementInput::Spinorama {
+                        speaker: speaker_name.clone(),
+                        version: effective_version,
+                        measurement: effective_measurement,
+                        curve_name: effective_curve_name.clone(),
+                    }
                 }),
                 driver_measurements: Vec::new(),
                 crossover_type: None,
@@ -1282,7 +1482,7 @@ impl PlayerView {
                     {
                         let dots = match (std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
+                            .unwrap_or_default()
                             .as_millis()
                             / 500)
                             % 4

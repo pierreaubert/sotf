@@ -1,0 +1,117 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "60s"
+size = "1440x900"
+
+[[scenario]]
+name = "roomeq-wizard-ui-happy"
+path = "crates/sotf-dev-driver/scenarios/roomeq_wizard_ui_happy.scn"
+timeout = "180s"
+tags = ["roomeq", "ui", "fixtures", "wizard"]
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true
+
+[[scenario]]
+name = "roomeq-simple-mode"
+path = "crates/sotf-dev-driver/scenarios/roomeq_simple_mode.scn"
+timeout = "30s"
+tags = ["roomeq", "ui", "simple"]
+
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true
+
+[[scenario]]
+name = "roomeq-advanced-mode"
+path = "crates/sotf-dev-driver/scenarios/roomeq_advanced_mode.scn"
+timeout = "30s"
+tags = ["roomeq", "ui", "advanced"]
+
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true
+
+[[scenario]]
+name = "roomeq-validation-cancel"
+path = "crates/sotf-dev-driver/scenarios/roomeq_validation_cancel.scn"
+timeout = "240s"
+tags = ["roomeq", "ui", "fixtures", "cancel", "retry"]
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true
+
+[[scenario]]
+name = "roomeq-missing-channel-repair"
+path = "crates/sotf-dev-driver/scenarios/roomeq_missing_channel_repair.scn"
+timeout = "30s"
+tags = ["roomeq", "validation", "repair", "ui", "fixture"]
+
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true
+invalid = "missing-channel"
+
+[[scenario]]
+name = "roomeq-mismatched-grid"
+path = "crates/sotf-dev-driver/scenarios/roomeq_mismatched_grid.scn"
+timeout = "30s"
+tags = ["roomeq", "validation", "grid", "ui", "fixture"]
+
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true
+invalid = "mismatched-grid"
+
+[[scenario]]
+name = "roomeq-review-export-apply"
+path = "crates/sotf-dev-driver/scenarios/roomeq_review_export_apply.scn"
+timeout = "180s"
+tags = ["roomeq", "ui", "review", "export", "apply"]
+
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true

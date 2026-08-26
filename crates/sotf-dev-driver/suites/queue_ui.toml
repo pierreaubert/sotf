@@ -1,0 +1,13 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+demo_audio_dir = "data_tests/audio"
+readiness_timeout = "20s"
+size = "1440x900"
+
+[[scenario]]
+name = "queue-manage-reorder"
+path = "crates/sotf-dev-driver/scenarios/queue_manage_reorder.scn"
+seed_demo_audio = true
+timeout = "30s"
+tags = ["queue", "ui", "reorder", "undo", "seeded"]

@@ -185,7 +185,6 @@ fn default_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-left", actions::PrevPage, None),
         KeyBinding::new("cmd-right", actions::NextPage, None),
         // Enter action - PlayerView context so text editing can use Enter
-        KeyBinding::new("enter", actions::Enter, Some("PlayerView")),
         KeyBinding::new("a", actions::Enter, Some("PlayerView")),
         // Remove/delete
         KeyBinding::new("d", actions::RemoveItem, Some("PlayerView")),
@@ -202,9 +201,13 @@ fn default_bindings() -> Vec<KeyBinding> {
         ),
         KeyBinding::new("S", actions::SwitchToSettings, Some("PlayerView")),
         // Level meter controls - PlayerView context so text editing isn't intercepted
-        KeyBinding::new("tab", actions::SelectNextMeterGroup, Some("PlayerView")),
         KeyBinding::new(
-            "shift-tab",
+            "ctrl-tab",
+            actions::SelectNextMeterGroup,
+            Some("PlayerView"),
+        ),
+        KeyBinding::new(
+            "ctrl-shift-tab",
             actions::SelectPrevMeterGroup,
             Some("PlayerView"),
         ),

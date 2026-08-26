@@ -1,0 +1,26 @@
+schema_version = 1
+version = 1
+target = "tvos-sim"
+fixture_profiles = ["default", "demo-audio"]
+
+[[actions]]
+id = "remote-select"
+family = "remote"
+weight = 100
+[actions.payload]
+type = "coordinate"
+[actions.payload.input]
+kind = "remote"
+command = "select"
+pressed = true
+
+[[actions]]
+id = "remote-menu"
+family = "remote"
+weight = 60
+[actions.payload]
+type = "coordinate"
+[actions.payload.input]
+kind = "remote"
+command = "menu"
+pressed = true

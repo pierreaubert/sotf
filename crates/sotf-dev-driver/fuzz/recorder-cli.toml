@@ -1,0 +1,20 @@
+schema_version = 1
+version = 1
+target = "recorder-cli"
+fixture_profiles = ["default", "fake-capture"]
+
+[[actions]]
+id = "show-help"
+family = "argv"
+weight = 100
+[actions.payload]
+type = "process_argv"
+argv = ["--help"]
+
+[[actions]]
+id = "bounded-wait"
+family = "timing"
+weight = 20
+[actions.payload]
+type = "wait"
+duration_ms = 10

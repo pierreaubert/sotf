@@ -1,3 +1,5 @@
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::DevTrackExt;
 use crate::app::types::OptimizationStatus;
 use crate::components::autoeq::{
     AlgorithmConfig, AutoEqConfig, AutoEqForm, AutoEqFormUiState, EqDesignConfig, GoalsConfig,
@@ -13,6 +15,19 @@ use gpui_ui_kit::{
     ProgressSize, ProgressVariant, Spinner, SpinnerSize, StackSpacing, Text, TextSize, TextWeight,
     VStack,
 };
+
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
 
 impl PlayerView {
     // ========================================================================
@@ -837,26 +852,34 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(if is_optimizing {
-                                Button::new("cancel_optimization", discovery_text.cancel)
-                                    .variant(ButtonVariant::Secondary)
+                                dev_track!(
+                                    Button::new("cancel_optimization", discovery_text.cancel)
+                                        .variant(ButtonVariant::Secondary)
+                                        .size(ButtonSize::Md)
+                                        .full_width(true)
+                                        .theme(button_theme.clone())
+                                        .on_click_event(cx.listener(|view, _, _, cx| {
+                                            view.cancel_headphone_eq_optimization(cx);
+                                        })),
+                                    "headphone.optimize_cancel"
+                                )
+                            } else {
+                                dev_track!(
+                                    Button::new(
+                                        "start_optimization",
+                                        discovery_text.generate_headphone_eq,
+                                    )
+                                    .variant(ButtonVariant::Primary)
                                     .size(ButtonSize::Md)
                                     .full_width(true)
                                     .theme(button_theme.clone())
-                                    .on_click_event(cx.listener(|view, _, _, cx| {
-                                        view.cancel_headphone_eq_optimization(cx);
-                                    }))
-                            } else {
-                                Button::new(
-                                    "start_optimization",
-                                    discovery_text.generate_headphone_eq,
+                                    .on_click_event(
+                                        cx.listener(|view, _, _, cx| {
+                                            view.start_headphone_eq_optimization(cx);
+                                        })
+                                    ),
+                                    "headphone.optimize_start"
                                 )
-                                .variant(ButtonVariant::Primary)
-                                .size(ButtonSize::Md)
-                                .full_width(true)
-                                .theme(button_theme.clone())
-                                .on_click_event(cx.listener(|view, _, _, cx| {
-                                    view.start_headphone_eq_optimization(cx);
-                                }))
                             })
                             .when(show_progress, |vstack| {
                                 let display_progress = if is_completed {

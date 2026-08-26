@@ -6,6 +6,20 @@ use gpui_ui_kit::{
     TextWeight, VStack,
 };
 
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 impl PlayerView {
     // ========================================================================
     // Step 4: Export
@@ -105,7 +119,7 @@ impl PlayerView {
                                                 }),
                                         )
                                     })
-                                    .child(
+                                    .child(dev_track!(
                                         Button::new(
                                             "save-spinorama-eq",
                                             discovery_text.save_eq_file,
@@ -118,7 +132,8 @@ impl PlayerView {
                                                 view.save_spinorama_eq_result(cx);
                                             }),
                                         ),
-                                    ),
+                                        "spinorama.export_save"
+                                    )),
                             ),
                     )
             })

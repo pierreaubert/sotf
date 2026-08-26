@@ -1,0 +1,28 @@
+schema_version = 1
+version = 1
+target = "configbar"
+fixture_profiles = ["lab"]
+
+[[actions]]
+id = "refresh-snapshot"
+family = "bridge-read"
+weight = 120
+[actions.payload]
+type = "ipc"
+command = { intent = "snapshot" }
+
+[[actions]]
+id = "toggle-menu"
+family = "accessibility"
+weight = 60
+[actions.payload]
+type = "ipc"
+command = { intent = "toggle_menu" }
+
+[[actions]]
+id = "settle"
+family = "timing"
+weight = 20
+[actions.payload]
+type = "wait"
+duration_ms = 20

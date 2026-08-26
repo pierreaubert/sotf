@@ -7,10 +7,28 @@ use super::misc::urlencode;
 use super::parse::parse_compare;
 use super::parse::parse_dev_response_body;
 use super::parse::parse_duration;
+use super::verb::accessibility_node_matches;
+use super::verb::mean_pixel_delta;
+use super::verb::parse_resize_dimensions;
+use super::verb::parse_typed_text;
+use super::verb::typed_keystroke;
+use super::verb::write_snapshot_artifacts;
 use serde_json::Value;
 use std::time::Duration;
 
 use serde_json::json;
+
+#[test]
+fn accessibility_match_is_role_insensitive_but_label_specific() {
+    let nodes = vec![json!({ "role": "button", "label": "Studio Rack" })];
+    assert!(accessibility_node_matches(&nodes, "BUTTON", "Studio"));
+    assert!(!accessibility_node_matches(&nodes, "textbox", "Studio"));
+    assert!(!accessibility_node_matches(
+        &nodes,
+        "button",
+        "Search speakers"
+    ));
+}
 
 #[test]
 fn comment_stripping() {
@@ -34,6 +52,69 @@ fn duration_suffixes() {
         parse_duration("1.5ms").unwrap(),
         Duration::from_micros(1500)
     );
+}
+
+#[test]
+fn typed_text_uses_the_platform_key_names_for_whitespace() {
+    assert_eq!(typed_keystroke('a'), "a");
+    assert_eq!(typed_keystroke('É'), "É");
+    assert_eq!(typed_keystroke(' '), "space");
+    assert_eq!(typed_keystroke('\t'), "tab");
+    assert_eq!(typed_keystroke('\n'), "enter");
+}
+
+#[test]
+fn typed_text_accepts_json_quoted_values_and_plain_text() {
+    assert_eq!(parse_typed_text("plain text").unwrap(), "plain text");
+    assert_eq!(
+        parse_typed_text(r#""playlist #1\nnew""#).unwrap(),
+        "playlist #1\nnew"
+    );
+    assert!(parse_typed_text("").is_err());
+    assert!(parse_typed_text(r#""unterminated"#).is_err());
+}
+
+#[test]
+fn resize_dimensions_require_exact_positive_numbers() {
+    assert_eq!(parse_resize_dimensions("700 600").unwrap(), (700.0, 600.0));
+    assert!(parse_resize_dimensions("700").is_err());
+    assert!(parse_resize_dimensions("700 600 1").is_err());
+    assert!(parse_resize_dimensions("0 600").is_err());
+    assert!(parse_resize_dimensions("700 NaN").is_err());
+}
+
+#[test]
+fn snapshot_delta_is_normalized_mean_absolute_channel_error() {
+    assert_eq!(mean_pixel_delta(&[], &[]), 0.0);
+    assert_eq!(mean_pixel_delta(&[0, 255], &[0, 255]), 0.0);
+    assert!((mean_pixel_delta(&[0, 255], &[255, 0]) - 1.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn snapshot_mismatch_artifacts_include_expected_actual_diff_and_comparison() {
+    let temporary_directory = tempfile::tempdir().unwrap();
+    let mut actual = image::RgbaImage::new(2, 1);
+    actual.put_pixel(0, 0, image::Rgba([10, 20, 30, 255]));
+    actual.put_pixel(1, 0, image::Rgba([40, 50, 60, 255]));
+    let mut baseline = image::RgbaImage::new(2, 1);
+    baseline.put_pixel(0, 0, image::Rgba([10, 10, 10, 255]));
+    baseline.put_pixel(1, 0, image::Rgba([40, 50, 60, 255]));
+
+    let artifacts =
+        write_snapshot_artifacts(&actual, &baseline, temporary_directory.path(), "playlist")
+            .unwrap();
+
+    assert_eq!(artifacts, temporary_directory.path());
+    assert!(artifacts.join("playlist-expected.png").is_file());
+    assert!(artifacts.join("playlist-actual.png").is_file());
+    assert!(artifacts.join("playlist-diff.png").is_file());
+    let comparison = image::open(artifacts.join("playlist-comparison.png"))
+        .unwrap()
+        .to_rgba8();
+    assert_eq!(comparison.dimensions(), (6, 1));
+    assert_eq!(*comparison.get_pixel(0, 0), image::Rgba([10, 10, 10, 255]));
+    assert_eq!(*comparison.get_pixel(2, 0), image::Rgba([10, 20, 30, 255]));
+    assert_eq!(*comparison.get_pixel(4, 0), image::Rgba([0, 40, 80, 255]));
 }
 
 #[test]

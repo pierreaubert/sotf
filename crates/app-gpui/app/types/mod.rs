@@ -105,6 +105,24 @@ impl Screen {
         }
     }
 
+    pub fn is_player_surface(self) -> bool {
+        matches!(
+            self,
+            Screen::Home
+                | Screen::HomeShelf
+                | Screen::NowPlaying
+                | Screen::Library
+                | Screen::Streams
+                | Screen::Queue
+                | Screen::Playlists
+                | Screen::Spectrum
+        )
+    }
+
+    pub fn is_studio_surface(self) -> bool {
+        matches!(self, Screen::StudioHub | Screen::EqCurve) || self.is_studio_tool()
+    }
+
     pub fn is_studio_tool(self) -> bool {
         matches!(
             self,

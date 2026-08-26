@@ -1,0 +1,85 @@
+schema_version = 1
+version = 1
+target = "tui"
+fixture_profiles = ["default", "demo-audio"]
+
+[[actions]]
+id = "navigate-library"
+family = "navigation"
+weight = 160
+timeout_ms = 5000
+[actions.payload]
+type = "dev_action"
+name = "SwitchToLibrary"
+payload = {}
+
+[[actions]]
+id = "navigate-queue"
+family = "navigation"
+weight = 120
+timeout_ms = 5000
+[actions.payload]
+type = "dev_action"
+name = "SwitchToQueue"
+payload = {}
+
+[[actions]]
+id = "navigate-configure"
+family = "navigation"
+weight = 80
+timeout_ms = 5000
+[actions.payload]
+type = "dev_action"
+name = "SwitchToConfigure"
+payload = {}
+
+[[actions]]
+id = "toggle-playback"
+family = "transport"
+weight = 100
+precondition_id = "player-ready"
+timeout_ms = 5000
+[actions.precondition]
+op = "exists"
+path = "state.playback.is_playing"
+[actions.payload]
+type = "dev_action"
+name = "PlayPause"
+payload = {}
+
+[[actions]]
+id = "keyboard-down"
+family = "keyboard"
+weight = 60
+timeout_ms = 5000
+[actions.payload]
+type = "key"
+keystroke = "down"
+
+[[actions]]
+id = "recover-library"
+family = "recovery"
+weight = 100
+recovery = true
+timeout_ms = 5000
+[actions.payload]
+type = "dev_action"
+name = "SwitchToLibrary"
+payload = {}
+
+[[invariants]]
+id = "screen-present"
+terminal = false
+[invariants.condition]
+op = "exists"
+path = "state.screen"
+
+[[workflows]]
+from = "library"
+action = "navigate-queue"
+to = "queue"
+
+[[workflows]]
+from = "queue"
+action = "navigate-library"
+to = "library"

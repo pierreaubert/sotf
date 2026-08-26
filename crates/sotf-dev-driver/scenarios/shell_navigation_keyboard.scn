@@ -1,0 +1,89 @@
+# Desktop shell navigation must be exercised through rendered sidebar controls.
+# This is deliberately independent of feature-workflow scenarios: it proves the
+# user can reach each primary destination, every destination renders a named,
+# focusable control, and the sidebar remains usable after repeated navigation.
+
+# 2026-08-26: `Tab` was consumed by the PlayerView meter-group shortcut, so
+# focus stayed on Home instead of moving through the rendered sidebar. Player
+# was also a non-interactive heading and Studio navigation overloaded the rack
+# route, preventing explicit mode restoration. Fixed in app keybindings,
+# `App::{enter_player_mode,enter_studio_mode}`, and the sidebar mode controls.
+# Reproduce: `cargo build -p sotf-gpui --features dev-api --bin sotf-desktop`
+# then `target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/shell_navigation_ui.toml -v`.
+focus       library
+assert      screen.focused == "Library"
+assert_visible sidebar.nav-player
+assert_visible sidebar.nav-home
+assert_visible sidebar.nav-library
+assert_visible sidebar.nav-playing
+assert_visible sidebar.nav-queue
+assert_visible sidebar.nav-playlists
+assert_visible sidebar.nav-streams
+assert_visible sidebar.nav-studio
+assert_visible sidebar.nav-studio-rack
+assert_visible sidebar.nav-recording
+assert_visible sidebar.nav-room-eq
+assert_visible sidebar.nav-headphone-eq
+assert_visible sidebar.nav-spinorama
+assert_visible sidebar.nav-learning
+assert_visible sidebar.nav-preferences-button
+accessibility
+screenshot  shell-navigation-library
+
+click       sidebar.nav-home
+assert      screen.focused == "Home"
+assert_focused nav-home
+
+# Keyboard-only route change: focus moves through real sidebar controls and
+# Enter activates the focused destination without another pointer event.
+key         tab
+assert_focused nav-library
+key         enter
+assert      screen.focused == "Library"
+click       sidebar.nav-playing
+assert      screen.focused == "NowPlaying"
+click       sidebar.nav-queue
+assert      screen.focused == "Queue"
+click       sidebar.nav-playlists
+assert      screen.focused == "Playlists"
+click       sidebar.nav-streams
+assert      screen.focused == "Streams"
+click       sidebar.nav-studio
+assert      screen.focused == "Studio"
+click       sidebar.nav-recording
+assert      screen.focused == "Recording"
+click       sidebar.nav-room-eq
+assert      screen.focused == "RoomEq"
+click       sidebar.nav-headphone-eq
+assert      screen.focused == "HeadphoneEq"
+click       sidebar.nav-spinorama
+assert      screen.focused == "Spinorama"
+click       sidebar.nav-learning
+assert      screen.focused == "ListeningTest"
+click       sidebar.nav-preferences-button
+assert      screen.focused == "Settings"
+
+# Each explicit mode entry restores the last destination in that mode, while
+# the rack remains a distinct Studio destination.
+click       sidebar.nav-queue
+assert      screen.focused == "Queue"
+click       sidebar.nav-room-eq
+assert      screen.focused == "RoomEq"
+click       sidebar.nav-player
+assert      screen.focused == "Queue"
+click       sidebar.nav-studio
+assert      screen.focused == "RoomEq"
+click       sidebar.nav-studio-rack
+assert      screen.focused == "Studio"
+
+# Re-check the a11y tree after all selected-state transitions and at compact
+# width. The driver rejects unnamed focusables and pointer-only primary actions.
+resize      700 600
+wait_idle   2s
+assert_in_viewport sidebar.nav-home
+assert_in_viewport sidebar.nav-preferences-button
+assert_accessible button Studio Rack
+assert_inaccessible textbox Search speakers
+assert_inaccessible button Listening guide
+accessibility
+screenshot  shell-navigation-compact-settings

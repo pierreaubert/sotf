@@ -45,3 +45,24 @@ action      VolumeMax
 sleep       100ms
 action      VolumeMin
 sleep       100ms
+
+# Desktop Now Playing must expose the same queue traversal policy as phone.
+# Exercise painted controls rather than only dispatching state actions.
+click      sidebar.nav-playing
+assert     screen.focused == "NowPlaying"
+assert     playback.shuffle == false
+assert     playback.repeat == false
+assert_visible transport.shuffle
+assert_visible transport.repeat
+assert_accessible button Shuffle
+assert_accessible button Repeat
+click      transport.shuffle
+wait_until playback.shuffle == true timeout=2s
+click      transport.repeat
+wait_until playback.repeat == true timeout=2s
+click      transport.shuffle
+wait_until playback.shuffle == false timeout=2s
+click      transport.repeat
+wait_until playback.repeat == false timeout=2s
+accessibility
+screenshot now-playing-transport

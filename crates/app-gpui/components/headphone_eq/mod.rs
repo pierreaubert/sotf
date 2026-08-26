@@ -12,6 +12,8 @@ mod step_2_optimisation;
 mod step_3_listen;
 mod step_4_export;
 
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::DevTrackExt;
 use crate::app::types::{HeadphoneEqStep, Screen};
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
@@ -23,6 +25,19 @@ use gpui_ui_kit::{
     Button, ButtonSize, ButtonTheme, ButtonVariant, HStack, StackSpacing, StepStatus, WizardHeader,
     WizardStep, WizardTheme,
 };
+
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
 
 impl PlayerView {
     // ========================================================================
@@ -130,7 +145,7 @@ impl PlayerView {
 
         let navigation = HStack::new()
             .spacing(StackSpacing::Sm)
-            .child(
+            .child(dev_track!(
                 Button::new("back", back_label)
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Sm)
@@ -142,8 +157,9 @@ impl PlayerView {
                         });
                         cx.notify();
                     })),
-            )
-            .child(
+                "headphone.back"
+            ))
+            .child(dev_track!(
                 Button::new("next", next_label)
                     .variant(ButtonVariant::Primary)
                     .size(ButtonSize::Sm)
@@ -155,7 +171,8 @@ impl PlayerView {
                         });
                         cx.notify();
                     })),
-            );
+                "headphone.next"
+            ));
         let navigation = navigation.build().flex_none();
 
         // Home button for navigation back to Library

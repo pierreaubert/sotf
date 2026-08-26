@@ -10,6 +10,20 @@ use gpui_ui_kit::{
 };
 use sotf_audio_player::room_eq_types::estimate_probe_sequence_ms;
 
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 impl PlayerView {
     /// Render the Probe step UI.
     pub(crate) fn render_recording_probe_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -87,24 +101,30 @@ impl PlayerView {
                         },
                     ))
                     .child(HStack::new().spacing(StackSpacing::Sm).child(if running {
-                        Button::new("probe_cancel", translations.general_cancel)
-                            .variant(ButtonVariant::Secondary)
-                            .size(ButtonSize::Sm)
-                            .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(|view, _, _, cx| {
-                                view.cancel_probe_capture(cx);
-                            }))
+                        dev_track!(
+                            Button::new("probe_cancel", translations.general_cancel)
+                                .variant(ButtonVariant::Secondary)
+                                .size(ButtonSize::Sm)
+                                .theme(theme.to_button_theme())
+                                .on_click_event(cx.listener(|view, _, _, cx| {
+                                    view.cancel_probe_capture(cx);
+                                })),
+                            "recording.probe_cancel"
+                        )
                     } else {
-                        Button::new("probe_run", translations.recording_run_probe)
-                            .variant(ButtonVariant::Primary)
-                            .size(ButtonSize::Sm)
-                            .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(move |view, _, _, cx| {
-                                if !has_capture {
-                                    return;
-                                }
-                                view.start_probe_capture(cx);
-                            }))
+                        dev_track!(
+                            Button::new("probe_run", translations.recording_run_probe)
+                                .variant(ButtonVariant::Primary)
+                                .size(ButtonSize::Sm)
+                                .theme(theme.to_button_theme())
+                                .on_click_event(cx.listener(move |view, _, _, cx| {
+                                    if !has_capture {
+                                        return;
+                                    }
+                                    view.start_probe_capture(cx);
+                                })),
+                            "recording.probe_run"
+                        )
                     })),
             );
         let _ = view; // silence unused warning if the closure didn't capture
@@ -303,6 +323,11 @@ impl PlayerView {
     /// buffer to `<recording_directory>/probe_all_channels.wav` via
     /// `sotf_audio::signal_recorder::probe_channel_delays_with_recording`.
     pub(crate) fn start_probe_capture(&mut self, cx: &mut Context<Self>) {
+        #[cfg(feature = "dev-api")]
+        if self.complete_qa_fake_probe_capture(cx) {
+            return;
+        }
+
         // Snapshot the device config + form inputs outside the async
         // closure so the worker thread doesn't hold a borrow on the
         // GPUI state.
@@ -447,6 +472,49 @@ impl PlayerView {
             });
         })
         .detach();
+    }
+
+    /// Complete the QA probe from deterministic fixture data only after the
+    /// visible Run Probe control has been activated.
+    #[cfg(feature = "dev-api")]
+    fn complete_qa_fake_probe_capture(&mut self, cx: &mut Context<Self>) -> bool {
+        let completed = self.state.update(cx, |state, cx| {
+            let rec = &mut state.app.measurement_state.recording_state;
+            if rec.qa_fake_capture.is_none() {
+                return false;
+            }
+            let channels = rec
+                .playback_config
+                .channel_mappings
+                .iter()
+                .enumerate()
+                .map(
+                    |(index, mapping)| sotf_audio::signal_recorder::ProbeDelayChannelResult {
+                        channel_name: mapping.group_name.clone(),
+                        channel_index: mapping.interface_channel(),
+                        arrival_ms: 4.0 + index as f64 * 0.75,
+                        gain_db: -(index as f64 * 0.25),
+                        snr_db: 36.0 - index as f64,
+                    },
+                )
+                .collect::<Vec<_>>();
+            let alignment_delays_ms = channels
+                .iter()
+                .map(|channel| (channels[0].arrival_ms - channel.arrival_ms).max(0.0))
+                .collect();
+            let sample_rate = rec.probe_capture.sample_rate;
+            rec.probe_capture.apply_results(
+                sotf_audio::signal_recorder::ProbeDelayResults {
+                    channels,
+                    sample_rate,
+                    alignment_delays_ms,
+                },
+                None,
+            );
+            cx.notify();
+            true
+        });
+        completed
     }
 
     /// Request cancellation of an in-progress probe capture. The engine

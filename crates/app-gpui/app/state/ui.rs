@@ -134,6 +134,8 @@ impl Default for LayoutState {
 pub struct UIState {
     pub current_screen: Screen,
     pub last_screen: Screen,
+    pub last_player_screen: Screen,
+    pub last_studio_screen: Screen,
     pub input_mode: InputMode,
     pub active_menu: ActiveMenu,
     pub density_mode: DensityMode,
@@ -204,6 +206,8 @@ impl Default for UIState {
         Self {
             current_screen: Screen::Home,
             last_screen: Screen::Library,
+            last_player_screen: Screen::Home,
+            last_studio_screen: Screen::Studio,
             input_mode: InputMode::Normal,
             active_menu: ActiveMenu::None,
             density_mode: DensityMode::Standard,

@@ -1,0 +1,49 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+demo_audio_dir = "data_tests/audio"
+readiness_timeout = "20s"
+size = "1440x900"
+
+[[scenario]]
+name = "recording-fake-capture"
+path = "crates/sotf-dev-driver/scenarios/recording_fake_capture.scn"
+timeout = "30s"
+tags = ["recording", "fixture", "ui"]
+
+[scenario.fake_recording]
+channels = 2
+points = 48
+
+[[scenario]]
+name = "recording-device-loss-retry"
+path = "crates/sotf-dev-driver/scenarios/recording_cancel_retry_error.scn"
+timeout = "45s"
+tags = ["recording", "error", "retry"]
+
+[scenario.fake_recording]
+channels = 2
+points = 48
+fault = "device-loss"
+
+[[scenario]]
+name = "recording-clipping-retry"
+path = "crates/sotf-dev-driver/scenarios/recording_cancel_retry_error.scn"
+timeout = "45s"
+tags = ["recording", "error", "retry"]
+
+[scenario.fake_recording]
+channels = 2
+points = 48
+fault = "clipping"
+
+[[scenario]]
+name = "recording-io-failure-retry"
+path = "crates/sotf-dev-driver/scenarios/recording_cancel_retry_error.scn"
+timeout = "45s"
+tags = ["recording", "error", "retry"]
+
+[scenario.fake_recording]
+channels = 2
+points = 48
+fault = "io-failure"

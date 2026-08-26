@@ -741,6 +741,8 @@ impl PlayerView {
         let position_secs = state.app.playback.position_secs;
         let duration_secs = state.app.playback.duration_secs;
         let is_playing = state.app.playback.is_playing;
+        let shuffle_enabled = state.app.ui_state.phone_shuffle_enabled;
+        let repeat_enabled = state.app.ui_state.phone_repeat_enabled;
 
         // Format time as MM:SS
         let format_time = |secs: f64| -> String {
@@ -876,6 +878,48 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .gap(d.grid)
+                            .child({
+                                #[cfg(feature = "dev-api")]
+                                use crate::app::dev_api::DevTrackExt;
+                                let tt = theme_clone.clone();
+                                let label = text.shuffle;
+                                let wrapper = div()
+                                    .id("transport-shuffle-wrapper")
+                                    .on_click(cx.listener(
+                                        |view, _event: &ClickEvent, _window, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                state.app.ui_state.phone_shuffle_enabled =
+                                                    !state.app.ui_state.phone_shuffle_enabled;
+                                            });
+                                            cx.notify();
+                                        },
+                                    ))
+                                    .tooltip(move |_window, cx| footer_tooltip(label, &tt, cx))
+                                    .child(
+                                        IconButton::with_child(
+                                            "transport-shuffle",
+                                            Icon::new(IconName::Shuffle).size(IconSize::Sm).color(
+                                                if shuffle_enabled {
+                                                    theme_clone.accent
+                                                } else {
+                                                    theme_clone.text_primary
+                                                },
+                                            ),
+                                        )
+                                        .variant(IconButtonVariant::Ghost)
+                                        .size(IconButtonSize::Sm)
+                                        .rounded_full()
+                                        .selected(shuffle_enabled)
+                                        .aria_label(label)
+                                        .theme(theme_clone.to_icon_button_theme()),
+                                    );
+                                #[cfg(feature = "dev-api")]
+                                let wrapper = wrapper.dev_track_with_state(
+                                    "transport.shuffle",
+                                    crate::app::dev_api::DevElementState::default(),
+                                );
+                                wrapper
+                            })
                             // Previous track
                             .child({
                                 let tt = theme_clone.clone();
@@ -979,7 +1023,12 @@ impl PlayerView {
                                         .theme(theme_clone.to_icon_button_theme()),
                                     );
                                 #[cfg(feature = "dev-api")]
-                                let wrapper = wrapper.dev_track("transport.play");
+                                let wrapper = wrapper.dev_track_with_state(
+                                    "transport.play",
+                                    crate::app::dev_api::DevElementState::default()
+                                        .enabled(true)
+                                        .selected(is_playing),
+                                );
                                 wrapper
                             })
                             // Seek forward
@@ -1059,6 +1108,46 @@ impl PlayerView {
                                 .justify_end()
                                 .child(duration_str.clone()),
                         )
+                    })
+                    .child({
+                        #[cfg(feature = "dev-api")]
+                        use crate::app::dev_api::DevTrackExt;
+                        let tt = theme_clone.clone();
+                        let label = text.repeat;
+                        let wrapper = div()
+                            .id("transport-repeat-wrapper")
+                            .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.ui_state.phone_repeat_enabled =
+                                        !state.app.ui_state.phone_repeat_enabled;
+                                });
+                                cx.notify();
+                            }))
+                            .tooltip(move |_window, cx| footer_tooltip(label, &tt, cx))
+                            .child(
+                                IconButton::with_child(
+                                    "transport-repeat",
+                                    Icon::new(IconName::Repeat).size(IconSize::Sm).color(
+                                        if repeat_enabled {
+                                            theme_clone.accent
+                                        } else {
+                                            theme_clone.text_primary
+                                        },
+                                    ),
+                                )
+                                .variant(IconButtonVariant::Ghost)
+                                .size(IconButtonSize::Sm)
+                                .rounded_full()
+                                .selected(repeat_enabled)
+                                .aria_label(label)
+                                .theme(theme_clone.to_icon_button_theme()),
+                            );
+                        #[cfg(feature = "dev-api")]
+                        let wrapper = wrapper.dev_track_with_state(
+                            "transport.repeat",
+                            crate::app::dev_api::DevElementState::default(),
+                        );
+                        wrapper
                     }),
             )
             // When waveform is hidden, show compact time display below transport (not in HAL mode)

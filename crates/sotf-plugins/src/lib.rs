@@ -207,6 +207,76 @@ pub mod param_specs {
     pub mod channel_mute_solo {
         pub use sotf_plugin_channel_mute_solo::params::*;
     }
+
+    /// Return the canonical parameter specifications for a built-in plugin.
+    ///
+    /// Consumers which can only identify a plugin by its persisted factory
+    /// name (for example A/B path editors) should use this instead of keeping
+    /// a second, potentially stale mapping of parameter ranges and defaults.
+    /// Plugins whose parameters are discovered dynamically return an empty
+    /// slice; unknown and external plugin types return `None`.
+    pub fn for_plugin_type(plugin_type: &str) -> Option<&'static [ParamSpec]> {
+        let specs = match plugin_type {
+            "EQ" | "eq" => eq::GLOBAL_PARAMS,
+            "Compressor" | "compressor" => compressor::PARAMS,
+            "Limiter" | "limiter" => limiter::PARAMS,
+            "Gate" | "gate" => gate::PARAMS,
+            "Gain" | "gain" => gain::PARAMS,
+            "Expander" | "expander" => expander::PARAMS,
+            "Crossfeed" | "crossfeed" => crossfeed::PARAMS,
+            "FletcherMunson"
+            | "fletcher_munson"
+            | "LoudnessCompensation"
+            | "loudness_compensation" => loudness_compensation::PARAMS,
+            "MultibandCompressor" | "multiband_compressor" => multiband_compressor::GLOBAL_PARAMS,
+            "MultibandExpander" | "multiband_expander" => multiband_expander::GLOBAL_PARAMS,
+            "Upmixer" | "upmixer" => upmixer::PARAMS,
+            "AAE" | "aae" => aae::PARAMS,
+            "XTC" | "xtc" => xtc::PARAMS,
+            "Binaural" | "binaural" | "BinauralDecoder" | "binaural_decoder" => binaural::PARAMS,
+            "ChannelMuteSolo" | "channel_mute_solo" => channel_mute_solo::PARAMS,
+            "Convolution" | "convolution" => convolution::PARAMS,
+            "ABCompare" | "ab_compare" => ab_compare::PARAMS,
+            "MonoToStereo" | "mono_to_stereo" => mono_to_stereo::PARAMS,
+            "PND" | "pnd" => pnd::PARAMS,
+            "Denoiser" | "denoiser" => denoiser::PARAMS,
+            "SpeechDenoiser" | "speech_denoiser" | "RNNoise" | "rnnoise" => speech_denoiser::PARAMS,
+            "HissReducer" | "hiss_reducer" => hiss_reducer::PARAMS,
+            "Declick" | "declick" | "TransientRepair" | "transient_repair" => declick::PARAMS,
+            "Downmix" | "downmix" => downmix::PARAMS,
+            "Saturation" | "saturation" => saturation::PARAMS,
+            "StereoImager" | "stereo_imager" => stereo_imager::PARAMS,
+            "TransientShaper" | "transient_shaper" => transient_shaper::PARAMS,
+            "DeEsser" | "de_esser" => de_esser::PARAMS,
+            "DynamicEQ" | "dynamic_eq" => dynamic_eq::PARAMS,
+            "LinearPhaseEQ" | "linear_phase_eq" => linear_phase_eq::PARAMS,
+            "Dither" | "dither" => dither::PARAMS,
+            "BandSplit" | "band_split" => band_split::PARAMS,
+            "BandMerge" | "band_merge" => band_merge::PARAMS,
+            "AEC" | "aec" => aec::PARAMS,
+            "Beamformer" | "beamformer" => beamformer::PARAMS,
+            "SpectralCompressor" | "spectral_compressor" => spectral_compressor::PARAMS,
+            "AmbisonicsDecoder" | "ambisonics_decoder" => ambisonics::PARAMS,
+            "Delay" | "delay" | "Matrix" | "matrix" | "Crossover" | "crossover"
+            | "LoudnessMonitor" | "loudness_monitor" | "SpectrumAnalyzer" | "spectrum_analyzer" => {
+                &[]
+            }
+            _ => return None,
+        };
+        Some(specs)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::for_plugin_type;
+
+        #[test]
+        fn resolves_persisted_plugin_aliases_without_panicking() {
+            assert!(for_plugin_type("gain").is_some_and(|specs| !specs.is_empty()));
+            assert!(for_plugin_type("Gain").is_some_and(|specs| !specs.is_empty()));
+            assert!(for_plugin_type("external").is_none());
+        }
+    }
     #[cfg(all(target_os = "macos", feature = "hal"))]
     pub mod hal_input {
         pub use sotf_plugin_hal_input::params::*;

@@ -287,7 +287,11 @@ pub fn take_verdict_text(q: &TakeQualitySummary) -> String {
     match q.drift_ppm {
         Some(ppm) => parts.push(format!(
             "drift {ppm:+.0} ppm{}",
-            if q.drift_corrected { " (corrected)" } else { "" }
+            if q.drift_corrected {
+                " (corrected)"
+            } else {
+                ""
+            }
         )),
         None => parts.push("drift n/a".to_string()),
     }
@@ -307,10 +311,7 @@ pub fn take_verdict_text(q: &TakeQualitySummary) -> String {
 /// - `OK* <score>` — accepted despite quality warnings (distinct from clean);
 /// - `OK <score>` — clean take;
 /// - empty string when there is nothing to say yet.
-pub fn take_quality_cell(
-    state: ChannelRecordingState,
-    result: Option<&RecordingResult>,
-) -> String {
+pub fn take_quality_cell(state: ChannelRecordingState, result: Option<&RecordingResult>) -> String {
     let quality = result.and_then(|r| r.quality.as_ref());
     match (state, quality) {
         (ChannelRecordingState::ReviewNeeded, Some(q)) => format!("REVIEW {:.2}", q.score),
@@ -346,9 +347,7 @@ pub fn dropout_warning(dropped_samples: u64) -> Option<String> {
 /// of it (Audyssey/Dirac guidance).
 pub fn position_guidance(pos: usize, total: usize) -> String {
     if pos == 0 {
-        format!(
-            "Position 1 of {total}: place the mic(s) at the main listening position first"
-        )
+        format!("Position 1 of {total}: place the mic(s) at the main listening position first")
     } else {
         format!(
             "Move the mic(s) to position {} of {total} — stay within ~60 cm of the main listening position",

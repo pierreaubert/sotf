@@ -13,13 +13,14 @@ fn parses_suite_with_scenario_alias() {
             seed_demo_audio = true
             tags = ["smoke"]
 
-            [scenario.fake_recording]
-            channels = 2
-            points = 48
+[scenario.fake_recording]
+channels = 2
+points = 48
+fault = "clipping"
 
             [scenario.room_eq]
-            fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
-            dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+            fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+            dist_path = "fixtures/roomeq/stereo_reference"
             target = "NearField"
             loss = "Flat"
             processing = "Iir"
@@ -35,6 +36,7 @@ fn parses_suite_with_scenario_alias() {
     let fake = suite.scenarios[0].fake_recording.as_ref().unwrap();
     assert_eq!(fake.channels, 2);
     assert_eq!(fake.points, 48);
+    assert_eq!(fake.fault.as_deref(), Some("clipping"));
     let room_eq = suite.scenarios[0].room_eq.as_ref().unwrap();
     assert_eq!(room_eq.target, "NearField");
     assert_eq!(room_eq.loss, "Flat");
@@ -64,5 +66,5 @@ fn checked_in_suites_parse() {
     assert_eq!(tui.scenarios.len(), 19);
 
     let full: SuiteFile = toml::from_str(include_str!("../../suites/full_matrix.toml")).unwrap();
-    assert_eq!(full.scenarios.len(), 15);
+    assert_eq!(full.scenarios.len(), 20);
 }

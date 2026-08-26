@@ -18,9 +18,11 @@ use gpui::{
 };
 
 use super::registry;
+use super::registry::DevElementState;
 
 pub struct DevTrack<E> {
     selector: String,
+    state: DevElementState,
     inner: E,
 }
 
@@ -55,7 +57,6 @@ impl<E: Element> Element for DevTrack<E> {
         window: &mut Window,
         cx: &mut App,
     ) -> Self::PrepaintState {
-        registry::record(&self.selector, bounds);
         self.inner
             .prepaint(id, inspector_id, bounds, request_layout, window, cx)
     }
@@ -70,6 +71,10 @@ impl<E: Element> Element for DevTrack<E> {
         window: &mut Window,
         cx: &mut App,
     ) {
+        // Deferred elements can be repositioned between prepaint and paint.
+        // Publish the final screen-space bounds used for hit testing so QA
+        // clicks target menus, popovers, and dialogs at their painted location.
+        registry::record_with_state(&self.selector, bounds, self.state.clone());
         self.inner.paint(
             id,
             inspector_id,
@@ -93,6 +98,22 @@ pub trait DevTrackExt: IntoElement + Sized {
     fn dev_track(self, selector: impl Into<String>) -> DevTrack<Self::Element> {
         DevTrack {
             selector: selector.into(),
+            state: DevElementState::default(),
+            inner: self.into_element(),
+        }
+    }
+
+    /// Publish explicit rendered state alongside an element's bounds. State is
+    /// opt-in at the element call site so a scenario cannot accidentally treat
+    /// an unpainted model value as UI evidence.
+    fn dev_track_with_state(
+        self,
+        selector: impl Into<String>,
+        state: DevElementState,
+    ) -> DevTrack<Self::Element> {
+        DevTrack {
+            selector: selector.into(),
+            state,
             inner: self.into_element(),
         }
     }

@@ -1,0 +1,18 @@
+# First launch with the suite's empty QA directory presents onboarding. Marking
+# it complete must persist before the dialog closes, then expose the empty
+# library's next action instead of leaving a blocked loading state.
+wait_until input_mode == "Tutorial" timeout=5s
+assert_visible onboarding.dont_show
+assert_visible onboarding.next
+assert_accessible checkbox Don't show again
+click onboarding.dont_show
+assert onboarding.completed == true
+click onboarding.next
+click onboarding.next
+click onboarding.next
+click onboarding.next
+click onboarding.next
+click onboarding.next
+assert_visible onboarding.complete
+click onboarding.complete
+wait_until input_mode == "EmptyLibraryPrompt" timeout=5s

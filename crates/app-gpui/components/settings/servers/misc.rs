@@ -11,6 +11,20 @@ use std::rc::Rc;
 
 const SERVER_QR_CODE_SIZE_PX: f32 = 220.0;
 
+macro_rules! dev_track {
+    ($element:expr, $selector:expr $(,)?) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 impl PlayerView {
     /// Render server settings content
     pub(crate) fn render_servers_settings_content(
@@ -41,6 +55,10 @@ impl PlayerView {
             .child(self.render_mpd_section(&server_config, &theme, &translations, &d, cx))
             // DLNA Server section
             .child(self.render_dlna_section(&server_config, &theme, &d, cx))
+            // Remote SOTF players are a client-side connection setting, not a
+            // hosted media-server option, but belong alongside the other
+            // server configuration surfaces.
+            .child(self.render_remote_sotf_section(&theme, &d, cx))
     }
 
     pub(super) fn render_sotf_api_section(
@@ -217,6 +235,7 @@ impl PlayerView {
         let port = mpd.port.to_string();
         let tls_enabled = mpd.tls_enabled;
         let has_password = mpd.password.is_some();
+        let show_mpd_password = self.state.read(cx).app.settings.show_mpd_password;
         let selected_mpd_state = if mpd_enabled { "enabled" } else { "disabled" };
         let cert_auth =
             mpd.auth_mode == sotf_audio_player::federation_config::MpdAuthMode::Certificate;
@@ -225,6 +244,8 @@ impl PlayerView {
         let state_for_bind = self.state.clone();
         let state_for_port = self.state.clone();
         let state_for_pw = self.state.clone();
+        let state_for_pw_reveal = self.state.clone();
+        let view_for_pw_reveal = cx.entity().clone();
 
         div()
             .flex()
@@ -406,7 +427,7 @@ impl PlayerView {
                     )
                     // Password (only shown when auth mode is Password)
                     .when(!cert_auth, |stack| {
-                        stack.child(server_editable_field(
+                        stack.child(server_secret_field(
                             "mpd-password",
                             text.password,
                             "",
@@ -417,11 +438,19 @@ impl PlayerView {
                             },
                             theme,
                             d,
+                            show_mpd_password,
                             move |val, _window, cx| {
                                 let v = val.to_string();
                                 state_for_pw.update(cx, |state, _cx| {
                                     state.app.update_mpd_field("password", &v);
                                 });
+                            },
+                            move |cx| {
+                                state_for_pw_reveal.update(cx, |state, _| {
+                                    state.app.settings.show_mpd_password =
+                                        !state.app.settings.show_mpd_password;
+                                });
+                                view_for_pw_reveal.update(cx, |_, cx| cx.notify());
                             },
                         ))
                     })
@@ -606,9 +635,12 @@ impl PlayerView {
         ) = remote;
         let selected_id = store.selected_server_id.clone();
         let server_count = store.servers.len();
+        let show_manual_remote_token = self.state.read(cx).app.settings.show_manual_remote_token;
         let state_for_name = self.state.clone();
         let state_for_url = self.state.clone();
         let state_for_token = self.state.clone();
+        let state_for_token_reveal = self.state.clone();
+        let view_for_token_reveal = cx.entity().clone();
 
         let mut section = div()
             .flex()
@@ -722,22 +754,29 @@ impl PlayerView {
                             });
                         },
                     ))
-                    .child(server_editable_field(
+                    .child(server_secret_field(
                         "remote-sotf-token",
                         "API Token",
                         &manual_token,
                         "Paste SOTF API token",
                         theme,
                         d,
+                        show_manual_remote_token,
                         move |val, _window, cx| {
                             let value = val.to_string();
                             state_for_token.update(cx, |state, _cx| {
                                 state.app.update_manual_remote_server_token(value);
                             });
                         },
+                        move |cx| {
+                            state_for_token_reveal.update(cx, |state, _| {
+                                state.app.settings.show_manual_remote_token =
+                                    !state.app.settings.show_manual_remote_token;
+                            });
+                            view_for_token_reveal.update(cx, |_, cx| cx.notify());
+                        },
                     ))
-                    .child(
-                        div().flex().justify_end().child(
+                    .child(div().flex().justify_end().child(dev_track!(
                             Button::new("add-manual-sotf-remote", text.add_server)
                                 .variant(ButtonVariant::Primary)
                                 .size(ButtonSize::Xs)
@@ -758,8 +797,8 @@ impl PlayerView {
                                         cx.notify();
                                     },
                                 )),
-                        ),
-                    )
+                            "settings.servers.remote.add",
+                        )))
                     .build(),
             );
 
@@ -1051,6 +1090,85 @@ pub(crate) fn server_editable_field(
     d: &Ds,
     on_change: impl Fn(&str, &mut Window, &mut gpui::App) + 'static,
 ) -> impl IntoElement {
+    server_editable_field_with_mode(id, label, value, placeholder, false, theme, d, on_change)
+}
+
+/// Render a server credential field. Its rendered and accessibility values are
+/// masked by the toolkit; the value is only passed to the configured callback.
+pub(crate) fn server_secret_field(
+    id: &str,
+    label: &str,
+    value: &str,
+    placeholder: &str,
+    theme: &crate::app::theme::Theme,
+    d: &Ds,
+    revealed: bool,
+    on_change: impl Fn(&str, &mut Window, &mut gpui::App) + 'static,
+    on_toggle_reveal: impl Fn(&mut gpui::App) + 'static,
+) -> impl IntoElement {
+    let on_change = Rc::new(on_change);
+    let on_confirm = on_change.clone();
+    let on_text_change = on_change.clone();
+    let reveal_label = if revealed {
+        format!("Hide {label}")
+    } else {
+        format!("Show {label}")
+    };
+
+    div()
+        .flex()
+        .items_center()
+        .gap(d.gap)
+        .child(
+            div()
+                .w(rems(7.5))
+                .text_size(d.text_xs)
+                .text_color(theme.text_secondary)
+                .child(label.to_string()),
+        )
+        .child(div().flex_1().child(dev_track!(
+                Input::new(SharedString::from(id.to_string()))
+                    .value(SharedString::from(value.to_string()))
+                    .placeholder(SharedString::from(placeholder.to_string()))
+                    .size(InputSize::Sm)
+                    .password(!revealed)
+                    .aria_label(SharedString::from(label.to_string()))
+                    .on_text_change(move |value, window, cx| {
+                        on_text_change(&value, window, cx);
+                    })
+                    .on_change(move |value, window, cx| {
+                        on_confirm(value, window, cx);
+                    }),
+                format!("settings.servers.{id}"),
+            )))
+        .child(dev_track!(
+            Button::new(
+                SharedString::from(format!("{id}-reveal")),
+                if revealed { "Hide" } else { "Show" },
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ButtonSize::Xs)
+            .theme(theme.to_button_theme())
+            .aria_label(reveal_label)
+            .on_click(move |_, cx| {
+                // `Button` owns focus and keyboard activation, so this is
+                // deliberately a real control rather than an input icon.
+                on_toggle_reveal(cx);
+            }),
+            format!("settings.servers.{id}.reveal")
+        ))
+}
+
+fn server_editable_field_with_mode(
+    id: &str,
+    label: &str,
+    value: &str,
+    placeholder: &str,
+    secret: bool,
+    theme: &crate::app::theme::Theme,
+    d: &Ds,
+    on_change: impl Fn(&str, &mut Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
     let on_change = Rc::new(on_change);
     let on_confirm = on_change.clone();
     let on_text_change = on_change.clone();
@@ -1066,18 +1184,19 @@ pub(crate) fn server_editable_field(
                 .text_color(theme.text_secondary)
                 .child(label.to_string()),
         )
-        .child(
-            div().flex_1().child(
+        .child(div().flex_1().child(dev_track!(
                 Input::new(SharedString::from(id.to_string()))
                     .value(SharedString::from(value.to_string()))
                     .placeholder(SharedString::from(placeholder.to_string()))
                     .size(InputSize::Sm)
+                    .password(secret)
+                    .aria_label(SharedString::from(label.to_string()))
                     .on_text_change(move |value, window, cx| {
                         on_text_change(&value, window, cx);
                     })
                     .on_change(move |value, window, cx| {
                         on_confirm(value, window, cx);
                     }),
-            ),
-        )
+                format!("settings.servers.{id}"),
+            )))
 }

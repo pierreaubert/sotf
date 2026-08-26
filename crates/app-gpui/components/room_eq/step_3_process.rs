@@ -13,6 +13,20 @@ use gpui_ui_kit::{
 };
 use sotf_audio_player::room_eq_types::RoomEqWizardMode;
 
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 impl PlayerView {
     pub(crate) fn render_room_eq_process(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
@@ -71,7 +85,7 @@ impl PlayerView {
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
-                                    .child(
+                                    .child(dev_track!(
                                         Button::new("select-simple", workflow_text.select)
                                             .variant(if simple_selected {
                                                 ButtonVariant::Primary
@@ -103,7 +117,8 @@ impl PlayerView {
                                                 });
                                                 cx.notify();
                                             })),
-                                    ),
+                                        "roomeq.select_simple"
+                                    )),
                             ),
                     )
                     .child(
@@ -136,7 +151,7 @@ impl PlayerView {
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
-                                    .child(
+                                    .child(dev_track!(
                                         Button::new("select-full", workflow_text.select)
                                             .variant(if full_selected {
                                                 ButtonVariant::Primary
@@ -168,7 +183,8 @@ impl PlayerView {
                                                 });
                                                 cx.notify();
                                             })),
-                                    ),
+                                        "roomeq.select_full"
+                                    )),
                             ),
                     ),
             )

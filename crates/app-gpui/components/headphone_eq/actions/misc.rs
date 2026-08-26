@@ -516,6 +516,11 @@ impl PlayerView {
     }
 
     pub(crate) fn save_headphone_eq_result(&mut self, cx: &mut Context<Self>) {
+        #[cfg(feature = "dev-api")]
+        if self.save_headphone_eq_qa_export(cx) {
+            return;
+        }
+
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let state = self.state.read(cx);
@@ -626,58 +631,154 @@ impl PlayerView {
     }
 
     // ========================================================================
+    /// Write a deterministic export for the rendered QA build. The normal
+    /// desktop path below still presents the native save dialog in production.
+    #[cfg(feature = "dev-api")]
+    fn save_headphone_eq_qa_export(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(qa_directory) = std::env::var_os("SOTF_QA_DIR") else {
+            return false;
+        };
+
+        let (biquads, export_format, default_name) = {
+            let state = self.state.read(cx);
+            let headphone_eq = &state.app.measurement_state.headphone_eq_state;
+            let Some(result) = &headphone_eq.result else {
+                return true;
+            };
+            let export_format = headphone_eq.export_format.clone();
+            let extension = sotf_audio_player::autoeq::get_export_extension(&export_format);
+            let default_name = if headphone_eq.save_name.is_empty() {
+                format!("headphone_eq{extension}")
+            } else {
+                format!("{}{}", headphone_eq.save_name, extension)
+            };
+            let biquads = result
+                .biquads
+                .iter()
+                .map(|biquad| {
+                    let filter_type = match biquad.filter_type.as_str() {
+                        "peak" => math_audio_iir_fir::BiquadFilterType::Peak,
+                        "lowshelf" => math_audio_iir_fir::BiquadFilterType::Lowshelf,
+                        "highshelf" => math_audio_iir_fir::BiquadFilterType::Highshelf,
+                        "lowpass" => math_audio_iir_fir::BiquadFilterType::Lowpass,
+                        "highpass" => math_audio_iir_fir::BiquadFilterType::Highpass,
+                        _ => math_audio_iir_fir::BiquadFilterType::Peak,
+                    };
+                    math_audio_iir_fir::Biquad::new(
+                        filter_type,
+                        biquad.freq,
+                        48_000.0,
+                        biquad.q,
+                        biquad.db_gain,
+                    )
+                })
+                .collect::<Vec<_>>();
+            (biquads, export_format, default_name)
+        };
+        let content = match sotf_audio_player::autoeq::format_peq_export(
+            &export_format,
+            "Headphone EQ",
+            &biquads,
+            48_000,
+        ) {
+            Ok(content) => content,
+            Err(error) => {
+                self.state.update(cx, |state, _cx| {
+                    state.app.ui_state.toast_message =
+                        Some(crate::app::types::ToastMessage::error(format!(
+                            "Failed to format Headphone EQ export: {error}"
+                        )));
+                });
+                cx.notify();
+                return true;
+            }
+        };
+        let directory = std::path::PathBuf::from(qa_directory).join("headphone-exports");
+        let path = directory.join(default_name);
+        let write_result =
+            std::fs::create_dir_all(&directory).and_then(|()| std::fs::write(&path, content));
+        self.state.update(cx, |state, _cx| match write_result {
+            Ok(()) => {
+                state
+                    .app
+                    .measurement_state
+                    .headphone_eq_state
+                    .qa_last_export_path = Some(path);
+                state.app.ui_state.toast_message = Some(crate::app::types::ToastMessage::success(
+                    "Headphone EQ export saved for QA",
+                ));
+            }
+            Err(error) => {
+                state.app.ui_state.toast_message = Some(crate::app::types::ToastMessage::error(
+                    format!("Failed to save Headphone EQ export: {error}"),
+                ));
+            }
+        });
+        cx.notify();
+        true
+    }
+
     // Headphone API Download (spinorama.org)
     // ========================================================================
 
     pub(crate) fn fetch_headphone_list(&mut self, cx: &mut Context<Self>) {
         log::info!("Fetching headphone list from API...");
-        self.state.update(cx, |state, _cx| {
-            state
-                .app
-                .measurement_state
-                .headphone_eq_state
-                .loading_headphones = true;
-            state
-                .app
-                .measurement_state
-                .headphone_eq_state
-                .model
-                .error_message = None;
+        let request_id = self.state.update(cx, |state, _cx| {
+            let headphone_eq = &mut state.app.measurement_state.headphone_eq_state;
+            headphone_eq.loading_headphones = true;
+            headphone_eq.model.error_message = None;
+            headphone_eq.begin_headphone_list_request()
         });
         cx.notify();
 
-        static HEADPHONES_RESULT: std::sync::Mutex<Option<Result<Vec<String>, String>>> =
-            std::sync::Mutex::new(None);
-        if let Ok(mut result) = HEADPHONES_RESULT.lock() {
-            *result = None;
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        #[cfg(feature = "dev-api")]
+        let qa_catalog = self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .headphone_eq_state
+            .qa_discovery_fixture
+            .as_ref()
+            .map(|fixture| fixture.catalog.clone());
+        #[cfg(feature = "dev-api")]
+        if let Some(catalog) = qa_catalog {
+            let _ = sender.send(Ok(catalog));
         } else {
-            self.state.update(cx, |state, _cx| {
-                let headphone_eq = &mut state.app.measurement_state.headphone_eq_state;
-                headphone_eq.loading_headphones = false;
-                headphone_eq.model.error_message =
-                    Some("Headphone fetch state is unavailable".to_string());
+            std::thread::spawn(move || {
+                let result = tokio::runtime::Runtime::new()
+                    .map_err(|error| format!("Failed to create network runtime: {error}"))
+                    .and_then(|runtime| {
+                        runtime
+                            .block_on(async { autoeq::fetch_available_headphones().await })
+                            .map_err(|error| error.to_string())
+                    });
+                let _ = sender.send(result);
             });
-            cx.notify();
-            return;
         }
-
-        std::thread::spawn(|| {
-            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-            let result = rt.block_on(async { autoeq::fetch_available_headphones().await });
-            if let Ok(mut slot) = HEADPHONES_RESULT.lock() {
-                *slot = Some(result.map_err(|e| e.to_string()));
-            } else {
-                log::error!("Headphone fetch result state is unavailable");
-            }
+        #[cfg(not(feature = "dev-api"))]
+        std::thread::spawn(move || {
+            let result = tokio::runtime::Runtime::new()
+                .map_err(|error| format!("Failed to create network runtime: {error}"))
+                .and_then(|runtime| {
+                    runtime
+                        .block_on(async { autoeq::fetch_available_headphones().await })
+                        .map_err(|error| error.to_string())
+                });
+            let _ = sender.send(result);
         });
 
         let weak_state = self.state.downgrade();
         cx.spawn(async move |_, cx| {
             loop {
                 smol::Timer::after(std::time::Duration::from_millis(100)).await;
-                let result = match HEADPHONES_RESULT.lock() {
-                    Ok(mut slot) => slot.take(),
-                    Err(_) => Some(Err("Headphone fetch state is unavailable".to_string())),
+                let result = match receiver.try_recv() {
+                    Ok(result) => Some(result),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => None,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => Some(Err(
+                        "Headphone fetch worker stopped unexpectedly".to_string(),
+                    )),
                 };
                 if let Some(result) = result {
                     let Some(state_entity) = weak_state.upgrade() else {
@@ -690,44 +791,29 @@ impl PlayerView {
                                 headphones.len()
                             );
                             state_entity.update(cx, |state, cx| {
-                                state
-                                    .app
-                                    .measurement_state
-                                    .headphone_eq_state
-                                    .available_headphones = headphones;
-                                state
-                                    .app
-                                    .measurement_state
-                                    .headphone_eq_state
-                                    .loading_headphones = false;
-                                state
-                                    .app
-                                    .measurement_state
-                                    .headphone_eq_state
-                                    .headphones_cached_at = Some(std::time::Instant::now());
-                                state
-                                    .app
-                                    .measurement_state
-                                    .headphone_eq_state
-                                    .update_headphone_suggestions();
+                                let headphone_eq =
+                                    &mut state.app.measurement_state.headphone_eq_state;
+                                if headphone_eq.headphone_list_request_id != request_id {
+                                    return;
+                                }
+                                headphone_eq.available_headphones = headphones;
+                                headphone_eq.loading_headphones = false;
+                                headphone_eq.headphones_cached_at = Some(std::time::Instant::now());
+                                headphone_eq.update_headphone_suggestions();
                                 cx.notify();
                             });
                         }
                         Err(e) => {
                             log::error!("Failed to fetch headphones: {}", e);
                             state_entity.update(cx, |state, cx| {
-                                state
-                                    .app
-                                    .measurement_state
-                                    .headphone_eq_state
-                                    .loading_headphones = false;
+                                let headphone_eq =
+                                    &mut state.app.measurement_state.headphone_eq_state;
+                                if headphone_eq.headphone_list_request_id != request_id {
+                                    return;
+                                }
+                                headphone_eq.loading_headphones = false;
                                 let msg = format!("Failed to fetch headphones: {}", e);
-                                state
-                                    .app
-                                    .measurement_state
-                                    .headphone_eq_state
-                                    .model
-                                    .error_message = Some(msg.clone());
+                                headphone_eq.model.error_message = Some(msg.clone());
                                 state.app.ui_state.toast_message =
                                     Some(crate::app::types::ToastMessage::error(msg));
                                 cx.notify();
@@ -747,93 +833,141 @@ impl PlayerView {
         log::info!("Selected headphone: {}", headphone);
         let headphone_name = headphone.to_string();
 
-        self.state.update(cx, |state, _cx| {
-            state
-                .app
-                .measurement_state
-                .headphone_eq_state
-                .model
-                .selected_headphone = Some(headphone_name.clone());
-            state
-                .app
-                .measurement_state
-                .headphone_eq_state
-                .model
-                .loading_download = true;
-            state
-                .app
-                .measurement_state
-                .headphone_eq_state
-                .model
-                .error_message = None;
+        let request_id = self.state.update(cx, |state, _cx| {
+            let headphone_eq = &mut state.app.measurement_state.headphone_eq_state;
+            headphone_eq.model.selected_headphone = Some(headphone_name.clone());
+            headphone_eq.model.loading_download = true;
+            headphone_eq.model.error_message = None;
             // Clear any previous measurement_path from a previous download
-            state
-                .app
-                .measurement_state
-                .headphone_eq_state
-                .model
-                .measurement_path
-                .clear();
-            state
-                .app
-                .measurement_state
-                .headphone_eq_state
-                .model
-                .downloaded_curve = None;
+            headphone_eq.model.measurement_path.clear();
+            headphone_eq.model.downloaded_curve = None;
+            headphone_eq.begin_download_request()
         });
         cx.notify();
 
         // Single thread: fetch versions → first version → measurements → first measurement → download curve → save CSV
         // Result contains (csv_path, curve_data)
-        #[allow(clippy::type_complexity)]
-        static DOWNLOAD_RESULT: std::sync::Mutex<
-            Option<Result<(String, Vec<(f64, f64)>), String>>,
-        > = std::sync::Mutex::new(None);
-        if let Ok(mut result) = DOWNLOAD_RESULT.lock() {
-            *result = None;
-        } else {
-            self.state.update(cx, |state, _cx| {
-                let headphone_eq = &mut state.app.measurement_state.headphone_eq_state;
-                headphone_eq.loading_download = false;
-                headphone_eq.model.error_message =
-                    Some("Headphone download state is unavailable".to_string());
-            });
-            cx.notify();
-            return;
-        }
-
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         let headphone_for_thread = headphone_name.clone();
+        #[cfg(feature = "dev-api")]
+        let qa_download = self.state.update(cx, |state, _cx| {
+            state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .qa_discovery_fixture
+                .as_mut()
+                .and_then(|fixture| fixture.downloads.get_mut(&headphone_name))
+                .map(|download| {
+                    let should_fail = download.failures_remaining > 0;
+                    download.failures_remaining = download.failures_remaining.saturating_sub(1);
+                    (download.clone(), should_fail)
+                })
+        });
+        #[cfg(feature = "dev-api")]
+        if let Some((download, should_fail)) = qa_download {
+            std::thread::spawn(move || {
+                if download.delay_ms > 0 {
+                    std::thread::sleep(std::time::Duration::from_millis(download.delay_ms));
+                }
+                let result = if should_fail {
+                    Err(download.failure_message)
+                } else {
+                    (|| -> Result<(String, Vec<(f64, f64)>), String> {
+                        let file_name = std::path::Path::new(&download.path)
+                            .file_name()
+                            .filter(|name| !name.is_empty())
+                            .ok_or_else(|| {
+                                "fixture measurement path needs a file name".to_string()
+                            })?;
+                        let directory = std::env::var_os("SOTF_QA_DIR")
+                            .map(std::path::PathBuf::from)
+                            .ok_or_else(|| {
+                                "SOTF_QA_DIR is required for fixture measurements".to_string()
+                            })?
+                            .join("headphone-fixtures");
+                        std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+                        let path = directory.join(file_name);
+                        let csv = std::iter::once("frequency,spl".to_string())
+                            .chain(
+                                download
+                                    .curve
+                                    .iter()
+                                    .map(|(frequency, spl)| format!("{frequency},{spl}")),
+                            )
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        std::fs::write(&path, csv).map_err(|error| error.to_string())?;
+                        Ok((path.to_string_lossy().into_owned(), download.curve))
+                    })()
+                };
+                let _ = sender.send(result);
+            });
+        } else {
+            std::thread::spawn(move || {
+                let rt = match tokio::runtime::Runtime::new() {
+                    Ok(runtime) => runtime,
+                    Err(error) => {
+                        let _ =
+                            sender.send(Err(format!("Failed to create network runtime: {error}")));
+                        return;
+                    }
+                };
+                let result = rt.block_on(async {
+                    let (csv_path, curve) =
+                        autoeq::fetch_headphone_frequency_response(&headphone_for_thread)
+                            .await
+                            .map_err(|e| e.to_string())?;
+
+                    let curve_data: Vec<(f64, f64)> = curve
+                        .freq
+                        .iter()
+                        .zip(curve.spl.iter())
+                        .map(|(&f, &s)| (f, s))
+                        .collect();
+
+                    Ok::<(String, Vec<(f64, f64)>), String>((csv_path, curve_data))
+                });
+                let _ = sender.send(result);
+            });
+        }
+        #[cfg(not(feature = "dev-api"))]
         std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+            let rt = match tokio::runtime::Runtime::new() {
+                Ok(runtime) => runtime,
+                Err(error) => {
+                    let _ = sender.send(Err(format!("Failed to create network runtime: {error}")));
+                    return;
+                }
+            };
             let result = rt.block_on(async {
                 let (csv_path, curve) =
                     autoeq::fetch_headphone_frequency_response(&headphone_for_thread)
                         .await
-                        .map_err(|e| e.to_string())?;
-
-                let curve_data: Vec<(f64, f64)> = curve
-                    .freq
-                    .iter()
-                    .zip(curve.spl.iter())
-                    .map(|(&f, &s)| (f, s))
-                    .collect();
-
-                Ok::<(String, Vec<(f64, f64)>), String>((csv_path, curve_data))
+                        .map_err(|error| error.to_string())?;
+                Ok::<(String, Vec<(f64, f64)>), String>((
+                    csv_path,
+                    curve
+                        .freq
+                        .iter()
+                        .zip(curve.spl.iter())
+                        .map(|(&f, &s)| (f, s))
+                        .collect(),
+                ))
             });
-            if let Ok(mut slot) = DOWNLOAD_RESULT.lock() {
-                *slot = Some(result);
-            } else {
-                log::error!("Headphone download result state is unavailable");
-            }
+            let _ = sender.send(result);
         });
 
         let weak_state = self.state.downgrade();
         cx.spawn(async move |_, cx| {
             loop {
                 smol::Timer::after(std::time::Duration::from_millis(100)).await;
-                let result = match DOWNLOAD_RESULT.lock() {
-                    Ok(mut slot) => slot.take(),
-                    Err(_) => Some(Err("Headphone download state is unavailable".to_string())),
+                let result = match receiver.try_recv() {
+                    Ok(result) => Some(result),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => None,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => Some(Err(
+                        "Headphone download worker stopped unexpectedly".to_string(),
+                    )),
                 };
                 if let Some(result) = result {
                     let Some(state_entity) = weak_state.upgrade() else {
@@ -847,6 +981,15 @@ impl PlayerView {
                                 curve_data.len()
                             );
                             state_entity.update(cx, |state, cx| {
+                                if state
+                                    .app
+                                    .measurement_state
+                                    .headphone_eq_state
+                                    .download_request_id
+                                    != request_id
+                                {
+                                    return;
+                                }
                                 state
                                     .app
                                     .measurement_state
@@ -870,6 +1013,15 @@ impl PlayerView {
                         Err(e) => {
                             log::error!("Headphone download failed: {}", e);
                             state_entity.update(cx, |state, cx| {
+                                if state
+                                    .app
+                                    .measurement_state
+                                    .headphone_eq_state
+                                    .download_request_id
+                                    != request_id
+                                {
+                                    return;
+                                }
                                 state
                                     .app
                                     .measurement_state

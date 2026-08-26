@@ -9,6 +9,22 @@ use gpui_ui_kit::{
     Text, TextSize, TextWeight, VStack,
 };
 
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::DevTrackExt;
+
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 impl PlayerView {
     // ========================================================================
     // Step 1: Measurement & Target
@@ -231,7 +247,7 @@ impl PlayerView {
                                                 .on_text_change({
                                                     move |text, _window, cx| {
                                                         state_for_text.update(cx, |state, _cx| {
-                                                            state.app.measurement_state.headphone_eq_state.model.headphone_search = text;
+                            state.app.measurement_state.headphone_eq_state.model.headphone_search = text.to_string();
                                                             state.app.measurement_state.headphone_eq_state.model.update_headphone_suggestions();
                                                         });
                                                     }
@@ -248,7 +264,7 @@ impl PlayerView {
                                         .child(
                                             HStack::new()
                                                 .spacing(StackSpacing::Xs)
-                                                .child(
+                                                .child(dev_track!(
                                                     Button::new(
                                                         "refresh-headphones",
                                                         discovery_text.refresh,
@@ -257,10 +273,11 @@ impl PlayerView {
                                                         .size(ButtonSize::Xs)
                                                         .disabled(is_loading)
                                                         .theme(button_theme.clone())
-                                                        .on_click_event(cx.listener(|view, _, _, cx| {
-                                                                view.fetch_headphone_list(cx);
-                                                            })),
-                                                )
+                                                    .on_click_event(cx.listener(|view, _, _, cx| {
+                                                        view.fetch_headphone_list(cx);
+                                                    })),
+                                                    "headphone.refresh"
+                                                ))
                                                 .when(is_loading, |hstack| {
                                                     hstack.child(Text::caption(workflow_text.loading))
                                                 })
@@ -325,6 +342,7 @@ impl PlayerView {
                                             let text_primary = theme.text_primary;
                                             let text_on_accent = theme.text_on_accent;
 
+                                            dev_track!(
                                             div()
                                                 .id(SharedString::from(format!(
                                                     "headphone-option-{}",
@@ -357,16 +375,36 @@ impl PlayerView {
                                                         }
                                                     }),
                                                 )
-                                                .child(headphone_name)
+                                                .child(headphone_name),
+                                                format!("headphone.select.{}", headphone)
+                                            )
                                         })),
                                 ),
                         )
                         // Error message
                         .when_some(error_message, |vstack, msg| {
                             vstack.child(
-                                Text::new(msg)
-                                    .size(TextSize::Xs)
-                                    .color(theme.error),
+                                HStack::new()
+                                    .spacing(StackSpacing::Xs)
+                                    .child(
+                                        Text::new(msg)
+                                            .size(TextSize::Xs)
+                                            .color(theme.error),
+                                    )
+                                    .when_some(selected_headphone.clone(), |row, headphone| {
+                                        row.child(dev_track!(
+                                            Button::new("retry-headphone-download", "Retry")
+                                                .variant(ButtonVariant::Secondary)
+                                                .size(ButtonSize::Xs)
+                                                .theme(button_theme.clone())
+                                                .on_click_event(cx.listener(
+                                                    move |view, _, _, cx| {
+                                                        view.select_headphone(&headphone, cx);
+                                                    },
+                                                )),
+                                            "headphone.retry"
+                                        ))
+                                    }),
                             )
                         })
                         // Download status

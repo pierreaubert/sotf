@@ -371,10 +371,8 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 if !app.recording.model.capture_in_progress() {
                     let accepted = app.recording.model.accept_all_review_needed();
                     if accepted > 0 {
-                        app.recording.model.status_message = format!(
-                            "Accepted {} take(s) despite quality warnings",
-                            accepted
-                        );
+                        app.recording.model.status_message =
+                            format!("Accepted {} take(s) despite quality warnings", accepted);
                     }
                 }
                 None

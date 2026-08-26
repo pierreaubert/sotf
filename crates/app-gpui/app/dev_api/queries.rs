@@ -31,14 +31,71 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "playback.volume" => json!(app.playback.volume),
         "playback.is_playing" => json!(app.playback.is_playing),
         "playback.muted" => json!(app.playback.muted),
+        "playback.shuffle" => json!(app.ui_state.phone_shuffle_enabled),
+        "playback.repeat" => json!(app.ui_state.phone_repeat_enabled),
+        "playback.seekable" => json!(app.playback.duration_secs > 0.0),
+        "spectrum.hold" => json!(app.ui_state.phone_spectrum_hold),
+        "spectrum.smoothing" => json!(app.ui_state.phone_spectrum_smoothed),
+        "spectrum.has_data" => json!(app.playback.spectrum_info.is_some()),
+        "listening.guide_open" => json!(
+            app.tutorial.listening_guide_open
+                || !app
+                    .plugin_state
+                    .listening_test_state
+                    .eq_progress
+                    .how_to_listen_completed
+        ),
+        "listening.guide_completed" => json!(
+            app.plugin_state
+                .listening_test_state
+                .eq_progress
+                .how_to_listen_completed
+        ),
+        "listening.surface" => json!(format!(
+            "{:?}",
+            app.plugin_state.listening_test_state.surface
+        )),
         "screen.focused" => json!(format!("{:?}", app.ui_state.current_screen)),
         "input_mode" => json!(format!("{:?}", app.ui_state.input_mode)),
+        "onboarding.completed" => json!(app.tutorial.completed),
         "queue.length" => json!(app.queue_state.len()),
         "queue.current_index" => match app.playback.current_queue_index {
             Some(i) => json!(i),
             None => Value::Null,
         },
+        "queue.first_title" => json!(app.queue_state.get(0).map(|item| item.album.title.as_str())),
+        "queue.second_title" => json!(app.queue_state.get(1).map(|item| item.album.title.as_str())),
+        "queue.can_undo_clear" => json!(app.queue_state.can_undo_clear()),
+        "queue.can_undo_remove" => json!(app.queue_state.can_undo_remove()),
+        "streams.count" => json!(app.stream_state.store.streams.len()),
+        "streams.error" => json!(app.stream_state.last_error),
+        "streams.status" => json!(app.stream_state.last_status),
+        "streams.name" => json!(app.stream_state.name_input),
+        "streams.url" => json!(app.stream_state.url_input),
+        "streams.seekable" => json!(app.stream_state.seekable_input),
+        "playlists.count" => json!(app.playlist.controller.playlists().len()),
+        "playlists.first_name" => json!(
+            app.playlist
+                .controller
+                .playlists()
+                .first()
+                .map(|playlist| playlist.name.as_str())
+        ),
+        "playlists.dialog" => json!(format!("{:?}", app.playlist.dialog)),
+        "playlists.active_track_count" => json!(
+            app.playlist
+                .controller
+                .active_playlist()
+                .map(|playlist| playlist.entries.len())
+                .unwrap_or(0)
+        ),
+        "playlists.undo_available" => json!(app.playlist.deleted_playlist.is_some()),
         "library.album_count" => json!(app.library_state.library.albums.len()),
+        "home.favorite_expanded" => json!(app.ui_state.expanded_home_sections.contains("favorite")),
+        "library.filtered_album_count" => json!(app.filtered_albums().len()),
+        "library.search_query" => json!(app.library_state.search_query),
+        "library.sort_order" => json!(format!("{:?}", app.library_state.sort_order)),
+        "library.channel_filter" => json!(format!("{:?}", app.library_state.filter)),
         "library.track_count" => json!(
             app.library_state
                 .library
@@ -109,13 +166,178 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 })
                 .count()
         ),
+        "recording.error_count" => json!(
+            app.measurement_state
+                .recording_state
+                .channel_recordings
+                .iter()
+                .filter(|recording| {
+                    recording.state == crate::app::types::ChannelRecordingState::Error
+                })
+                .count()
+        ),
+        "recording.status_severity" => json!(format!(
+            "{:?}",
+            app.measurement_state.recording_state.status_severity
+        )),
         "recording.step" => json!(format!("{:?}", app.measurement_state.recording_state.step)),
+        "recording.probe_complete" => json!(matches!(
+            app.measurement_state.recording_state.probe_capture.status,
+            crate::app::types::recording::ProbeCaptureStatus::Complete
+        )),
+        "recording.bass_anchor_complete" => json!(matches!(
+            app.measurement_state
+                .recording_state
+                .bass_anchor_capture
+                .status,
+            crate::app::types::recording::BassAnchorCaptureStatus::Complete
+        )),
+        "recording.spl_ready" => json!(
+            app.measurement_state
+                .recording_state
+                .spl_calibration_capture
+                .is_ready()
+        ),
+        "headphone.catalog_count" => json!(
+            app.measurement_state
+                .headphone_eq_state
+                .available_headphones
+                .len()
+        ),
+        "headphone.suggestion_count" => json!(
+            app.measurement_state
+                .headphone_eq_state
+                .headphone_suggestions
+                .len()
+        ),
+        "headphone.selected" => json!(app.measurement_state.headphone_eq_state.selected_headphone),
+        "headphone.error" => json!(app.measurement_state.headphone_eq_state.error_message),
+        "headphone.easy_applied" => json!(
+            app.measurement_state
+                .headphone_eq_state
+                .easy_mode_last_apply
+                .is_some()
+        ),
+        "headphone.export_path" => {
+            json!(app.measurement_state.headphone_eq_state.qa_last_export_path)
+        }
+        "headphone.export_exists" => json!(
+            app.measurement_state
+                .headphone_eq_state
+                .qa_last_export_path
+                .as_ref()
+                .is_some_and(|path| path.is_file())
+        ),
+        "headphone.export_json_reloadable" => json!(
+            app.measurement_state
+                .headphone_eq_state
+                .qa_last_export_path
+                .as_ref()
+                .is_some_and(|path| {
+                    std::fs::read_to_string(path)
+                        .ok()
+                        .and_then(|content| {
+                            serde_json::from_str::<Vec<math_audio_iir_fir::Biquad>>(&content).ok()
+                        })
+                        .is_some_and(|filters| !filters.is_empty())
+                })
+        ),
+        "headphone.step" => json!(format!(
+            "{:?}",
+            app.measurement_state.headphone_eq_state.step
+        )),
+        "headphone.optimization_status" => json!(format!(
+            "{:?}",
+            app.measurement_state.headphone_eq_state.optimization_status
+        )),
+        "headphone.measurement_path" => {
+            json!(app.measurement_state.headphone_eq_state.measurement_path)
+        }
+        "headphone.curve_point_count" => json!(
+            app.measurement_state
+                .headphone_eq_state
+                .downloaded_curve
+                .as_ref()
+                .map_or(0, Vec::len)
+        ),
+        "headphone.loading" => json!(
+            app.measurement_state.headphone_eq_state.loading_headphones
+                || app.measurement_state.headphone_eq_state.loading_download
+        ),
+        "spinorama.catalog_count" => json!(
+            app.measurement_state
+                .spinorama_eq_state
+                .available_speakers
+                .len()
+        ),
+        "spinorama.suggestion_count" => json!(
+            app.measurement_state
+                .spinorama_eq_state
+                .speaker_suggestions
+                .len()
+        ),
+        "spinorama.selected_speaker" => {
+            json!(app.measurement_state.spinorama_eq_state.selected_speaker)
+        }
+        "spinorama.selected_version" => {
+            json!(app.measurement_state.spinorama_eq_state.selected_version)
+        }
+        "spinorama.selected_measurement" => json!(
+            app.measurement_state
+                .spinorama_eq_state
+                .selected_measurement
+        ),
+        "spinorama.measurement_count" => json!(
+            app.measurement_state
+                .spinorama_eq_state
+                .available_measurements
+                .len()
+        ),
+        "spinorama.loading" => json!(
+            app.measurement_state.spinorama_eq_state.loading_speakers
+                || app.measurement_state.spinorama_eq_state.loading_versions
+                || app
+                    .measurement_state
+                    .spinorama_eq_state
+                    .loading_measurements
+        ),
+        "spinorama.error" => json!(app.measurement_state.spinorama_eq_state.error_message),
+        "spinorama.step" => json!(format!(
+            "{:?}",
+            app.measurement_state.spinorama_eq_state.step
+        )),
+        "spinorama.optimization_status" => json!(format!(
+            "{:?}",
+            app.measurement_state.spinorama_eq_state.optimization_status
+        )),
+        "spinorama.result_count" => json!(
+            app.measurement_state
+                .spinorama_eq_state
+                .result
+                .as_ref()
+                .map_or(0, |result| result.biquads.len())
+        ),
         "roomeq.step" => json!(format!("{:?}", app.measurement_state.room_eq_state.step)),
         "roomeq.measurement_count" => json!(
             app.measurement_state
                 .room_eq_state
                 .channel_measurements
                 .len()
+        ),
+        "roomeq.frequency_grid_consistent" => json!(
+            app.measurement_state
+                .room_eq_state
+                .channel_measurements
+                .first()
+                .is_none_or(|first| {
+                    app.measurement_state
+                        .room_eq_state
+                        .channel_measurements
+                        .iter()
+                        .all(|measurement| {
+                            measurement.measurement.frequencies == first.measurement.frequencies
+                        })
+                })
         ),
         "roomeq.speaker_config_count" => {
             json!(app.measurement_state.room_eq_state.speaker_configs.len())
@@ -169,6 +391,10 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
             "{:?}",
             app.measurement_state.room_eq_state.simple_preset.crossover
         )),
+        "roomeq.wizard_mode" => json!(format!(
+            "{:?}",
+            app.measurement_state.room_eq_state.wizard_mode
+        )),
         "roomeq.status" => json!(app.measurement_state.room_eq_state.status_message),
         "roomeq.error" => json!(app.measurement_state.room_eq_state.error_message),
         "roomeq.export.path" => json!(default_room_eq_export_path()),
@@ -193,6 +419,11 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "settings.design_language" => {
             json!(app.ui_state.design_language.as_deref().unwrap_or("default"))
         }
+        "settings.remote_server_count" => json!(app.remote.server_store.servers.len()),
+        "settings.remote_token_revealed" => json!(app.settings.show_manual_remote_token),
+        "settings.remote_manual_token_configured" => {
+            json!(!app.remote.manual_auth_token.trim().is_empty())
+        }
 
         // Playback preferences
         "playback.replay_gain_enabled" => json!(app.playback.replay_gain_enabled),
@@ -204,6 +435,59 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "audio.input_device_count" => json!(app.audio_device_state.input_devices.len()),
 
         // Plugin chain state
+        "plugins.graph.selection_count" => json!(
+            app.plugin_state
+                .graph_state
+                .graph_selection
+                .selected_nodes
+                .len()
+        ),
+        "plugins.graph.connection_count" => {
+            json!(app.plugin_state.graph.connections.len())
+        }
+        "plugins.graph.connecting" => json!(
+            app.plugin_state
+                .graph_state
+                .keyboard_connect_source
+                .is_some()
+        ),
+        "plugins.user_count" => json!(
+            app.plugin_state
+                .graph
+                .nodes
+                .values()
+                .filter(|node| !node.plugin.permanent)
+                .count()
+        ),
+        "plugins.first_user_type" => json!(
+            app.plugin_state
+                .graph
+                .nodes
+                .values()
+                .find(|node| !node.plugin.permanent)
+                .map(|node| node.plugin.plugin_type().name())
+        ),
+        "plugins.first_user_enabled" => json!(
+            app.plugin_state
+                .graph
+                .nodes
+                .values()
+                .find(|node| !node.plugin.permanent)
+                .map(|node| node.plugin.enabled)
+        ),
+        "toast.message" => json!(
+            app.ui_state
+                .toast_message
+                .as_ref()
+                .map(|toast| toast.message.as_str())
+        ),
+        "toast.type" => json!(
+            app.ui_state
+                .toast_message
+                .as_ref()
+                .map(|toast| format!("{:?}", toast.toast_type))
+        ),
+
         other if other.starts_with("plugins.") => {
             sotf_audio_player::controllers::plugin::dev_api::queries::plugin_query(
                 &app.plugin_state.graph,

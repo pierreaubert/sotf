@@ -10,6 +10,7 @@ pub mod home;
 pub mod icons;
 pub mod listening_test;
 pub mod migration;
+pub mod playlists;
 pub mod plugins;
 pub mod recording;
 pub mod room_eq;
@@ -55,14 +56,14 @@ pub fn settings_tab_icon_name(tab: SettingsTab) -> IconName {
 pub fn settings_tab_label(tab: SettingsTab, translations: &Translations) -> &'static str {
     match tab {
         SettingsTab::Library => translations.settings_tab_library,
-        SettingsTab::Theme => "Appearance",
+        SettingsTab::Theme => translations.settings_tab_theme,
         SettingsTab::Language => translations.settings_tab_language,
         SettingsTab::Keybindings => translations.settings_tab_keybindings,
         SettingsTab::AudioDevice => translations.settings_tab_audio_device,
-        SettingsTab::Misc => "Resources",
+        SettingsTab::Misc => translations.settings_tab_misc,
         SettingsTab::Federation => translations.settings_tab_federation,
         SettingsTab::Servers => translations.settings_tab_servers,
-        SettingsTab::Metadata => "Metadata",
+        SettingsTab::Metadata => translations.settings_tab_metadata,
         SettingsTab::ReleaseChannel => translations.settings_tab_release_channel,
     }
 }
@@ -261,7 +262,11 @@ impl PlayerView {
                             #[cfg(feature = "dev-api")]
                             let tab = {
                                 use crate::app::dev_api::DevTrackExt;
-                                tab.dev_track(format!("settings.tab.{:?}", tab_variant))
+                                tab.dev_track_with_state(
+                                    format!("settings.tab.{:?}", tab_variant),
+                                    crate::app::dev_api::DevElementState::default()
+                                        .selected(is_selected),
+                                )
                             };
 
                             tabs_container = tabs_container.child(tab);
@@ -271,15 +276,21 @@ impl PlayerView {
                     })),
             )
             // Content with vertical scroll
-            .child(
-                div()
+            .child({
+                let content_scroll = div()
                     .id("settings-content-scroll")
                     .overflow_y_scroll()
                     .flex_1()
                     .min_h_0()
                     .p(d.card)
-                    .child(div().w_full().max_w(rems(78.0)).child(content)),
-            )
+                    .child(div().w_full().max_w(rems(78.0)).child(content));
+                #[cfg(feature = "dev-api")]
+                let content_scroll = {
+                    use crate::app::dev_api::DevTrackExt;
+                    content_scroll.dev_track("settings.content")
+                };
+                content_scroll
+            })
     }
 
     /// Clear all EQ plugins from the playback chain.

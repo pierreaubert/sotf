@@ -1,0 +1,22 @@
+# Desktop HomeShelf: See all opens the complete shelf and Back returns to the
+# same affordance, preserving keyboard focus and the retained Home scroll view.
+click      sidebar.nav-home
+action     HomeSeedShelves
+sleep      150ms
+assert     screen.focused == "Home"
+click      home.see_all.favorite
+wait_until screen.focused == "HomeShelf" timeout=2s
+assert_visible home.shelf.back
+assert_visible home.shelf.grid
+assert_visible home.shelf.album.7
+assert_accessible button Back
+assert_accessible heading Favorite
+assert_accessible status 8 albums
+assert_focused home-shelf-navigation-favorite
+accessibility
+screenshot home-shelf-all
+click      home.shelf.back
+wait_until screen.focused == "Home" timeout=2s
+assert_visible home.see_all.favorite
+assert_focused home-shelf-navigation-favorite
+screenshot home-shelf-back-restored

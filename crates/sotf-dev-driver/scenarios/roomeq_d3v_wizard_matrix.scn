@@ -1,9 +1,10 @@
-# RoomEQ e2e matrix: 2.0_d3v measured fixture through one default-wizard tuple.
+# RoomEQ optimizer integration matrix: checked-in calibrated stereo fixture
+# through one default-wizard tuple.
 #
-# The suite copies ../autoeq/data_tests/roomeq/measured/2.0_d3v into the
-# per-run crates/autoeq dist tree, loads recordings.json through /qa/room-eq, applies the
-# tuple from [scenario.room_eq], caps optimizer work for QA, and starts the
-# real optimizer before this script observes completion.
+# Fixture provisioning is hermetic: the suite copies its own testkit fixture
+# into this scenario's artifact tree. This legacy matrix intentionally starts
+# at the optimizer adapter; visible wizard coverage belongs in dedicated
+# UI-driven scenarios and must not rely on `/qa/room-eq` state injection.
 
 focus       room-e-q
 assert      screen.focused == "RoomEq"

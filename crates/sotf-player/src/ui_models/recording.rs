@@ -1119,18 +1119,21 @@ mod tests {
             ChannelRecordingState::Done
         );
         // The accepted take keeps its quality summary (OK* distinction).
-        assert!(model.channel_recordings[0]
-            .result
-            .as_ref()
-            .and_then(|r| r.quality.as_ref())
-            .is_some());
+        assert!(
+            model.channel_recordings[0]
+                .result
+                .as_ref()
+                .and_then(|r| r.quality.as_ref())
+                .is_some()
+        );
         assert!(model.review_needed_indices().is_empty());
     }
 
     #[test]
     fn accept_review_needed_for_scopes_to_speaker_and_position() {
         let mut model = RecordingScreenModel::default();
-        let mut pos1 = done_channel_with_quality(0, "FL (Pos 2)", ChannelRecordingState::ReviewNeeded, 4);
+        let mut pos1 =
+            done_channel_with_quality(0, "FL (Pos 2)", ChannelRecordingState::ReviewNeeded, 4);
         pos1.mic_position_index = 1;
         model.channel_recordings = vec![
             done_channel_with_quality(0, "FL (Pos 1)", ChannelRecordingState::ReviewNeeded, 4),
@@ -1200,10 +1203,7 @@ mod tests {
             done_channel_with_quality(1, "FR", ChannelRecordingState::Empty, 4),
         ];
         assert_eq!(model.accept_review_needed_for(0, 0), 1);
-        assert_eq!(
-            model.batch_next_action(0),
-            BatchNextAction::StartChannel(1)
-        );
+        assert_eq!(model.batch_next_action(0), BatchNextAction::StartChannel(1));
     }
 
     #[test]

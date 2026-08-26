@@ -1,0 +1,11 @@
+# Room EQ Advanced mode: user selects the full control surface explicitly.
+focus room-e-q
+click roomeq.load_from_recording
+click roomeq.next
+click roomeq.next
+assert roomeq.step == "Process"
+assert_visible roomeq.select_full
+click roomeq.select_full
+assert roomeq.wizard_mode == "Full"
+assert roomeq.step == "Configure"
+screenshot roomeq-advanced-configure

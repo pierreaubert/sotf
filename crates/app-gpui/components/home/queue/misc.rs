@@ -1,4 +1,4 @@
-use crate::app::i18n::{LevelMeterTranslations, PhoneTranslations};
+use crate::app::i18n::{ContextMenuTranslations, LevelMeterTranslations, PhoneTranslations};
 use crate::app::types::{MeterDisplayMode, Screen};
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
@@ -9,14 +9,34 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, Button, ButtonSet, ButtonSetOption, ButtonSetSize,
-    ButtonSize, CollapseDirection, PaneDivider, PaneDividerTheme, StackSpacing, Text, TextSize,
-    VStack,
+    ButtonSize, ButtonVariant, CollapseDirection, IconButton, IconButtonSize, IconButtonVariant,
+    PaneDivider, PaneDividerTheme, StackSpacing, Text, TextSize, VStack,
 };
 use sotf_audio_player::Track;
 use std::collections::BTreeMap;
 
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::DevTrackExt;
+
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 impl PlayerView {
-    pub(crate) fn render_queue_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_queue_screen(
+        &self,
+        solved_queue_width: Option<f32>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let layout = state.layout.read(cx);
@@ -29,19 +49,15 @@ impl PlayerView {
         let window_height = state.app.ui_state.window_height;
         let window_width = state.app.ui_state.window_width;
         let hide_meters_for_rack = state.app.layout.hide_queue_meters_for_rack;
-
-        // Calculate available width for the queue panel (between library and rack)
-        let library_width = if layout.library_panel_collapsed {
-            0.0
-        } else {
-            layout.library_h_ratio * window_width
-        };
-        let rack_width = if layout.rack_panel_collapsed {
-            0.0
-        } else {
-            layout.rack_h_ratio * window_width
-        };
-        let available_queue_width = (window_width - library_width - rack_width).max(0.0);
+        // Use the solved queue slot, rather than reconstructing its bounds from
+        // persisted ratios. The solver accounts for panel minimums, collapsed
+        // panels, the app shell/sidebar, and responsive layout adjustments.
+        let available_queue_width = solved_queue_width.unwrap_or_else(|| {
+            crate::ui::layout_tree::solve_app_layout(window_width, window_height, &layout)
+                .find("queue")
+                .filter(|slot| slot.visible)
+                .map_or(0.0, |slot| slot.width)
+        });
 
         // When the meters panel is tall enough, show both LUFS and Meters stacked
         // (no toggle switch needed). The queue panel height depends on the layout ratio.
@@ -315,10 +331,20 @@ impl PlayerView {
         // Extract only the tiny bits of queue data needed to build the
         // accordion. Previously this cloned the entire `Vec<QueueItem>`
         // (including every Track in every album) on every render.
-        let (theme, queue_len, expanded_idx, summaries, max_title_chars) = {
+        let (
+            theme,
+            queue_len,
+            can_undo_clear,
+            can_undo_remove,
+            expanded_idx,
+            summaries,
+            max_title_chars,
+        ) = {
             let state = self.state.read(cx);
             let layout = state.layout.read(cx);
             let queue_len = state.app.queue_state.len();
+            let can_undo_clear = state.app.queue_state.can_undo_clear();
+            let can_undo_remove = state.app.queue_state.can_undo_remove();
             let selected_idx = if queue_len == 0 {
                 None
             } else {
@@ -344,7 +370,15 @@ impl PlayerView {
             let summaries = crate::queue_render::queue_accordion_summaries(&state.app.queue_state);
             let max_title_chars = state.app.max_chars_queue_list_title(layout);
 
-            (theme, queue_len, expanded_idx, summaries, max_title_chars)
+            (
+                theme,
+                queue_len,
+                can_undo_clear,
+                can_undo_remove,
+                expanded_idx,
+                summaries,
+                max_title_chars,
+            )
         };
 
         let accordion_items = summaries
@@ -375,9 +409,6 @@ impl PlayerView {
         let accordion_theme = theme.to_accordion_theme();
         let state_handle = self.state.clone();
         let state_for_home = self.state.clone();
-        let text_muted = theme.text_muted;
-        let surface_hover = theme.surface_hover;
-
         div()
             .flex()
             .flex_col()
@@ -392,22 +423,19 @@ impl PlayerView {
                     .border_b_1()
                     .border_color(theme.border)
                     .child(
-                        div()
-                            .id("queue-home-button")
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .w(rems(2.5))
-                            .h(rems(2.0))
-                            .cursor_pointer()
-                            .rounded(d.r_md)
-                            .hover(move |s| s.bg(surface_hover))
-                            .child(Icon::new(IconName::Home).color(text_muted))
-                            .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                                state_for_home.update(cx, |state, _cx| {
-                                    state.app.ui_state.current_screen = Screen::Library;
-                                });
-                            }),
+                        IconButton::with_child(
+                            "queue-home-button",
+                            Icon::new(IconName::Home).color(theme.text_muted),
+                        )
+                        .variant(IconButtonVariant::Ghost)
+                        .size(IconButtonSize::Sm)
+                        .theme(theme.to_icon_button_theme())
+                        .aria_label(translations.screen_library)
+                        .on_click_event(move |_event, _window, cx| {
+                            state_for_home.update(cx, |state, _cx| {
+                                state.app.ui_state.current_screen = Screen::Library;
+                            });
+                        }),
                     )
                     .child(
                         div()
@@ -424,7 +452,71 @@ impl PlayerView {
                                 translations.queue_title, queue_len, translations.queue_albums
                             )),
                     )
-                    .child(self.render_magic_radio_button(cx)),
+                    .child(self.render_magic_radio_button(cx).into_any_element())
+                    .child(
+                        dev_track!(
+                            Button::new(
+                                "queue-save-as-playlist",
+                                translations.queue_save_as_playlist,
+                            )
+                            .size(ButtonSize::Xs)
+                            .variant(ButtonVariant::Secondary)
+                            .theme(theme.to_button_theme())
+                            .disabled(queue_len == 0)
+                            .on_click_event(cx.listener(
+                                |view, _event: &ClickEvent, _window, cx| {
+                                    view.state.update(cx, |state, _| {
+                                        state.app.playlist.name_input.clear();
+                                        state.app.playlist.dialog =
+                                            crate::app::state::app::PlaylistDialog::CreateFromQueue;
+                                        state.app.playlist.error = None;
+                                        state.app.ui_state.current_screen = Screen::Playlists;
+                                    });
+                                    cx.notify();
+                                },
+                            )),
+                            "queue.save_as_playlist"
+                        )
+                        .into_any_element(),
+                    )
+                    .child(
+                        dev_track!(
+                            Button::new("queue-clear", translations.queue_clear)
+                                .size(ButtonSize::Xs)
+                                .variant(ButtonVariant::Secondary)
+                                .theme(theme.to_button_theme())
+                                .disabled(queue_len == 0)
+                                .on_click_event(cx.listener(
+                                    |view, _event: &ClickEvent, _window, cx| {
+                                        view.state.update(cx, |state, _| {
+                                            state.app.clear_queue();
+                                        });
+                                        cx.notify();
+                                    },
+                                )),
+                            "queue.clear"
+                        )
+                        .into_any_element(),
+                    )
+                    .child(
+                        dev_track!(
+                            Button::new("queue-undo-clear", translations.queue_undo_clear)
+                                .size(ButtonSize::Xs)
+                                .variant(ButtonVariant::Secondary)
+                                .theme(theme.to_button_theme())
+                                .disabled(!can_undo_clear)
+                                .on_click_event(cx.listener(
+                                    |view, _event: &ClickEvent, _window, cx| {
+                                        view.state.update(cx, |state, _| {
+                                            let _ = state.app.undo_clear_queue();
+                                        });
+                                        cx.notify();
+                                    },
+                                )),
+                            "queue.undo_clear"
+                        )
+                        .into_any_element(),
+                    ),
             )
             .child(
                 div()
@@ -484,6 +576,37 @@ impl PlayerView {
                         )
                     }),
             )
+            .child(
+                dev_track!(
+                    Button::new("queue-undo-remove", translations.queue_undo_remove)
+                        .size(ButtonSize::Xs)
+                        .variant(ButtonVariant::Secondary)
+                        .theme(theme.to_button_theme())
+                        .disabled(!can_undo_remove)
+                        .on_click_event(cx.listener(|view, _event: &ClickEvent, _window, cx| {
+                            view.state.update(cx, |state, cx| {
+                            let effect = state.app.undo_remove_from_queue();
+                            match effect {
+                                sotf_audio_player::QueuePlaybackEffect::Reload(source)
+                                | sotf_audio_player::QueuePlaybackEffect::Play(source) => {
+                                    PlayerView::play_track(state, source);
+                                }
+                                sotf_audio_player::QueuePlaybackEffect::Stop => {
+                                    if let Err(error) = state.player.stop() {
+                                        log::warn!(
+                                            "[UI] Failed to stop player after queue undo: {error}"
+                                        );
+                                    }
+                                }
+                                sotf_audio_player::QueuePlaybackEffect::None => {}
+                            }
+                            cx.notify();
+                        });
+                        })),
+                    "queue.undo_remove"
+                )
+                .into_any_element(),
+            )
     }
 
     pub(super) fn render_magic_radio_button(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -491,22 +614,26 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let text = PhoneTranslations::for_language(state.app.ui_state.language);
 
-        Button::new("magic-radio-btn", text.magic_radio)
-            .size(ButtonSize::Xs)
-            .theme(theme.to_button_theme())
-            .on_click_event(cx.listener(|view, _event: &ClickEvent, _window, cx| {
-                log::info!("[Queue] Magic Radio button clicked");
-                view.state
-                    .update(cx, |state, _cx| match state.app.fill_queue_magic() {
-                        Ok(count) => {
-                            log::info!("[Queue] Magic Radio added {} tracks", count);
-                        }
-                        Err(e) => {
-                            log::error!("[Queue] Magic Radio error: {}", e);
-                        }
-                    });
-                cx.notify();
-            }))
+        dev_track!(
+            Button::new("magic-radio-btn", text.magic_radio)
+                .size(ButtonSize::Xs)
+                .theme(theme.to_button_theme())
+                .on_click_event(cx.listener(|view, _event: &ClickEvent, _window, cx| {
+                    log::info!("[Queue] Magic Radio button clicked");
+                    view.state
+                        .update(cx, |state, _cx| match state.app.fill_queue_magic() {
+                            Ok(count) => {
+                                log::info!("[Queue] Magic Radio added {} tracks", count);
+                            }
+                            Err(e) => {
+                                log::error!("[Queue] Magic Radio error: {}", e);
+                            }
+                        });
+                    cx.notify();
+                })),
+            "queue.magic_radio"
+        )
+        .into_any_element()
     }
 
     pub(super) fn render_queue_album_detail(
@@ -521,6 +648,12 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let theme_for_closure = theme.clone();
         let translations = translations.clone();
+        let remove_label =
+            ContextMenuTranslations::for_language(state.app.ui_state.language).remove_from_queue;
+        let queue_len = state.app.queue_state.len();
+        let state_for_move_up = self.state.clone();
+        let state_for_move_down = self.state.clone();
+        let state_for_remove = self.state.clone();
         let is_active_queue_album = state.app.playback.current_queue_index == Some(queue_idx);
 
         if let Some(item) = state.app.queue_state.get(queue_idx) {
@@ -770,7 +903,88 @@ impl PlayerView {
                                 ),
                         ),
                 )
-                .child(self.render_track_list(
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(d.gap)
+                                .child(
+                                    dev_track!(
+                                        IconButton::with_child(
+                                        ("queue-move-up", queue_idx),
+                                        Icon::new(IconName::ChevronUp).color(theme.text_muted),
+                                    )
+                                    .variant(IconButtonVariant::Ghost)
+                                    .size(IconButtonSize::Sm)
+                                    .theme(theme.to_icon_button_theme())
+                                    .aria_label(translations.queue_move_up)
+                                    .disabled(queue_idx == 0)
+                                    .on_click_event(move |_event, _window, cx| {
+                                        state_for_move_up.update(cx, |state, _| {
+                                            if queue_idx > 0 {
+                                                state.app.move_queue_item(queue_idx, queue_idx - 1);
+                                            }
+                                        });
+                                    }),
+                                        format!("queue.move_up.{queue_idx}")
+                                    )
+                                    .into_any_element(),
+                                )
+                                .child(
+                                    dev_track!(
+                                        IconButton::with_child(
+                                        ("queue-move-down", queue_idx),
+                                        Icon::new(IconName::ChevronDown).color(theme.text_muted),
+                                    )
+                                    .variant(IconButtonVariant::Ghost)
+                                    .size(IconButtonSize::Sm)
+                                    .theme(theme.to_icon_button_theme())
+                                    .aria_label(translations.queue_move_down)
+                                    .disabled(queue_idx + 1 >= queue_len)
+                                    .on_click_event(move |_event, _window, cx| {
+                                        state_for_move_down.update(cx, |state, _| {
+                                            state.app.move_queue_item(queue_idx, queue_idx + 1);
+                                        });
+                                    }),
+                                        format!("queue.move_down.{queue_idx}")
+                                    )
+                                    .into_any_element(),
+                                )
+                                .child(
+                                    dev_track!(
+                                        Button::new(
+                                            ("queue-remove", queue_idx),
+                                            remove_label,
+                                        )
+                                        .size(ButtonSize::Xs)
+                                        .variant(ButtonVariant::Ghost)
+                                        .theme(theme.to_button_theme())
+                                        .on_click_event(move |_event, _window, cx| {
+                                            state_for_remove.update(cx, |state, cx| {
+                                                let effect = state.app.remove_from_queue(queue_idx);
+                                                match effect {
+                                                    sotf_audio_player::QueuePlaybackEffect::Reload(source)
+                                                    | sotf_audio_player::QueuePlaybackEffect::Play(source) => {
+                                                        PlayerView::play_track(state, source);
+                                                    }
+                                                    sotf_audio_player::QueuePlaybackEffect::Stop => {
+                                                        if let Err(error) = state.player.stop() {
+                                                            log::warn!(
+                                                                "[Queue] Failed to stop player after queue removal: {error}"
+                                                            );
+                                                        }
+                                                    }
+                                                    sotf_audio_player::QueuePlaybackEffect::None => {}
+                                                }
+                                                cx.notify();
+                                            });
+                                        }),
+                                        format!("queue.remove.{queue_idx}")
+                                    )
+                                    .into_any_element(),
+                                ),
+                        )
+                        .child(self.render_track_list(
                     queue_idx,
                     &disc_map,
                     current_track_idx,

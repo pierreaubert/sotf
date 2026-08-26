@@ -1,0 +1,32 @@
+# Room EQ cancellation/retry E2E. The fixture only seeds Recording state;
+# every Room EQ state transition is initiated through rendered controls.
+#
+# Run with:
+#   cargo run -p sotf-dev-driver -- run-suite crates/sotf-dev-driver/suites/roomeq_ui.toml -v
+
+focus       room-e-q
+assert      roomeq.step == "LoadData"
+click       roomeq.load_from_recording
+wait_idle   2s
+assert      roomeq.measurement_count == 2
+click       roomeq.next
+assert      roomeq.step == "Delay"
+click       roomeq.next
+assert      roomeq.step == "Process"
+click       roomeq.select_simple
+assert      roomeq.step == "Configure"
+click       roomeq.next
+assert      roomeq.step == "Optimize"
+
+# The Cancel control must appear only once the real optimization worker is
+# running, and retry must restore the normal Start affordance.
+click       roomeq.optimize_start
+wait_until  roomeq.optimization_status == "Running" timeout=10s
+click       roomeq.optimize_cancel
+wait_until  roomeq.optimization_status == "Cancelled" timeout=30s
+assert      roomeq.step == "Optimize"
+assert_visible roomeq.optimize_start
+click       roomeq.optimize_start
+wait_until  roomeq.optimization_status == "Completed" timeout=180s
+assert      roomeq.step == "Review"
+assert      roomeq.error == null

@@ -7,6 +7,20 @@ use gpui_ui_kit::{
     TextWeight, VStack,
 };
 
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 // === Step Content Renderers ===
 
 impl PlayerView {
@@ -77,18 +91,29 @@ impl PlayerView {
                                                 .color(theme.text_primary),
                                         ),
                                 )
-                                .child(
-                                    Button::new("dismiss_error", workflow_text.dismiss)
-                                        .variant(ButtonVariant::Secondary)
-                                        .size(ButtonSize::Xs)
-                                        .theme(theme.to_button_theme())
+                        .child(dev_track!(
+                            Button::new("dismiss_error", workflow_text.dismiss)
+                                .variant(ButtonVariant::Secondary)
+                                .size(ButtonSize::Xs)
+                                .theme(theme.to_button_theme())
                                         .on_click_event(cx.listener(|view, _, _, cx| {
                                                 view.state.update(cx, |state, _| {
                                                     state.app.measurement_state.room_eq_state.error_message = None;
-                                                });
-                                                cx.notify();
-                                            })),
-                                ),
+                                    });
+                                    cx.notify();
+                                })),
+                            "roomeq.dismiss_error"
+                        ))
+                        .child(dev_track!(
+                            Button::new("repair_recording", workflow_text.go_to_recording)
+                                .variant(ButtonVariant::Primary)
+                                .size(ButtonSize::Xs)
+                                .theme(theme.to_button_theme())
+                                .on_click_event(cx.listener(|view, _, _, cx| {
+                                    view.switch_screen(crate::app::Screen::Recording, cx);
+                                })),
+                            "roomeq.repair_recording"
+                        )),
                         )
                         .into_any_element()
                         .into_any(),
@@ -122,7 +147,7 @@ impl PlayerView {
                                             .color(theme.text_secondary),
                                         )
                                         .child(if has_recording_session_data {
-                                            Button::new(
+                                            dev_track!(Button::new(
                                                 "load_from_recording",
                                                 workflow_text.load_from_recording,
                                             )
@@ -131,9 +156,9 @@ impl PlayerView {
                                                 .theme(theme.to_button_theme())
                                                 .on_click_event(cx.listener(|view, _, _, cx| {
                                                         view.load_room_eq_from_recording(cx);
-                                                    }))
+                                                    })), "roomeq.load_from_recording")
                                         } else {
-                                            Button::new(
+                                            dev_track!(Button::new(
                                                 "go_to_recording",
                                                 workflow_text.go_to_recording,
                                             )
@@ -142,7 +167,7 @@ impl PlayerView {
                                                 .theme(theme.to_button_theme())
                                                 .on_click_event(cx.listener(|view, _, _, cx| {
                                                         view.switch_screen(crate::app::Screen::Recording, cx);
-                                                    }))
+                                                    })), "roomeq.go_to_recording")
                                         }),
                                 ),
                         ),

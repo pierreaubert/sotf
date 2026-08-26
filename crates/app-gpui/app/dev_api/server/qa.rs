@@ -7,13 +7,18 @@ use super::parse::parse_simple_processing;
 use super::parse::parse_speaker_tier;
 use super::with::with_app_state;
 use super::with::with_player_view;
+use crate::app::types::headphone_eq::HeadphoneMeasurementSource;
+#[cfg(feature = "dev-api")]
+use crate::app::types::recording::{QaFakeCapture, QaFakeCaptureFault};
 use crate::app::types::{
-    ChannelMapping, ChannelRecording, ChannelRecordingState, RecordingResult, RecordingState,
-    RecordingStep, RoomEqStep,
+    ChannelMapping, ChannelRecording, ChannelRecordingState, RecordingState, RecordingStep,
+    RoomEqStep,
 };
 use anyhow::{Result, anyhow};
 use gpui::{AnyWindowHandle, App};
+use sotf_audio_player::recording_types::RecordingResult;
 use sotf_audio_player::room_eq_types::RoomEqWizardMode;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub(super) fn qa_seed(
@@ -79,12 +84,15 @@ pub(super) fn qa_recording_fake_capture(
         .filter(|points| (2..=4096).contains(points))
         .ok_or_else(|| anyhow!("fake recording `points` must be between 2 and 4096"))?;
 
-    let frequencies = (0..points)
-        .map(|index| {
-            let fraction = index as f32 / (points - 1) as f32;
-            20.0 * 1000.0_f32.powf(fraction)
-        })
-        .collect::<Vec<_>>();
+    let fault = match payload.get("fault").and_then(|value| value.as_str()) {
+        None => None,
+        Some(value) => Some(QaFakeCaptureFault::parse(value).ok_or_else(|| {
+            anyhow!(
+                "fake recording `fault` must be one of `device-loss`, `clipping`, or `io-failure`"
+            )
+        })?),
+    };
+
     let channel_names = (0..channels)
         .map(|index| match index {
             0 => "L".to_string(),
@@ -108,43 +116,371 @@ pub(super) fn qa_recording_fake_capture(
         .collect();
     recording.model.recording_config.num_channels = 1;
     recording.model.recording_config.channel_mappings = vec![0];
-    recording.model.channel_recordings = channel_names
-        .into_iter()
-        .enumerate()
-        .map(|(index, name)| {
-            let mut channel = ChannelRecording::new(index, name);
-            channel.state = ChannelRecordingState::Done;
-            channel.result = Some(RecordingResult {
-                channel: index,
-                wav_path: None,
-                csv_path: None,
-                frequencies: frequencies.clone(),
-                magnitude_db: vec![0.0; points],
-                phase_deg: vec![0.0; points],
-                impulse_response: None,
-                impulse_time_ms: None,
-                thd_percent: None,
-                harmonic_distortion_db: None,
-                excess_group_delay_ms: None,
-                rt60_ms: None,
-                clarity_c50_db: None,
-                clarity_c80_db: None,
-                spectrogram_db: None,
-                quality: None,
-            });
-            channel
-        })
-        .collect();
-    recording.model.step = RecordingStep::Evaluating;
-    recording.model.recording_progress = 1.0;
-    recording.model.current_recording_channel = None;
+    recording.model.step = RecordingStep::Capture;
+    recording.model.init_channel_recordings();
+    recording.qa_fake_capture = Some(QaFakeCapture { points, fault });
 
     with_player_view(window, cx, |view, cx| {
         view.state.update(cx, |state, cx| {
             state.app.measurement_state.recording_state = recording;
             cx.notify();
         });
-        view.load_room_eq_from_recording(cx);
+        Ok(())
+    })
+}
+
+pub(super) fn qa_headphone_discovery_fixture(
+    payload: serde_json::Value,
+    window: AnyWindowHandle,
+    cx: &mut App,
+) -> Result<()> {
+    let catalog = payload
+        .get("catalog")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| anyhow!("Headphone discovery fixture needs `catalog` array"))?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| anyhow!("fixture catalog entries must be strings"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if catalog.is_empty() {
+        return Err(anyhow!(
+            "Headphone discovery fixture catalog must not be empty"
+        ));
+    }
+    if catalog.iter().any(|name| name.trim().is_empty()) {
+        return Err(anyhow!("fixture catalog entries must not be empty"));
+    }
+
+    let downloads = match payload.get("downloads") {
+        None => HashMap::new(),
+        Some(value) => value
+            .as_object()
+            .ok_or_else(|| anyhow!("fixture `downloads` must be an object keyed by headphone"))?
+            .iter()
+            .map(|(headphone, download)| {
+                if !catalog.iter().any(|name| name == headphone) {
+                    return Err(anyhow!(
+                        "fixture download `{headphone}` is not present in `catalog`"
+                    ));
+                }
+                let path = download
+                    .get("path")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|path| !path.trim().is_empty())
+                    .ok_or_else(|| anyhow!("fixture download `{headphone}` needs non-empty `path`"))?
+                    .to_owned();
+                let points = download
+                    .get("points")
+                    .and_then(serde_json::Value::as_array)
+                    .ok_or_else(|| anyhow!("fixture download `{headphone}` needs `points` array"))?
+                    .iter()
+                    .map(|point| {
+                        let point = point.as_array().ok_or_else(|| {
+                            anyhow!("fixture download `{headphone}` points must be [frequency, spl]")
+                        })?;
+                        if point.len() != 2 {
+                            return Err(anyhow!(
+                                "fixture download `{headphone}` points must have exactly two values"
+                            ));
+                        }
+                        let frequency = point[0].as_f64().ok_or_else(|| {
+                            anyhow!("fixture download `{headphone}` frequency must be numeric")
+                        })?;
+                        let spl = point[1].as_f64().ok_or_else(|| {
+                            anyhow!("fixture download `{headphone}` SPL must be numeric")
+                        })?;
+                        if !frequency.is_finite() || frequency <= 0.0 || !spl.is_finite() {
+                            return Err(anyhow!(
+                                "fixture download `{headphone}` points must be finite with positive frequency"
+                            ));
+                        }
+                        Ok((frequency, spl))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                if points.len() < 2 {
+                    return Err(anyhow!(
+                        "fixture download `{headphone}` needs at least two points"
+                    ));
+                }
+                let delay_ms = download
+                    .get("delay_ms")
+                    .map(|value| {
+                        value.as_u64().ok_or_else(|| {
+                            anyhow!("fixture download `{headphone}` `delay_ms` must be a non-negative integer")
+                        })
+                    })
+                    .transpose()?
+                    .unwrap_or(0);
+                let failures_remaining = download
+                    .get("failures")
+                    .map(|value| {
+                        value.as_u64()
+                            .and_then(|value| usize::try_from(value).ok())
+                            .ok_or_else(|| {
+                                anyhow!("fixture download `{headphone}` `failures` must be a non-negative integer")
+                            })
+                    })
+                    .transpose()?
+                    .unwrap_or(0);
+                let failure_message = download
+                    .get("failure_message")
+                    .filter(|value| !value.is_null())
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .filter(|value| !value.trim().is_empty())
+                            .map(str::to_owned)
+                            .ok_or_else(|| {
+                                anyhow!("fixture download `{headphone}` `failure_message` must be a non-empty string")
+                            })
+                    })
+                    .transpose()?
+                    .unwrap_or_else(|| "Fixture measurement download failed".to_string());
+
+                Ok((
+                    headphone.clone(),
+                    crate::app::types::headphone_eq::QaHeadphoneDownloadFixture {
+                        path,
+                        curve: points,
+                        delay_ms,
+                        failures_remaining,
+                        failure_message,
+                    },
+                ))
+            })
+            .collect::<Result<HashMap<_, _>>>()?,
+    };
+    with_player_view(window, cx, |view, cx| {
+        view.state.update(cx, |state, _cx| {
+            state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .qa_discovery_fixture = Some(
+                crate::app::types::headphone_eq::QaHeadphoneDiscoveryFixture { catalog, downloads },
+            );
+            state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .measurement_source = HeadphoneMeasurementSource::Spinorama;
+            state.app.ui_state.current_screen = crate::app::Screen::HeadphoneEq;
+            state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+        });
+        cx.notify();
+        Ok(())
+    })
+}
+
+pub(super) fn qa_spinorama_discovery_fixture(
+    payload: serde_json::Value,
+    window: AnyWindowHandle,
+    cx: &mut App,
+) -> Result<()> {
+    let catalog = payload
+        .get("catalog")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| anyhow!("Spinorama discovery fixture needs `catalog` array"))?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .filter(|name| !name.trim().is_empty())
+                .map(str::to_owned)
+                .ok_or_else(|| anyhow!("fixture catalog entries must be non-empty strings"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if catalog.is_empty() {
+        return Err(anyhow!(
+            "Spinorama discovery fixture catalog must not be empty"
+        ));
+    }
+    let catalog_delay_ms = payload
+        .get("catalog_delay_ms")
+        .map(|value| {
+            value.as_u64().ok_or_else(|| {
+                anyhow!("Spinorama fixture `catalog_delay_ms` must be a non-negative integer")
+            })
+        })
+        .transpose()?
+        .unwrap_or(0);
+    let catalog_failures_remaining = payload
+        .get("catalog_failures")
+        .map(|value| {
+            value
+                .as_u64()
+                .and_then(|value| usize::try_from(value).ok())
+                .ok_or_else(|| {
+                    anyhow!("Spinorama fixture `catalog_failures` must be a non-negative integer")
+                })
+        })
+        .transpose()?
+        .unwrap_or(0);
+    let catalog_failure_message = payload
+        .get("catalog_failure_message")
+        .filter(|value| !value.is_null())
+        .map(|value| {
+            value
+                .as_str()
+                .filter(|value| !value.trim().is_empty())
+                .map(str::to_owned)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Spinorama fixture `catalog_failure_message` must be a non-empty string"
+                    )
+                })
+        })
+        .transpose()?
+        .unwrap_or_else(|| "Spinorama fixture catalog request failed".to_string());
+    let speakers = payload
+        .get("speakers")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| anyhow!("Spinorama discovery fixture needs `speakers` object"))?;
+    let mut versions = HashMap::new();
+    let mut measurements = HashMap::new();
+    let mut responses = HashMap::new();
+    for name in &catalog {
+        let speaker = speakers
+            .get(name)
+            .and_then(serde_json::Value::as_object)
+            .ok_or_else(|| anyhow!("fixture needs speaker data for `{name}`"))?;
+        let fixture_versions = speaker
+            .get("versions")
+            .and_then(serde_json::Value::as_object)
+            .ok_or_else(|| anyhow!("fixture speaker `{name}` needs `versions` object"))?;
+        if fixture_versions.is_empty() {
+            return Err(anyhow!(
+                "fixture speaker `{name}` needs at least one version"
+            ));
+        }
+        let mut version_names = Vec::with_capacity(fixture_versions.len());
+        for (version, values) in fixture_versions {
+            if version.trim().is_empty() {
+                return Err(anyhow!("fixture version names must not be empty"));
+            }
+            let values = values
+                .as_array()
+                .ok_or_else(|| {
+                    anyhow!("fixture measurements for `{name}` / `{version}` must be array")
+                })?
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .filter(|measurement| !measurement.trim().is_empty())
+                        .map(str::to_owned)
+                        .ok_or_else(|| anyhow!("fixture measurements must be non-empty strings"))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            if values.is_empty() {
+                return Err(anyhow!(
+                    "fixture `{name}` / `{version}` needs at least one measurement"
+                ));
+            }
+            version_names.push(version.clone());
+            measurements.insert((name.clone(), version.clone()), values);
+        }
+        versions.insert(name.clone(), version_names);
+    }
+    if let Some(response_values) = payload.get("responses") {
+        let response_values = response_values.as_object().ok_or_else(|| {
+            anyhow!("Spinorama fixture `responses` must map speaker|version|measurement keys")
+        })?;
+        for (key, points) in response_values {
+            let mut parts = key.splitn(3, '|');
+            let (Some(speaker), Some(version), Some(measurement)) =
+                (parts.next(), parts.next(), parts.next())
+            else {
+                return Err(anyhow!(
+                    "Spinorama fixture response key must be speaker|version|measurement"
+                ));
+            };
+            if !measurements
+                .get(&(speaker.to_string(), version.to_string()))
+                .is_some_and(|available| available.iter().any(|item| item == measurement))
+            {
+                return Err(anyhow!(
+                    "Spinorama fixture response `{key}` has no matching measurement"
+                ));
+            }
+            let points = points.as_array().ok_or_else(|| {
+                anyhow!("Spinorama fixture response `{key}` must be an array of [Hz, dB]")
+            })?;
+            let (frequencies, spl): (Vec<_>, Vec<_>) = points
+                .iter()
+                .map(|point| {
+                    let pair = point.as_array().ok_or_else(|| {
+                        anyhow!("Spinorama fixture response `{key}` points must be [Hz, dB]")
+                    })?;
+                    if pair.len() != 2 {
+                        return Err(anyhow!(
+                            "Spinorama fixture response `{key}` points need two values"
+                        ));
+                    }
+                    let frequency = pair[0]
+                        .as_f64()
+                        .filter(|value| value.is_finite() && *value > 0.0)
+                        .ok_or_else(|| {
+                            anyhow!("Spinorama fixture response `{key}` frequency must be positive")
+                        })?;
+                    let level = pair[1]
+                        .as_f64()
+                        .filter(|value| value.is_finite())
+                        .ok_or_else(|| {
+                            anyhow!("Spinorama fixture response `{key}` level must be finite")
+                        })?;
+                    Ok((frequency, level))
+                })
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .unzip();
+            if frequencies.len() < 4 || frequencies.windows(2).any(|pair| pair[0] >= pair[1]) {
+                return Err(anyhow!(
+                    "Spinorama fixture response `{key}` needs four increasing frequencies"
+                ));
+            }
+            responses.insert(
+                (
+                    speaker.to_string(),
+                    version.to_string(),
+                    measurement.to_string(),
+                ),
+                crate::app::types::spinorama_eq::QaSpinoramaResponse { frequencies, spl },
+            );
+        }
+    }
+    with_player_view(window, cx, |view, cx| {
+        view.state.update(cx, |state, _cx| {
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .qa_discovery_fixture = Some(
+                crate::app::types::spinorama_eq::QaSpinoramaDiscoveryFixture {
+                    catalog,
+                    catalog_delay_ms,
+                    catalog_failures_remaining,
+                    catalog_failure_message,
+                    versions,
+                    measurements,
+                    responses,
+                },
+            );
+            state.app.ui_state.current_screen = crate::app::Screen::Spinorama;
+            state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+            // The scenario must invoke the visible Refresh control. Avoid an
+            // automatic render-time fetch consuming fixture responses first.
+            state
+                .app
+                .measurement_state
+                .spinorama_eq_state
+                .speakers_cached_at = Some(std::time::Instant::now());
+        });
+        cx.notify();
         Ok(())
     })
 }
@@ -261,6 +597,101 @@ pub(super) fn qa_room_eq(
 
         Ok(())
     })
+}
+
+/// Arrange a hermetic recording fixture for RoomEQ UI E2E without loading
+/// measurements into the RoomEQ model. The subsequent visible Load from
+/// recording action owns the production conversion and wizard transition.
+pub(super) fn qa_room_eq_ui_fixture(
+    payload: serde_json::Value,
+    window: AnyWindowHandle,
+    cx: &mut App,
+) -> Result<()> {
+    let invalid = payload.get("invalid").and_then(|value| value.as_str());
+    if let Some(invalid) = invalid {
+        // The visible Load from recording handler treats this as a completed
+        // session, then rejects it because the channel has no measurement
+        // result. This gives the rendered test a genuine recovery path rather
+        // than injecting a RoomEQ error after the fact.
+        let mut recording_state = RecordingState::default();
+        recording_state.model.channel_recordings = match invalid {
+            "missing-channel" => {
+                let mut channel = ChannelRecording::new(0, "L".to_string());
+                channel.state = ChannelRecordingState::Done;
+                vec![channel]
+            }
+            "mismatched-grid" => vec![
+                qa_done_recording(0, "L", vec![20.0, 100.0, 1_000.0, 20_000.0]),
+                qa_done_recording(1, "R", vec![20.0, 125.0, 1_000.0, 20_000.0]),
+            ],
+            _ => {
+                return Err(anyhow!(
+                    "RoomEQ UI invalid fixture must be `missing-channel` or `mismatched-grid`, got `{invalid}`"
+                ));
+            }
+        };
+        return with_player_view(window, cx, |view, cx| {
+            view.state.update(cx, |state, cx| {
+                state.app.measurement_state.recording_state = recording_state;
+                state.app.measurement_state.room_eq_state = Default::default();
+                state.app.ui_state.current_screen = crate::app::Screen::RoomEq;
+                state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                cx.notify();
+            });
+            Ok(())
+        });
+    }
+
+    let fixture_dir = payload
+        .get("fixture_dir")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("room-eq UI payload needs `fixture_dir` string"))?;
+    let fixture_dir = PathBuf::from(fixture_dir);
+    if !fixture_dir.is_dir() {
+        return Err(anyhow!(
+            "RoomEQ fixture directory does not exist: {}",
+            fixture_dir.display()
+        ));
+    }
+    let recording_state = load_room_eq_recording_fixture(&fixture_dir)?;
+    with_player_view(window, cx, |view, cx| {
+        view.state.update(cx, |state, cx| {
+            state.app.measurement_state.recording_state = recording_state;
+            state.app.measurement_state.room_eq_state = Default::default();
+            state.app.ui_state.current_screen = crate::app::Screen::RoomEq;
+            state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+            cx.notify();
+        });
+        Ok(())
+    })
+}
+
+fn qa_done_recording(
+    channel_index: usize,
+    channel_name: &str,
+    frequencies: Vec<f32>,
+) -> ChannelRecording {
+    let mut channel = ChannelRecording::new(channel_index, channel_name.to_string());
+    channel.state = ChannelRecordingState::Done;
+    channel.result = Some(RecordingResult {
+        channel: channel_index,
+        wav_path: None,
+        csv_path: None,
+        magnitude_db: vec![0.0; frequencies.len()],
+        phase_deg: vec![0.0; frequencies.len()],
+        frequencies,
+        impulse_response: None,
+        impulse_time_ms: None,
+        thd_percent: None,
+        harmonic_distortion_db: None,
+        excess_group_delay_ms: None,
+        rt60_ms: None,
+        clarity_c50_db: None,
+        clarity_c80_db: None,
+        spectrogram_db: None,
+        quality: None,
+    });
+    channel
 }
 
 pub(super) fn qa_room_eq_export_json(

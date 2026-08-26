@@ -13,6 +13,20 @@ use gpui_ui_kit::{
 };
 use sotf_audio_player::ui_models::recording::BatchNextAction;
 
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 impl PlayerView {
     /// Render the capture step UI
     pub(crate) fn render_recording_capture_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -533,6 +547,7 @@ impl PlayerView {
             crate::app::i18n::RuntimeMessageTranslations::for_language(state.app.ui_state.language)
                 .translate(&state.app.measurement_state.recording_state.status_message)
                 .into_owned();
+        let status_severity = state.app.measurement_state.recording_state.status_severity;
         let recording_progress = state
             .app
             .measurement_state
@@ -579,7 +594,7 @@ impl PlayerView {
                                     let view = view.clone();
                                     let theme = theme.clone();
                                     let label = translations.recording_record_all_channels;
-                                    stack.child(
+                                    stack.child(dev_track!(
                                         Button::new("record_all", label)
                                             .variant(ButtonVariant::Primary)
                                             .size(ButtonSize::Sm)
@@ -592,7 +607,8 @@ impl PlayerView {
                                                     });
                                                 }
                                             }),
-                                    )
+                                        "recording.capture_all"
+                                    ))
                                 })
                                 .when(is_recording, |stack| {
                                     let view = view.clone();
@@ -645,7 +661,25 @@ impl PlayerView {
                     )
                 })
                 .when(!status_message.is_empty(), |stack| {
-                    stack.child(Text::new(status_message.clone()).size(TextSize::Xs))
+                    stack.child(Text::new(status_message.clone()).size(TextSize::Xs).color(
+                        match status_severity {
+                            crate::app::types::recording::RecordingStatusSeverity::Idle => {
+                                theme.text_secondary
+                            }
+                            crate::app::types::recording::RecordingStatusSeverity::Working => {
+                                theme.accent
+                            }
+                            crate::app::types::recording::RecordingStatusSeverity::Success => {
+                                theme.success
+                            }
+                            crate::app::types::recording::RecordingStatusSeverity::Warning => {
+                                theme.warning
+                            }
+                            crate::app::types::recording::RecordingStatusSeverity::Error => {
+                                theme.error
+                            }
+                        },
+                    ))
                 })
                 .when(noise_floor_warning.is_some(), |stack| {
                     let warning_msg = noise_floor_warning.clone().unwrap_or_default();
@@ -908,6 +942,8 @@ impl PlayerView {
                                                                     recording_text
                                                                         .accepted_takes(accepted)
                                                                         .to_string();
+                                                                    state.app.measurement_state.recording_state.status_severity =
+                                                                        crate::app::types::recording::RecordingStatusSeverity::Success;
                                                             }
                                                             accepted
                                                         });
@@ -1051,6 +1087,11 @@ impl PlayerView {
 
     /// Start recording all channels sequentially
     pub fn start_recording_all_channels(&mut self, cx: &mut Context<Self>) {
+        #[cfg(feature = "dev-api")]
+        if self.complete_qa_fake_capture(cx) {
+            return;
+        }
+
         // Enable auto-record mode and clear all previous results upfront
         // so the evaluating graphs don't show stale data from a prior session.
         self.state.update(cx, |state, _| {
@@ -1074,6 +1115,72 @@ impl PlayerView {
         self.start_recording_channel(0, cx);
 
         log::info!("Starting auto-record mode - all channels will be recorded sequentially");
+    }
+
+    /// Complete the deterministic debug fixture only after the user has
+    /// activated the same Capture control as a production recording session.
+    #[cfg(feature = "dev-api")]
+    fn complete_qa_fake_capture(&mut self, cx: &mut Context<Self>) -> bool {
+        let completed = self.state.update(cx, |state, _| {
+            let recording = &mut state.app.measurement_state.recording_state;
+            let Some(fixture) = recording.qa_fake_capture.as_mut() else {
+                return false;
+            };
+            let points = fixture.points;
+            if let Some(fault) = fixture.fault.take() {
+                for channel in &mut recording.channel_recordings {
+                    channel.state = ChannelRecordingState::Error;
+                    channel.result = None;
+                }
+                recording.recording_progress = 0.0;
+                recording.current_recording_channel = None;
+                recording.auto_record_remaining = false;
+                recording.set_status(
+                    fault.status_message(),
+                    crate::app::types::recording::RecordingStatusSeverity::Error,
+                );
+                return true;
+            }
+            let frequencies = (0..points)
+                .map(|index| {
+                    let fraction = index as f32 / (fixture.points - 1) as f32;
+                    20.0 * 1000.0_f32.powf(fraction)
+                })
+                .collect::<Vec<_>>();
+            for channel in &mut recording.channel_recordings {
+                channel.state = ChannelRecordingState::Done;
+                channel.result = Some(RecordingResult {
+                    channel: channel.channel_index,
+                    wav_path: None,
+                    csv_path: None,
+                    frequencies: frequencies.clone(),
+                    magnitude_db: vec![0.0; points],
+                    phase_deg: vec![0.0; points],
+                    impulse_response: None,
+                    impulse_time_ms: None,
+                    thd_percent: None,
+                    harmonic_distortion_db: None,
+                    excess_group_delay_ms: None,
+                    rt60_ms: None,
+                    clarity_c50_db: None,
+                    clarity_c80_db: None,
+                    spectrogram_db: None,
+                    quality: None,
+                });
+            }
+            recording.recording_progress = 1.0;
+            recording.current_recording_channel = None;
+            recording.auto_record_remaining = false;
+            recording.set_status(
+                "QA fixture captured through the Recording workflow",
+                crate::app::types::recording::RecordingStatusSeverity::Success,
+            );
+            true
+        });
+        if completed {
+            cx.notify();
+        }
+        completed
     }
 
     /// Start recording a speaker (all mics captured simultaneously).
@@ -1250,6 +1357,8 @@ impl PlayerView {
                         rec_state.status_message =
                             "Please select a recording directory in the Configuration step"
                                 .to_string();
+                        rec_state.status_severity =
+                            crate::app::types::recording::RecordingStatusSeverity::Error;
                         // Hard failure before spawn: end the batch, mirroring
                         // the async error arms (task-9 review C8).
                         rec_state.auto_record_remaining = false;
@@ -1279,6 +1388,8 @@ impl PlayerView {
             self.state.update(cx, |state, _| {
                 let rec_state = &mut state.app.measurement_state.recording_state;
                 rec_state.status_message = format!("Cannot create recording directory: {}", e);
+                rec_state.status_severity =
+                    crate::app::types::recording::RecordingStatusSeverity::Error;
                 // Hard failure before spawn: end the batch (task-9 review C8).
                 rec_state.auto_record_remaining = false;
             });
@@ -1311,6 +1422,8 @@ impl PlayerView {
             rec_state.capture_generation += 1;
             rec_state.current_recording_channel = Some(channel_idx);
             rec_state.status_message = format!("Recording {}...", params.speaker_name);
+            rec_state.status_severity =
+                crate::app::types::recording::RecordingStatusSeverity::Working;
             rec_state.recording_progress = 0.0;
             rec_state.capture_generation
         });
@@ -1381,6 +1494,8 @@ impl PlayerView {
                     let rec_state = &mut state.app.measurement_state.recording_state;
                     rec_state.current_recording_channel = None;
                     rec_state.status_message = format!("Error: {}", e);
+                    rec_state.status_severity =
+                        crate::app::types::recording::RecordingStatusSeverity::Error;
                     // Hard failure before spawn: end the batch, mirroring
                     // the async error arms (task-9 review C8).
                     rec_state.auto_record_remaining = false;
@@ -1409,6 +1524,8 @@ impl PlayerView {
                     let rec_state = &mut state.app.measurement_state.recording_state;
                     rec_state.current_recording_channel = None;
                     rec_state.status_message = format!("Error: {}", e);
+                    rec_state.status_severity =
+                        crate::app::types::recording::RecordingStatusSeverity::Error;
                     // Hard failure before spawn: end the batch, mirroring
                     // the async error arms (task-9 review C8).
                     rec_state.auto_record_remaining = false;
@@ -1712,6 +1829,12 @@ impl PlayerView {
                                 msg = format!("{} — {}", msg, dropout);
                             }
                             state.app.measurement_state.recording_state.status_message = msg;
+                            state.app.measurement_state.recording_state.status_severity =
+                                if any_review || any_low_signal || max_dropped > 0 {
+                                    crate::app::types::recording::RecordingStatusSeverity::Warning
+                                } else {
+                                    crate::app::types::recording::RecordingStatusSeverity::Success
+                                };
 
                             // The batch advance is decided below by
                             // `batch_next_action`, which re-checks the batch
@@ -1749,6 +1872,8 @@ impl PlayerView {
                                 .noise_floor_warning = None;
                             state.app.measurement_state.recording_state.status_message =
                                 "Recording cancelled".to_string();
+                            state.app.measurement_state.recording_state.status_severity =
+                                crate::app::types::recording::RecordingStatusSeverity::Idle;
                             state
                                 .app
                                 .measurement_state
@@ -1782,6 +1907,8 @@ impl PlayerView {
                                 .noise_floor_warning = None;
                             state.app.measurement_state.recording_state.status_message =
                                 format!("Recording error: {}", e);
+                            state.app.measurement_state.recording_state.status_severity =
+                                crate::app::types::recording::RecordingStatusSeverity::Error;
                             state
                                 .app
                                 .measurement_state
@@ -1847,6 +1974,8 @@ impl PlayerView {
                                 "Move microphones to position {} and click Continue",
                                 finished_position + 2
                             );
+                            rec_state.status_severity =
+                                crate::app::types::recording::RecordingStatusSeverity::Working;
                         });
                         cx.notify();
                     });
@@ -1862,6 +1991,8 @@ impl PlayerView {
                                 .auto_record_remaining = false;
                             state.app.measurement_state.recording_state.status_message =
                                 "All channels recorded, saving...".to_string();
+                            state.app.measurement_state.recording_state.status_severity =
+                                crate::app::types::recording::RecordingStatusSeverity::Working;
                         });
                         // Auto-save recordings.json with all channel data
                         view.save_recordings(cx);
@@ -1907,6 +2038,8 @@ impl PlayerView {
                 .recording_progress = 0.0;
             state.app.measurement_state.recording_state.status_message =
                 "Recording stopped".to_string();
+            state.app.measurement_state.recording_state.status_severity =
+                crate::app::types::recording::RecordingStatusSeverity::Idle;
             state
                 .app
                 .measurement_state
@@ -1977,7 +2110,7 @@ impl PlayerView {
                 .measurement_state
                 .recording_state
                 .recording_progress = 0.0;
-            state.app.measurement_state.recording_state.status_message = String::new();
+            state.app.measurement_state.recording_state.clear_status();
             state
                 .app
                 .measurement_state
@@ -2112,6 +2245,8 @@ impl PlayerView {
                 self.state.update(cx, |state, _| {
                     state.app.measurement_state.recording_state.status_message =
                         format!("Failed to prepare output directory: {}", e);
+                    state.app.measurement_state.recording_state.status_severity =
+                        crate::app::types::recording::RecordingStatusSeverity::Error;
                 });
                 cx.notify();
                 return;
@@ -2307,6 +2442,8 @@ impl PlayerView {
                     self.state.update(cx, |state, _| {
                         state.app.measurement_state.recording_state.status_message =
                             format!("Failed to save: {}", e);
+                        state.app.measurement_state.recording_state.status_severity =
+                            crate::app::types::recording::RecordingStatusSeverity::Error;
                     });
                 } else {
                     log::info!("Recordings saved to {:?}", json_path);
@@ -2318,6 +2455,12 @@ impl PlayerView {
                         };
                         state.app.measurement_state.recording_state.status_message =
                             format!("Saved to {}{}", json_path.display(), suffix);
+                        state.app.measurement_state.recording_state.status_severity =
+                            if ctc_raw_fallback {
+                                crate::app::types::recording::RecordingStatusSeverity::Warning
+                            } else {
+                                crate::app::types::recording::RecordingStatusSeverity::Success
+                            };
                     });
                 }
             }
@@ -2326,6 +2469,8 @@ impl PlayerView {
                 self.state.update(cx, |state, _| {
                     state.app.measurement_state.recording_state.status_message =
                         format!("Failed to serialize: {}", e);
+                    state.app.measurement_state.recording_state.status_severity =
+                        crate::app::types::recording::RecordingStatusSeverity::Error;
                 });
             }
         }
@@ -2377,6 +2522,8 @@ impl PlayerView {
                             state_entity.update(&mut cx.clone(), |state, _| {
                                 state.app.measurement_state.recording_state.status_message =
                                     format!("Failed to read: {}", e);
+                                state.app.measurement_state.recording_state.status_severity =
+                                    crate::app::types::recording::RecordingStatusSeverity::Error;
                             });
                         }
                     }
@@ -2591,6 +2738,8 @@ impl PlayerView {
                     recordings.len(),
                     file_path_display
                 );
+                rec_state.status_severity =
+                    crate::app::types::recording::RecordingStatusSeverity::Success;
             });
             return;
         }
@@ -2605,6 +2754,8 @@ impl PlayerView {
                 "{} is not in the current RoomConfig format — re-run the Recording wizard to regenerate it.",
                 file_path.display()
             );
+            state.app.measurement_state.recording_state.status_severity =
+                crate::app::types::recording::RecordingStatusSeverity::Error;
         });
     }
 
@@ -2835,6 +2986,8 @@ impl PlayerView {
             rec_state.status_message =
                 "Legacy file migration is no longer supported. Re-record to regenerate the file."
                     .to_string();
+            rec_state.status_severity =
+                crate::app::types::recording::RecordingStatusSeverity::Error;
         });
         cx.notify();
     }
@@ -2984,10 +3137,14 @@ impl PlayerView {
                         "Move microphones to position {} and click Continue",
                         finished_position + 2
                     );
+                    rec_state.status_severity =
+                        crate::app::types::recording::RecordingStatusSeverity::Working;
                 }
                 BatchNextAction::Save => {
                     rec_state.auto_record_remaining = false;
                     rec_state.status_message = "All channels recorded, saving...".to_string();
+                    rec_state.status_severity =
+                        crate::app::types::recording::RecordingStatusSeverity::Working;
                 }
                 _ => {}
             }
@@ -3026,6 +3183,8 @@ impl PlayerView {
                 None
             } else {
                 rec_state.status_message = format!("Recording position {}...", next_pos + 1);
+                rec_state.status_severity =
+                    crate::app::types::recording::RecordingStatusSeverity::Working;
                 rec_state.next_channel_in_position(next_pos)
             }
         });
@@ -3048,6 +3207,7 @@ impl PlayerView {
             rec_state.pending_next_position = None;
             rec_state.auto_record_remaining = false;
             rec_state.status_message = "Recording session cancelled".to_string();
+            rec_state.status_severity = crate::app::types::recording::RecordingStatusSeverity::Idle;
         });
         cx.notify();
     }

@@ -1,0 +1,48 @@
+# Queue rendered workflow with the checked-in demo audio fixture.
+#
+# Album-card selection and Enter use the same visible Library workflow as a
+# keyboard user. The remainder uses only painted Queue controls and asserts
+# the durable queue model behind the rendered rows.
+
+focus library
+assert screen.focused == "Library"
+assert queue.length == 0
+wait_until library.album_count > 0 timeout=5s
+assert_visible library.album.0
+assert_visible library.album.1
+click library.album.0
+key enter
+wait_until queue.length == 1 timeout=2s
+click library.album.1
+key enter
+wait_until queue.length == 2 timeout=2s
+click sidebar.nav-queue
+assert screen.focused == "Queue"
+assert_visible queue.move_down.0
+click queue.move_down.0
+# Let GPUI repaint the expanded row after its index changes before selecting its
+# newly registered remove control.
+sleep 100ms
+assert_visible queue.remove.0
+assert_accessible button Remove from Queue
+click queue.remove.0
+wait_until queue.length == 1 timeout=2s
+assert queue.can_undo_remove == true
+assert_visible queue.undo_remove
+click queue.undo_remove
+wait_until queue.length == 2 timeout=2s
+assert queue.can_undo_remove == false
+
+# Clear and undo through the header controls; the recovered queue must retain
+# its populated, usable state rather than stale row indices.
+assert_visible queue.clear
+click queue.clear
+wait_until queue.length == 0 timeout=2s
+assert queue.can_undo_clear == true
+assert_visible queue.undo_clear
+click queue.undo_clear
+wait_until queue.length >= 2 timeout=2s
+assert queue.can_undo_clear == false
+assert_visible queue.move_down.0
+accessibility
+screenshot queue-manage-reorder

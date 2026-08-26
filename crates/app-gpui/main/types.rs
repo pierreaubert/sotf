@@ -10,6 +10,11 @@ pub(super) struct Args {
     #[arg(long)]
     pub(super) qa: Option<PathBuf>,
 
+    /// Exercise first-launch onboarding in a hermetic dev-api QA run.
+    #[cfg(feature = "dev-api")]
+    #[arg(long, hide = true)]
+    pub(super) qa_onboarding: bool,
+
     /// Run in headless server mode (MPD/DLNA) without UI
     #[arg(long)]
     pub(super) server: bool,

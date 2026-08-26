@@ -490,14 +490,13 @@ pub(crate) fn save_recordings(app: &mut App) {
     // (probe/bass-anchor/SPL results, sweep shaping, mic calibration) —
     // the previous literal with `..Default::default()` silently dropped
     // those fields.
-    let configuration = app
-        .recording
-        .model
-        .build_recording_configuration(if app.recording.output_directory.is_empty() {
+    let configuration = app.recording.model.build_recording_configuration(
+        if app.recording.output_directory.is_empty() {
             None
         } else {
             Some(app.recording.output_directory.as_str())
-        });
+        },
+    );
 
     let ctc = ctc_measurements.map(|measurements| {
         let raw = ctc_reference_sweep.is_some();

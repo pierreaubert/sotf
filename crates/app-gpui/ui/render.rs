@@ -3,6 +3,77 @@ use crate::app::state::plugin::EarTrainingSurface;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::listening_test::activate_listening_surface;
+use gpui_ui_kit::accessibility::{
+    AccessibilityExt, AccessibilityNode, AccessibilityTree, AriaProps, AriaRole, AriaState,
+};
+
+thread_local! {
+    /// Sidebar rows are reconstructed every render, so retain each row's focus
+    /// handle by stable element ID. This keeps Tab focus and keyboard activation
+    /// working across navigation updates.
+    static SIDEBAR_FOCUS_HANDLES: std::cell::RefCell<
+        std::collections::HashMap<ElementId, FocusHandle>
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+    static SIDEBAR_FOCUS_ORDER: std::cell::RefCell<Vec<ElementId>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn sidebar_focus_handle(id: &ElementId, cx: &mut App) -> FocusHandle {
+    SIDEBAR_FOCUS_ORDER.with(|order| {
+        let mut order = order.borrow_mut();
+        if !order.contains(id) {
+            order.push(id.clone());
+        }
+    });
+    SIDEBAR_FOCUS_HANDLES.with(|handles| {
+        handles
+            .borrow_mut()
+            .entry(id.clone())
+            .or_insert_with(|| cx.focus_handle())
+            .clone()
+    })
+}
+
+fn reset_sidebar_focus_order() {
+    SIDEBAR_FOCUS_ORDER.with(|order| order.borrow_mut().clear());
+}
+
+fn focus_sidebar_relative(window: &mut Window, cx: &mut App, backwards: bool) -> bool {
+    let order = SIDEBAR_FOCUS_ORDER.with(|order| order.borrow().clone());
+    let focused_index = SIDEBAR_FOCUS_HANDLES.with(|handles| {
+        let handles = handles.borrow();
+        order.iter().position(|id| {
+            handles
+                .get(id)
+                .is_some_and(|handle| handle.is_focused(window))
+        })
+    });
+    let Some(focused_index) = focused_index else {
+        return false;
+    };
+    let target_index = if backwards {
+        focused_index.checked_sub(1)
+    } else {
+        let next = focused_index + 1;
+        (next < order.len()).then_some(next)
+    };
+    let Some(target_index) = target_index else {
+        return false;
+    };
+    let target =
+        SIDEBAR_FOCUS_HANDLES.with(|handles| handles.borrow().get(&order[target_index]).cloned());
+    let Some(target) = target else {
+        return false;
+    };
+    window.focus(&target, cx);
+    true
+}
+
+#[derive(Clone, Copy)]
+enum SidebarMode {
+    Player,
+    Studio,
+}
 
 #[derive(Debug)]
 pub(crate) struct PendingGeometrySave {
@@ -12,6 +83,12 @@ pub(crate) struct PendingGeometrySave {
 
 impl Render for PlayerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(feature = "dev-api")]
+        crate::app::dev_api::clear_tracked_elements();
+        if cx.has_global::<AccessibilityTree>() {
+            cx.global_mut::<AccessibilityTree>().clear();
+        }
+
         // Focus view on first render to activate macOS menu bar
         if self.needs_initial_focus {
             self.needs_initial_focus = false;
@@ -772,7 +849,7 @@ impl PlayerView {
         match screen {
             // These screens render the same regardless of layout mode
             Screen::Home => self.render_home_screen(cx).into_any_element(),
-            Screen::HomeShelf => self.render_home_screen(cx).into_any_element(),
+            Screen::HomeShelf => self.render_home_shelf_screen(cx).into_any_element(),
             Screen::Streams => self.render_streams_screen(cx).into_any_element(),
             Screen::Spectrum => self.render_spectrum_screen(cx).into_any_element(),
             Screen::Settings => self.render_settings_screen(cx).into_any_element(),
@@ -786,7 +863,7 @@ impl PlayerView {
             Screen::Spinorama => self.render_spinorama_eq_screen(cx).into_any_element(),
             Screen::PluginGraph => self.render_plugin_graph_screen(cx).into_any_element(),
             Screen::ListeningTest => self.render_listening_test_screen(cx).into_any_element(),
-            Screen::Playlists => div().into_any_element(),
+            Screen::Playlists => self.render_playlists_screen(cx).into_any_element(),
             // Library/Queue use 3-panel layout in Expanded mode, individual screens in Compact
             Screen::NowPlaying | Screen::Library | Screen::Queue => {
                 let layout_orientation = self.state.read(cx).app.layout.orientation;
@@ -802,7 +879,7 @@ impl PlayerView {
                     crate::app::LayoutMode::Compact => match screen {
                         Screen::Library => self.render_library_screen(cx).into_any_element(),
                         Screen::NowPlaying | Screen::Queue => {
-                            self.render_queue_screen(cx).into_any_element()
+                            self.render_queue_screen(None, cx).into_any_element()
                         }
                         _ => unreachable!("handled by outer match"),
                     },
@@ -812,6 +889,7 @@ impl PlayerView {
     }
 
     fn render_app_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
+        reset_sidebar_focus_order();
         let d = Ds::from_cx(cx);
         let cast_text = CastTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let (
@@ -852,9 +930,33 @@ impl PlayerView {
             IconName::ChevronLeft
         };
         let state_for_toggle = self.state.clone();
+        let toggle_action = std::rc::Rc::new(move |cx: &mut App| {
+            state_for_toggle.update(cx, |state, _cx| {
+                state.app.ui_state.primary_nav_collapsed =
+                    !state.app.ui_state.primary_nav_collapsed;
+            });
+        });
+        let toggle_mouse_action = toggle_action.clone();
+        let toggle_focus_handle = sidebar_focus_handle(&ElementId::from("app-sidebar-toggle"), cx);
+        cx.register_accessible(AccessibilityNode {
+            element_id: "app-sidebar-toggle".into(),
+            label: if collapsed {
+                "Expand sidebar".into()
+            } else {
+                "Collapse sidebar".into()
+            },
+            props: AriaProps::with_role(AriaRole::Button),
+        });
 
         div()
             .id("app-sidebar")
+            .on_key_down(|event: &KeyDownEvent, window, cx| {
+                if event.keystroke.key.as_str() == "tab"
+                    && focus_sidebar_relative(window, cx, event.keystroke.modifiers.shift)
+                {
+                    cx.stop_propagation();
+                }
+            })
             .flex()
             .flex_col()
             .flex_none()
@@ -870,12 +972,18 @@ impl PlayerView {
             .child(
                 div()
                     .id("app-sidebar-toggle")
+                    .track_focus(&toggle_focus_handle)
+                    .track_focus_element(&toggle_focus_handle)
                     .h(rems(2.0))
                     .flex()
                     .items_center()
                     .justify_center()
                     .rounded(d.r_md)
                     .cursor_pointer()
+                    .focus_visible({
+                        let theme = theme.clone();
+                        move |style| style.border_2().border_color(theme.accent)
+                    })
                     .hover({
                         let theme = theme.clone();
                         move |s| s.bg(theme.surface_hover)
@@ -886,60 +994,140 @@ impl PlayerView {
                             .color(theme.text_muted),
                     )
                     .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                        state_for_toggle.update(cx, |state, _cx| {
-                            state.app.ui_state.primary_nav_collapsed =
-                                !state.app.ui_state.primary_nav_collapsed;
-                        });
+                        toggle_mouse_action(cx);
+                    })
+                    .on_key_down(move |event: &KeyDownEvent, _window, cx| {
+                        let key = event.keystroke.key.as_str();
+                        if key == "enter" || key == "space" {
+                            toggle_action(cx);
+                            cx.stop_propagation();
+                        }
                     }),
             )
+            .child(self.render_sidebar_mode_item(
+                "nav-player",
+                translations.screen_player,
+                IconName::Music,
+                SidebarMode::Player,
+                current_screen.is_player_surface(),
+                collapsed,
+                &theme,
+                &d,
+                cx,
+            ))
             .child(self.render_sidebar_screen_item(
                 "nav-home",
-                "Home",
+                translations.screen_home,
                 IconName::Home,
                 Screen::Home,
                 current_screen == Screen::Home,
                 collapsed,
                 &theme,
                 &d,
+                cx,
+            ))
+            .child(self.render_sidebar_screen_item(
+                "nav-library",
+                translations.screen_library,
+                IconName::Library,
+                Screen::Library,
+                current_screen == Screen::Library,
+                collapsed,
+                &theme,
+                &d,
+                cx,
             ))
             .child(self.render_sidebar_search_item(
+                translations.library_search,
                 input_mode == crate::app::InputMode::Search,
                 collapsed,
                 &theme,
                 &d,
+                cx,
             ))
             .child(self.render_sidebar_screen_item(
                 "nav-playing",
-                "Playing",
+                translations.screen_now_playing,
                 IconName::Music,
                 Screen::NowPlaying,
-                matches!(current_screen, Screen::NowPlaying | Screen::Queue),
+                current_screen == Screen::NowPlaying,
                 collapsed,
                 &theme,
                 &d,
+                cx,
+            ))
+            .child(self.render_sidebar_screen_item(
+                "nav-queue",
+                translations.screen_queue,
+                IconName::ListMusic,
+                Screen::Queue,
+                current_screen == Screen::Queue,
+                collapsed,
+                &theme,
+                &d,
+                cx,
+            ))
+            .child(self.render_sidebar_screen_item(
+                "nav-playlists",
+                translations.screen_playlists,
+                IconName::Album,
+                Screen::Playlists,
+                current_screen == Screen::Playlists,
+                collapsed,
+                &theme,
+                &d,
+                cx,
             ))
             .child(self.render_sidebar_screen_item(
                 "nav-streams",
-                "Streams",
+                translations.screen_streams,
                 IconName::ListMusic,
                 Screen::Streams,
                 current_screen == Screen::Streams,
                 collapsed,
                 &theme,
                 &d,
+                cx,
+            ))
+            .child(self.render_sidebar_separator(&d, &theme))
+            .child(self.render_sidebar_mode_item(
+                "nav-studio",
+                translations.screen_tools,
+                IconName::SlidersHorizontal,
+                SidebarMode::Studio,
+                current_screen.is_studio_surface(),
+                collapsed,
+                &theme,
+                &d,
+                cx,
             ))
             .child(self.render_sidebar_screen_item(
-                "nav-studio",
-                translations.screen_studio,
+                "nav-studio-rack",
+                translations.screen_studio_rack,
                 IconName::SlidersHorizontal,
                 Screen::Studio,
                 current_screen == Screen::Studio,
                 collapsed,
                 &theme,
                 &d,
+                cx,
             ))
-            .child(self.render_sidebar_separator(&d, &theme))
-            .child(self.render_sidebar_group_label("Tools", collapsed, &theme, &d))
+            .when(
+                release_channel.allows(Screen::PluginGraph.maturity()),
+                |el| {
+                    el.child(self.render_sidebar_screen_item(
+                        "nav-plugin-graph",
+                        translations.screen_studio_full,
+                        IconName::Plug,
+                        Screen::PluginGraph,
+                        current_screen == Screen::PluginGraph,
+                        collapsed,
+                        &theme,
+                        &d,
+                        cx,
+                    ))
+                },
+            )
             .when(release_channel.allows(Screen::Recording.maturity()), |el| {
                 el.child(self.render_sidebar_screen_item(
                     "nav-recording",
@@ -950,6 +1138,7 @@ impl PlayerView {
                     collapsed,
                     &theme,
                     &d,
+                    cx,
                 ))
             })
             .when(release_channel.allows(Screen::RoomEq.maturity()), |el| {
@@ -962,6 +1151,7 @@ impl PlayerView {
                     collapsed,
                     &theme,
                     &d,
+                    cx,
                 ))
             })
             .when(
@@ -976,6 +1166,7 @@ impl PlayerView {
                         collapsed,
                         &theme,
                         &d,
+                        cx,
                     ))
                 },
             )
@@ -989,6 +1180,7 @@ impl PlayerView {
                     collapsed,
                     &theme,
                     &d,
+                    cx,
                 ))
             })
             .when(
@@ -1004,6 +1196,7 @@ impl PlayerView {
                         collapsed,
                         &theme,
                         &d,
+                        cx,
                     ))
                     .child(self.render_sidebar_listening_item(
                         "nav-ab-compare",
@@ -1015,6 +1208,7 @@ impl PlayerView {
                         collapsed,
                         &theme,
                         &d,
+                        cx,
                     ))
                 },
             )
@@ -1023,17 +1217,26 @@ impl PlayerView {
             .when(collapsed, |el| {
                 el.child(self.render_sidebar_screen_item(
                     "nav-preferences-collapsed",
-                    "Preferences",
+                    cast_text.preferences,
                     IconName::Settings,
                     Screen::Settings,
                     current_screen == Screen::Settings,
                     true,
                     &theme,
                     &d,
+                    cx,
                 ))
             })
             .child({
                 let state_entity = self.state.clone();
+                let preferences_id: ElementId = "nav-preferences-button".into();
+                let preferences_focus_handle = sidebar_focus_handle(&preferences_id, cx);
+                let preferences_props = AriaProps::with_role(AriaRole::Button);
+                cx.register_accessible(AccessibilityNode {
+                    element_id: preferences_id.clone(),
+                    label: cast_text.preferences.into(),
+                    props: preferences_props.clone(),
+                });
                 div()
                     .h(if collapsed { rems(0.25) } else { rems(1.5) })
                     .px(d.pad_y)
@@ -1059,11 +1262,19 @@ impl PlayerView {
                                         .child(cast_text.preferences),
                                 ),
                         )
-                        .child(
-                            div()
-                                .id("nav-preferences-button")
+                        .child({
+                            let mouse_state = state_entity.clone();
+                            let key_state = state_entity.clone();
+                            let element = div()
+                                .id(preferences_id)
+                                .track_focus(&preferences_focus_handle)
+                                .track_focus_element(&preferences_focus_handle)
                                 .cursor_pointer()
                                 .text_color(theme.text_muted)
+                                .focus_visible({
+                                    let theme = theme.clone();
+                                    move |style| style.border_2().border_color(theme.accent)
+                                })
                                 .hover({
                                     let theme = theme.clone();
                                     move |s| s.text_color(theme.text_primary)
@@ -1071,28 +1282,63 @@ impl PlayerView {
                                 .child(Icon::new(IconName::Settings).size(IconSize::Sm))
                                 .on_mouse_up(MouseButton::Left, move |_event, window, cx| {
                                     window.dispatch_action(Box::new(OpenConfig), cx);
-                                    state_entity.update(cx, |state, _cx| {
+                                    mouse_state.update(cx, |state, _cx| {
                                         state.app.ui_state.input_mode =
                                             crate::app::InputMode::Normal;
                                     });
-                                }),
-                        )
+                                })
+                                .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                                    let key = event.keystroke.key.as_str();
+                                    if key == "enter" || key == "space" {
+                                        window.dispatch_action(Box::new(OpenConfig), cx);
+                                        key_state.update(cx, |state, _cx| {
+                                            state.app.ui_state.input_mode =
+                                                crate::app::InputMode::Normal;
+                                        });
+                                        cx.stop_propagation();
+                                    }
+                                });
+                            let element = gpui_ui_kit::accessibility::apply_native_accessibility(
+                                element,
+                                cast_text.preferences,
+                                &preferences_props,
+                            );
+                            #[cfg(feature = "dev-api")]
+                            {
+                                use crate::app::dev_api::DevTrackExt;
+                                element
+                                    .dev_track("sidebar.nav-preferences-button")
+                                    .into_any_element()
+                            }
+                            #[cfg(not(feature = "dev-api"))]
+                            {
+                                element.into_any_element()
+                            }
+                        })
                     })
                     .into_any_element()
             })
-            .child(self.render_sidebar_devices_item(collapsed, &theme, &d))
+            .child(self.render_sidebar_devices_item(
+                translations.devices_title,
+                collapsed,
+                &theme,
+                &d,
+                cx,
+            ))
             .when(!collapsed, |el| {
                 el.child(self.render_sidebar_device_actions(
                     cast_discovery_running,
                     cast_text,
                     &theme,
                     &d,
+                    cx,
                 ))
                 .children(
                     output_devices
                         .iter()
-                        .take(4)
                         .enumerate()
+                        .filter(|(_, device)| !device.name.trim().is_empty())
+                        .take(4)
                         .map(|(idx, device)| {
                             self.render_sidebar_output_device_item(
                                 idx,
@@ -1101,6 +1347,7 @@ impl PlayerView {
                                     && selected_cast_device.is_none(),
                                 &theme,
                                 &d,
+                                cx,
                             )
                         }),
                 )
@@ -1118,8 +1365,11 @@ impl PlayerView {
                 .children(
                     cast_devices
                         .iter()
-                        .take(4)
                         .enumerate()
+                        .filter(|(_, device)| {
+                            !device.name.trim().is_empty() || !device.device_type.trim().is_empty()
+                        })
+                        .take(4)
                         .map(|(idx, device)| {
                             self.render_sidebar_cast_device_item(
                                 idx,
@@ -1128,6 +1378,7 @@ impl PlayerView {
                                 selected_cast_device == Some(idx),
                                 &theme,
                                 &d,
+                                cx,
                             )
                         }),
                 )
@@ -1144,28 +1395,43 @@ impl PlayerView {
             .into_any_element()
     }
 
-    fn render_sidebar_group_label(
+    fn render_sidebar_mode_item(
         &self,
-        label: &'static str,
+        id: &'static str,
+        label: &str,
+        icon: IconName,
+        mode: SidebarMode,
+        selected: bool,
         collapsed: bool,
         theme: &crate::theme::Theme,
         d: &Ds,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
-        div()
-            .h(if collapsed { rems(0.25) } else { rems(1.5) })
-            .px(d.pad_y)
-            .flex()
-            .items_center()
-            .when(!collapsed, |el| {
-                el.child(
-                    div()
-                        .text_size(d.text_xs)
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.text_muted)
-                        .child(label),
-                )
-            })
-            .into_any_element()
+        let label = label.to_string();
+        let state_entity = self.state.clone();
+        let state_entity_id = state_entity.entity_id();
+
+        self.render_sidebar_item_base(
+            id,
+            &label,
+            icon,
+            selected,
+            collapsed,
+            theme,
+            d,
+            cx,
+            move |cx| {
+                state_entity.update(cx, |state, _cx| {
+                    match mode {
+                        SidebarMode::Player => state.app.enter_player_mode("SidebarPlayerMode"),
+                        SidebarMode::Studio => state.app.enter_studio_mode("SidebarStudioMode"),
+                    }
+                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                });
+                cx.notify(state_entity_id);
+            },
+        )
+        .into_any_element()
     }
 
     fn render_sidebar_screen_item(
@@ -1178,20 +1444,30 @@ impl PlayerView {
         collapsed: bool,
         theme: &crate::theme::Theme,
         d: &Ds,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let label = label.to_string();
         let state_entity = self.state.clone();
         let state_entity_id = state_entity.entity_id();
 
-        self.render_sidebar_item_base(id, &label, icon, selected, collapsed, theme, d)
-            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+        self.render_sidebar_item_base(
+            id,
+            &label,
+            icon,
+            selected,
+            collapsed,
+            theme,
+            d,
+            cx,
+            move |cx| {
                 state_entity.update(cx, |state, _cx| {
                     state.app.set_screen(screen, "SidebarNav");
                     state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                 });
                 cx.notify(state_entity_id);
-            })
-            .into_any_element()
+            },
+        )
+        .into_any_element()
     }
 
     fn render_sidebar_listening_item(
@@ -1204,66 +1480,81 @@ impl PlayerView {
         collapsed: bool,
         theme: &crate::theme::Theme,
         d: &Ds,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let label = label.to_string();
         let state_entity = self.state.clone();
         let state_entity_id = state_entity.entity_id();
 
-        self.render_sidebar_item_base(id, &label, icon, selected, collapsed, theme, d)
-            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+        self.render_sidebar_item_base(
+            id,
+            &label,
+            icon,
+            selected,
+            collapsed,
+            theme,
+            d,
+            cx,
+            move |cx| {
                 state_entity.update(cx, |state, _cx| {
                     activate_listening_surface(&mut state.app, surface);
                     state.app.set_screen(Screen::ListeningTest, "SidebarNav");
                     state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                 });
                 cx.notify(state_entity_id);
-            })
-            .into_any_element()
+            },
+        )
+        .into_any_element()
     }
 
     fn render_sidebar_search_item(
         &self,
+        label: &str,
         selected: bool,
         collapsed: bool,
         theme: &crate::theme::Theme,
         d: &Ds,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let state_entity = self.state.clone();
         let state_entity_id = state_entity.entity_id();
 
         self.render_sidebar_item_base(
             "nav-search",
-            "Search",
+            label,
             IconName::Search,
             selected,
             collapsed,
             theme,
             d,
+            cx,
+            move |cx| {
+                state_entity.update(cx, |state, _cx| {
+                    state.app.set_screen(Screen::Library, "SidebarSearch");
+                    state.app.ui_state.input_mode = crate::app::InputMode::Search;
+                    state.app.clear_library_search();
+                });
+                #[cfg(any(target_os = "ios", target_os = "tvos"))]
+                gpui_ios::show_keyboard();
+                cx.notify(state_entity_id);
+            },
         )
-        .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-            state_entity.update(cx, |state, _cx| {
-                state.app.set_screen(Screen::Library, "SidebarSearch");
-                state.app.ui_state.input_mode = crate::app::InputMode::Search;
-                state.app.clear_library_search();
-            });
-            #[cfg(any(target_os = "ios", target_os = "tvos"))]
-            gpui_ios::show_keyboard();
-            cx.notify(state_entity_id);
-        })
         .into_any_element()
     }
 
     fn render_sidebar_devices_item(
         &self,
+        label: &str,
         collapsed: bool,
         theme: &crate::theme::Theme,
         d: &Ds,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let state_entity = self.state.clone();
 
         self.render_sidebar_item_base(
             "nav-devices",
-            "Devices",
+            label,
             if collapsed {
                 IconName::Cog
             } else {
@@ -1273,14 +1564,15 @@ impl PlayerView {
             collapsed,
             theme,
             d,
+            cx,
+            move |cx| {
+                state_entity.update(cx, |state, _cx| {
+                    state.app.set_screen(Screen::Settings, "SidebarDevices");
+                    state.app.ui_state.active_settings_tab = crate::app::SettingsTab::AudioDevice;
+                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                });
+            },
         )
-        .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-            state_entity.update(cx, |state, _cx| {
-                state.app.set_screen(Screen::Settings, "SidebarDevices");
-                state.app.ui_state.active_settings_tab = crate::app::SettingsTab::AudioDevice;
-                state.app.ui_state.input_mode = crate::app::InputMode::Normal;
-            });
-        })
         .into_any_element()
     }
 
@@ -1290,9 +1582,16 @@ impl PlayerView {
         text: CastTranslations,
         theme: &crate::theme::Theme,
         d: &Ds,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let state_for_refresh = self.state.clone();
         let state_for_cast = self.state.clone();
+        let refresh_label = text.refresh.to_string();
+        let scan_label = if cast_discovery_running {
+            text.scanning.to_string()
+        } else {
+            text.scan.to_string()
+        };
 
         div()
             .id("nav-device-actions")
@@ -1301,67 +1600,112 @@ impl PlayerView {
             .gap(d.grid)
             .px(d.pad_y)
             .py(d.grid)
-            .child(
-                div()
-                    .id("nav-refresh-devices")
-                    .flex_1()
-                    .h(rems(1.75))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(d.r_sm)
-                    .border_1()
-                    .border_color(theme.border)
-                    .text_size(d.text_xs)
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(theme.text_secondary)
-                    .cursor_pointer()
-                    .hover({
-                        let theme = theme.clone();
-                        move |style| style.bg(theme.surface_hover).text_color(theme.text_primary)
-                    })
-                    .child(text.refresh)
-                    .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                        state_for_refresh.update(cx, |state, _cx| {
-                            state.app.load_audio_devices();
-                        });
-                    }),
-            )
-            .child(
-                div()
-                    .id("nav-scan-cast")
-                    .flex_1()
-                    .h(rems(1.75))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(d.r_sm)
-                    .border_1()
-                    .border_color(theme.border)
-                    .text_size(d.text_xs)
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(if cast_discovery_running {
-                        theme.accent
-                    } else {
-                        theme.text_secondary
-                    })
-                    .cursor_pointer()
-                    .hover({
-                        let theme = theme.clone();
-                        move |style| style.bg(theme.surface_hover).text_color(theme.text_primary)
-                    })
-                    .child(if cast_discovery_running {
-                        "Scanning"
-                    } else {
-                        "Scan Cast"
-                    })
-                    .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                        state_for_cast.update(cx, |state, _cx| {
-                            state.app.start_cast_discovery();
-                        });
-                    }),
-            )
+            .child(self.render_sidebar_action_button(
+                "nav-refresh-devices",
+                refresh_label,
+                theme.text_secondary,
+                theme,
+                d,
+                cx,
+                move |cx| {
+                    state_for_refresh.update(cx, |state, _cx| {
+                        state.app.load_audio_devices();
+                    });
+                },
+            ))
+            .child(self.render_sidebar_action_button(
+                "nav-scan-cast",
+                scan_label,
+                if cast_discovery_running {
+                    theme.accent
+                } else {
+                    theme.text_secondary
+                },
+                theme,
+                d,
+                cx,
+                move |cx| {
+                    state_for_cast.update(cx, |state, _cx| {
+                        state.app.start_cast_discovery();
+                    });
+                },
+            ))
             .into_any_element()
+    }
+
+    fn render_sidebar_action_button(
+        &self,
+        id: &'static str,
+        label: String,
+        text_color: Rgba,
+        theme: &crate::theme::Theme,
+        d: &Ds,
+        cx: &mut Context<Self>,
+        on_activate: impl Fn(&mut App) + 'static,
+    ) -> AnyElement {
+        let element_id: ElementId = id.into();
+        let focus_handle = sidebar_focus_handle(&element_id, cx);
+        let accessibility_props = AriaProps::with_role(AriaRole::Button);
+        cx.register_accessible(AccessibilityNode {
+            element_id: element_id.clone(),
+            label: label.clone().into(),
+            props: accessibility_props.clone(),
+        });
+        let on_activate = std::rc::Rc::new(on_activate);
+        let mouse_activate = on_activate.clone();
+        let key_activate = on_activate;
+        let element = div()
+            .id(element_id)
+            .track_focus(&focus_handle)
+            .track_focus_element(&focus_handle)
+            .flex_1()
+            .h(rems(1.75))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(d.r_sm)
+            .border_1()
+            .border_color(theme.border)
+            .text_size(d.text_xs)
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(text_color)
+            .cursor_pointer()
+            .focus_visible({
+                let theme = theme.clone();
+                move |style| style.border_2().border_color(theme.accent)
+            })
+            .hover({
+                let theme = theme.clone();
+                move |style| style.bg(theme.surface_hover).text_color(theme.text_primary)
+            })
+            .child(label.clone())
+            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                mouse_activate(cx)
+            })
+            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
+                let key = event.keystroke.key.as_str();
+                if key == "enter" || key == "space" {
+                    key_activate(cx);
+                    cx.stop_propagation();
+                }
+            });
+        let element = gpui_ui_kit::accessibility::apply_native_accessibility(
+            element,
+            &label,
+            &accessibility_props,
+        );
+
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            element
+                .dev_track(format!("sidebar.{id}"))
+                .into_any_element()
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            element.into_any_element()
+        }
     }
 
     fn render_sidebar_cast_group_label(
@@ -1400,6 +1744,7 @@ impl PlayerView {
         selected: bool,
         theme: &crate::theme::Theme,
         d: &Ds,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let device_name = name.to_string();
         let display_name = if device_name.chars().count() > 18 {
@@ -1407,10 +1752,46 @@ impl PlayerView {
         } else {
             device_name.clone()
         };
-        let state_entity = self.state.clone();
+        let element_id = ElementId::from(SharedString::from(format!("nav-device-{index}")));
+        let focus_handle = sidebar_focus_handle(&element_id, cx);
+        let accessibility_props =
+            AriaProps::with_role(AriaRole::Button).maybe_state(selected, AriaState::Pressed(true));
+        cx.register_accessible(AccessibilityNode {
+            element_id: element_id.clone(),
+            label: device_name.clone().into(),
+            props: accessibility_props.clone(),
+        });
 
-        div()
-            .id(SharedString::from(format!("nav-device-{index}")))
+        let state_entity = self.state.clone();
+        let activation_device_name = device_name.clone();
+        let on_activate = std::rc::Rc::new(move |cx: &mut App| {
+            state_entity.update(cx, |state, _cx| {
+                let was_playing = state.app.playback.is_playing;
+                let current_path = state.app.queue_state.current_track_source();
+                let current_pos = state.app.playback.position_secs;
+
+                state.app.audio_device_state.selected_output_device_index = index;
+                state.app.audio_device_state.current_output_device_name =
+                    Some(activation_device_name.clone());
+                state.app.deselect_cast_device();
+
+                if let Err(e) = state
+                    .player
+                    .set_output_device(activation_device_name.clone())
+                {
+                    log::error!("Failed to set output device: {}", e);
+                } else if was_playing && let Some(path) = current_path {
+                    Self::play_track_at(state, path, Some(current_pos));
+                }
+            });
+        });
+        let mouse_activate = on_activate.clone();
+        let key_activate = on_activate;
+
+        let element = div()
+            .id(element_id)
+            .track_focus(&focus_handle)
+            .track_focus_element(&focus_handle)
             .flex()
             .items_center()
             .gap(d.grid)
@@ -1418,6 +1799,10 @@ impl PlayerView {
             .px(d.pad_y)
             .rounded(d.r_sm)
             .cursor_pointer()
+            .focus_visible({
+                let theme = theme.clone();
+                move |style| style.border_2().border_color(theme.accent)
+            })
             .text_size(d.text_xs)
             .when(selected, |el| {
                 el.bg(theme.surface_selected)
@@ -1448,24 +1833,36 @@ impl PlayerView {
                     .child(display_name),
             )
             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                state_entity.update(cx, |state, _cx| {
-                    let was_playing = state.app.playback.is_playing;
-                    let current_path = state.app.queue_state.current_track_source();
-                    let current_pos = state.app.playback.position_secs;
-
-                    state.app.audio_device_state.selected_output_device_index = index;
-                    state.app.audio_device_state.current_output_device_name =
-                        Some(device_name.clone());
-                    state.app.deselect_cast_device();
-
-                    if let Err(e) = state.player.set_output_device(device_name.clone()) {
-                        log::error!("Failed to set output device: {}", e);
-                    } else if was_playing && let Some(path) = current_path {
-                        Self::play_track_at(state, path, Some(current_pos));
-                    }
-                });
+                mouse_activate(cx)
             })
-            .into_any_element()
+            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
+                let key = event.keystroke.key.as_str();
+                if key == "enter" || key == "space" {
+                    key_activate(cx);
+                    cx.stop_propagation();
+                }
+            });
+
+        let element = gpui_ui_kit::accessibility::apply_native_accessibility(
+            element,
+            &device_name,
+            &accessibility_props,
+        );
+
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            element
+                .dev_track_with_state(
+                    format!("sidebar.device.{index}"),
+                    crate::app::dev_api::DevElementState::default().selected(selected),
+                )
+                .into_any_element()
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            element.into_any_element()
+        }
     }
 
     fn render_sidebar_cast_device_item(
@@ -1476,6 +1873,7 @@ impl PlayerView {
         selected: bool,
         theme: &crate::theme::Theme,
         d: &Ds,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let device_name = name.to_string();
         let display_name = if device_name.chars().count() > 15 {
@@ -1484,10 +1882,33 @@ impl PlayerView {
             device_name.clone()
         };
         let display_type = device_type.to_string();
-        let state_entity = self.state.clone();
+        let element_id = ElementId::from(SharedString::from(format!("nav-cast-device-{index}")));
+        let focus_handle = sidebar_focus_handle(&element_id, cx);
+        let accessibility_props =
+            AriaProps::with_role(AriaRole::Button).maybe_state(selected, AriaState::Pressed(true));
+        cx.register_accessible(AccessibilityNode {
+            element_id: element_id.clone(),
+            label: format!("{device_name} {display_type}").into(),
+            props: accessibility_props.clone(),
+        });
 
-        div()
-            .id(SharedString::from(format!("nav-cast-device-{index}")))
+        let state_entity = self.state.clone();
+        let on_activate = std::rc::Rc::new(move |cx: &mut App| {
+            state_entity.update(cx, |state, _cx| {
+                if state.app.audio_device_state.selected_cast_device == Some(index) {
+                    state.app.deselect_cast_device();
+                } else {
+                    state.app.select_cast_device(index);
+                }
+            });
+        });
+        let mouse_activate = on_activate.clone();
+        let key_activate = on_activate;
+
+        let element = div()
+            .id(element_id)
+            .track_focus(&focus_handle)
+            .track_focus_element(&focus_handle)
             .flex()
             .items_center()
             .gap(d.grid)
@@ -1495,6 +1916,10 @@ impl PlayerView {
             .px(d.pad_y)
             .rounded(d.r_sm)
             .cursor_pointer()
+            .focus_visible({
+                let theme = theme.clone();
+                move |style| style.border_2().border_color(theme.accent)
+            })
             .text_size(d.text_xs)
             .when(selected, |el| {
                 el.bg(theme.surface_selected)
@@ -1533,18 +1958,39 @@ impl PlayerView {
                     .overflow_hidden()
                     .text_ellipsis()
                     .whitespace_nowrap()
-                    .child(display_type),
+                    .child(display_type.clone()),
             )
             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                state_entity.update(cx, |state, _cx| {
-                    if state.app.audio_device_state.selected_cast_device == Some(index) {
-                        state.app.deselect_cast_device();
-                    } else {
-                        state.app.select_cast_device(index);
-                    }
-                });
+                mouse_activate(cx)
             })
-            .into_any_element()
+            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
+                let key = event.keystroke.key.as_str();
+                if key == "enter" || key == "space" {
+                    key_activate(cx);
+                    cx.stop_propagation();
+                }
+            });
+
+        let element = gpui_ui_kit::accessibility::apply_native_accessibility(
+            element,
+            &format!("{device_name} {display_type}"),
+            &accessibility_props,
+        );
+
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            element
+                .dev_track_with_state(
+                    format!("sidebar.cast_device.{index}"),
+                    crate::app::dev_api::DevElementState::default().selected(selected),
+                )
+                .into_any_element()
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            element.into_any_element()
+        }
     }
 
     fn render_sidebar_item_base(
@@ -1556,9 +2002,23 @@ impl PlayerView {
         collapsed: bool,
         theme: &crate::theme::Theme,
         d: &Ds,
-    ) -> Stateful<Div> {
+        cx: &mut Context<Self>,
+        on_activate: impl Fn(&mut App) + 'static,
+    ) -> AnyElement {
         use crate::components::themed_tooltip;
 
+        let element_id: ElementId = id.into();
+        let focus_handle = sidebar_focus_handle(&element_id, cx);
+        let accessibility_props =
+            AriaProps::with_role(AriaRole::Button).maybe_state(selected, AriaState::Pressed(true));
+        cx.register_accessible(AccessibilityNode {
+            element_id: element_id.clone(),
+            label: label.into(),
+            props: accessibility_props.clone(),
+        });
+        let on_activate = std::rc::Rc::new(on_activate);
+        let mouse_activate = on_activate.clone();
+        let key_activate = on_activate;
         let icon_color = if selected {
             theme.icon_on_accent
         } else {
@@ -1573,8 +2033,10 @@ impl PlayerView {
         let tooltip_label = label.to_string();
         let tooltip_theme = theme.clone();
 
-        div()
-            .id(id)
+        let element = div()
+            .id(element_id)
+            .track_focus(&focus_handle)
+            .track_focus_element(&focus_handle)
             .flex()
             .items_center()
             .justify_center()
@@ -1583,6 +2045,20 @@ impl PlayerView {
             .px(if collapsed { d.grid } else { d.pad_y })
             .rounded(d.r_md)
             .cursor_pointer()
+            .focus_visible({
+                let theme = theme.clone();
+                move |style| style.border_2().border_color(theme.accent)
+            })
+            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                mouse_activate(cx);
+            })
+            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
+                let key = event.keystroke.key.as_str();
+                if key == "enter" || key == "space" {
+                    key_activate(cx);
+                    cx.stop_propagation();
+                }
+            })
             .when(selected, |el| {
                 el.bg(theme.accent)
                     .text_color(theme.text_on_accent)
@@ -1612,6 +2088,27 @@ impl PlayerView {
                         .whitespace_nowrap()
                         .child(label.to_string()),
                 )
-            })
+            });
+
+        let element = gpui_ui_kit::accessibility::apply_native_accessibility(
+            element,
+            label,
+            &accessibility_props,
+        );
+
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            element
+                .dev_track_with_state(
+                    format!("sidebar.{id}"),
+                    crate::app::dev_api::DevElementState::default().selected(selected),
+                )
+                .into_any_element()
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            element.into_any_element()
+        }
     }
 }

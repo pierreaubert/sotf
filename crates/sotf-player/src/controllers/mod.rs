@@ -31,5 +31,5 @@ pub use playback::PlaybackController;
 pub use playlist::PlaylistController;
 pub use plugin::{EqEditTarget, PluginController, PluginUpdateEffect, get_param_count};
 pub use plugin_param_map::param_index_to_engine_param;
-pub use queue::{QueueController, QueuePlaybackEffect};
+pub use queue::{PlaylistQueueAppend, QueueController, QueuePlaybackEffect};
 pub use scan::ScanController;

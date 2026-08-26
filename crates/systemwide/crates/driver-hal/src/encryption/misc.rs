@@ -7,9 +7,9 @@ pub const AUTH_TAG_SIZE: usize = 16;
 pub(super) fn bytes_to_samples(bytes: &[u8]) -> Vec<f32> {
     let mut samples = Vec::with_capacity(bytes.len() / std::mem::size_of::<f32>());
 
-    for chunk in bytes.chunks_exact(std::mem::size_of::<f32>()) {
-        let sample_bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
-        samples.push(f32::from_le_bytes(sample_bytes));
+    let (chunks, _) = bytes.as_chunks::<{ std::mem::size_of::<f32>() }>();
+    for chunk in chunks {
+        samples.push(f32::from_le_bytes(*chunk));
     }
 
     samples

@@ -594,6 +594,7 @@ impl RoomEqScreenModel {
                 }
             })
             .collect();
+        normalize_channel_measurement_grids(&mut self.channel_measurements);
 
         let mut ctc_exported_raw = false;
         let mut ctc_raw_sweep_range = None;
@@ -991,6 +992,92 @@ impl RoomEqScreenModel {
     pub fn compute_lr_slope(&self) -> Option<(f64, f64, f64)> {
         crate::room_eq_types::compute_lr_slope(&self.channel_measurements)
     }
+}
+
+/// Normalize completed recording measurements to their shared frequency range
+/// before Room EQ combines channels. The recorder can legitimately emit
+/// different analysis grids per channel, but downstream Room EQ must never
+/// combine values by matching their vector indices.
+fn normalize_channel_measurement_grids(measurements: &mut [ChannelMeasurement]) {
+    let Some(first) = measurements.first() else {
+        return;
+    };
+    let Some((&lower, &upper)) = first
+        .measurement
+        .frequencies
+        .first()
+        .zip(first.measurement.frequencies.last())
+    else {
+        return;
+    };
+    let (lower, upper) = measurements
+        .iter()
+        .skip(1)
+        .fold((lower, upper), |range, channel| {
+            let start = channel
+                .measurement
+                .frequencies
+                .first()
+                .copied()
+                .unwrap_or(range.0);
+            let end = channel
+                .measurement
+                .frequencies
+                .last()
+                .copied()
+                .unwrap_or(range.1);
+            (range.0.max(start), range.1.min(end))
+        });
+    let grid: Vec<f32> = first
+        .measurement
+        .frequencies
+        .iter()
+        .copied()
+        .filter(|frequency| *frequency >= lower && *frequency <= upper)
+        .collect();
+    if grid.len() < 2 {
+        return;
+    }
+    for channel in measurements {
+        if channel.measurement.frequencies == grid {
+            continue;
+        }
+        let frequencies = &channel.measurement.frequencies;
+        channel.measurement.magnitude_db =
+            interpolate_log_grid(frequencies, &channel.measurement.magnitude_db, &grid);
+        channel.measurement.phase_deg =
+            interpolate_log_grid(frequencies, &channel.measurement.phase_deg, &grid);
+        channel.measurement.frequencies = grid.clone();
+    }
+}
+
+fn interpolate_log_grid(frequencies: &[f32], values: &[f32], target: &[f32]) -> Vec<f32> {
+    let count = frequencies.len().min(values.len());
+    if count < 2 {
+        return vec![0.0; target.len()];
+    }
+    let frequencies = &frequencies[..count];
+    let values = &values[..count];
+    target
+        .iter()
+        .map(|&frequency| {
+            let upper = frequencies.partition_point(|value| *value < frequency);
+            if upper == 0 {
+                return values[0];
+            }
+            if upper == frequencies.len() {
+                return values[values.len() - 1];
+            }
+            let lower = upper - 1;
+            let (lo_frequency, hi_frequency) = (frequencies[lower], frequencies[upper]);
+            let fraction = if lo_frequency > 0.0 && hi_frequency > lo_frequency {
+                (frequency.ln() - lo_frequency.ln()) / (hi_frequency.ln() - lo_frequency.ln())
+            } else {
+                0.0
+            };
+            values[lower] + (values[upper] - values[lower]) * fraction
+        })
+        .collect()
 }
 
 #[cfg(test)]

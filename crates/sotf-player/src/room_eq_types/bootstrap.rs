@@ -27,5 +27,11 @@ pub(super) fn bootstrap_uncertainty_to_backend(
             _ => autoeq::roomeq::BootstrapScalarisation::WorstCase,
         },
         cvar_alpha: ui.cvar_alpha,
+        // These nuisance and correlation adjustments are not yet editable in
+        // the UI. Keep them absent rather than manufacturing measurement
+        // certainty from a UI default.
+        effective_spatial_sample_size: None,
+        repeat_sweep_noise_std_db: None,
+        calibration_uncertainty_std_db: None,
     }
 }

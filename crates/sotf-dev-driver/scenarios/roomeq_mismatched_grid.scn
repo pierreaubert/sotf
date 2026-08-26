@@ -1,0 +1,11 @@
+# The normal Room EQ load action must validate a real completed recording with
+# incompatible channel frequency grids; the fixture does not inject a Room EQ
+# error state.
+assert screen.focused == "RoomEq"
+assert roomeq.step == "LoadData"
+click roomeq.load_from_recording
+wait_idle 2s
+assert roomeq.error == null
+assert roomeq.frequency_grid_consistent == true
+assert_visible roomeq.next
+screenshot roomeq-mismatched-grid-aligned

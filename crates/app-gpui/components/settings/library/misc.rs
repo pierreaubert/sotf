@@ -731,6 +731,7 @@ impl PlayerView {
                             )
                             .child(
                                 NumberInput::new("scanner-threads-input")
+                                    .label(text.thread_count)
                                     .value(current_value)
                                     .range(1.0, max_allowed as f64)
                                     .step(1.0)

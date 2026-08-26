@@ -1,16 +1,57 @@
 # Recording fake-capture QA scenario.
 #
-# This scenario expects the suite runner to call
-# POST /qa/recording/fake-capture before executing the script.
+# The suite runner installs a deterministic capture source before this script.
+# It must not pre-complete the wizard: every deterministic result is consumed
+# only by the corresponding visible action. Run with:
+#   QA_DIR=$(mktemp -d)
+#   cargo run -p sotf-gpui --features dev-api --bin SotF -- --qa "$QA_DIR" &
+#   cargo run -p sotf-dev-driver -- crates/sotf-dev-driver/scenarios/recording_fake_capture.scn -v
 
 focus       recording
 assert      screen.focused == "Recording"
-assert      recording.all_done == true
+assert      recording.all_done == false
 assert      recording.channel_count == 2
+assert      recording.done_count == 0
+assert      recording.step == "Capture"
+assert_visible recording.capture_all
+click       recording.capture_all
+wait_idle   2s
+assert      recording.all_done == true
 assert      recording.done_count == 2
+
+# Rewind to exercise the user-entered SPL calibration stage before Capture.
+assert_visible recording.back
+click       recording.back
+assert      recording.step == "SplCalibration"
+assert_visible recording.spl_start
+assert_accessible button Play calibration tone
+click       recording.spl_start
+wait_idle   2s
+assert_visible recording.spl_meter
+click       recording.spl_meter
+key         cmd-a
+type        "75"
+key         enter
+assert      recording.spl_ready == true
+click       recording.next
+assert      recording.step == "Capture"
+
+assert_visible recording.next
+click       recording.next
+assert      recording.step == "Probe"
+assert_visible recording.probe_run
+assert_accessible button Run Probe
+click       recording.probe_run
+wait_idle   2s
+assert      recording.probe_complete == true
+click       recording.next
+assert      recording.step == "BassAnchor"
+assert_visible recording.bass_anchor_run
+click       recording.bass_anchor_run
+wait_idle   2s
+assert      recording.bass_anchor_complete == true
+click       recording.next
 assert      recording.step == "Evaluating"
-
-focus       room-e-q
-assert      screen.focused == "RoomEq"
-assert      roomeq.measurement_count == 2
-
+screenshot  recording-evaluating
+click       recording.next
+assert      recording.step == "Saving"

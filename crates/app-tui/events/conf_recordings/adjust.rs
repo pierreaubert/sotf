@@ -169,8 +169,7 @@ pub(super) fn adjust_recording_field(app: &mut App, delta: i32) {
             // 1..=8 positions (GPUI uses the same range); the channel list
             // is position-major, so rebuild it when the count changes.
             let cur = app.recording.model.recording_config.num_positions as i32;
-            app.recording.model.recording_config.num_positions =
-                (cur + delta).clamp(1, 8) as usize;
+            app.recording.model.recording_config.num_positions = (cur + delta).clamp(1, 8) as usize;
             init_recording_channels(app);
         }
         ChannelInput(i) => {

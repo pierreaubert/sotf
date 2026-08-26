@@ -24,10 +24,8 @@ fn test_header_size() {
 
 #[test]
 fn test_header_offsets_match_swift_layout_contract() {
-    let manifest: serde_json::Value = serde_json::from_str(
-        super::SHARED_MEMORY_LAYOUT_MANIFEST,
-    )
-    .expect("shared-memory layout manifest must be valid JSON");
+    let manifest: serde_json::Value = serde_json::from_str(super::SHARED_MEMORY_LAYOUT_MANIFEST)
+        .expect("shared-memory layout manifest must be valid JSON");
     assert_eq!(
         manifest["size"].as_u64(),
         Some(std::mem::size_of::<SharedAudioHeader>() as u64)
@@ -425,10 +423,7 @@ fn stale_plain_cursor_commit_is_rejected_after_reconfigure_begins() {
         SharedAudioBuffer::create_or_open_with_capacity(temp_file.path(), 48_000, 16, 2, 2)
             .expect("Failed to create shared memory");
 
-    buffer
-        .header()
-        .write_position
-        .store(8, Ordering::Release);
+    buffer.header().write_position.store(8, Ordering::Release);
     buffer.header().configuring.store(
         super::shared_audio_buffer::CONFIGURING_RECONFIGURE,
         Ordering::Release,
@@ -448,10 +443,7 @@ fn stale_encrypted_cursor_commit_is_rejected_after_reconfigure_begins() {
         SharedAudioBuffer::create_or_open_with_capacity(temp_file.path(), 48_000, 16, 2, 2)
             .expect("Failed to create shared memory");
 
-    buffer
-        .header()
-        .read_position
-        .store(12, Ordering::Release);
+    buffer.header().read_position.store(12, Ordering::Release);
     buffer.header().configuring.store(
         super::shared_audio_buffer::CONFIGURING_RECONFIGURE,
         Ordering::Release,

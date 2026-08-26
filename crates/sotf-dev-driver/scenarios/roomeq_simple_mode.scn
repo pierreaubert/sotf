@@ -1,0 +1,11 @@
+# Room EQ Simple mode: user selects the guided preset surface explicitly.
+focus room-e-q
+click roomeq.load_from_recording
+click roomeq.next
+click roomeq.next
+assert roomeq.step == "Process"
+assert_visible roomeq.select_simple
+click roomeq.select_simple
+assert roomeq.wizard_mode == "Simple"
+assert roomeq.step == "Configure"
+screenshot roomeq-simple-configure

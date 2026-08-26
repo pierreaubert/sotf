@@ -24,6 +24,22 @@ use crate::theme::Theme;
 use crate::ui::PlayerView;
 use sotf_plugins::param_specs::{find_by_key as pk, spectrum::PARAMS as SP};
 
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::DevTrackExt;
+
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 // ============================================================================
 // Spectrum color adapters
 // ============================================================================
@@ -498,6 +514,7 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let text = SpectrumTranslations::for_language(state.app.ui_state.language);
         let spectrum_state = self.state.clone();
+        let hold_state = spectrum_state.clone();
         let phone_hold = state.app.ui_state.phone_spectrum_hold;
         let phone_hold_magnitudes = state.app.ui_state.phone_spectrum_hold_magnitudes.clone();
         let phone_smoothing = if state.app.ui_state.phone_spectrum_smoothed {
@@ -571,10 +588,9 @@ impl PlayerView {
                 .items_center()
                 .justify_center()
                 .size_full()
-                .child(render_empty_state(
-                    IconName::AudioWaveform,
-                    "No spectrum data available. Play audio to see visualization.",
-                    &theme,
+                .child(dev_track!(
+                    render_empty_state(IconName::AudioWaveform, text.data_unavailable, &theme),
+                    "spectrum.unavailable"
                 ))
         };
 
@@ -600,9 +616,34 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .gap(d.grid)
-                            .child(
+                            .child(dev_track!(
+                                Toggle::new("spectrum-screen-hold")
+                                    .checked(phone_hold)
+                                    .label(text.hold)
+                                    .style(ToggleStyle::Segmented)
+                                    .theme(theme.to_toggle_theme())
+                                    .aria_label(text.hold)
+                                    .on_change(move |hold, _, cx| {
+                                        hold_state.update(cx, |state, _| {
+                                            state.app.ui_state.phone_spectrum_hold = hold;
+                                            state.app.ui_state.phone_spectrum_hold_magnitudes =
+                                                hold.then(|| {
+                                                    state
+                                                        .app
+                                                        .playback
+                                                        .spectrum_info
+                                                        .as_ref()
+                                                        .map(|info| info.magnitudes.to_vec())
+                                                })
+                                                .flatten();
+                                        });
+                                    }),
+                                "spectrum.hold"
+                            ))
+                            .child(dev_track!(
                                 Toggle::new("spectrum-screen-smoothing")
                                     .checked(state.app.ui_state.phone_spectrum_smoothed)
+                                    .label(text.smoothing)
                                     .style(ToggleStyle::Segmented)
                                     .theme(theme.to_toggle_theme())
                                     .aria_label(text.smoothing)
@@ -611,13 +652,8 @@ impl PlayerView {
                                             state.app.ui_state.phone_spectrum_smoothed = smoothed;
                                         });
                                     }),
-                            )
-                            .child(
-                                div()
-                                    .text_size(d.text_xs)
-                                    .text_color(theme.text_secondary)
-                                    .child(text.smoothing),
-                            ),
+                                "spectrum.smoothing"
+                            )),
                     ),
             )
             .child(content)

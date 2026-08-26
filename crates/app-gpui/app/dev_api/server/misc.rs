@@ -259,9 +259,10 @@ pub(super) fn percent_decode(s: &str) -> String {
 pub(super) fn list_elements_json() -> String {
     let entries = registry::snapshot();
     let mut items = Vec::with_capacity(entries.len());
-    for (selector, bounds) in entries {
+    for (selector, element) in entries {
+        let bounds = element.bounds;
         let centre = bounds.center();
-        items.push(serde_json::json!({
+        let mut item = serde_json::json!({
             "selector": selector,
             "x": f32::from(bounds.origin.x),
             "y": f32::from(bounds.origin.y),
@@ -269,7 +270,20 @@ pub(super) fn list_elements_json() -> String {
             "h": f32::from(bounds.size.height),
             "cx": f32::from(centre.x),
             "cy": f32::from(centre.y),
-        }));
+        });
+        let Some(state) = item.as_object_mut() else {
+            continue;
+        };
+        if let Some(enabled) = element.state.enabled {
+            state.insert("enabled".into(), serde_json::json!(enabled));
+        }
+        if let Some(selected) = element.state.selected {
+            state.insert("selected".into(), serde_json::json!(selected));
+        }
+        if let Some(expanded) = element.state.expanded {
+            state.insert("expanded".into(), serde_json::json!(expanded));
+        }
+        items.push(item);
     }
     serde_json::json!({ "ok": true, "elements": items }).to_string()
 }

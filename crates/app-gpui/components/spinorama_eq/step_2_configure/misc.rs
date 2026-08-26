@@ -14,6 +14,20 @@ use gpui_ui_kit::{
     ProgressVariant, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 impl PlayerView {
     // ========================================================================
     // Step 2: Configure
@@ -1082,26 +1096,39 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(if is_optimizing {
-                                Button::new("cancel_spinorama_optimization", discovery_text.cancel)
+                                dev_track!(
+                                    Button::new(
+                                        "cancel_spinorama_optimization",
+                                        discovery_text.cancel
+                                    )
                                     .variant(ButtonVariant::Secondary)
                                     .size(ButtonSize::Md)
                                     .full_width(true)
                                     .theme(theme.to_button_theme())
-                                    .on_click_event(cx.listener(|view, _, _, cx| {
-                                        view.cancel_spinorama_optimization(cx);
-                                    }))
-                            } else {
-                                Button::new(
-                                    "start_spinorama_optimization",
-                                    discovery_text.generate_speaker_eq,
+                                    .on_click_event(
+                                        cx.listener(|view, _, _, cx| {
+                                            view.cancel_spinorama_optimization(cx);
+                                        })
+                                    ),
+                                    "spinorama.optimize_cancel"
                                 )
-                                .variant(ButtonVariant::Primary)
-                                .size(ButtonSize::Md)
-                                .full_width(true)
-                                .theme(theme.to_button_theme())
-                                .on_click_event(cx.listener(|view, _, _, cx| {
-                                    view.start_spinorama_optimization(cx);
-                                }))
+                            } else {
+                                dev_track!(
+                                    Button::new(
+                                        "start_spinorama_optimization",
+                                        discovery_text.generate_speaker_eq,
+                                    )
+                                    .variant(ButtonVariant::Primary)
+                                    .size(ButtonSize::Md)
+                                    .full_width(true)
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event(
+                                        cx.listener(|view, _, _, cx| {
+                                            view.start_spinorama_optimization(cx);
+                                        })
+                                    ),
+                                    "spinorama.optimize_start"
+                                )
                             })
                             .when(show_progress, |vstack| {
                                 let display_progress = if is_completed {

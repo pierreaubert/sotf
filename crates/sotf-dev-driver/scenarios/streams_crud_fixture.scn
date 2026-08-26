@@ -1,0 +1,40 @@
+# Validate before persistence, then save, edit, queue, and remove a stream
+# through rendered controls. The first invalid Save must stay recoverable.
+click sidebar.nav-streams
+assert screen.focused == "Streams"
+assert_visible streams.name_input
+assert_visible streams.url_input
+assert_accessible button Save
+click streams.save
+assert streams.count == 0
+assert streams.error != null
+
+click streams.name_input
+type "SOTF QA Live"
+click streams.format_input
+type "mp3"
+click streams.url_input
+type "https://example.invalid/sotf-qa-live.mp3"
+assert streams.seekable == false
+click streams.save
+wait_until streams.count == 1 timeout=2s
+assert streams.error == null
+assert streams.status == "Stream saved"
+
+assert_visible streams.queue.0
+click streams.queue.0
+wait_until queue.length == 1 timeout=2s
+
+click streams.row.0
+assert streams.name == "SOTF QA Live"
+click streams.seekable
+assert streams.seekable == true
+click streams.name_input
+key cmd-a
+type "SOTF QA Live Edited"
+click streams.save
+wait_until streams.status == "Stream saved" timeout=2s
+
+assert_visible streams.remove.0
+click streams.remove.0
+wait_until streams.count == 0 timeout=2s

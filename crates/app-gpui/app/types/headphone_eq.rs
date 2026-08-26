@@ -9,6 +9,9 @@ use sotf_audio_player::autoeq::HeadphoneEasyApplyOutcome;
 use sotf_audio_player::ui_models::headphone_eq::HeadphoneEqScreenModel;
 use std::ops::{Deref, DerefMut};
 
+#[cfg(feature = "dev-api")]
+use std::collections::HashMap;
+
 use super::room_eq::AutoEqField;
 
 // Re-export shared domain types from player crate
@@ -57,6 +60,38 @@ pub struct HeadphoneEqState {
     pub easy_mode_undo_graph: Option<PluginGraph>,
     /// Safety and calibration summary for the currently applied easy chain.
     pub easy_mode_last_apply: Option<HeadphoneEasyApplyOutcome>,
+    /// Monotonic request IDs ensure stale network completions cannot overwrite
+    /// a newer Headphone EQ request.
+    pub headphone_list_request_id: u64,
+    pub download_request_id: u64,
+    /// Deterministic discovery responses used only by the dev-api fixture
+    /// runner. Shipping builds neither contain nor consult this data.
+    #[cfg(feature = "dev-api")]
+    pub qa_discovery_fixture: Option<QaHeadphoneDiscoveryFixture>,
+    /// Last export written by the dev-api build, retained for rendered QA
+    /// assertions. Production builds do not contain this observability state.
+    #[cfg(feature = "dev-api")]
+    pub qa_last_export_path: Option<std::path::PathBuf>,
+}
+
+/// Hermetic responses for the real Headphone EQ discovery controls.
+#[cfg(feature = "dev-api")]
+#[derive(Debug, Clone, Default)]
+pub struct QaHeadphoneDiscoveryFixture {
+    pub catalog: Vec<String>,
+    pub downloads: HashMap<String, QaHeadphoneDownloadFixture>,
+}
+
+/// A single deterministic fixture download. Delays and failures exercise the
+/// same asynchronous state transitions as production network requests.
+#[cfg(feature = "dev-api")]
+#[derive(Debug, Clone)]
+pub struct QaHeadphoneDownloadFixture {
+    pub path: String,
+    pub curve: Vec<(f64, f64)>,
+    pub delay_ms: u64,
+    pub failures_remaining: usize,
+    pub failure_message: String,
 }
 
 impl Default for HeadphoneEqState {
@@ -69,6 +104,12 @@ impl Default for HeadphoneEqState {
             expanded_sections: vec!["measurement".into(), "target".into(), "eq-design".into()],
             easy_mode_undo_graph: None,
             easy_mode_last_apply: None,
+            headphone_list_request_id: 0,
+            download_request_id: 0,
+            #[cfg(feature = "dev-api")]
+            qa_discovery_fixture: None,
+            #[cfg(feature = "dev-api")]
+            qa_last_export_path: None,
         }
     }
 }
@@ -88,6 +129,16 @@ impl DerefMut for HeadphoneEqState {
 }
 
 impl HeadphoneEqState {
+    pub fn begin_headphone_list_request(&mut self) -> u64 {
+        self.headphone_list_request_id = self.headphone_list_request_id.wrapping_add(1);
+        self.headphone_list_request_id
+    }
+
+    pub fn begin_download_request(&mut self) -> u64 {
+        self.download_request_id = self.download_request_id.wrapping_add(1);
+        self.download_request_id
+    }
+
     /// Check if we can proceed from the current step.
     pub fn can_advance(&self) -> bool {
         self.model.can_advance()

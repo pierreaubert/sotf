@@ -46,9 +46,70 @@ pub struct RecordingState {
     /// Index of the channel-speaker row whose autocomplete suggestions
     /// are currently visible, or `None` when no dropdown is open.
     pub channel_speaker_autocomplete_open: Option<usize>,
+    /// Semantic severity for the user-visible recording status.  Display
+    /// text is translated independently, so it must never determine this.
+    pub status_severity: RecordingStatusSeverity,
+    /// Debug-only deterministic capture source. It configures the environment
+    /// for a UI test; results are produced only after the visible Capture
+    /// action is invoked.
+    #[cfg(feature = "dev-api")]
+    pub qa_fake_capture: Option<QaFakeCapture>,
     // NOTE: `capture_generation` / `is_current_capture` live on the shared
     // `RecordingScreenModel` (reached via Deref) so the TUI can use the same
     // stale-completion guard.
+}
+
+#[cfg(feature = "dev-api")]
+#[derive(Debug, Clone)]
+pub struct QaFakeCapture {
+    pub points: usize,
+    /// A one-shot deterministic failure injected after the visible Capture
+    /// action. Taking it on the first attempt makes Retry exercise the same
+    /// UI control and then succeed.
+    pub fault: Option<QaFakeCaptureFault>,
+}
+
+/// Failure modes that the dev-only recording fixture can reproduce.
+#[cfg(feature = "dev-api")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QaFakeCaptureFault {
+    DeviceLost,
+    Clipping,
+    IoFailure,
+}
+
+#[cfg(feature = "dev-api")]
+impl QaFakeCaptureFault {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "device-loss" => Some(Self::DeviceLost),
+            "clipping" => Some(Self::Clipping),
+            "io-failure" => Some(Self::IoFailure),
+            _ => None,
+        }
+    }
+
+    pub const fn status_message(self) -> &'static str {
+        match self {
+            Self::DeviceLost => "Recording error: capture device was disconnected",
+            Self::Clipping => "Recording error: input clipped during capture",
+            Self::IoFailure => "Recording error: unable to write capture data",
+        }
+    }
+}
+
+/// Severity associated with a recording workflow status message.
+///
+/// This deliberately lives in the GPUI wrapper rather than the shared player
+/// model: it is presentation metadata, not recording-domain state.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RecordingStatusSeverity {
+    #[default]
+    Idle,
+    Working,
+    Success,
+    Warning,
+    Error,
 }
 
 impl Default for RecordingState {
@@ -75,7 +136,27 @@ impl Default for RecordingState {
             plot_channel_dropdown_open: false,
             plot_smoothing_dropdown_open: false,
             channel_speaker_autocomplete_open: None,
+            status_severity: RecordingStatusSeverity::Idle,
+            #[cfg(feature = "dev-api")]
+            qa_fake_capture: None,
         }
+    }
+}
+
+impl RecordingState {
+    /// Set the presentation status and its semantic severity together.
+    ///
+    /// Keeping these in one operation prevents translated display text from
+    /// becoming an implicit source of truth for success or failure styling.
+    pub fn set_status(&mut self, message: impl Into<String>, severity: RecordingStatusSeverity) {
+        self.status_message = message.into();
+        self.status_severity = severity;
+    }
+
+    /// Clear a transient status when a workflow returns to its idle state.
+    pub fn clear_status(&mut self) {
+        self.status_message.clear();
+        self.status_severity = RecordingStatusSeverity::Idle;
     }
 }
 

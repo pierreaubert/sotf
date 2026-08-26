@@ -85,17 +85,18 @@ the scenario artifact directory and sends them to `/qa/seed`.
 `require_virtual_audio = true` skips the scenario unless `AEQ_E2E_DEVICE`
 is set; use it for BlackHole/SotF HAL loopback smoke tests.
 
-RoomEQ fixture scenarios use `[scenario.room_eq]`. The runner copies the
-fixture into the per-scenario artifact `dist/` tree, loads `recordings.json`
-through `/qa/room-eq`, applies the requested default-wizard tuple, and can
-start the real optimizer. The checked-in `roomeq_matrix.toml` expects the
-separate `autoeq` repository to be checked out next to `sotf`; that repository
-owns the D3V measurement fixture used by all 24 matrix cases.
+RoomEQ fixture scenarios use `[scenario.room_eq]`. Fixtures must live under
+`crates/sotf-dev-driver/testkit/roomeq/`; the runner rejects sibling checkout
+and absolute-path fixtures, then copies the data into the per-scenario
+artifact `dist/` tree. The existing optimizer matrix uses `/qa/room-eq` only
+as an optimizer-adapter integration test. UI end-to-end scenarios must use a
+fixture solely to arrange the environment and then click visible workflow
+controls.
 
 ```toml
 [scenario.room_eq]
-fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
-dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
 target = "NearField"      # NearField | MidField | FarField
 loss = "Flat"             # Flat | Epa
 processing = "Iir"        # Iir | MixedPhase
@@ -158,13 +159,30 @@ involvement, prefer a unit test in the implicated crate over a `.scn`.
 | `action`     | Dispatch a named GPUI Action (with optional inline JSON).    |
 | `query`      | Read a property by string path; print value when `-v`.       |
 | `assert`     | Compare a property to a literal; fail script on mismatch.    |
+| `assert_snapshot` | Compare a QA screenshot with a baseline PNG; write expected/actual/diff artifacts on mismatch. |
+| `assert_accessible` | Require a rendered accessibility role/name pair.         |
+| `assert_inaccessible` | Require that a role/name pair is absent from the current rendered tree. |
+| `assert_focused` | Require that an accessibility element ID owns keyboard focus. |
 | `wait_until` | Poll a property until it matches; with optional `timeout=`.  |
+| `wait_idle`  | Wait for rendered selectors to remain stable; optional timeout duration. |
 | `sleep`      | Real-time wait (escape hatch).                               |
 | `focus`      | Sugar: `focus library` → `action SwitchToLibrary`.           |
 | `key`        | Synthetic keystroke (`gpui::Keystroke::parse` syntax).        |
+| `type`       | Type text through the focused control using real key events; quote as JSON for escapes. |
 | `click`      | Click a `dev_track`-registered element by selector.           |
+| `hover`      | Move the pointer over a tracked selector.                      |
+| `drag`       | Drag from one tracked selector to another.                     |
+| `scroll`     | Scroll a selector by a signed vertical pixel delta.            |
+| `resize`     | Resize the app content area to a width and height in pixels.   |
+| `screenshot` | Capture a PNG below the scenario's isolated QA directory.      |
+| `assert_visible` | Require a rendered selector with non-empty bounds.         |
+| `assert_absent` | Require that a selector is not rendered.                   |
+| `assert_in_viewport` | Require a selector to fit in the current viewport.    |
+| `assert_non_overlapping` | Require two selectors not to overlap.              |
+| `assert_enabled` / `assert_selected` / `assert_expanded` | Compare explicit semantic state. |
 | `export_room_eq_json` | Export completed RoomEQ DSP JSON to the QA artifact. |
 | `elements`   | Print every tracked selector to stdout (debugging aid).       |
+| `accessibility` | Print the rendered accessibility tree.                     |
 
 Comparison clauses support `==`, `!=`, `>`, `>=`, `<`, and `<=`. They
 accept trailing `tolerance=<f>` for numeric equality and `timeout=<dur>`
@@ -175,8 +193,14 @@ focus       library
 assert      screen.focused == "Library"
 action      PlayPause
 wait_until  playback.is_playing == true   timeout=2s
+wait_idle   2s
 action      VolumeUpLarge
 assert      playback.volume == 0.85       tolerance=0.01
+# After a visible input has been focused with `click`:
+type        Focused playlist name
+screenshot  playlists-compact
+assert_snapshot playlists-compact crates/sotf-dev-driver/baselines/playlists-compact.png 0.02
+assert_accessible button New Playlist
 assert      roomeq.average_post_score <= 35
 action      Stop
 ```
@@ -195,7 +219,11 @@ See `crates/app-gpui/app/dev_api/queries.rs` — currently:
 - `screen.focused`         → string (Screen variant)
 - `queue.length`           → number
 - `queue.current_index`    → number | null
-- `library.directory_count`, `library.album_count`, `library.track_count`
+- `playlists.count`, `playlists.first_name`, `playlists.dialog`,
+  `playlists.active_track_count`, `playlists.undo_available`
+- `library.directory_count`, `library.album_count`, `library.track_count`,
+  `library.filtered_album_count`, `library.search_query`, `library.sort_order`,
+  `library.channel_filter`
 - `recording.step`, `recording.channel_count`, `recording.done_count`,
   `recording.all_done`, `recording.status`
 - `roomeq.step`, `roomeq.measurement_count`, `roomeq.speaker_config_count`,
@@ -245,5 +273,6 @@ All seven phases of the original plan are wired:
 - Query allow-list (`crates/app-gpui/app/dev_api/queries.rs`).
 - Synthetic keystrokes via `Window::dispatch_keystroke`.
 - ElementId registry + click synthesis via `Window::dispatch_event`.
-- Line-based DSL with `action / query / assert / wait_until / sleep /
-  focus / key / click / elements`.
+- Line-based DSL with `action / query / assert / assert_snapshot / assert_accessible / assert_inaccessible / wait_until / wait_idle / sleep /
+  focus / key / type / click / hover / drag / scroll / resize / screenshot / elements /
+  accessibility`.

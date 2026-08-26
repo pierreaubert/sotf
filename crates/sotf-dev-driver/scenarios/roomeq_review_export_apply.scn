@@ -1,0 +1,29 @@
+# Room EQ review, export, and apply E2E against the in-repository fixture.
+# Fixture setup only seeds Recording; every Room EQ transition is a visible UI action.
+
+focus       room-e-q
+click       roomeq.load_from_recording
+click       roomeq.next
+click       roomeq.next
+click       roomeq.select_simple
+click       roomeq.next
+click       roomeq.optimize_start
+wait_until  roomeq.optimization_status == "Completed" timeout=150s
+assert      roomeq.step == "Review"
+assert      roomeq.result_count == 2
+assert      roomeq.filter_count >= 2
+assert      roomeq.average_pre_score != null
+assert      roomeq.average_post_score != null
+screenshot  roomeq-review-comparison
+click       roomeq.next
+assert      roomeq.step == "Export"
+click       roomeq.export_file
+wait_idle   2s
+assert      roomeq.export.exists == true
+assert      roomeq.export.channel_count == 2
+assert      roomeq.export.filter_count >= 2
+click       roomeq.apply_to_player
+wait_idle   2s
+assert      roomeq.error == null
+assert      roomeq.status != ""
+screenshot  roomeq-export-applied

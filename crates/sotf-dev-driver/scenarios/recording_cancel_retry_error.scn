@@ -1,0 +1,48 @@
+# Recording deterministic failure, cancellation, and retry QA scenario.
+#
+# The suite installs one one-shot fault before this script. The first visible
+# Capture action must put every channel in the Error state without pretending
+# completion. Going back cancels the failed take's context; returning to
+# Capture and retrying the same button consumes a healthy deterministic source.
+# Fix: crates/app-gpui/components/recording/capture/misc.rs::complete_qa_fake_capture.
+# Run with:
+#   QA_DIR=$(mktemp -d) && rtk cargo build -p sotf-gpui --features dev-api --bin sotf-desktop && \
+#   target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/recording_ui.toml -v
+
+focus       recording
+assert      screen.focused == "Recording"
+assert      recording.step == "Capture"
+assert      recording.all_done == false
+assert      recording.error_count == 0
+assert_visible recording.capture_all
+
+# The injected device loss, clipping, or I/O failure is surfaced by the real
+# Capture control rather than by a direct state mutation from the scenario.
+click       recording.capture_all
+wait_idle   2s
+assert      recording.all_done == false
+assert      recording.done_count == 0
+assert      recording.error_count == 2
+assert      recording.status_severity == "Error"
+screenshot  recording-capture-error
+
+# Leave the failed take, then return and retry with the same production action.
+assert_visible recording.back
+click       recording.back
+assert      recording.step == "SplCalibration"
+click       recording.spl_start
+wait_idle   2s
+click       recording.spl_meter
+key         cmd-a
+type        "75"
+key         enter
+assert      recording.spl_ready == true
+click       recording.next
+assert      recording.step == "Capture"
+click       recording.capture_all
+wait_idle   2s
+assert      recording.error_count == 0
+assert      recording.done_count == 2
+assert      recording.all_done == true
+assert      recording.status_severity == "Success"
+screenshot  recording-capture-retry

@@ -481,9 +481,17 @@ impl EarTrainingSessionSummary {
 pub struct EarTrainingProgress {
     #[serde(default)]
     pub sessions: Vec<EarTrainingSessionSummary>,
+    /// Completion of the first-run listening-safety guide. Kept alongside
+    /// progress so it survives app restarts without coupling it to a frontend.
+    #[serde(default)]
+    pub how_to_listen_completed: bool,
 }
 
 impl EarTrainingProgress {
+    pub fn mark_how_to_listen_completed(&mut self) {
+        self.how_to_listen_completed = true;
+    }
+
     pub fn record(&mut self, session: &EqTrainingSession, course: Option<EarTrainingCourse>) {
         self.sessions
             .push(EarTrainingSessionSummary::from_session(session, course));

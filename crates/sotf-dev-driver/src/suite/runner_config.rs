@@ -44,6 +44,7 @@ pub(super) fn spawn_app(
     scenario_dir: &Path,
     qa_dir: &Path,
     port: u16,
+    run_id: &str,
     verbose: bool,
 ) -> Result<Child> {
     let stdout_path = scenario_dir.join("sotf.stdout.log");
@@ -58,6 +59,7 @@ pub(super) fn spawn_app(
     }
     cmd.args(&runner.app_args)
         .env("SOTF_DEV_API_PORT", port.to_string())
+        .env("SOTF_DEV_API_RUN_ID", run_id)
         .env("SOTF_QA_DIR", qa_dir.as_os_str())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr));

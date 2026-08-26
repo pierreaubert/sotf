@@ -1,0 +1,42 @@
+# Room EQ visible wizard E2E with the checked-in calibrated stereo fixture.
+#
+# The suite only seeds Recording state. `roomeq.load_from_recording` must run
+# the same product handler that users activate on the Load screen; no Room EQ
+# measurements, configs, or optimizer result are injected. Run with:
+#   cargo run -p sotf-dev-driver -- run-suite crates/sotf-dev-driver/suites/roomeq_ui.toml -v
+
+focus       room-e-q
+assert      screen.focused == "RoomEq"
+assert      roomeq.step == "LoadData"
+assert      roomeq.measurement_count == 0
+assert_visible roomeq.load_from_recording
+assert_accessible button Load
+click       roomeq.load_from_recording
+wait_idle   2s
+assert      roomeq.measurement_count == 2
+assert      roomeq.speaker_config_count == 2
+assert_visible roomeq.next
+click       roomeq.next
+assert      roomeq.step == "Delay"
+click       roomeq.next
+assert      roomeq.step == "Process"
+assert_visible roomeq.select_simple
+click       roomeq.select_simple
+assert      roomeq.step == "Configure"
+click       roomeq.next
+assert      roomeq.step == "Optimize"
+assert_visible roomeq.optimize_start
+click       roomeq.optimize_start
+wait_until  roomeq.optimization_status == "Completed" timeout=150s
+assert      roomeq.step == "Review"
+assert      roomeq.result_count == 2
+assert      roomeq.has_dsp_output == true
+screenshot  roomeq-review
+click       roomeq.next
+assert      roomeq.step == "Export"
+assert_visible roomeq.export_file
+click       roomeq.export_file
+wait_idle   2s
+assert      roomeq.export.exists == true
+assert      roomeq.export.channel_count == 2
+assert      roomeq.export.filter_count >= 2

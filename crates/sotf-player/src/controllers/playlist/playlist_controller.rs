@@ -150,6 +150,32 @@ impl PlaylistController {
         Ok(id)
     }
 
+    /// Persist an ordered track collection as a new playlist and open it.
+    /// This is deliberately controller-owned so every frontend follows the
+    /// same create-and-populate persistence path.
+    pub fn create_playlist_with_tracks(
+        &mut self,
+        db: &MusicDatabase,
+        name: &str,
+        description: Option<&str>,
+        track_paths: &[PathBuf],
+    ) -> Result<i64, String> {
+        let id = self.create_playlist(db, name, description)?;
+        if !track_paths.is_empty() {
+            db.add_tracks_to_playlist(id, track_paths)
+                .map_err(|e| format!("Failed add playlist tracks: {e}"))?;
+            self.load_playlists(db)?;
+        }
+
+        let index = self
+            .playlists
+            .iter()
+            .position(|playlist| playlist.id == Some(id))
+            .ok_or_else(|| "Created playlist was not found".to_string())?;
+        self.open_playlist(db, index)?;
+        Ok(id)
+    }
+
     /// Rename the playlist at the given index.
     pub fn rename_playlist(
         &mut self,
@@ -229,6 +255,30 @@ impl PlaylistController {
         db.add_tracks_to_playlist(id, &paths)
             .map_err(|e| format!("Failed to add album tracks: {}", e))?;
         // Reload active if this is the open playlist
+        if self.active_playlist_id() == Some(id) {
+            self.reload_active(db)?;
+        }
+        self.load_playlists(db)?;
+        Ok(())
+    }
+
+    /// Add tracks to a playlist selected by index. This is used when restoring
+    /// a deleted playlist, before it becomes the active playlist again.
+    pub fn add_tracks_to_playlist(
+        &mut self,
+        db: &MusicDatabase,
+        playlist_index: usize,
+        track_paths: &[PathBuf],
+    ) -> Result<(), String> {
+        let playlist = self
+            .playlists
+            .get(playlist_index)
+            .ok_or_else(|| format!("Playlist index {playlist_index} out of range"))?;
+        let id = playlist
+            .id
+            .ok_or_else(|| "Playlist has no ID".to_string())?;
+        db.add_tracks_to_playlist(id, track_paths)
+            .map_err(|error| format!("Failed to add playlist tracks: {error}"))?;
         if self.active_playlist_id() == Some(id) {
             self.reload_active(db)?;
         }
@@ -444,6 +494,24 @@ mod tests {
         assert_eq!(ctrl.playlists().len(), 2);
         assert_eq!(ctrl.playlists()[0].name, "Jazz Mix");
         assert_eq!(ctrl.playlists()[1].name, "Road Trip");
+    }
+
+    #[test]
+    fn test_create_playlist_with_tracks_opens_and_populates_playlist() {
+        let db = setup_db();
+        let mut ctrl = PlaylistController::new();
+        let paths = vec![
+            PathBuf::from("/music/a.flac"),
+            PathBuf::from("/music/b.flac"),
+        ];
+
+        ctrl.create_playlist_with_tracks(&db, "Queue export", None, &paths)
+            .unwrap();
+
+        assert_eq!(ctrl.playlists().len(), 1);
+        assert_eq!(ctrl.playlists()[0].name, "Queue export");
+        assert_eq!(ctrl.playlist_track_count(0), 2);
+        assert_eq!(ctrl.active_playlist().unwrap().entries.len(), 2);
     }
 
     #[test]

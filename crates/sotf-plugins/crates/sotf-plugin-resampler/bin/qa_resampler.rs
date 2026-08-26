@@ -154,22 +154,22 @@ fn main() {
                         candidate.process(&input, &mut output, &context).unwrap();
                     }
 
-                let mut samples = Vec::with_capacity(SAMPLED_CALLBACKS);
-                let scheduler_deadline = Duration::from_secs_f64(
-                    Plugin::realtime_quantum_frames(&candidate).max(frames) as f64
-                        / source_rate as f64,
-                );
-                let scheduler_budget = Duration::from_secs_f64(
-                    scheduler_deadline.as_secs_f64() * SCHEDULER_JITTER_MARGIN,
-                );
+                    let mut samples = Vec::with_capacity(SAMPLED_CALLBACKS);
+                    let scheduler_deadline = Duration::from_secs_f64(
+                        Plugin::realtime_quantum_frames(&candidate).max(frames) as f64
+                            / source_rate as f64,
+                    );
+                    let scheduler_budget = Duration::from_secs_f64(
+                        scheduler_deadline.as_secs_f64() * SCHEDULER_JITTER_MARGIN,
+                    );
                     for _ in 0..SAMPLED_CALLBACKS {
                         let started = Instant::now();
                         let produced = candidate.process(&input, &mut output, &context).unwrap();
                         let elapsed = started.elapsed();
                         let actual_deadline =
                             Duration::from_secs_f64(frames as f64 / source_rate as f64);
-                actual_callback_misses += usize::from(elapsed >= actual_deadline);
-                scheduler_quantum_misses += usize::from(elapsed >= scheduler_budget);
+                        actual_callback_misses += usize::from(elapsed >= actual_deadline);
+                        scheduler_quantum_misses += usize::from(elapsed >= scheduler_budget);
                         samples.push(elapsed);
                         assert!(
                             output[..produced * matrix_channels]
@@ -186,10 +186,10 @@ fn main() {
                     worst_case_p95 = worst_case_p95.max(p95);
                     worst_case_p99 = worst_case_p99.max(p99);
                     worst_callback = worst_callback.max(max);
-                let callback_deadline = scheduler_deadline;
+                    let callback_deadline = scheduler_deadline;
                     assert!(
-                    p99 < scheduler_budget && max < scheduler_budget,
-                    "{quality:?} {source_rate}->{sink_rate} {matrix_channels}ch/{frames}f p50/p95/p99/max={p50:?}/{p95:?}/{p99:?}/{max:?}, scheduler budget={scheduler_budget:?} (negotiated quantum={callback_deadline:?})"
+                        p99 < scheduler_budget && max < scheduler_budget,
+                        "{quality:?} {source_rate}->{sink_rate} {matrix_channels}ch/{frames}f p50/p95/p99/max={p50:?}/{p95:?}/{p99:?}/{max:?}, scheduler budget={scheduler_budget:?} (negotiated quantum={callback_deadline:?})"
                     );
                     all_samples.extend_from_slice(&samples);
 

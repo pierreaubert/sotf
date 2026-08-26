@@ -6,12 +6,15 @@
 //! channel. The handler blocks on a synchronous reply channel before
 //! writing the HTTP response and closing the connection.
 
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
+use sotf_dev_api::server::{ServerConfig, start_server};
+use sotf_dev_api::{
+    Capabilities, FixtureCapability, HttpResponse, InputCapabilities, Method, NamedCapability,
+    RunId,
+};
 
 use super::commands::{DevCommand, DevQueryReply, DevReply};
 
@@ -22,46 +25,137 @@ const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 /// Returns an mpsc receiver that the TUI main loop should poll for
 /// incoming commands.
 pub fn start(port: u16) -> mpsc::Receiver<DevCommand> {
-    let (tx, rx) = mpsc::channel::<DevCommand>();
-
-    std::thread::Builder::new()
-        .name("sotf-dev-api".into())
-        .spawn(move || {
-            if let Err(e) = run_listener(port, tx) {
-                log::error!("dev-api listener exited: {e:#}");
+    let (tx, rx) = mpsc::sync_channel::<DevCommand>(64);
+    let run_id = std::env::var("SOTF_DEV_API_RUN_ID")
+        .map_err(anyhow::Error::from)
+        .and_then(|value| RunId::parse(value).map_err(anyhow::Error::from));
+    match run_id {
+        Ok(run_id) => {
+            let mut config = ServerConfig::loopback(run_id, capabilities());
+            config.bind = ([127, 0, 0, 1], port).into();
+            let dispatcher_tx = tx.clone();
+            match start_server(
+                config,
+                move |request: sotf_dev_api::HttpRequest, _context| {
+                    let request = HttpRequest {
+                        method: match request.method {
+                            Method::Get => "GET".into(),
+                            Method::Post => "POST".into(),
+                        },
+                        path: request.path,
+                        body: request.body,
+                    };
+                    legacy_response(&dispatch_request(&request, &dispatcher_tx))
+                },
+            ) {
+                Ok(handle) => {
+                    let endpoint = handle.endpoint();
+                    std::thread::Builder::new()
+                        .name("sotf-tui-dev-api-owner".into())
+                        .spawn(move || {
+                            loop {
+                                std::hint::black_box(&handle);
+                                std::thread::park_timeout(Duration::from_secs(3600));
+                            }
+                        })
+                        .expect("failed to retain TUI dev-api server handle");
+                    log::info!("TUI dev-api protocol v2 listening on http://{endpoint}");
+                }
+                Err(error) => log::error!("TUI dev-api listener failed: {error}"),
             }
-        })
-        .expect("failed to spawn dev-api thread");
-
-    log::info!("dev-api listening on http://127.0.0.1:{port}");
+        }
+        Err(error) => {
+            log::error!(
+                "refusing to start TUI dev-api without a valid SOTF_DEV_API_RUN_ID: {error:#}"
+            );
+        }
+    }
 
     rx
 }
 
-fn run_listener(port: u16, tx: mpsc::Sender<DevCommand>) -> Result<()> {
-    let listener = TcpListener::bind(("127.0.0.1", port))?;
-    for stream in listener.incoming() {
-        let stream = match stream {
-            Ok(s) => s,
-            Err(e) => {
-                log::warn!("dev-api accept failed: {e}");
-                continue;
-            }
-        };
-        if let Err(e) = handle_connection(stream, &tx) {
-            log::warn!("dev-api connection error: {e:#}");
-        }
-    }
-    Ok(())
+fn capabilities() -> Capabilities {
+    let mut capabilities = Capabilities::new("tui", "sotf-tui");
+    capabilities.build_version = env!("CARGO_PKG_VERSION").into();
+    capabilities.build_id = option_env!("SOTF_BUILD_ID").unwrap_or("development").into();
+    capabilities.debug_features = vec!["dev-api".into(), "qa".into(), "headless".into()];
+    capabilities.actions = [
+        "PlayPause",
+        "Stop",
+        "VolumeUp",
+        "VolumeDown",
+        "Mute",
+        "SwitchToLibrary",
+        "SwitchToQueue",
+        "SwitchToConfigure",
+        "SwitchToPlugins",
+        "SwitchToDevices",
+        "SwitchToPlaylists",
+        "PluginClear",
+        "PluginAdd",
+        "PluginRemove",
+        "PluginToggle",
+        "PluginMoveUp",
+        "PluginMoveDown",
+        "PluginSetParam",
+        "PluginSetParamString",
+        "PluginChainSave",
+        "PluginChainLoad",
+        "MetadataSeedAlbum",
+        "MetadataOpenAlbumEditor",
+        "MetadataSetField",
+        "MetadataPreview",
+    ]
+    .into_iter()
+    .map(|name| NamedCapability {
+        name: name.into(),
+        family: if name.starts_with("SwitchTo") {
+            "navigation".into()
+        } else {
+            "tui_action".into()
+        },
+        payload_schema: None,
+    })
+    .collect();
+    capabilities.queries = vec![
+        "screen.focused".into(),
+        "input_mode".into(),
+        "configure.sub_screen".into(),
+        "playback.volume".into(),
+        "playback.is_playing".into(),
+        "playback.muted".into(),
+        "queue.length".into(),
+        "queue.current_index".into(),
+        "library.album_count".into(),
+        "library.track_count".into(),
+        "metadata.editor_open".into(),
+    ];
+    capabilities.inputs = InputCapabilities {
+        key: true,
+        text: true,
+        selector: false,
+        pointer: false,
+        touch: false,
+        scroll: false,
+        resize: true,
+        remote: vec![],
+    };
+    capabilities.fixtures = vec![FixtureCapability {
+        name: "seed".into(),
+        max_body_bytes: capabilities.limits.fixture_body_bytes,
+    }];
+    capabilities
 }
 
-fn handle_connection(mut stream: TcpStream, tx: &mpsc::Sender<DevCommand>) -> Result<()> {
-    stream.set_read_timeout(Some(Duration::from_secs(2)))?;
-    let req = parse_request(&mut stream)?;
-    let response = dispatch_request(&req, tx);
-    stream.write_all(response.as_bytes())?;
-    stream.flush()?;
-    Ok(())
+fn legacy_response(response: &str) -> HttpResponse {
+    let (head, body) = response.split_once("\r\n\r\n").unwrap_or((response, ""));
+    let status = head
+        .lines()
+        .next()
+        .and_then(|line| line.split_ascii_whitespace().nth(1))
+        .and_then(|status| status.parse().ok())
+        .unwrap_or(500);
+    HttpResponse::json(status, body.as_bytes().to_vec())
 }
 
 #[derive(Debug)]
@@ -71,47 +165,7 @@ struct HttpRequest {
     body: Vec<u8>,
 }
 
-fn parse_request(stream: &mut TcpStream) -> Result<HttpRequest> {
-    let mut reader = BufReader::new(stream);
-
-    // Request line.
-    let mut line = String::new();
-    reader.read_line(&mut line)?;
-    let mut parts = line.split_whitespace();
-    let method = parts
-        .next()
-        .ok_or_else(|| anyhow!("missing method"))?
-        .to_string();
-    let path = parts
-        .next()
-        .ok_or_else(|| anyhow!("missing path"))?
-        .to_string();
-
-    // Headers — we only care about Content-Length.
-    let mut content_length = 0usize;
-    loop {
-        let mut header = String::new();
-        reader.read_line(&mut header)?;
-        if header == "\r\n" || header.is_empty() {
-            break;
-        }
-        if let Some(value) = header
-            .strip_prefix("Content-Length:")
-            .or_else(|| header.strip_prefix("content-length:"))
-        {
-            content_length = value.trim().parse().unwrap_or(0);
-        }
-    }
-
-    let mut body = vec![0u8; content_length];
-    if content_length > 0 {
-        reader.read_exact(&mut body)?;
-    }
-
-    Ok(HttpRequest { method, path, body })
-}
-
-fn dispatch_request(req: &HttpRequest, tx: &mpsc::Sender<DevCommand>) -> String {
+fn dispatch_request(req: &HttpRequest, tx: &mpsc::SyncSender<DevCommand>) -> String {
     let (path, query) = split_path_query(&req.path);
     let result: Result<(u16, String)> = match (req.method.as_str(), path) {
         ("POST", "/action") => post_action(&req.body, tx).map(|r| {
@@ -127,6 +181,10 @@ fn dispatch_request(req: &HttpRequest, tx: &mpsc::Sender<DevCommand>) -> String 
             (status, r.to_json())
         }),
         ("GET", "/health") => get_health(tx).map(|r| {
+            let status = if r.value.is_ok() { 200 } else { 500 };
+            (status, r.to_json())
+        }),
+        ("GET", "/snapshot") => get_snapshot(tx).map(|r| {
             let status = if r.value.is_ok() { 200 } else { 500 };
             (status, r.to_json())
         }),
@@ -153,7 +211,7 @@ fn split_path_query(full: &str) -> (&str, &str) {
     }
 }
 
-fn get_query(raw_query: &str, tx: &mpsc::Sender<DevCommand>) -> Result<DevQueryReply> {
+fn get_query(raw_query: &str, tx: &mpsc::SyncSender<DevCommand>) -> Result<DevQueryReply> {
     let mut path: Option<String> = None;
     for kv in raw_query.split('&').filter(|s| !s.is_empty()) {
         let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
@@ -205,7 +263,7 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn post_action(body: &[u8], tx: &mpsc::Sender<DevCommand>) -> Result<DevReply> {
+fn post_action(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> {
     #[derive(serde::Deserialize)]
     struct Payload {
         name: String,
@@ -229,7 +287,7 @@ fn post_action(body: &[u8], tx: &mpsc::Sender<DevCommand>) -> Result<DevReply> {
     Ok(reply)
 }
 
-fn post_key(body: &[u8], tx: &mpsc::Sender<DevCommand>) -> Result<DevReply> {
+fn post_key(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> {
     #[derive(serde::Deserialize)]
     struct Payload {
         keystroke: String,
@@ -249,7 +307,7 @@ fn post_key(body: &[u8], tx: &mpsc::Sender<DevCommand>) -> Result<DevReply> {
     Ok(reply)
 }
 
-fn get_health(tx: &mpsc::Sender<DevCommand>) -> Result<DevQueryReply> {
+fn get_health(tx: &mpsc::SyncSender<DevCommand>) -> Result<DevQueryReply> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     tx.send(DevCommand::Health { reply: reply_tx })
         .map_err(|_| anyhow!("dev-api queue closed"))?;
@@ -259,7 +317,16 @@ fn get_health(tx: &mpsc::Sender<DevCommand>) -> Result<DevQueryReply> {
     Ok(reply)
 }
 
-fn post_quit(tx: &mpsc::Sender<DevCommand>) -> Result<DevReply> {
+fn get_snapshot(tx: &mpsc::SyncSender<DevCommand>) -> Result<DevQueryReply> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    tx.send(DevCommand::Snapshot { reply: reply_tx })
+        .map_err(|_| anyhow!("dev-api queue closed"))?;
+    reply_rx
+        .recv_timeout(REPLY_TIMEOUT)
+        .map_err(|_| anyhow!("dev-api snapshot reply timeout"))
+}
+
+fn post_quit(tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     tx.send(DevCommand::Quit { reply: reply_tx })
         .map_err(|_| anyhow!("dev-api queue closed"))?;
@@ -269,7 +336,7 @@ fn post_quit(tx: &mpsc::Sender<DevCommand>) -> Result<DevReply> {
     Ok(reply)
 }
 
-fn post_qa_seed(tx: &mpsc::Sender<DevCommand>) -> Result<DevReply> {
+fn post_qa_seed(tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     tx.send(DevCommand::QaSeed { reply: reply_tx })
         .map_err(|_| anyhow!("dev-api queue closed"))?;

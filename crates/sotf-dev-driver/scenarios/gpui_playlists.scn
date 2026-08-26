@@ -5,18 +5,64 @@
 focus       playlists
 assert      screen.focused == "Playlists"
 
+# Primary navigation must be operable through the rendered sidebar controls,
+# rather than only through the internal SwitchTo action used by `focus`.
+click       sidebar.nav-home
+assert      screen.focused == "Home"
+click       sidebar.nav-streams
+assert      screen.focused == "Streams"
+click       sidebar.nav-search
+assert      screen.focused == "Library"
+
+focus       playlists
+assert      screen.focused == "Playlists"
+
 # Create a new playlist (action opens a modal in GPUI).
-action      CreatePlaylist
-sleep       200ms
+assert_visible playlist.create
+resize 700 600
+wait_idle 2s
+assert_in_viewport playlist.create
+assert_non_overlapping sidebar.nav-home playlist.create
+screenshot playlists-compact
+accessibility
+assert_accessible button New playlist
+click playlist.create
+assert playlists.dialog == "Create"
+assert_visible playlist.name_input
+click playlist.name_input
+wait_idle 1s
+screenshot playlists-create-focus
+assert_focused playlist-name
+type "SOTF QA Playlist #1"
+click playlist.save
+wait_until playlists.count >= 1 timeout=2s
+assert playlists.first_name == "SOTF QA Playlist #1"
+assert playlists.dialog == "None"
+assert_absent playlist.name_input
+assert_visible playlist.open.0
+click playlist.open.0
+assert_visible playlist.delete_active
+click playlist.rename.0
+assert playlists.dialog == "Rename"
+click playlist.name_input
+wait_idle 1s
+assert_focused playlist-name
+key cmd-a
+type "SOTF QA Playlist Renamed"
+click playlist.save
+wait_until playlists.first_name == "SOTF QA Playlist Renamed" timeout=2s
+assert playlists.dialog == "None"
+click playlist.delete_active
+assert playlists.dialog == "ConfirmDelete"
+assert_visible playlist.delete_confirm
+click playlist.delete_confirm
+wait_until playlists.count == 0 timeout=2s
+assert playlists.undo_available == true
+assert_visible playlist.undo_delete
+click playlist.undo_delete
+wait_until playlists.count == 1 timeout=2s
+assert playlists.undo_available == false
 
-# Rename the selected playlist.
-action      RenamePlaylist
-sleep       200ms
-
-# Delete the selected playlist.
-action      DeletePlaylist
-sleep       200ms
-
-# Return to library.
-focus       library
+# Return through the visible sidebar control.
+click       sidebar.nav-library
 assert      screen.focused == "Library"

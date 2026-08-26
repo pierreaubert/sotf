@@ -1,0 +1,55 @@
+# Library browse/search/filter rendered workflow.
+#
+# Uses only the checked-in demo audio fixture. Every mutation is performed
+# through a painted control; dev-api queries assert the durable controller
+# state that the rendered result represents.
+
+focus library
+assert screen.focused == "Library"
+wait_until library.album_count > 0 timeout=5s
+wait_idle 2s
+assert_visible library.tab.search
+assert_visible library.tab.album
+
+# Search a known fixture title, then recover from a deliberately empty result.
+click library.tab.search
+assert_visible library.search_input
+click library.search_input
+type "classical"
+wait_until library.search_query == "classical" timeout=2s
+wait_until library.filtered_album_count > 0 timeout=2s
+
+# The Search tab doubles as a clear/close action. Re-open it instead of
+# mutating the input by fixture state, then enter a query with no matches.
+click library.tab.search
+wait_until library.search_query == "" timeout=2s
+click library.tab.search
+assert_visible library.search_input
+click library.search_input
+type "no-sotf-library-result"
+wait_until library.search_query == "no-sotf-library-result" timeout=2s
+wait_until library.filtered_album_count == 0 timeout=2s
+assert_visible library.empty_results
+assert_visible library.clear_results
+click library.clear_results
+wait_until library.search_query == "" timeout=2s
+wait_until library.filtered_album_count > 0 timeout=2s
+wait_idle 1s
+assert_absent library.empty_results
+
+# The visible channel filter changes the controller state and reports its
+# selected semantics. The seeded fixture is stereo, so this remains usable.
+click library.tab.filter
+wait_idle 1s
+assert_visible library.filter.all
+click library.filter.stereo
+wait_until library.channel_filter == "Stereo" timeout=2s
+assert library.filtered_album_count > 0
+
+# A sort-tab transition keeps the filtered result visible and makes the
+# selected tab inspectable to the driver.
+click library.tab.album
+wait_until library.sort_order == "Album" timeout=2s
+assert library.filtered_album_count > 0
+accessibility
+screenshot library-browse-search-filter

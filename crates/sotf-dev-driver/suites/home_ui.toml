@@ -1,0 +1,17 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+size = "700x600"
+
+[[scenario]]
+name = "home-shelves"
+path = "crates/sotf-dev-driver/scenarios/home_shelves.scn"
+timeout = "30s"
+tags = ["home", "ui", "accessibility", "keyboard"]
+
+[[scenario]]
+name = "home-shelf-all"
+path = "crates/sotf-dev-driver/scenarios/home_shelf_all.scn"
+timeout = "30s"
+tags = ["home", "ui", "accessibility", "keyboard", "navigation"]

@@ -11,6 +11,19 @@ use crate::app::actions::{
 };
 #[cfg(feature = "dev-api")]
 use crate::app::dev_api::DevTrackExt;
+
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
 use crate::app::state::plugin::{ABPathTarget, EarTrainingSurface};
 use crate::components::design::Ds;
 use crate::components::graphs::response_graphs::{
@@ -23,7 +36,7 @@ use gpui::*;
 use gpui_ui_kit::workflow::{Position, WorkflowCanvas, WorkflowGraph, WorkflowNodeData};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Input, InputSize, NumberInput, NumberInputSize, Text,
-    TextWeight,
+    TextWeight, Toggle, ToggleSize,
 };
 use sotf_audio::plugins::PluginType;
 use sotf_audio_player::controllers::ab_compare_path::{
@@ -38,6 +51,7 @@ use sotf_audio_player::controllers::ab_test_session::{
     AbTestError, LevelMatchMetric, TrialAnswer, TrialCue, TrialMode,
 };
 use sotf_audio_player::{EarTrainingCourse, EqChangeMode, EqTrainingExercise, EqTrainingSession};
+use sotf_plugins::param_specs::ParamType;
 
 #[derive(Clone, Copy)]
 enum ListeningPathTarget {
@@ -57,12 +71,22 @@ enum EqConfigField {
 impl PlayerView {
     pub(crate) fn render_listening_test_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
-        let (theme, translations, surface) = {
+        let (theme, translations, surface, show_listening_guide, show_break_prompt) = {
             let state = self.state.read(cx);
             (
                 state.app.ui_state.theme.clone(),
                 state.app.ui_state.translations.clone(),
                 state.app.plugin_state.listening_test_state.surface,
+                state.app.tutorial.listening_guide_open
+                    || !state
+                        .app
+                        .plugin_state
+                        .listening_test_state
+                        .eq_progress
+                        .how_to_listen_completed,
+                state.app.plugin_state.listening_test_state.surface
+                    == EarTrainingSurface::BlindComparison
+                    && state.app.tutorial.listening_break_prompt_open,
             )
         };
         let listening_text = &translations.listening_test;
@@ -140,6 +164,23 @@ impl PlayerView {
                                         ),
                                     )
                                     .child(
+                                        Button::new(
+                                            "listening-guide-reopen",
+                                            listening_text.how_to_listen_reopen(),
+                                        )
+                                        .size(ButtonSize::Sm)
+                                        .variant(ButtonVariant::Secondary)
+                                        .theme(theme.to_button_theme())
+                                        .on_click_event(
+                                            cx.listener(|view, _, _, cx| {
+                                                view.state.update(cx, |state, _| {
+                                                    state.app.tutorial.listening_guide_open = true;
+                                                });
+                                                cx.notify();
+                                            }),
+                                        ),
+                                    )
+                                    .child(
                                         Button::new("ear-training-ab-app", eq_text.mode_blind)
                                             .size(ButtonSize::Sm)
                                             .variant(if is_learning {
@@ -157,6 +198,12 @@ impl PlayerView {
                                     ),
                             ),
                     )
+                    .when(show_listening_guide, |header| {
+                        header.child(self.render_listening_guide(cx))
+                    })
+                    .when(show_break_prompt, |header| {
+                        header.child(self.render_listening_break_prompt(cx))
+                    })
                     .when(is_learning, |header| {
                         header.child(
                             div()
@@ -216,6 +263,143 @@ impl PlayerView {
                     }),
             )
             .child(div().flex_1().min_h_0().child(body))
+    }
+
+    fn render_listening_guide(&self, cx: &mut Context<Self>) -> AnyElement {
+        let d = Ds::from_cx(cx);
+        let (theme, text) = {
+            let state = self.state.read(cx);
+            (
+                state.app.ui_state.theme.clone(),
+                state.app.ui_state.translations.listening_test.clone(),
+            )
+        };
+        let items = text.how_to_listen_items().into_iter().enumerate().fold(
+            div().flex().flex_col().gap(d.grid),
+            |list, (index, item)| list.child(Text::caption(format!("{}. {item}", index + 1))),
+        );
+
+        div()
+            .id("listening-guide")
+            .w_full()
+            .p(d.card)
+            .rounded(d.r_md)
+            .border_1()
+            .border_color(theme.border)
+            .bg(theme.background_secondary)
+            .flex()
+            .flex_col()
+            .gap(d.gap)
+            .child(Text::section_header(text.how_to_listen_title()))
+            .child(items)
+            .child(dev_track!(
+                Button::new(
+                    "listening-guide-acknowledge",
+                    text.how_to_listen_acknowledge(),
+                )
+                .size(ButtonSize::Sm)
+                .variant(ButtonVariant::Primary)
+                .theme(theme.to_button_theme())
+                .on_click_event(cx.listener(|view, _, _, cx| {
+                    let progress = view.state.update(cx, |state, _| {
+                        state
+                            .app
+                            .plugin_state
+                            .listening_test_state
+                            .eq_progress
+                            .mark_how_to_listen_completed();
+                        state.app.tutorial.listening_guide_open = false;
+                        state
+                            .app
+                            .plugin_state
+                            .listening_test_state
+                            .eq_progress
+                            .clone()
+                    });
+                    if let Some(path) = sotf_audio_player::config::get_ear_training_progress_path()
+                        && let Err(error) = progress.save_atomic(&path)
+                    {
+                        log::warn!("Failed to save Listening Lab guide completion: {error}");
+                    }
+                    cx.notify();
+                })),
+                "listening.guide.acknowledge"
+            ))
+            .into_any_element()
+    }
+
+    fn render_listening_break_prompt(&self, cx: &mut Context<Self>) -> AnyElement {
+        let d = Ds::from_cx(cx);
+        let (theme, text, interval, completed_trials) = {
+            let state = self.state.read(cx);
+            (
+                state.app.ui_state.theme.clone(),
+                state.app.ui_state.translations.listening_test.clone(),
+                state.app.tutorial.listening_break_interval,
+                state
+                    .app
+                    .plugin_state
+                    .listening_test_state
+                    .ab_test
+                    .view()
+                    .completed_trials,
+            )
+        };
+        let state_for_interval = self.state.clone();
+        let state_for_dismiss = self.state.clone();
+
+        div()
+            .id("listening-fatigue-prompt")
+            .w_full()
+            .p(d.card)
+            .rounded(d.r_md)
+            .border_1()
+            .border_color(theme.warning)
+            .bg(theme.background_secondary)
+            .flex()
+            .flex_col()
+            .gap(d.gap)
+            .child(Text::section_header(text.how_to_listen_reopen()).color(theme.warning))
+            .child(Text::body(text.fatigue_prompt(completed_trials)))
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(d.gap)
+                    .child(Text::caption(text.fatigue_interval()))
+                    .child(
+                        NumberInput::new("listening-break-interval")
+                            .value(interval as f64)
+                            .range(1.0, 100.0)
+                            .step(1.0)
+                            .decimals(0)
+                            .aria_label(text.fatigue_interval())
+                            .size(NumberInputSize::Sm)
+                            .width(110.0)
+                            .on_change(move |value, _window, cx| {
+                                state_for_interval.update(cx, |state, _| {
+                                    state.app.tutorial.listening_break_interval =
+                                        value.round().clamp(1.0, 100.0) as usize;
+                                });
+                            }),
+                    )
+                    .child(
+                        Button::new("listening-fatigue-continue", text.fatigue_continue())
+                            .size(ButtonSize::Sm)
+                            .variant(ButtonVariant::Secondary)
+                            .theme(theme.to_button_theme())
+                            .on_click_event(cx.listener(move |_, _, _window, cx| {
+                                state_for_dismiss.update(cx, |state, _| {
+                                    state.app.tutorial.listening_break_dismissed_at =
+                                        completed_trials;
+                                    state.app.tutorial.listening_break_prompt_open = false;
+                                });
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .into_any_element()
     }
 
     fn render_eq_courses(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -386,104 +570,143 @@ impl PlayerView {
         self.ensure_listening_path_canvas(ListeningPathTarget::B, cx);
 
         let d = Ds::from_cx(cx);
-        let state = self.state.read(cx);
-        let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.listening_test.clone();
-        let listening = state.app.plugin_state.listening_test_state.clone();
-        let has_session = listening.ab_test.session().is_some();
-        let trial_ready = listening
-            .ab_test
-            .session()
-            .is_some_and(|session| session.setup.level_match.within_tolerance());
-        let paths_ready = listening.path_a.is_some() && listening.path_b.is_some();
-        let pending_mode = listening
-            .ab_test
-            .session()
-            .and_then(|session| session.pending_mode());
-        let trial_count = listening
-            .ab_test
-            .session()
-            .map_or(0, |session| session.trials.len());
-        let score = listening
-            .ab_test
-            .session()
-            .map(|session| session.abx_score());
-        let level_text = translations.setup.level.clone();
-        let level_match = listening.level_match_config;
-        let prepared_evidence = listening.ab_test.session().map(|session| {
-            let measurement = &session.setup.level_match;
-            let confidence = if measurement.within_tolerance() {
-                level_text.within_tolerance
-            } else {
-                level_text.outside_tolerance
-            };
-            let confidence_color = if measurement.within_tolerance() {
-                theme.success
-            } else {
-                theme.warning
-            };
-            div()
-                .flex()
-                .flex_col()
-                .gap(d.grid)
-                .p(d.pad_y)
-                .rounded(d.r_sm)
-                .bg(theme.background_secondary)
-                .child(
-                    div()
-                        .min_w_0()
-                        .overflow_hidden()
-                        .text_ellipsis()
-                        .text_size(d.text_xs)
-                        .text_color(theme.text_secondary)
-                        .child(format!(
-                            "{}: {} · {:.2}–{:.2} {}",
-                            level_text.media_segment,
-                            session
-                                .setup
-                                .media
-                                .media_path
-                                .as_deref()
-                                .unwrap_or(&session.setup.media.media_id),
-                            session.setup.media.start_ms as f64 / 1_000.0,
-                            (session.setup.media.start_ms + session.setup.media.duration_ms) as f64
-                                / 1_000.0,
-                            level_text.seconds_unit,
-                        )),
-                )
-                .child(
-                    Text::caption(format!(
-                        "{}: {}",
-                        level_text.media_identity, session.setup.media.media_id
-                    ))
-                    .color(theme.text_muted),
-                )
-                .child(
-                    Text::caption(format!(
-                        "{} · {}: {:+.2} dB · {}: {:.3} dB / {:.3} dB · {}: ±{:.2} dB",
-                        level_text.metric_label(measurement.metric),
-                        level_text.correction,
+        let (
+            theme,
+            translations,
+            has_session,
+            trial_ready,
+            paths_ready,
+            pending_mode,
+            trial_count,
+            score,
+            path_a_label,
+            path_a,
+            path_b_label,
+            path_b,
+            segment_start_ms,
+            level_match,
+            status,
+            prepared_measurement,
+        ) = {
+            let state = self.state.read(cx);
+            let listening = &state.app.plugin_state.listening_test_state;
+            let session = listening.ab_test.session();
+            (
+                state.app.ui_state.theme.clone(),
+                state.app.ui_state.translations.listening_test.clone(),
+                session.is_some(),
+                session.is_some_and(|session| session.setup.level_match.within_tolerance()),
+                listening.path_a.is_some() && listening.path_b.is_some(),
+                session.and_then(|session| session.pending_mode()),
+                session.map_or(0, |session| session.trials.len()),
+                session.map(|session| session.abx_score()),
+                listening.path_a_label.clone(),
+                listening.path_a.clone(),
+                listening.path_b_label.clone(),
+                listening.path_b.clone(),
+                listening.segment_start_ms,
+                listening.level_match_config,
+                listening.status.clone(),
+                session.map(|session| {
+                    let measurement = &session.setup.level_match;
+                    (
+                        session
+                            .setup
+                            .media
+                            .media_path
+                            .clone()
+                            .unwrap_or_else(|| session.setup.media.media_id.clone()),
+                        session.setup.media.media_id.clone(),
+                        session.setup.media.start_ms,
+                        session.setup.media.duration_ms,
+                        measurement.metric,
                         measurement.correction_b_db,
-                        level_text.residual,
                         measurement.residual_error_db(),
                         measurement.tolerance_db,
-                        level_text.max_correction,
                         measurement.max_correction_db,
-                    ))
-                    .color(theme.text_secondary),
-                )
-                .child(Text::label(confidence).color(confidence_color))
-                .child(
-                    Button::new("load-listening-media", level_text.load_saved_media)
-                        .size(ButtonSize::Xs)
-                        .variant(ButtonVariant::Secondary)
-                        .theme(theme.to_button_theme())
-                        .on_click_event(cx.listener(|view, _, _, cx| {
-                            view.load_listening_session_media(cx);
-                        })),
-                )
-                .into_any_element()
-        });
+                        measurement.within_tolerance(),
+                    )
+                }),
+            )
+        };
+        let level_text = translations.setup.level.clone();
+        let prepared_evidence = prepared_measurement.map(
+            |(
+                media_path,
+                media_id,
+                start_ms,
+                duration_ms,
+                metric,
+                correction_b_db,
+                residual_error_db,
+                tolerance_db,
+                max_correction_db,
+                within_tolerance,
+            )| {
+                let confidence = if within_tolerance {
+                    level_text.within_tolerance
+                } else {
+                    level_text.outside_tolerance
+                };
+                let confidence_color = if within_tolerance {
+                    theme.success
+                } else {
+                    theme.warning
+                };
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.grid)
+                    .p(d.pad_y)
+                    .rounded(d.r_sm)
+                    .bg(theme.background_secondary)
+                    .child(
+                        div()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .text_size(d.text_xs)
+                            .text_color(theme.text_secondary)
+                            .child(format!(
+                                "{}: {} · {:.2}–{:.2} {}",
+                                level_text.media_segment,
+                                media_path,
+                                start_ms as f64 / 1_000.0,
+                                (start_ms + duration_ms) as f64 / 1_000.0,
+                                level_text.seconds_unit,
+                            )),
+                    )
+                    .child(
+                        Text::caption(format!("{}: {}", level_text.media_identity, media_id))
+                            .color(theme.text_muted),
+                    )
+                    .child(
+                        Text::caption(format!(
+                            "{} · {}: {:+.2} dB · {}: {:.3} dB / {:.3} dB · {}: ±{:.2} dB",
+                            level_text.metric_label(metric),
+                            level_text.correction,
+                            correction_b_db,
+                            level_text.residual,
+                            residual_error_db,
+                            tolerance_db,
+                            level_text.max_correction,
+                            max_correction_db,
+                        ))
+                        .color(theme.text_secondary),
+                    )
+                    .child(Text::label(confidence).color(confidence_color))
+                    .child(
+                        Button::new("load-listening-media", level_text.load_saved_media)
+                            .size(ButtonSize::Xs)
+                            .variant(ButtonVariant::Secondary)
+                            .theme(theme.to_button_theme())
+                            .on_click_event(cx.listener(|view, _, _, cx| {
+                                view.load_listening_session_media(cx);
+                            })),
+                    )
+                    .into_any_element()
+            },
+        );
         let setup_step =
             |id: &'static str, number: usize, label: &'static str, complete: bool, active: bool| {
                 div()
@@ -601,14 +824,14 @@ impl PlayerView {
                     .gap(d.section)
                     .child(self.render_listening_path_card(
                         ListeningPathTarget::A,
-                        &listening.path_a_label,
-                        listening.path_a.as_ref(),
+                        &path_a_label,
+                        path_a.as_ref(),
                         cx,
                     ))
                     .child(self.render_listening_path_card(
                         ListeningPathTarget::B,
-                        &listening.path_b_label,
-                        listening.path_b.as_ref(),
+                        &path_b_label,
+                        path_b.as_ref(),
                         cx,
                     )),
             )
@@ -704,7 +927,7 @@ impl PlayerView {
                                     .child(Text::caption(level_text.segment_start))
                                     .child(
                                         NumberInput::new("listening-segment-start")
-                                            .value(listening.segment_start_ms as f64 / 1_000.0)
+                                            .value(segment_start_ms as f64 / 1_000.0)
                                             .range(0.0, 86_400.0)
                                             .step(0.1)
                                             .decimals(2)
@@ -902,10 +1125,10 @@ impl PlayerView {
                     .rounded(d.r_sm)
                     .bg(theme.background_secondary)
                     .child(
-                        Text::caption(if listening.status.is_empty() {
+                        Text::caption(if status.is_empty() {
                             translations.status.select_paths.to_owned()
                         } else {
-                            listening.status
+                            status
                         })
                         .color(theme.text_secondary),
                     ),
@@ -915,57 +1138,104 @@ impl PlayerView {
 
     fn render_eq_training_workbench(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
-        let state = self.state.read(cx);
-        let theme = state.app.ui_state.theme.clone();
-        let eq_text = state.app.ui_state.translations.listening_test.eq.clone();
-        let listening = state.app.plugin_state.listening_test_state.clone();
-        let current_track = state
-            .app
-            .get_current_track_path()
-            .and_then(|path| {
-                path.file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-            })
-            .unwrap_or_else(|| eq_text.no_track.into());
-        let session = listening.eq_session.as_ref();
-        let answered = session.is_some_and(EqTrainingSession::current_is_answered);
-        let complete = session.is_some_and(EqTrainingSession::is_complete);
-        let has_question = session.is_some_and(|session| session.current_question.is_some());
-        let trial_number = session
-            .and_then(|session| session.current_question.as_ref())
-            .map_or_else(
-                || session.map_or(0, |session| session.trials.len()),
-                |question| question.number + 1,
-            );
-        let accuracy = session.map_or(0.0, EqTrainingSession::accuracy) * 100.0;
-        let answer_labels = session
-            .and_then(|session| {
-                session.current_question.as_ref().map(|question| {
-                    question.answer_labels(session.config.exercise, &session.band_frequencies)
+        let (
+            theme,
+            eq_text,
+            current_track,
+            answered,
+            complete,
+            has_question,
+            trial_number,
+            accuracy,
+            answer_labels,
+            selected_band,
+            curve_points,
+            feedback_result,
+            has_session,
+            eq_config,
+            eq_adaptive,
+            eq_filtered,
+            status,
+        ) = {
+            let state = self.state.read(cx);
+            let listening = &state.app.plugin_state.listening_test_state;
+            let session = listening.eq_session.as_ref();
+            let answered = session.is_some_and(EqTrainingSession::current_is_answered);
+            let answer_labels = session
+                .and_then(|session| {
+                    session.current_question.as_ref().map(|question| {
+                        question.answer_labels(session.config.exercise, &session.band_frequencies)
+                    })
                 })
-            })
-            .unwrap_or_default();
-        let selected_band = listening
-            .eq_selected_band
-            .min(answer_labels.len().saturating_sub(1));
-
-        let curve_points = session
-            .and_then(|session| session.current_question.as_ref())
-            .filter(|_| answered)
-            .map(|question| question.preview_curve(160))
-            .unwrap_or_else(|| vec![(20.0, 0.0), (20_000.0, 0.0)]);
+                .unwrap_or_default();
+            let selected_band = listening
+                .eq_selected_band
+                .min(answer_labels.len().saturating_sub(1));
+            let correct_answer = session.and_then(|session| {
+                session
+                    .current_question
+                    .as_ref()
+                    .map(|question| question.correct_answer(listening.eq_config.exercise))
+            });
+            (
+                state.app.ui_state.theme.clone(),
+                state.app.ui_state.translations.listening_test.eq.clone(),
+                state.app.get_current_track_path().and_then(|path| {
+                    path.file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                }),
+                answered,
+                session.is_some_and(EqTrainingSession::is_complete),
+                session.is_some_and(|session| session.current_question.is_some()),
+                session
+                    .and_then(|session| session.current_question.as_ref())
+                    .map_or_else(
+                        || session.map_or(0, |session| session.trials.len()),
+                        |question| question.number + 1,
+                    ),
+                session.map_or(0.0, EqTrainingSession::accuracy) * 100.0,
+                answer_labels
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, label)| (label, answered && correct_answer == Some(index)))
+                    .collect::<Vec<_>>(),
+                selected_band,
+                session
+                    .and_then(|session| session.current_question.as_ref())
+                    .filter(|_| answered)
+                    .map(|question| question.preview_curve(160))
+                    .unwrap_or_else(|| vec![(20.0, 0.0), (20_000.0, 0.0)]),
+                session
+                    .and_then(|session| session.trials.last())
+                    .filter(|_| answered)
+                    .map(|result| {
+                        (
+                            result.correct,
+                            result.question.center_frequency_hz,
+                            result.question.signed_gain_db(),
+                            result.question.q,
+                        )
+                    }),
+                session.is_some(),
+                listening.eq_config.clone(),
+                listening.eq_adaptive,
+                listening.eq_filtered,
+                listening.status.clone(),
+            )
+        };
+        let current_track = current_track.unwrap_or_else(|| eq_text.no_track.into());
         let (x_values, y_values): (Vec<_>, Vec<_>) = curve_points.into_iter().unzip();
         let chart = render_line_chart(
             vec![Series::new(
-                "Training EQ",
+                eq_text.chart_series(),
                 channel_color(&theme, 0),
                 x_values,
                 y_values,
             )],
             ChartConfig {
                 title: None,
-                x_label: Some("Frequency (Hz)".into()),
-                y_label: Some("Gain (dB)".into()),
+                x_label: Some(eq_text.frequency_axis().into()),
+                y_label: Some(eq_text.gain_axis().into()),
                 x_range: (20.0, 20_000.0),
                 y_range: (-16.0, 16.0),
                 x_scale: gpui_px::ScaleType::Log,
@@ -977,15 +1247,9 @@ impl PlayerView {
         );
 
         let mut answers = div().flex().flex_wrap().gap(d.gap);
-        for (index, answer_label) in answer_labels.iter().enumerate() {
+        for (index, (answer_label, is_answer)) in answer_labels.iter().enumerate() {
             let is_selected = index == selected_band;
-            let is_answer = answered
-                && session
-                    .and_then(|session| session.current_question.as_ref())
-                    .is_some_and(|question| {
-                        question.correct_answer(listening.eq_config.exercise) == index
-                    });
-            let label = if is_answer {
+            let label = if *is_answer {
                 format!("{answer_label} ✓")
             } else if answered && is_selected {
                 format!("{answer_label} •")
@@ -995,7 +1259,7 @@ impl PlayerView {
             answers = answers.child(
                 Button::new(("eq-training-band", index), label)
                     .size(ButtonSize::Sm)
-                    .variant(if is_selected || is_answer {
+                    .variant(if is_selected || *is_answer {
                         ButtonVariant::Primary
                     } else {
                         ButtonVariant::Secondary
@@ -1007,28 +1271,25 @@ impl PlayerView {
             );
         }
 
-        let feedback = session
-            .and_then(|session| session.trials.last())
-            .filter(|_| answered)
-            .map(|result| {
-                if result.correct {
-                    format!(
-                        "{} — {} at {:+.0} dB, Q {:.1}",
-                        eq_text.correct,
-                        format_frequency(result.question.center_frequency_hz),
-                        result.question.signed_gain_db(),
-                        result.question.q
-                    )
-                } else {
-                    format!(
-                        "{}: {} at {:+.0} dB, Q {:.1}",
-                        eq_text.learning.answer,
-                        format_frequency(result.question.center_frequency_hz),
-                        result.question.signed_gain_db(),
-                        result.question.q
-                    )
-                }
-            });
+        let feedback = feedback_result.map(|(correct, center_frequency_hz, signed_gain_db, q)| {
+            if correct {
+                format!(
+                    "{} — {} at {:+.0} dB, Q {:.1}",
+                    eq_text.correct,
+                    format_frequency(center_frequency_hz),
+                    signed_gain_db,
+                    q
+                )
+            } else {
+                format!(
+                    "{}: {} at {:+.0} dB, Q {:.1}",
+                    eq_text.learning.answer,
+                    format_frequency(center_frequency_hz),
+                    signed_gain_db,
+                    q
+                )
+            }
+        });
 
         div()
             .id("eq-training-workbench")
@@ -1053,7 +1314,7 @@ impl PlayerView {
                     )
                     .child(Text::caption(format!(
                         "Trial {trial_number}/{} · Accuracy {accuracy:.0}%",
-                        listening.eq_config.trial_count
+                        eq_config.trial_count
                     ))),
             )
             .child(
@@ -1078,7 +1339,7 @@ impl PlayerView {
                             .child(
                                 Button::new(
                                     "eq-training-exercise",
-                                    format!("Exercise: {}", listening.eq_config.exercise.label()),
+                                    eq_text.exercise_display(eq_config.exercise),
                                 )
                                 .size(ButtonSize::Sm)
                                 .variant(ButtonVariant::Secondary)
@@ -1092,14 +1353,10 @@ impl PlayerView {
                             .child(
                                 Button::new(
                                     "eq-training-adaptive",
-                                    if listening.eq_adaptive {
-                                        "Adaptive difficulty: on"
-                                    } else {
-                                        "Adaptive difficulty: off"
-                                    },
+                                    eq_text.adaptive_status(eq_adaptive),
                                 )
                                 .size(ButtonSize::Sm)
-                                .variant(if listening.eq_adaptive {
+                                .variant(if eq_adaptive {
                                     ButtonVariant::Primary
                                 } else {
                                     ButtonVariant::Secondary
@@ -1111,25 +1368,25 @@ impl PlayerView {
                             )
                             .child(self.render_eq_config_row(
                                 eq_text.bands,
-                                listening.eq_config.band_count.to_string(),
+                                eq_config.band_count.to_string(),
                                 EqConfigField::Bands,
                                 cx,
                             ))
                             .child(self.render_eq_config_row(
                                 eq_text.gain,
-                                format!("±{:.0} dB", listening.eq_config.gain_db),
+                                format!("±{:.0} dB", eq_config.gain_db),
                                 EqConfigField::Gain,
                                 cx,
                             ))
                             .child(self.render_eq_config_row(
                                 "Q",
-                                format!("{:.1}", listening.eq_config.q),
+                                format!("{:.1}", eq_config.q),
                                 EqConfigField::Q,
                                 cx,
                             ))
                             .child(self.render_eq_config_row(
                                 eq_text.trials,
-                                listening.eq_config.trial_count.to_string(),
+                                eq_config.trial_count.to_string(),
                                 EqConfigField::Trials,
                                 cx,
                             ))
@@ -1139,7 +1396,7 @@ impl PlayerView {
                                     format!(
                                         "{}: {}",
                                         eq_text.change,
-                                        eq_change_mode_symbol(listening.eq_config.change_mode)
+                                        eq_change_mode_symbol(eq_config.change_mode)
                                     ),
                                 )
                                 .size(ButtonSize::Sm)
@@ -1152,7 +1409,7 @@ impl PlayerView {
                             .child(
                                 Button::new(
                                     "eq-training-start",
-                                    if session.is_some() {
+                                    if has_session {
                                         eq_text.restart
                                     } else {
                                         eq_text.start
@@ -1181,7 +1438,7 @@ impl PlayerView {
                             .gap(d.gap)
                             .child(Text::section_header(if complete {
                                 eq_text.complete
-                            } else if session.is_some() {
+                            } else if has_session {
                                 eq_text.question
                             } else {
                                 eq_text.start_prompt
@@ -1189,18 +1446,13 @@ impl PlayerView {
                             .child(answers)
                             .child(div().w_full().min_h(rems(14.0)).child(chart))
                             .when_some(feedback, |panel, feedback| {
-                                panel.child(
-                                    Text::body(feedback).color(
-                                        if session
-                                            .and_then(|session| session.trials.last())
-                                            .is_some_and(|result| result.correct)
-                                        {
-                                            theme.success
-                                        } else {
-                                            theme.warning
-                                        },
-                                    ),
-                                )
+                                panel.child(Text::body(feedback).color(
+                                    if feedback_result.is_some_and(|result| result.0) {
+                                        theme.success
+                                    } else {
+                                        theme.warning
+                                    },
+                                ))
                             })
                             .child(
                                 div()
@@ -1213,7 +1465,7 @@ impl PlayerView {
                                             format!("1  {}", eq_text.original),
                                         )
                                         .size(ButtonSize::Sm)
-                                        .variant(if !listening.eq_filtered {
+                                        .variant(if !eq_filtered {
                                             ButtonVariant::Primary
                                         } else {
                                             ButtonVariant::Secondary
@@ -1231,7 +1483,7 @@ impl PlayerView {
                                             format!("2  {}", eq_text.filtered),
                                         )
                                         .size(ButtonSize::Sm)
-                                        .variant(if listening.eq_filtered {
+                                        .variant(if eq_filtered {
                                             ButtonVariant::Primary
                                         } else {
                                             ButtonVariant::Secondary
@@ -1280,10 +1532,10 @@ impl PlayerView {
                     .p(d.pad_y)
                     .rounded(d.r_sm)
                     .bg(theme.background_secondary)
-                    .child(Text::caption(if listening.status.is_empty() {
+                    .child(Text::caption(if status.is_empty() {
                         eq_text.configure_start
                     } else {
-                        &listening.status
+                        &status
                     })),
             )
             .into_any_element()
@@ -1677,6 +1929,23 @@ impl PlayerView {
                 .when_some(editing_node_id, |card, node_id| {
                     let state_for_params = self.state.clone();
                     let state_for_close = self.state.clone();
+                    let state_for_cancel = self.state.clone();
+                    let node_id_for_close = node_id.clone();
+                    let node_id_for_input = node_id.clone();
+                    let node_plugin_type = match config {
+                        Some(PathConfig::Graph { nodes, .. }) => nodes
+                            .iter()
+                            .find(|node| node.id == node_id)
+                            .map(|node| node.plugin_type.clone()),
+                        _ => None,
+                    };
+                    let node_editor_id = format!("{suffix}-graph-{node_id}");
+                    let reset_label = translations.parameter_reset();
+                    let use_expert_editor = node_plugin_type
+                        .as_deref()
+                        .and_then(sotf_plugins::param_specs::for_plugin_type)
+                        .is_none_or(|specs| specs.is_empty());
+                    let editor_label = translations.parameter_editor(use_expert_editor);
                     card.child(
                         div()
                             .p(d.pad_y)
@@ -1690,7 +1959,31 @@ impl PlayerView {
                                     .flex()
                                     .items_center()
                                     .justify_between()
-                                    .child(Text::caption(format!("{node_id} · JSON")))
+                                    .child(Text::caption(format!("{node_id} · {}", editor_label)))
+                                    .child(
+                                        Button::new(
+                                            SharedString::from(format!(
+                                                "listening-cancel-node-{suffix}"
+                                            )),
+                                            translations.setup.cancel,
+                                        )
+                                        .size(ButtonSize::Xs)
+                                        .variant(ButtonVariant::Secondary)
+                                        .theme(theme.to_button_theme())
+                                        .on_click_event(
+                                            move |_, _, cx| {
+                                                state_for_cancel.update(cx, |state, _| {
+                                                    let listening = &mut state
+                                                        .app
+                                                        .plugin_state
+                                                        .listening_test_state;
+                                                    listening.editing_path_target = None;
+                                                    listening.editing_path_node_id = None;
+                                                    listening.editing_path_parameters.clear();
+                                                });
+                                            },
+                                        ),
+                                    )
                                     .child(
                                         Button::new(
                                             SharedString::from(format!(
@@ -1704,9 +1997,40 @@ impl PlayerView {
                                         .on_click_event(
                                             move |_, _, cx| {
                                                 state_for_close.update(cx, |state, _| {
-                                                    let listening = &mut state
-                                                        .app
-                                                        .plugin_state
+                                        let draft = state
+                                            .app
+                                            .plugin_state
+                                            .listening_test_state
+                                            .editing_path_parameters
+                                            .clone();
+                                        let valid_draft = matches!(
+                                            serde_json::from_str::<serde_json::Value>(&draft),
+                                            Ok(parameters) if parameters.is_object()
+                                        );
+                                        if !valid_draft {
+                                            let localized = state
+                                                .app
+                                                .ui_state
+                                                .translations
+                                                .listening_test
+                                                .status
+                                                .clone();
+                                            state
+                                                .app
+                                                .plugin_state
+                                                .listening_test_state
+                                                .status = localized.params_invalid.into();
+                                            return;
+                                        }
+                                        update_listening_node_parameters(
+                                            state,
+                                            target,
+                                            &node_id_for_close,
+                                            draft,
+                                        );
+                                        let listening = &mut state
+                                            .app
+                                            .plugin_state
                                                         .listening_test_state;
                                                     listening.editing_path_target = None;
                                                     listening.editing_path_node_id = None;
@@ -1717,21 +2041,42 @@ impl PlayerView {
                                     ),
                             )
                             .child(
-                                Input::new(SharedString::from(format!(
-                                    "listening-node-params-{suffix}"
-                                )))
-                                .value(editing_parameters)
-                                .placeholder(r#"{"parameter": "value"}"#)
-                                .size(InputSize::Sm)
-                                .on_text_change(
-                                    move |value, _window, cx| {
-                                        state_for_params.update(cx, |state, _| {
-                                            update_listening_node_parameters(
-                                                state, target, &node_id, value,
-                                            );
-                                        });
-                                    },
-                                ),
+                                div()
+                                    .when_some(node_plugin_type.clone(), |editor, plugin_type| {
+                                        editor.child(self.render_listening_parameter_editor(
+                                            &node_editor_id,
+                                            &plugin_type,
+                                            &editing_parameters,
+                                            reset_label,
+                                            cx,
+                                        ))
+                                    })
+                                    .when(
+                                        node_plugin_type
+                                            .as_deref()
+                                            .and_then(sotf_plugins::param_specs::for_plugin_type)
+                                            .is_none_or(|specs| specs.is_empty()),
+                                        |editor| {
+                                            editor.child(
+                                                Input::new(SharedString::from(format!(
+                                                    "listening-node-params-{suffix}"
+                                                )))
+                                                .value(editing_parameters)
+                                                .placeholder(r#"{"parameter": "value"}"#)
+                                                .size(InputSize::Sm)
+                                                .on_text_change(move |value, _window, cx| {
+                                                    state_for_params.update(cx, |state, _| {
+                                                        stage_listening_node_parameters(
+                                                            state,
+                                                            target,
+                                                            &node_id_for_input,
+                                                            value.to_string(),
+                                                        );
+                                                    });
+                                                }),
+                                            )
+                                        },
+                                    ),
                             ),
                     )
                 })
@@ -1810,6 +2155,186 @@ impl PlayerView {
         menu
     }
 
+    fn render_listening_parameter_editor(
+        &self,
+        editor_id: &str,
+        plugin_type: &str,
+        edit_value: &str,
+        reset_label: &'static str,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let d = Ds::from_cx(cx);
+        let theme = self.state.read(cx).app.ui_state.theme.clone();
+        let values = serde_json::from_str::<serde_json::Value>(edit_value)
+            .ok()
+            .and_then(|value| value.as_object().cloned())
+            .unwrap_or_default();
+        let Some(specs) = sotf_plugins::param_specs::for_plugin_type(plugin_type) else {
+            return div();
+        };
+
+        let mut controls = div().flex().flex_wrap().gap(d.gap).w_full();
+        for spec in specs {
+            let value = values
+                .get(spec.engine_key)
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or_else(|| spec.default_f64());
+            let key = spec.engine_key.to_string();
+            let state_for_value = self.state.clone();
+            let state_for_reset = self.state.clone();
+            let mut control = div()
+                .flex()
+                .flex_col()
+                .gap(d.grid)
+                .min_w(rems(10.0))
+                .child(Text::label(spec.name));
+
+            match spec.param_type {
+                ParamType::Float { step, .. } => {
+                    let mut input = NumberInput::new(SharedString::from(format!(
+                        "listening-param-{editor_id}-{}",
+                        spec.engine_key
+                    )))
+                    .value(value)
+                    .range(spec.min_f64(), spec.max_f64())
+                    .step(step)
+                    .decimals(spec.precision())
+                    .size(NumberInputSize::Xs)
+                    .aria_label(format!("{} value", spec.name))
+                    .on_change(move |value, _window, cx| {
+                        state_for_value.update(cx, |state, _| {
+                            set_listening_staged_parameter(
+                                state,
+                                &key,
+                                serde_json::Value::from(value),
+                            );
+                        });
+                    });
+                    if !spec.unit.is_empty() {
+                        input = input.unit(spec.unit);
+                    }
+                    control = control.child(input);
+                }
+                ParamType::Int { step, .. } => {
+                    let mut input = NumberInput::new(SharedString::from(format!(
+                        "listening-param-{editor_id}-{}",
+                        spec.engine_key
+                    )))
+                    .value(value)
+                    .range(spec.min_f64(), spec.max_f64())
+                    .step(step as f64)
+                    .decimals(0)
+                    .size(NumberInputSize::Xs)
+                    .aria_label(format!("{} value", spec.name))
+                    .on_change(move |value, _window, cx| {
+                        state_for_value.update(cx, |state, _| {
+                            set_listening_staged_parameter(
+                                state,
+                                &key,
+                                serde_json::Value::from(value.round() as i64),
+                            );
+                        });
+                    });
+                    if !spec.unit.is_empty() {
+                        input = input.unit(spec.unit);
+                    }
+                    control = control.child(input);
+                }
+                ParamType::Bool { .. } => {
+                    let checked = values
+                        .get(spec.engine_key)
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or_else(|| spec.default_bool());
+                    control = control.child(
+                        Toggle::new(SharedString::from(format!(
+                            "listening-param-{editor_id}-{}",
+                            spec.engine_key
+                        )))
+                        .checked(checked)
+                        .size(ToggleSize::Sm)
+                        .on_change(move |checked, _window, cx| {
+                            state_for_value.update(cx, |state, _| {
+                                set_listening_staged_parameter(
+                                    state,
+                                    &key,
+                                    serde_json::Value::from(checked),
+                                );
+                            });
+                        }),
+                    );
+                }
+                ParamType::Choice { .. } => {
+                    let choice_label = spec.format_value(value);
+                    control = control.child(
+                        Button::new(
+                            SharedString::from(format!(
+                                "listening-param-{editor_id}-{}",
+                                spec.engine_key
+                            )),
+                            choice_label,
+                        )
+                        .size(ButtonSize::Xs)
+                        .variant(ButtonVariant::Secondary)
+                        .theme(theme.to_button_theme())
+                        .aria_label(format!("{}: select next option", spec.name))
+                        .on_click_event(move |_, _, cx| {
+                            state_for_value.update(cx, |state, _| {
+                                let current = state
+                                    .app
+                                    .plugin_state
+                                    .listening_test_state
+                                    .editing_path_parameters
+                                    .parse::<serde_json::Value>()
+                                    .ok()
+                                    .and_then(|value| {
+                                        value.get(&key).and_then(serde_json::Value::as_f64)
+                                    })
+                                    .unwrap_or_else(|| spec.default_f64());
+                                set_listening_staged_parameter(
+                                    state,
+                                    &key,
+                                    serde_json::Value::from(spec.adjust_f64(current, 1.0) as i64),
+                                );
+                            });
+                        }),
+                    );
+                }
+                ParamType::FilePath => continue,
+            }
+
+            let key_for_reset = spec.engine_key.to_string();
+            let default = match spec.param_type {
+                ParamType::Bool { .. } => serde_json::Value::from(spec.default_bool()),
+                ParamType::Choice { .. } | ParamType::Int { .. } => {
+                    serde_json::Value::from(spec.default_f64() as i64)
+                }
+                ParamType::Float { .. } => serde_json::Value::from(spec.default_f64()),
+                ParamType::FilePath => unreachable!(),
+            };
+            controls = controls.child(
+                control.child(
+                    Button::new(
+                        SharedString::from(format!(
+                            "listening-param-reset-{editor_id}-{}",
+                            spec.engine_key
+                        )),
+                        reset_label,
+                    )
+                    .size(ButtonSize::Xs)
+                    .variant(ButtonVariant::Ghost)
+                    .theme(theme.to_button_theme())
+                    .aria_label(format!("Reset {}", spec.name))
+                    .on_click_event(move |_, _, cx| {
+                        state_for_reset.update(cx, |state, _| {
+                            set_listening_staged_parameter(state, &key_for_reset, default.clone());
+                        });
+                    }),
+                ),
+            );
+        }
+        controls
+    }
+
     fn render_listening_rack_row(
         &self,
         target: ListeningPathTarget,
@@ -1838,7 +2363,24 @@ impl PlayerView {
         };
         let state_for_begin_edit = self.state.clone();
         let state_for_edit = self.state.clone();
+        let state_for_cancel = self.state.clone();
         let parameters = plugin.parameters.clone();
+        let reset_label = state
+            .app
+            .ui_state
+            .translations
+            .listening_test
+            .parameter_reset();
+        let plugin_type = plugin.plugin_type.clone();
+        let parameter_editor_id = format!("{suffix}-rack-{index}");
+        let use_expert_editor = sotf_plugins::param_specs::for_plugin_type(&plugin_type)
+            .is_none_or(|specs| specs.is_empty());
+        let editor_label = state
+            .app
+            .ui_state
+            .translations
+            .listening_test
+            .parameter_editor(use_expert_editor);
         div()
             .flex()
             .flex_wrap()
@@ -1863,9 +2405,9 @@ impl PlayerView {
                         Button::new(
                             SharedString::from(format!("listening-{suffix}-edit-{index}")),
                             if is_editing {
-                                translations.editing
+                                translations.done
                             } else {
-                                translations.edit_json
+                                editor_label
                             },
                         )
                         .size(ButtonSize::Xs)
@@ -1879,6 +2421,37 @@ impl PlayerView {
                             let edit_id = edit_id.clone();
                             let parameters = parameters.clone();
                             state_for_begin_edit.update(cx, |state, _| {
+                                if is_editing {
+                                    let draft = state
+                                        .app
+                                        .plugin_state
+                                        .listening_test_state
+                                        .editing_path_parameters
+                                        .clone();
+                                    let valid_draft = matches!(
+                                        serde_json::from_str::<serde_json::Value>(&draft),
+                                        Ok(parameters) if parameters.is_object()
+                                    );
+                                    if !valid_draft {
+                                        let localized = state
+                                            .app
+                                            .ui_state
+                                            .translations
+                                            .listening_test
+                                            .status
+                                            .clone();
+                                        state.app.plugin_state.listening_test_state.status =
+                                            localized.params_invalid.into();
+                                        return;
+                                    }
+                                    update_listening_rack_parameters(state, target, index, draft);
+                                    let listening =
+                                        &mut state.app.plugin_state.listening_test_state;
+                                    listening.editing_path_target = None;
+                                    listening.editing_path_node_id = None;
+                                    listening.editing_path_parameters.clear();
+                                    return;
+                                }
                                 let listening = &mut state.app.plugin_state.listening_test_state;
                                 listening.editing_path_target = Some(target.into());
                                 listening.editing_path_node_id = Some(edit_id);
@@ -1888,6 +2461,26 @@ impl PlayerView {
                             });
                         }),
                     )
+                    .when(is_editing, |buttons| {
+                        buttons.child(
+                            Button::new(
+                                SharedString::from(format!("listening-{suffix}-cancel-{index}")),
+                                translations.cancel,
+                            )
+                            .size(ButtonSize::Xs)
+                            .variant(ButtonVariant::Secondary)
+                            .theme(theme.to_button_theme())
+                            .on_click_event(move |_, _, cx| {
+                                state_for_cancel.update(cx, |state, _| {
+                                    let listening =
+                                        &mut state.app.plugin_state.listening_test_state;
+                                    listening.editing_path_target = None;
+                                    listening.editing_path_node_id = None;
+                                    listening.editing_path_parameters.clear();
+                                });
+                            }),
+                        )
+                    })
                     .when(index > 0, |buttons| {
                         buttons.child(
                             Button::new(
@@ -1936,20 +2529,39 @@ impl PlayerView {
                     ),
             )
             .when(is_editing, |row| {
+                let specs = sotf_plugins::param_specs::for_plugin_type(&plugin_type);
                 row.child(
-                    div().w_full().child(
-                        Input::new(SharedString::from(format!(
-                            "listening-{suffix}-params-{index}"
-                        )))
-                        .value(edit_value)
-                        .placeholder(r#"{"parameter": "value"}"#)
-                        .size(InputSize::Sm)
-                        .on_text_change(move |value, _window, cx| {
-                            state_for_edit.update(cx, |state, _| {
-                                update_listening_rack_parameters(state, target, index, value);
-                            });
+                    div()
+                        .w_full()
+                        .child(self.render_listening_parameter_editor(
+                            &parameter_editor_id,
+                            &plugin_type,
+                            &edit_value,
+                            reset_label,
+                            cx,
+                        ))
+                        .when(specs.is_none_or(|specs| specs.is_empty()), |editor| {
+                            editor.child(
+                                Input::new(SharedString::from(format!(
+                                    "listening-{suffix}-params-{index}"
+                                )))
+                                .value(edit_value)
+                                .placeholder(r#"{"parameter": "value"}"#)
+                                .size(InputSize::Sm)
+                                .on_text_change(
+                                    move |value, _window, cx| {
+                                        state_for_edit.update(cx, |state, _| {
+                                            stage_listening_rack_parameters(
+                                                state,
+                                                target,
+                                                index,
+                                                value.to_string(),
+                                            );
+                                        });
+                                    },
+                                ),
+                            )
                         }),
-                    ),
                 )
             })
     }
@@ -2251,7 +2863,8 @@ impl PlayerView {
                         .size(InputSize::Sm)
                         .on_text_change(move |value, _window, cx| {
                             state_for_notes.update(cx, |state, _| {
-                                state.app.plugin_state.listening_test_state.notes = value;
+                                state.app.plugin_state.listening_test_state.notes =
+                                    value.to_string();
                             });
                         }),
                 ),
@@ -2622,13 +3235,31 @@ impl PlayerView {
                     .app
                     .plugin_state
                     .commit_ab_test_answer(answer, Some(confidence), Some(notes));
-            let listening = &mut state.app.plugin_state.listening_test_state;
             match result {
                 Ok(_) => {
-                    listening.notes.clear();
-                    listening.status = answer_committed.into();
+                    let completed_trials = state
+                        .app
+                        .plugin_state
+                        .listening_test_state
+                        .ab_test
+                        .view()
+                        .completed_trials;
+                    {
+                        let listening = &mut state.app.plugin_state.listening_test_state;
+                        listening.notes.clear();
+                        listening.status = answer_committed.into();
+                    }
+                    let tutorial = &mut state.app.tutorial;
+                    if completed_trials >= tutorial.listening_break_interval
+                        && completed_trials % tutorial.listening_break_interval == 0
+                        && completed_trials != tutorial.listening_break_dismissed_at
+                    {
+                        tutorial.listening_break_prompt_open = true;
+                    }
                 }
-                Err(error) => listening.status = error.to_string(),
+                Err(error) => {
+                    state.app.plugin_state.listening_test_state.status = error.to_string();
+                }
             }
         });
         cx.notify();
@@ -2964,6 +3595,7 @@ impl PlayerView {
 
     fn set_eq_loop_boundary(&mut self, start: bool, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _| {
+            let eq_text = state.app.ui_state.translations.listening_test.eq.clone();
             let position = state.app.playback.position_secs.max(0.0);
             let listening = &mut state.app.plugin_state.listening_test_state;
             let (mut loop_start, mut loop_end) =
@@ -2974,21 +3606,18 @@ impl PlayerView {
                 loop_end = position.max(loop_start + 0.1);
             }
             listening.eq_loop_range = Some((loop_start, loop_end));
-            listening.status = format!("Loop {loop_start:.1}–{loop_end:.1} s");
+            listening.status = eq_text.clip_loop_range(loop_start, loop_end);
         });
         cx.notify();
     }
 
     fn toggle_eq_loop(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _| {
+            let eq_text = state.app.ui_state.translations.listening_test.eq.clone();
             let listening = &mut state.app.plugin_state.listening_test_state;
             listening.eq_loop_enabled =
                 !listening.eq_loop_enabled && listening.eq_loop_range.is_some();
-            listening.status = if listening.eq_loop_enabled {
-                "Clip loop enabled".into()
-            } else {
-                "Clip loop disabled".into()
-            };
+            listening.status = eq_text.clip_loop_status(listening.eq_loop_enabled).into();
         });
         cx.notify();
     }
@@ -3720,6 +4349,28 @@ fn sync_listening_path_from_workflow(
     listening.status = graph_updated.into();
 }
 
+fn stage_listening_node_parameters(
+    state: &mut crate::app::AppState,
+    _target: ListeningPathTarget,
+    _node_id: &str,
+    value: String,
+) {
+    let localized = state
+        .app
+        .ui_state
+        .translations
+        .listening_test
+        .status
+        .clone();
+    let listening = &mut state.app.plugin_state.listening_test_state;
+    listening.editing_path_parameters = value.clone();
+    match serde_json::from_str::<serde_json::Value>(&value) {
+        Ok(parameters) if parameters.is_object() => listening.status.clear(),
+        Ok(_) => listening.status = localized.params_object.into(),
+        Err(error) => listening.status = format!("{}: {error}", localized.params_invalid),
+    }
+}
+
 fn update_listening_node_parameters(
     state: &mut crate::app::AppState,
     target: ListeningPathTarget,
@@ -3755,6 +4406,48 @@ fn update_listening_node_parameters(
     node.parameters = parameters;
     let _ = listening.ab_test.clear_session();
     listening.status = localized.params_updated.into();
+}
+
+fn stage_listening_rack_parameters(
+    state: &mut crate::app::AppState,
+    _target: ListeningPathTarget,
+    _index: usize,
+    value: String,
+) {
+    let localized = state
+        .app
+        .ui_state
+        .translations
+        .listening_test
+        .status
+        .clone();
+    let listening = &mut state.app.plugin_state.listening_test_state;
+    listening.editing_path_parameters = value.clone();
+    match serde_json::from_str::<serde_json::Value>(&value) {
+        Ok(parameters) if parameters.is_object() => listening.status.clear(),
+        Ok(_) => listening.status = localized.params_object.into(),
+        Err(error) => listening.status = format!("{}: {error}", localized.params_invalid),
+    }
+}
+
+/// Update one value in the staged parameter object. The edited A/B path is
+/// intentionally left untouched until the user presses Done, so Cancel keeps
+/// the same transactional behavior for typed controls and Expert JSON.
+fn set_listening_staged_parameter(
+    state: &mut crate::app::AppState,
+    key: &str,
+    value: serde_json::Value,
+) {
+    let listening = &mut state.app.plugin_state.listening_test_state;
+    let mut parameters =
+        serde_json::from_str::<serde_json::Value>(&listening.editing_path_parameters)
+            .ok()
+            .filter(serde_json::Value::is_object)
+            .unwrap_or_else(|| serde_json::json!({}));
+    parameters[key] = value;
+    listening.editing_path_parameters =
+        serde_json::to_string_pretty(&parameters).unwrap_or_else(|_| "{}".to_string());
+    listening.status.clear();
 }
 
 fn update_listening_rack_parameters(

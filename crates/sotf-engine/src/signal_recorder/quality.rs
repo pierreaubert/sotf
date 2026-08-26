@@ -237,9 +237,7 @@ pub(super) fn build_capture_quality(
 ) -> MeasurementQualityReport {
     let coherence = coherence.filter(|values| !values.is_empty());
     let (measured_spectrum_db, noise_floor_db) = match (measured_spectrum_db, noise_floor_db) {
-        (Some(measured), Some(noise))
-            if !measured.is_empty() && measured.len() == noise.len() =>
-        {
+        (Some(measured), Some(noise)) if !measured.is_empty() && measured.len() == noise.len() => {
             (Some(measured), Some(noise))
         }
         (None, None) => (None, None),

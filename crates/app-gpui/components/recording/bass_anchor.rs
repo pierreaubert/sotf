@@ -22,6 +22,20 @@ use gpui_ui_kit::{
 
 const BASS_ANCHOR_SIGNAL_BOOST_DB: f32 = 10.0;
 
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 impl PlayerView {
     /// Render the BassAnchor step UI.
     pub(crate) fn render_recording_bass_anchor_step(
@@ -57,24 +71,30 @@ impl PlayerView {
         };
 
         let run_button = if running {
-            Button::new("bass_anchor_cancel", translations.general_cancel)
-                .variant(ButtonVariant::Secondary)
-                .size(ButtonSize::Sm)
-                .theme(theme.to_button_theme())
-                .on_click_event(cx.listener(|view, _, _, cx| {
-                    view.cancel_bass_anchor_capture(cx);
-                }))
+            dev_track!(
+                Button::new("bass_anchor_cancel", translations.general_cancel)
+                    .variant(ButtonVariant::Secondary)
+                    .size(ButtonSize::Sm)
+                    .theme(theme.to_button_theme())
+                    .on_click_event(cx.listener(|view, _, _, cx| {
+                        view.cancel_bass_anchor_capture(cx);
+                    })),
+                "recording.bass_anchor_cancel"
+            )
         } else {
-            Button::new("bass_anchor_run", recording_text.run_bass_anchor)
-                .variant(ButtonVariant::Primary)
-                .size(ButtonSize::Sm)
-                .theme(theme.to_button_theme())
-                .on_click_event(cx.listener(move |view, _, _, cx| {
-                    if !has_speakers {
-                        return;
-                    }
-                    view.start_bass_anchor_capture(cx);
-                }))
+            dev_track!(
+                Button::new("bass_anchor_run", recording_text.run_bass_anchor)
+                    .variant(ButtonVariant::Primary)
+                    .size(ButtonSize::Sm)
+                    .theme(theme.to_button_theme())
+                    .on_click_event(cx.listener(move |view, _, _, cx| {
+                        if !has_speakers {
+                            return;
+                        }
+                        view.start_bass_anchor_capture(cx);
+                    })),
+                "recording.bass_anchor_run"
+            )
         };
 
         let mut column = VStack::new()
@@ -164,6 +184,11 @@ impl PlayerView {
     /// channel list from `playback_config.channel_mappings`, sets the
     /// status to Running, and on completion calls `apply_results`.
     pub(crate) fn start_bass_anchor_capture(&mut self, cx: &mut Context<Self>) {
+        #[cfg(feature = "dev-api")]
+        if self.complete_qa_fake_bass_anchor_capture(cx) {
+            return;
+        }
+
         let (
             bass_freq_hz,
             bass_duration_s,
@@ -326,6 +351,48 @@ impl PlayerView {
             });
         })
         .detach();
+    }
+
+    /// Complete the QA bass-anchor capture through the visible Run action.
+    #[cfg(feature = "dev-api")]
+    fn complete_qa_fake_bass_anchor_capture(&mut self, cx: &mut Context<Self>) -> bool {
+        self.state.update(cx, |state, cx| {
+            let rec = &mut state.app.measurement_state.recording_state;
+            if rec.qa_fake_capture.is_none() {
+                return false;
+            }
+            let channels = rec
+                .playback_config
+                .channel_mappings
+                .iter()
+                .enumerate()
+                .map(
+                    |(index, mapping)| sotf_audio::signal_recorder::BassAnchorChannelResult {
+                        channel_name: mapping.group_name.clone(),
+                        channel_index: mapping.interface_channel(),
+                        bass_anchor_phase_deg: index as f64 * 8.0,
+                        bass_anchor_magnitude: 0.5 - index as f64 * 0.05,
+                        bass_anchor_stability_deg: 3.0 + index as f64,
+                        bass_anchor_loopback_phase_deg: None,
+                        bass_anchor_coherence: None,
+                    },
+                )
+                .collect();
+            let sample_rate = rec.bass_anchor_capture.sample_rate;
+            let bass_freq_hz = rec.bass_anchor_capture.bass_freq_hz;
+            let bass_duration_s = rec.bass_anchor_capture.bass_duration_s;
+            rec.bass_anchor_capture.apply_results(
+                sotf_audio::signal_recorder::BassAnchorResults {
+                    channels,
+                    sample_rate,
+                    bass_freq_hz,
+                    bass_duration_s,
+                },
+                None,
+            );
+            cx.notify();
+            true
+        })
     }
 
     /// Request cancellation of an in-progress bass anchor capture. The

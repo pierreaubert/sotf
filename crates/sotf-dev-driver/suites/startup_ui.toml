@@ -1,0 +1,12 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+size = "1440x900"
+app_args = ["--qa-onboarding"]
+
+[[scenario]]
+name = "startup-empty-library-onboarding"
+path = "crates/sotf-dev-driver/scenarios/startup_empty_library.scn"
+timeout = "20s"
+tags = ["startup", "onboarding", "ui", "empty-library"]

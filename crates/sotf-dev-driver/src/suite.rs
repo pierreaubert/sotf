@@ -1,3 +1,4 @@
+mod clean_log;
 mod copy;
 mod default;
 mod misc;

@@ -1,0 +1,17 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+size = "900x700"
+
+[[scenario]]
+name = "plugin-rack-visible-controls"
+path = "crates/sotf-dev-driver/scenarios/gpui_plugin_rack.scn"
+timeout = "30s"
+tags = ["plugins", "rack", "ui", "accessibility", "persistence"]
+
+[[scenario]]
+name = "plugin-graph-keyboard-invalid-edge"
+path = "crates/sotf-dev-driver/scenarios/plugin_graph.scn"
+timeout = "30s"
+tags = ["plugins", "graph", "ui", "keyboard", "error"]

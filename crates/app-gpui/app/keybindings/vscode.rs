@@ -43,7 +43,6 @@ pub(super) fn vscode_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-shift-[", actions::ToggleExpand, None),
         KeyBinding::new("ctrl-shift-]", actions::ToggleExpand, None),
         // Enter action - PlayerView context so text editing can use Enter
-        KeyBinding::new("enter", actions::Enter, Some("PlayerView")),
         KeyBinding::new("ctrl-enter", actions::Enter, None),
         // Remove/delete - PlayerView context so text editing isn't intercepted
         KeyBinding::new("delete", actions::RemoveItem, Some("PlayerView")),
@@ -57,9 +56,13 @@ pub(super) fn vscode_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-shift-r", actions::ScanLibrary, None),
         KeyBinding::new("S", actions::SwitchToSettings, Some("PlayerView")),
         // Level meter controls - PlayerView context so text editing isn't intercepted
-        KeyBinding::new("tab", actions::SelectNextMeterGroup, Some("PlayerView")),
         KeyBinding::new(
-            "shift-tab",
+            "ctrl-tab",
+            actions::SelectNextMeterGroup,
+            Some("PlayerView"),
+        ),
+        KeyBinding::new(
+            "ctrl-shift-tab",
             actions::SelectPrevMeterGroup,
             Some("PlayerView"),
         ),

@@ -1,0 +1,15 @@
+# The fixture only arranges an incomplete Recording session. The user-visible
+# Load action must surface the diagnosis, and the repair affordance must route
+# back to Recording without leaving stale Room EQ state behind.
+assert screen.focused == "RoomEq"
+assert roomeq.step == "LoadData"
+assert_visible roomeq.load_from_recording
+click roomeq.load_from_recording
+wait_idle 2s
+assert roomeq.error == "Failed to load measurements: no valid channel data found."
+assert_visible roomeq.dismiss_error
+assert_visible roomeq.repair_recording
+assert_accessible button Go to Recording
+screenshot roomeq-missing-channel-diagnosis
+click roomeq.repair_recording
+assert screen.focused == "Recording"

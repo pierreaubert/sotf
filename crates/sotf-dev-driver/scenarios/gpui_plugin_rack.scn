@@ -1,26 +1,25 @@
-# GPUI Plugin Rack — quick-add, reorder, and toggle plugins.
-#
-# Covers: QuickAddEQ, QuickAddGain, MovePluginUp, MovePluginDown, TogglePlugin
-
-focus       plugin_graph
-assert      screen.focused == "PluginGraph"
-
-# Quick-add a few plugins.
-action      QuickAddEQ
-sleep       200ms
-action      QuickAddGain
-sleep       200ms
-action      QuickAddLimiter
-sleep       200ms
-
-# Reorder and toggle.
-action      MovePluginUp
-sleep       100ms
-action      MovePluginDown
-sleep       100ms
-action      TogglePlugin
-sleep       100ms
-
-# Switch to studio to verify the chain is reflected there too.
-focus       studio
-assert      screen.focused == "Studio"
+# Plugin rack: arrange an empty user chain, then mutate it only through visible
+# controls. Route away and back to prove the rack state survives navigation.
+action     PluginClear
+click      sidebar.nav-studio-rack
+assert     screen.focused == "Studio"
+assert     plugins.user_count == 0
+assert_visible rack.add.open
+assert_accessible button Add a plugin to get started
+click      rack.add.open
+assert_visible rack.add.compressor
+assert_accessible button Compressor
+screenshot plugin-rack-add-menu
+click      rack.add.compressor
+wait_until plugins.user_count == 1 timeout=2s
+assert     plugins.first_user_type == "Compressor"
+assert_visible rack.plugin.2.toggle
+click      rack.plugin.2.toggle
+wait_until plugins.first_user_enabled == false timeout=2s
+accessibility
+screenshot plugin-rack-visible-controls
+click      sidebar.nav-library
+assert     screen.focused == "Library"
+click      sidebar.nav-studio-rack
+assert     screen.focused == "Studio"
+assert     plugins.user_count == 1

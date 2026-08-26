@@ -1,0 +1,30 @@
+schema_version = 1
+version = 1
+target = "systemwide-daemon"
+fixture_profiles = ["lab"]
+
+[[actions]]
+id = "get-snapshot"
+family = "ipc-read"
+weight = 120
+[actions.payload]
+type = "ipc"
+command = { command = "get_snapshot" }
+
+[[actions]]
+id = "get-status"
+family = "ipc-read"
+weight = 100
+[actions.payload]
+type = "ipc"
+command = { command = "status" }
+
+[[actions]]
+id = "malformed-bounded"
+family = "ipc-chaos"
+chaos_only = true
+weight = 20
+[actions.payload]
+type = "stdin"
+bytes = [123, 34, 99, 111, 109, 109, 97, 110, 100]
+eof = false

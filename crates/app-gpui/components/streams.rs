@@ -12,6 +12,20 @@ use crate::components::icons::{Icon, IconName, IconSize};
 use crate::i18n::StreamsTranslations;
 use crate::ui::PlayerView;
 
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 impl PlayerView {
     pub(crate) fn render_streams_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
@@ -145,33 +159,32 @@ impl PlayerView {
                 HStack::new()
                     .spacing(StackSpacing::Sm)
                     .align(StackAlign::Center)
-                    .child(
-                        div().flex_1().child(
+                    .child(div().flex_1().child(dev_track!(
                             Input::new("stream-name-input")
                                 .value(name)
                                 .placeholder(translations.name)
                                 .size(InputSize::Sm)
                                 .on_text_change(move |value, _window, cx| {
                                     state_for_name.update(cx, |state, _cx| {
-                                        state.app.stream_state.name_input = value;
+                                        state.app.stream_state.name_input = value.to_string();
                                     });
                                 }),
-                        ),
-                    )
-                    .child(
-                        div().w(rems(8.0)).child(
+                            "streams.name_input"
+                        )))
+                    .child(div().w(rems(8.0)).child(dev_track!(
                             Input::new("stream-format-input")
                                 .value(format_hint)
                                 .placeholder("mp3")
                                 .size(InputSize::Sm)
                                 .on_text_change(move |value, _window, cx| {
                                     state_for_hint.update(cx, |state, _cx| {
-                                        state.app.stream_state.format_hint_input = value;
+                                        state.app.stream_state.format_hint_input =
+                                            value.to_string();
                                     });
                                 }),
-                        ),
-                    )
-                    .child(
+                            "streams.format_input"
+                        )))
+                    .child(dev_track!(
                         Toggle::new("stream-seekable-toggle")
                             .size(ToggleSize::Sm)
                             .checked(seekable)
@@ -183,26 +196,26 @@ impl PlayerView {
                                     state.app.stream_state.seekable_input = enabled;
                                 });
                             }),
-                    ),
+                        "streams.seekable"
+                    )),
             )
             .child(
                 HStack::new()
                     .spacing(StackSpacing::Sm)
                     .align(StackAlign::Center)
-                    .child(
-                        div().flex_1().child(
+                    .child(div().flex_1().child(dev_track!(
                             Input::new("stream-url-input")
                                 .value(url)
                                 .placeholder(translations.url_placeholder)
                                 .size(InputSize::Sm)
                                 .on_text_change(move |value, _window, cx| {
                                     state_for_url.update(cx, |state, _cx| {
-                                        state.app.stream_state.url_input = value;
+                                        state.app.stream_state.url_input = value.to_string();
                                     });
                                 }),
-                        ),
-                    )
-                    .child(
+                            "streams.url_input"
+                        )))
+                    .child(dev_track!(
                         Button::new("stream-save", translations.save)
                             .variant(ButtonVariant::Secondary)
                             .size(ButtonSize::Sm)
@@ -214,8 +227,9 @@ impl PlayerView {
                                     }
                                 });
                             }),
-                    )
-                    .child(
+                        "streams.save"
+                    ))
+                    .child(dev_track!(
                         Button::new("stream-play-input", translations.play)
                             .variant(ButtonVariant::Primary)
                             .size(ButtonSize::Sm)
@@ -239,7 +253,8 @@ impl PlayerView {
                                     }
                                 });
                             }),
-                    ),
+                        "streams.play_input"
+                    )),
             )
             .into_any_element()
     }
@@ -261,110 +276,117 @@ impl PlayerView {
         let stream_for_play = stream.clone();
         let stream_for_queue = stream.clone();
 
-        div()
-            .id(SharedString::from(format!("stream-row-{index}")))
-            .flex()
-            .items_center()
-            .gap(d.gap_md)
-            .p(d.card)
-            .bg(theme.surface)
-            .rounded(d.r_md)
-            .border_1()
-            .border_color(theme.border)
-            .cursor_pointer()
-            .hover({
-                let theme = theme.clone();
-                move |style| style.bg(theme.surface_hover)
-            })
-            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                state_for_select.update(cx, |state, _cx| {
-                    state.app.set_stream_inputs_from_selected(index);
-                });
-            })
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(d.grid)
-                    .min_w_0()
-                    .flex_1()
-                    .child(
-                        HStack::new()
-                            .spacing(StackSpacing::Sm)
-                            .align(StackAlign::Center)
-                            .child(
-                                Text::new(stream.name.clone())
-                                    .size(TextSize::Sm)
-                                    .weight(TextWeight::Bold)
-                                    .color(theme.text_primary),
-                            )
-                            .child(Text::caption(if stream.seekable {
-                                "seekable"
-                            } else {
-                                "live"
-                            })),
+        dev_track!(
+            div()
+                .id(SharedString::from(format!("stream-row-{index}")))
+                .flex()
+                .items_center()
+                .gap(d.gap_md)
+                .p(d.card)
+                .bg(theme.surface)
+                .rounded(d.r_md)
+                .border_1()
+                .border_color(theme.border)
+                .cursor_pointer()
+                .hover({
+                    let theme = theme.clone();
+                    move |style| style.bg(theme.surface_hover)
+                })
+                .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                    state_for_select.update(cx, |state, _cx| {
+                        state.app.set_stream_inputs_from_selected(index);
+                    });
+                })
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(d.grid)
+                        .min_w_0()
+                        .flex_1()
+                        .child(
+                            HStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .align(StackAlign::Center)
+                                .child(
+                                    Text::new(stream.name.clone())
+                                        .size(TextSize::Sm)
+                                        .weight(TextWeight::Bold)
+                                        .color(theme.text_primary),
+                                )
+                                .child(Text::caption(if stream.seekable {
+                                    translations.seekable
+                                } else {
+                                    translations.live
+                                })),
+                        )
+                        .child(
+                            div()
+                                .text_size(d.text_xs)
+                                .text_color(theme.text_secondary)
+                                .overflow_hidden()
+                                .text_ellipsis()
+                                .child(stream.url.clone()),
+                        ),
+                )
+                .child(dev_track!(
+                    Button::new(
+                        SharedString::from(format!("stream-play-{index}")),
+                        translations.play,
                     )
-                    .child(
-                        div()
-                            .text_size(d.text_xs)
-                            .text_color(theme.text_secondary)
-                            .overflow_hidden()
-                            .text_ellipsis()
-                            .child(stream.url.clone()),
-                    ),
-            )
-            .child(
-                Button::new(
-                    SharedString::from(format!("stream-play-{index}")),
-                    translations.play,
-                )
-                .variant(ButtonVariant::Primary)
-                .size(ButtonSize::Sm)
-                .theme(theme.to_button_theme())
-                .on_click(move |_, cx| {
-                    state_for_play.update(cx, |state, _cx| {
-                        match state.app.play_stream_now(stream_for_play.clone()) {
-                            Ok(Some(source)) => PlayerView::play_track(state, source),
-                            Ok(None) => {}
-                            Err(err) => state.app.record_stream_error(err),
-                        }
-                    });
-                }),
-            )
-            .child(
-                Button::new(
-                    SharedString::from(format!("stream-queue-{index}")),
-                    translations.queue,
-                )
-                .variant(ButtonVariant::Secondary)
-                .size(ButtonSize::Sm)
-                .theme(theme.to_button_theme())
-                .on_click(move |_, cx| {
-                    state_for_queue.update(cx, |state, _cx| {
-                        match state.app.add_stream_to_queue(stream_for_queue.clone()) {
-                            Ok(Some(source)) => PlayerView::play_track(state, source),
-                            Ok(None) => {}
-                            Err(err) => state.app.record_stream_error(err),
-                        }
-                    });
-                }),
-            )
-            .child(
-                Button::new(
-                    SharedString::from(format!("stream-remove-{index}")),
-                    translations.remove,
-                )
-                .variant(ButtonVariant::Ghost)
-                .size(ButtonSize::Sm)
-                .theme(theme.to_button_theme())
-                .on_click(move |_, cx| {
-                    state_for_remove.update(cx, |state, _cx| {
-                        if let Err(err) = state.app.remove_stream_at(index) {
-                            state.app.record_stream_error(err);
-                        }
-                    });
-                }),
-            )
-            .into_any_element()
+                    .variant(ButtonVariant::Primary)
+                    .size(ButtonSize::Sm)
+                    .theme(theme.to_button_theme())
+                    .on_click(move |_, cx| {
+                        state_for_play.update(cx, |state, _cx| {
+                            match state.app.play_stream_now(stream_for_play.clone()) {
+                                Ok(Some(source)) => PlayerView::play_track(state, source),
+                                Ok(None) => {}
+                                Err(err) => state.app.record_stream_error(err),
+                            }
+                        });
+                    }),
+                    format!("streams.play.{index}")
+                ))
+                .child(dev_track!(
+                    Button::new(
+                        SharedString::from(format!("stream-queue-{index}")),
+                        translations.queue,
+                    )
+                    .variant(ButtonVariant::Secondary)
+                    .size(ButtonSize::Sm)
+                    .theme(theme.to_button_theme())
+                    .on_click(move |_, cx| {
+                        state_for_queue.update(cx, |state, _cx| {
+                            match state.app.add_stream_to_queue(stream_for_queue.clone()) {
+                                Ok(Some(source)) => PlayerView::play_track(state, source),
+                                Ok(None) => {}
+                                Err(err) => state.app.record_stream_error(err),
+                            }
+                        });
+                    }),
+                    format!("streams.queue.{index}")
+                ))
+                .child(dev_track!(
+                    Button::new(
+                        SharedString::from(format!("stream-remove-{index}")),
+                        translations.remove,
+                    )
+                    .variant(ButtonVariant::Ghost)
+                    .size(ButtonSize::Sm)
+                    .theme(theme.to_button_theme())
+                    .on_click(move |_, cx| {
+                        state_for_remove.update(cx, |state, _cx| {
+                            if let Err(err) = state.app.remove_stream_at(index) {
+                                state.app.record_stream_error(err);
+                            }
+                        });
+                    }),
+                    format!("streams.remove.{index}")
+                ))
+                .into_any_element(),
+            format!("streams.row.{index}")
+        )
+        .into_any_element()
     }
 }

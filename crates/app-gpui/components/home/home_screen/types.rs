@@ -8,6 +8,8 @@ use super::misc::expanded_album_limit_for_dimensions;
 use super::misc::prioritize_cover_refs;
 use super::misc::slug;
 use super::misc::sort_album_refs_by_listening;
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::DevTrackExt;
 use crate::app::i18n::PhoneTranslations;
 use crate::components::design::Ds;
 use crate::components::home::album_card::{AlbumCard, AlbumCardMode};
@@ -15,8 +17,10 @@ use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant,
+    Button, ButtonSize, ButtonVariant, Heading, IconButton, IconButtonSize, IconButtonVariant,
+    Spinner, SpinnerSize, Text,
 };
 use sotf_audio_player::{Album, sotf_api_client::SotfApiAlbum};
 use std::cell::RefCell;
@@ -25,6 +29,19 @@ use std::sync::Arc;
 
 const REMOTE_ALBUM_CARD_WIDTH_PX: f32 = 180.0;
 const REMOTE_ALBUM_CARD_MIN_HEIGHT_PX: f32 = 132.0;
+
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
 
 #[derive(Clone)]
 pub(super) struct HomeShelf {
@@ -240,7 +257,7 @@ impl PlayerView {
 
         let d = Ds::from_cx(cx);
         let text = PhoneTranslations::for_language(self.state.read(cx).app.ui_state.language);
-        let (theme, shelves, expanded_sections) = {
+        let (theme, shelves, expanded_sections, is_loading) = {
             let state = self.state.read(cx);
             let ui = &state.app.ui_state;
             let collapsed_limit = collapsed_album_limit_for_width(ui.window_width);
@@ -260,6 +277,7 @@ impl PlayerView {
                     expanded_limit,
                 ),
                 ui.expanded_home_sections.clone(),
+                state.app.library_view.loading_initial_data,
             )
         };
 
@@ -269,10 +287,11 @@ impl PlayerView {
             .flex_col()
             .size_full()
             .overflow_y_scroll()
+            .track_scroll(&self.home_scroll_handle)
             .bg(theme.background)
             .p(d.card)
             .gap(d.section_lg)
-            .when(shelves.iter().all(|shelf| shelf.albums.is_empty()), |el| {
+            .when(is_loading, |el| {
                 el.child(
                     div()
                         .flex()
@@ -281,9 +300,24 @@ impl PlayerView {
                         .size_full()
                         .text_size(d.text_sm)
                         .text_color(theme.text_muted)
-                        .child(text.home_empty),
+                        .child(Spinner::new().size(SpinnerSize::Lg)),
                 )
             })
+            .when(
+                !is_loading && shelves.iter().all(|shelf| shelf.albums.is_empty()),
+                |el| {
+                    el.child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .size_full()
+                            .text_size(d.text_sm)
+                            .text_color(theme.text_muted)
+                            .child(text.home_empty),
+                    )
+                },
+            )
             .children(
                 shelves
                     .into_iter()
@@ -293,6 +327,168 @@ impl PlayerView {
                         self.render_home_shelf(shelf, is_expanded, cx)
                     }),
             )
+            .into_any_element()
+    }
+
+    pub(crate) fn render_home_shelf_screen(&self, cx: &mut Context<Self>) -> AnyElement {
+        let d = Ds::from_cx(cx);
+        let (theme, text, album_label, active_shelf_id, shelf) = {
+            let state = self.state.read(cx);
+            let ui = &state.app.ui_state;
+            let collapsed_limit = collapsed_album_limit_for_width(ui.window_width);
+            let active_shelf_id = state
+                .app
+                .library_state
+                .home_album_selection
+                .shelf_id
+                .clone();
+            let shelf = active_shelf_id.as_deref().and_then(|active_id| {
+                cached_home_shelves(
+                    &state.app.library_state.library.albums,
+                    state.app.library_state.content_generation(),
+                    collapsed_limit,
+                    usize::MAX,
+                )
+                .into_iter()
+                .find(|candidate| candidate.id == active_id)
+            });
+            (
+                ui.theme.clone(),
+                PhoneTranslations::for_language(ui.language),
+                ui.translations.library_albums.to_lowercase(),
+                active_shelf_id,
+                shelf,
+            )
+        };
+
+        let state_for_back = self.state.clone();
+        let navigation_id = active_shelf_id
+            .as_deref()
+            .map(|id| format!("home-shelf-navigation-{id}"))
+            .unwrap_or_else(|| "home-shelf-navigation-missing".to_string());
+        #[cfg(feature = "dev-api")]
+        let navigation_selector = navigation_id.clone();
+
+        let Some(shelf) = shelf else {
+            return div()
+                .id("home-shelf-screen")
+                .flex()
+                .flex_col()
+                .size_full()
+                .bg(theme.background)
+                .p(d.card)
+                .gap(d.section_lg)
+                .child(
+                    Button::new(navigation_id, text.back)
+                        .variant(ButtonVariant::Secondary)
+                        .size(ButtonSize::Sm)
+                        .theme(theme.to_button_theme())
+                        .on_click_event(move |_event, _window, cx| {
+                            state_for_back.update(cx, |state, cx| {
+                                state
+                                    .app
+                                    .set_screen(crate::app::Screen::Home, "HomeShelfBack");
+                                cx.notify();
+                            });
+                        }),
+                )
+                .child(Text::body(text.home_empty).muted(true))
+                .into_any_element();
+        };
+
+        let shelf_id = shelf.id.clone();
+        let selection = self
+            .state
+            .read(cx)
+            .app
+            .library_state
+            .home_album_selection
+            .clone();
+        let count_label = format!("{} {}", shelf.total_count, album_label);
+        cx.register_accessible(AccessibilityNode {
+            element_id: "home-shelf-title".into(),
+            label: shelf.title.clone().into(),
+            props: AriaProps::with_role(AriaRole::Heading),
+        });
+        cx.register_accessible(AccessibilityNode {
+            element_id: "home-shelf-count".into(),
+            label: count_label.clone().into(),
+            props: AriaProps::with_role(AriaRole::Status),
+        });
+
+        div()
+            .id("home-shelf-screen")
+            .flex()
+            .flex_col()
+            .size_full()
+            .bg(theme.background)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(d.gap_md)
+                    .p(d.card)
+                    .pb(d.gap)
+                    .child(dev_track!(
+                        dev_track!(
+                            Button::new(navigation_id, text.back)
+                                .variant(ButtonVariant::Secondary)
+                                .size(ButtonSize::Sm)
+                                .theme(theme.to_button_theme())
+                                .on_click_event(move |_event, _window, cx| {
+                                    state_for_back.update(cx, |state, cx| {
+                                        state
+                                            .app
+                                            .set_screen(crate::app::Screen::Home, "HomeShelfBack");
+                                        cx.notify();
+                                    });
+                                }),
+                            navigation_selector
+                        ),
+                        "home.shelf.back"
+                    ))
+                    .child(
+                        div()
+                            .min_w_0()
+                            .flex_1()
+                            .flex()
+                            .flex_col()
+                            .gap(d.grid)
+                            .child(Heading::h1(shelf.title.clone()))
+                            .child(Text::caption(count_label).muted(true)),
+                    ),
+            )
+            .child(dev_track!(
+                div()
+                    .id("home-shelf-grid")
+                    .flex()
+                    .flex_1()
+                    .min_h_0()
+                    .flex_wrap()
+                    .content_start()
+                    .overflow_y_scroll()
+                    .gap(d.gap_md)
+                    .px(d.card)
+                    .pb(d.card)
+                    .children(shelf.albums.into_iter().enumerate().map(|(idx, album)| {
+                        let is_selected = selection.shelf_id.as_deref() == Some(shelf_id.as_str())
+                            && selection.album_index == idx;
+                        #[cfg(feature = "dev-api")]
+                        let album_selector = format!("home.shelf.album.{idx}");
+                        dev_track!(
+                            div().child(self.render_home_album_card(
+                                &shelf_id,
+                                album,
+                                idx,
+                                is_selected,
+                                cx,
+                            )),
+                            album_selector
+                        )
+                        .into_any_element()
+                    })),
+                "home.shelf.grid"
+            ))
             .into_any_element()
     }
 
@@ -377,6 +573,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let ui = &state.app.ui_state;
         let theme = ui.theme.clone();
+        let text = PhoneTranslations::for_language(ui.language);
         let collapsed_limit = collapsed_album_limit_for_width(ui.window_width);
         let expanded_limit = expanded_album_limit_for_dimensions(
             ui.window_width,
@@ -392,9 +589,13 @@ impl PlayerView {
         };
         let can_expand = shelf.total_count > collapsed_limit;
         let shelf_id = shelf.id.clone();
+        #[cfg(feature = "dev-api")]
+        let see_all_selector = format!("home.see_all.{shelf_id}");
+        #[cfg(feature = "dev-api")]
+        let navigation_selector = format!("home-shelf-navigation-{shelf_id}");
         let album_shelf_id = shelf.id.clone();
         let selection = state.app.library_state.home_album_selection.clone();
-        let state_for_toggle = self.state.clone();
+        let state_for_open = self.state.clone();
 
         div()
             .id(SharedString::from(format!("home-shelf-{}", shelf.id)))
@@ -417,40 +618,39 @@ impl PlayerView {
                             .child(shelf.title),
                     )
                     .when(can_expand, |el| {
-                        let icon_name = if is_expanded {
-                            IconName::ChevronUp
-                        } else {
-                            IconName::ChevronDown
-                        };
-                        let icon_label = if is_expanded {
-                            "Collapse section"
-                        } else {
-                            "Expand section"
-                        };
-                        let icon_theme = theme.clone();
-                        el.child(
-                            IconButton::with_child(
-                                SharedString::from(format!("home-shelf-toggle-{shelf_id}")),
-                                Icon::new(icon_name)
-                                    .size(IconSize::Xs)
-                                    .color(icon_theme.text_primary),
-                            )
-                            .variant(IconButtonVariant::Filled)
-                            .size(IconButtonSize::Sm)
-                            .theme(icon_theme.to_icon_button_theme())
-                            .aria_label(icon_label)
-                            .on_click_event(
-                                move |_event, _window, cx| {
-                                    state_for_toggle.update(cx, |state, _cx| {
-                                        let expanded =
-                                            &mut state.app.ui_state.expanded_home_sections;
-                                        if !expanded.insert(shelf_id.clone()) {
-                                            expanded.remove(&shelf_id);
-                                        }
-                                    });
-                                },
+                        let button_theme = theme.clone();
+                        el.child(dev_track!(
+                            dev_track!(
+                                Button::new(
+                                    SharedString::from(format!("home-shelf-navigation-{shelf_id}")),
+                                    text.see_all,
+                                )
+                                .variant(ButtonVariant::Secondary)
+                                .size(ButtonSize::Xs)
+                                .theme(button_theme.to_button_theme())
+                                .on_click_event(
+                                    move |_event, _window, cx| {
+                                        state_for_open.update(cx, |state, cx| {
+                                            let selection =
+                                                &mut state.app.library_state.home_album_selection;
+                                            if selection.shelf_id.as_deref()
+                                                != Some(shelf_id.as_str())
+                                            {
+                                                selection.album_index = 0;
+                                            }
+                                            selection.shelf_id = Some(shelf_id.clone());
+                                            state.app.set_screen(
+                                                crate::app::Screen::HomeShelf,
+                                                "HomeSeeAll",
+                                            );
+                                            cx.notify();
+                                        });
+                                    }
+                                ),
+                                navigation_selector
                             ),
-                        )
+                            see_all_selector
+                        ))
                     })
                     .child(div().flex_1()),
             )
@@ -614,7 +814,6 @@ impl PlayerView {
         let album_for_click = Arc::clone(&album);
         let album_for_menu = Arc::clone(&album);
         let state_entity = self.state.clone();
-
         div()
             .id(SharedString::from(format!(
                 "home-album-{}-{}",

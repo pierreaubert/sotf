@@ -13,6 +13,7 @@ use std::borrow::Cow;
 #[include = "brands/*.jpeg"]
 #[include = "brands/*.png"]
 #[include = "brands/*.webp"]
+#[include = "tutorial/*.webp"]
 #[include = "sotf.jpg"]
 #[include = "sotf.png"]
 #[include = "presets/*.json"]

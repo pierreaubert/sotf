@@ -26,7 +26,7 @@ spotify = ["dep:sotf-service-spotify", "sotf-player/spotify"]
 # QA/debug-only HTTP API for scripted E2E testing. Compile errors in release builds
 # and only starts at runtime when `sotf-desktop --qa <dir>` is used.
 qa = []
-dev-api = ["sotf-player/dev-api"]
+dev-api = ["sotf-player/dev-api", "visual-qa", "dep:sotf-dev-api"]
 # macOS-only off-screen Metal capture support for release visual review.
 # Kept out of default/shipping builds; the binary below requires it explicitly.
 visual-qa = [
@@ -50,6 +50,7 @@ glam = { workspace = true }
 
 # Shared audio player library (provides business logic, database, plugins, etc.)
 sotf-player = { workspace = true }
+sotf-dev-api = { path = "../sotf-dev-api", optional = true, features = ["server"] }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
 sotf-midi = { workspace = true }

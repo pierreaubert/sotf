@@ -8,6 +8,20 @@ use gpui_ui_kit::{
 };
 use sotf_audio_player::room_eq_types::DspChainOutputExt;
 
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 /// Export format options shown in the dropdown. Index 0 is the native
 /// SotF JSON; indices 1–6 map to `autoeq::roomeq::ExportFormat` variants.
 const EXPORT_FORMATS: &[(&str, &str)] = &[
@@ -153,7 +167,7 @@ impl PlayerView {
                                             .color(theme.text_primary),
                                         ),
                                 )
-                                .child(
+                                .child(dev_track!(
                                     Button::new("export_file", translations.roomeq_export_button)
                                         .variant(ButtonVariant::Primary)
                                         .size(ButtonSize::Sm)
@@ -161,7 +175,8 @@ impl PlayerView {
                                         .on_click_event(cx.listener(|view, _, _, cx| {
                                             view.export_room_eq_format(cx);
                                         })),
-                                ),
+                                    "roomeq.export_file"
+                                )),
                         );
 
                         // Dropdown list (visible when open)
@@ -252,14 +267,15 @@ impl PlayerView {
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                             )
-                            .child(
+                            .child(dev_track!(
                                 Button::new("apply_to_player", translations.roomeq_apply_to_rack)
                                     .variant(ButtonVariant::Secondary)
                                     .theme(theme.to_button_theme())
                                     .on_click_event(cx.listener(|view, _, _, cx| {
                                         view.apply_room_eq_to_player(cx);
                                     })),
-                            ),
+                                "roomeq.apply_to_player"
+                            )),
                     ),
             );
         } else {
@@ -349,6 +365,48 @@ impl PlayerView {
             .get(format_idx)
             .copied()
             .unwrap_or(("Unknown", "bin"));
+
+        #[cfg(feature = "dev-api")]
+        if std::env::var_os("SOTF_QA_DIR").is_some() {
+            let path = sotf_audio_player::config::get_app_config_dir()
+                .unwrap_or_else(|| std::env::temp_dir().join("sotf-qa"))
+                .join("qa-room-eq-export.json");
+            let result = (|| -> Result<(), String> {
+                let parent = path
+                    .parent()
+                    .ok_or_else(|| "missing export parent".to_string())?;
+                std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                let packaged = autoeq::roomeq::package_convolution_sidecars(
+                    &dsp_output,
+                    &artifact_dir,
+                    parent,
+                )
+                .map_err(|error| error.to_string())?;
+                let json =
+                    serde_json::to_string_pretty(&packaged).map_err(|error| error.to_string())?;
+                std::fs::write(&path, json).map_err(|error| error.to_string())
+            })();
+            self.state.update(cx, |state, _| match result {
+                Ok(()) => {
+                    // The export destination is shown by the dedicated result row.
+                    // Keep transient status text catalog-backed instead of creating
+                    // a new, untranslated template around a filesystem path.
+                    state.app.measurement_state.room_eq_state.status_message = state
+                        .app
+                        .ui_state
+                        .translations
+                        .roomeq_export_and_apply
+                        .into();
+                    state.app.measurement_state.room_eq_state.error_message = None;
+                }
+                Err(error) => {
+                    state.app.measurement_state.room_eq_state.error_message =
+                        Some(format!("Failed to export Room EQ: {error}"));
+                }
+            });
+            cx.notify();
+            return;
+        }
 
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
@@ -446,6 +504,45 @@ impl PlayerView {
             });
             return;
         };
+
+        #[cfg(feature = "dev-api")]
+        if std::env::var_os("SOTF_QA_DIR").is_some() {
+            let path = sotf_audio_player::config::get_app_config_dir()
+                .unwrap_or_else(|| std::env::temp_dir().join("sotf-qa"))
+                .join("qa-room-eq-export.json");
+            let result = (|| -> Result<(), String> {
+                let parent = path
+                    .parent()
+                    .ok_or_else(|| "missing export parent".to_string())?;
+                std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                let packaged = autoeq::roomeq::package_convolution_sidecars(
+                    &dsp_output,
+                    &artifact_dir,
+                    parent,
+                )
+                .map_err(|error| error.to_string())?;
+                let json =
+                    serde_json::to_string_pretty(&packaged).map_err(|error| error.to_string())?;
+                std::fs::write(&path, json).map_err(|error| error.to_string())
+            })();
+            self.state.update(cx, |state, _| match result {
+                Ok(()) => {
+                    state.app.measurement_state.room_eq_state.status_message = state
+                        .app
+                        .ui_state
+                        .translations
+                        .roomeq_export_and_apply
+                        .into();
+                    state.app.measurement_state.room_eq_state.error_message = None;
+                }
+                Err(error) => {
+                    state.app.measurement_state.room_eq_state.error_message =
+                        Some(format!("Failed to export Room EQ: {error}"));
+                }
+            });
+            cx.notify();
+            return;
+        }
 
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {

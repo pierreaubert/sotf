@@ -1033,7 +1033,7 @@ impl PlayerView {
                                                         if let Some(editor) =
                                                             &mut state.app.modal.metadata_editor
                                                         {
-                                                            editor.search_query = value;
+                                                            editor.search_query = value.to_string();
                                                             editor.search_error = None;
                                                         }
                                                     });
@@ -1195,19 +1195,23 @@ impl PlayerView {
                                     return;
                                 };
                                 match field {
-                                    "title" => editor.fields.title = value,
-                                    "artist" => editor.fields.artist = value,
-                                    "album_artist" => editor.fields.album_artist = value,
-                                    "year" => editor.fields.year = value,
-                                    "genre" => editor.fields.genre = value,
-                                    "composer" => editor.fields.composer = value,
-                                    "disc_number" => editor.fields.disc_number = value,
-                                    "track_number" => editor.fields.track_number = value,
-                                    "conductor" => editor.fields.conductor = value,
-                                    "performer" => editor.fields.performer = value,
-                                    "isrc" => editor.fields.isrc = value,
-                                    "ensemble" => editor.fields.ensemble = value,
-                                    "edition" => editor.fields.edition = value,
+                                    "title" => editor.fields.title = value.to_string(),
+                                    "artist" => editor.fields.artist = value.to_string(),
+                                    "album_artist" => {
+                                        editor.fields.album_artist = value.to_string()
+                                    }
+                                    "year" => editor.fields.year = value.to_string(),
+                                    "genre" => editor.fields.genre = value.to_string(),
+                                    "composer" => editor.fields.composer = value.to_string(),
+                                    "disc_number" => editor.fields.disc_number = value.to_string(),
+                                    "track_number" => {
+                                        editor.fields.track_number = value.to_string()
+                                    }
+                                    "conductor" => editor.fields.conductor = value.to_string(),
+                                    "performer" => editor.fields.performer = value.to_string(),
+                                    "isrc" => editor.fields.isrc = value.to_string(),
+                                    "ensemble" => editor.fields.ensemble = value.to_string(),
+                                    "edition" => editor.fields.edition = value.to_string(),
                                     _ => {}
                                 }
                                 editor.preview = None;

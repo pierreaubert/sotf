@@ -31,20 +31,45 @@ impl DlnaMediaServer {
         local_ip: Ipv4Addr,
         cancel: tokio::sync::watch::Receiver<bool>,
     ) -> Result<(), String> {
+        self.run_inner(bind_address, local_ip, cancel, true).await
+    }
+
+    /// Run only the bounded HTTP/SOAP listener without SSDP multicast.
+    ///
+    /// This mode is used by hermetic QA and fuzz runs that need to exercise
+    /// the real DLNA request handlers without advertising on the host network.
+    pub async fn run_http_only(
+        &self,
+        bind_address: &str,
+        local_ip: Ipv4Addr,
+        cancel: tokio::sync::watch::Receiver<bool>,
+    ) -> Result<(), String> {
+        self.run_inner(bind_address, local_ip, cancel, false).await
+    }
+
+    async fn run_inner(
+        &self,
+        bind_address: &str,
+        local_ip: Ipv4Addr,
+        cancel: tokio::sync::watch::Receiver<bool>,
+        discovery_enabled: bool,
+    ) -> Result<(), String> {
         let bind_label = format!("{bind_address}:{}", self.device.http_port);
         let listener = TcpListener::bind((bind_address, self.device.http_port))
             .await
             .map_err(|e| format!("Failed to bind server HTTP on {bind_label}: {e}"))?;
 
-        ssdp::send_alive(&self.device, local_ip).await?;
+        if discovery_enabled {
+            ssdp::send_alive(&self.device, local_ip).await?;
 
-        let ssdp_device = self.device.clone();
-        let ssdp_cancel = cancel.clone();
-        tokio::spawn(async move {
-            if let Err(e) = ssdp::listen_and_respond(ssdp_device, local_ip, ssdp_cancel).await {
-                log::warn!("[DLNA Server] SSDP error: {}", e);
-            }
-        });
+            let ssdp_device = self.device.clone();
+            let ssdp_cancel = cancel.clone();
+            tokio::spawn(async move {
+                if let Err(e) = ssdp::listen_and_respond(ssdp_device, local_ip, ssdp_cancel).await {
+                    log::warn!("[DLNA Server] SSDP error: {}", e);
+                }
+            });
+        }
 
         let event_adapter = Arc::clone(&self.adapter);
         let event_registry = self.events.clone();
@@ -112,7 +137,9 @@ impl DlnaMediaServer {
                 }
                 _ = cancel_rx.changed() => {
                     if *cancel_rx.borrow() {
-                        ssdp::send_byebye(&self.device).await.ok();
+                        if discovery_enabled {
+                            ssdp::send_byebye(&self.device).await.ok();
+                        }
                         break;
                     }
                 }

@@ -1,0 +1,98 @@
+schema_version = 1
+version = 2
+target = "headless-server"
+fixture_profiles = ["default", "demo-audio"]
+
+[[actions]]
+id = "mpd-ping"
+family = "mpd"
+weight = 100
+coverage = ["protocol:mpd", "mpd:ping"]
+[actions.payload]
+type = "http"
+endpoint = "mpd"
+method = "RAW"
+path = "/"
+headers = {}
+body = [112, 105, 110, 103, 10]
+
+[[actions]]
+id = "mpd-auth-status"
+family = "mpd"
+weight = 100
+coverage = ["protocol:mpd", "mpd:auth", "mpd:status"]
+[actions.payload]
+type = "http"
+endpoint = "mpd"
+method = "RAW"
+path = "/"
+headers = {}
+body = [112, 97, 115, 115, 119, 111, 114, 100, 32, 115, 111, 116, 102, 45, 102, 117, 122, 122, 101, 114, 10, 115, 116, 97, 116, 117, 115, 10]
+
+[[actions]]
+id = "api-health"
+family = "sotf-api"
+weight = 100
+coverage = ["protocol:http", "api:public"]
+[actions.payload]
+type = "http"
+endpoint = "sotf-api"
+method = "GET"
+path = "/api/v1/health"
+headers = {}
+body = []
+
+[[actions]]
+id = "api-state"
+family = "sotf-api"
+weight = 100
+coverage = ["protocol:http", "api:authenticated", "api:state"]
+[actions.payload]
+type = "http"
+endpoint = "sotf-api"
+method = "GET"
+path = "/api/v1/state"
+headers = {}
+body = []
+
+[[actions]]
+id = "dlna-description"
+family = "dlna-http"
+weight = 100
+coverage = ["protocol:http", "dlna:description"]
+[actions.payload]
+type = "http"
+endpoint = "dlna"
+method = "GET"
+path = "/description.xml"
+headers = {}
+body = []
+
+[[actions]]
+id = "dlna-protocol-info"
+family = "dlna-soap"
+weight = 100
+coverage = ["protocol:http", "protocol:xml", "dlna:connection-manager"]
+[actions.payload]
+type = "http"
+endpoint = "dlna"
+method = "POST"
+path = "/ConnectionManager/control"
+headers = { "Content-Type" = "text/xml; charset=utf-8" }
+body = [60, 115, 58, 69, 110, 118, 101, 108, 111, 112, 101, 62, 60, 115, 58, 66, 111, 100, 121, 62, 60, 117, 58, 71, 101, 116, 80, 114, 111, 116, 111, 99, 111, 108, 73, 110, 102, 111, 62, 60, 47, 117, 58, 71, 101, 116, 80, 114, 111, 116, 111, 99, 111, 108, 73, 110, 102, 111, 62, 60, 47, 115, 58, 66, 111, 100, 121, 62, 60, 47, 115, 58, 69, 110, 118, 101, 108, 111, 112, 101, 62]
+
+[[actions]]
+id = "settle"
+family = "timing"
+weight = 20
+coverage = ["timing:short-wait"]
+[actions.payload]
+type = "wait"
+duration_ms = 20
+
+[[invariants]]
+id = "server-process-running"
+terminal = true
+[invariants.condition]
+op = "process_phase"
+phase = "running"

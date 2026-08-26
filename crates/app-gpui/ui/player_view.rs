@@ -47,6 +47,8 @@ pub struct PlayerView {
     pub(super) last_saved_window_bounds: Option<Bounds<Pixels>>,
     /// Scroll handle for library grid view
     pub(crate) grid_scroll_handle: ScrollHandle,
+    /// Retains the desktop Home position while a full shelf is open.
+    pub(crate) home_scroll_handle: ScrollHandle,
     /// Track if we've done initial focus (for macOS menu activation)
     pub(super) needs_initial_focus: bool,
     /// Off-screen visual QA pins synthetic viewport dimensions in AppState;
@@ -296,6 +298,7 @@ impl PlayerView {
             eq_chart_focus_handle,
             last_saved_window_bounds: None,
             grid_scroll_handle: ScrollHandle::new(),
+            home_scroll_handle: ScrollHandle::new(),
             needs_initial_focus: true,
             suppress_geometry_sync: false,
             update_frame_count: 0,

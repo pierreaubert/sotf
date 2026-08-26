@@ -1,0 +1,39 @@
+# Hermetic source selection still goes through the visible refresh and speaker
+# controls. Selecting a speaker causes the normal version/measurement chain.
+assert screen.focused == "Spinorama"
+wait_idle 2s
+assert_visible spinorama.refresh
+assert_accessible button Refresh
+click spinorama.refresh
+wait_until spinorama.loading == false timeout=5s
+assert spinorama.catalog_count == 2
+assert spinorama.suggestion_count == 2
+assert_visible spinorama.select.Fixture Speaker
+screenshot spinorama-discovery-catalog
+click spinorama.select.Fixture Speaker
+wait_until spinorama.loading == false timeout=5s
+assert spinorama.selected_speaker == "Fixture Speaker"
+assert spinorama.selected_version == "fixture-v1"
+assert spinorama.selected_measurement == "CEA2034"
+assert spinorama.measurement_count == 2
+screenshot spinorama-discovery-selected
+assert_visible spinorama.next
+click spinorama.next
+wait_idle 2s
+assert spinorama.step == "Configure"
+scroll spinorama.content -350
+wait_idle 500ms
+assert_visible spinorama.optimize_start
+screenshot spinorama-configure
+click spinorama.optimize_start
+query spinorama.optimization_status
+wait_until spinorama.optimization_status == "Running" timeout=5s
+assert_visible spinorama.optimize_cancel
+click spinorama.optimize_cancel
+wait_until spinorama.optimization_status == "Cancelled" timeout=5s
+assert_visible spinorama.optimize_start
+click spinorama.optimize_start
+wait_until spinorama.optimization_status == "Running" timeout=5s
+click spinorama.optimize_cancel
+wait_until spinorama.optimization_status == "Cancelled" timeout=5s
+screenshot spinorama-optimization-cancelled

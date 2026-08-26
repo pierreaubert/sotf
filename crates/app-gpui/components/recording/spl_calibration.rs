@@ -22,6 +22,20 @@ use gpui_ui_kit::{
     StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 impl PlayerView {
     /// Render the SPL calibration step UI.
     pub(crate) fn render_recording_spl_calibration_step(
@@ -63,16 +77,19 @@ impl PlayerView {
 
         let view = cx.entity().clone();
         let start_button: AnyElement = if running {
-            Button::new("spl-cal-cancel", recording_text.cancel)
-                .variant(ButtonVariant::Secondary)
-                .size(ButtonSize::Md)
-                .on_click({
-                    let view = view.clone();
-                    move |_, cx| {
-                        view.update(cx, |this, cx| this.cancel_spl_calibration_capture(cx));
-                    }
-                })
-                .into_any_element()
+            dev_track!(
+                Button::new("spl-cal-cancel", recording_text.cancel)
+                    .variant(ButtonVariant::Secondary)
+                    .size(ButtonSize::Md)
+                    .on_click({
+                        let view = view.clone();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| this.cancel_spl_calibration_capture(cx));
+                        }
+                    }),
+                "recording.spl_cancel"
+            )
+            .into_any_element()
         } else {
             let button_label = match cal.status {
                 SplCalibrationCaptureStatus::Idle | SplCalibrationCaptureStatus::Failed(_) => {
@@ -81,16 +98,19 @@ impl PlayerView {
                 SplCalibrationCaptureStatus::Running { .. } => "Playing…",
                 SplCalibrationCaptureStatus::Complete => "Re-play tone",
             };
-            Button::new("spl-cal-start", button_label)
-                .variant(ButtonVariant::Primary)
-                .size(ButtonSize::Md)
-                .on_click({
-                    let view = view.clone();
-                    move |_, cx| {
-                        view.update(cx, |this, cx| this.start_spl_calibration_capture(cx));
-                    }
-                })
-                .into_any_element()
+            dev_track!(
+                Button::new("spl-cal-start", button_label)
+                    .variant(ButtonVariant::Primary)
+                    .size(ButtonSize::Md)
+                    .on_click({
+                        let view = view.clone();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| this.start_spl_calibration_capture(cx));
+                        }
+                    }),
+                "recording.spl_start"
+            )
+            .into_any_element()
         };
 
         let mut column = VStack::new()
@@ -128,6 +148,7 @@ impl PlayerView {
                                         if val > 0.0 {
                                             rec.status_message = "Level must be ≤ 0 dB (positive values clip the signal)"
                                                 .to_string();
+                                            rec.status_severity = crate::app::types::recording::RecordingStatusSeverity::Error;
                                         } else {
                                             rec.signal_level_db = val as f32;
                                             rec.spl_calibration_capture.tone_amp =
@@ -157,7 +178,7 @@ impl PlayerView {
                         .spacing(StackSpacing::Sm)
                         .align(StackAlign::Center)
                         .child(Text::new(text.reported_dbspl).size(TextSize::Sm))
-                        .child(
+                        .child(dev_track!(
                             NumberInput::new("spl_calibration_reported_db_spl")
                                 .value(initial_db_spl)
                                 .min(30.0)
@@ -180,7 +201,8 @@ impl PlayerView {
                                         cx.notify();
                                     });
                                 }),
-                        ),
+                            "recording.spl_meter"
+                        )),
                 );
             if let Some(cal_out) = cal.to_spl_calibration() {
                 column = column.child(
@@ -204,6 +226,11 @@ impl PlayerView {
     /// the UI surfaces the engine's peak/RMS numbers and waits for
     /// the user to type the meter reading before the cal is "ready".
     pub(crate) fn start_spl_calibration_capture(&mut self, cx: &mut Context<Self>) {
+        #[cfg(feature = "dev-api")]
+        if self.complete_qa_fake_spl_calibration_capture(cx) {
+            return;
+        }
+
         let (
             reference_freq_hz,
             tone_amp,
@@ -316,6 +343,27 @@ impl PlayerView {
             });
         })
         .detach();
+    }
+
+    /// Deterministic QA result for the real SPL calibration button.
+    #[cfg(feature = "dev-api")]
+    fn complete_qa_fake_spl_calibration_capture(&mut self, cx: &mut Context<Self>) -> bool {
+        self.state.update(cx, |state, cx| {
+            let rec = &mut state.app.measurement_state.recording_state;
+            if rec.qa_fake_capture.is_none() {
+                return false;
+            }
+            let cal = &mut rec.spl_calibration_capture;
+            cal.apply_engine_result(sotf_audio::signal_recorder::SplCalibrationResult {
+                sample_rate: cal.sample_rate,
+                peak_sample_level: 0.1,
+                rms_sample_level: 0.070_710_68,
+                reference_freq_hz: cal.reference_freq_hz,
+                output_channel: cal.output_channel,
+            });
+            cx.notify();
+            true
+        })
     }
 
     /// Request cancellation of the in-progress SPL calibration capture.

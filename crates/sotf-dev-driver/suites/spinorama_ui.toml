@@ -1,0 +1,60 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+demo_audio_dir = "data_tests/audio"
+readiness_timeout = "20s"
+size = "1440x900"
+
+[[scenario]]
+name = "spinorama-offline-discovery"
+path = "crates/sotf-dev-driver/scenarios/spinorama_offline_fixture.scn"
+timeout = "30s"
+tags = ["spinorama", "fixture", "ui", "offline"]
+
+[scenario.spinorama_discovery]
+catalog = ["Fixture Speaker", "Fixture Speaker Two"]
+
+[[scenario.spinorama_discovery.speakers]]
+speaker = "Fixture Speaker"
+
+[[scenario.spinorama_discovery.speakers.versions]]
+version = "fixture-v1"
+measurements = ["CEA2034", "Estimated In-Room Response"]
+response = [
+  [20.0, 72.0], [31.5, 73.5], [50.0, 75.0], [80.0, 74.0],
+  [125.0, 76.0], [200.0, 75.0], [315.0, 74.0], [500.0, 72.5],
+  [800.0, 73.0], [1250.0, 75.5], [2000.0, 74.5], [3150.0, 71.5],
+  [5000.0, 70.0], [8000.0, 68.5], [12500.0, 66.0], [20000.0, 62.0],
+]
+
+[[scenario.spinorama_discovery.speakers]]
+speaker = "Fixture Speaker Two"
+
+[[scenario.spinorama_discovery.speakers.versions]]
+version = "fixture-v2"
+measurements = ["CEA2034"]
+
+[[scenario]]
+name = "spinorama-fixture-retry"
+path = "crates/sotf-dev-driver/scenarios/spinorama_retry_fixture.scn"
+timeout = "20s"
+tags = ["spinorama", "fixture", "ui", "offline", "retry"]
+
+[scenario.spinorama_discovery]
+catalog = ["Fixture Speaker", "Fixture Speaker Two"]
+catalog_failures = 2
+catalog_delay_ms = 300
+
+[[scenario.spinorama_discovery.speakers]]
+speaker = "Fixture Speaker"
+
+[[scenario.spinorama_discovery.speakers.versions]]
+version = "fixture-v1"
+measurements = ["CEA2034"]
+
+[[scenario.spinorama_discovery.speakers]]
+speaker = "Fixture Speaker Two"
+
+[[scenario.spinorama_discovery.speakers.versions]]
+version = "fixture-v2"
+measurements = ["CEA2034"]

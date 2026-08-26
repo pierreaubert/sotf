@@ -86,6 +86,10 @@ pub enum DevCommand {
         keystroke: String,
         reply: mpsc::SyncSender<DevReply>,
     },
+    /// Return an allow-listed protocol-v2 state snapshot.
+    Snapshot {
+        reply: mpsc::SyncSender<DevQueryReply>,
+    },
     /// Return a small readiness/status payload.
     Health {
         reply: mpsc::SyncSender<DevQueryReply>,

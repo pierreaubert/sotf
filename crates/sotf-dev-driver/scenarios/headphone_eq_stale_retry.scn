@@ -1,0 +1,30 @@
+# The delayed Fixture One response must not replace the later Fixture Two
+# selection. Fixture Two fails once, then the visible Retry control succeeds.
+assert screen.focused == "HeadphoneEq"
+wait_idle 2s
+click headphone.refresh
+wait_until headphone.loading == false timeout=5s
+assert_visible headphone.select.Fixture One
+assert_visible headphone.select.Fixture Two
+
+click headphone.select.Fixture One
+click headphone.select.Fixture Two
+wait_until headphone.loading == false timeout=5s
+assert headphone.selected == "Fixture Two"
+assert headphone.error == "Fixture Two fixture failure"
+assert headphone.curve_point_count == 0
+assert_visible headphone.retry
+screenshot headphone-stale-newest-error
+
+# Let the old delayed response arrive. Request IDs must discard it.
+wait_idle 1200ms
+assert headphone.selected == "Fixture Two"
+assert headphone.error == "Fixture Two fixture failure"
+assert headphone.curve_point_count == 0
+
+click headphone.retry
+wait_until headphone.loading == false timeout=5s
+assert headphone.selected == "Fixture Two"
+assert headphone.error == null
+assert headphone.curve_point_count == 3
+screenshot headphone-stale-retry-success

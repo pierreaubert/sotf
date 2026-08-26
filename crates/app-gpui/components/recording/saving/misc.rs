@@ -157,7 +157,7 @@ impl PlayerView {
                                                             .app
                                                             .measurement_state
                                                             .recording_state
-                                                            .save_name = value;
+                                                            .save_name = value.to_string();
                                                     });
                                                     cx.notify();
                                                 });
@@ -381,6 +381,7 @@ impl PlayerView {
             crate::app::i18n::RuntimeMessageTranslations::for_language(state.app.ui_state.language)
                 .translate(&state.app.measurement_state.recording_state.status_message)
                 .into_owned();
+        let status_severity = state.app.measurement_state.recording_state.status_severity;
         let view = cx.entity().clone();
 
         let can_save = has_recordings && recording_dir.is_some();
@@ -424,13 +425,25 @@ impl PlayerView {
                 )
                 .when(!status_message.is_empty(), |stack| {
                     let theme = theme.clone();
-                    let is_error = status_message.to_lowercase().contains("error")
-                        || status_message.to_lowercase().contains("failed");
-                    stack.child(
-                        Text::new(status_message.clone())
-                            .size(TextSize::Xs)
-                            .color(if is_error { theme.error } else { theme.success }),
-                    )
+                    stack.child(Text::new(status_message.clone()).size(TextSize::Xs).color(
+                        match status_severity {
+                            crate::app::types::recording::RecordingStatusSeverity::Idle => {
+                                theme.text_secondary
+                            }
+                            crate::app::types::recording::RecordingStatusSeverity::Working => {
+                                theme.accent
+                            }
+                            crate::app::types::recording::RecordingStatusSeverity::Success => {
+                                theme.success
+                            }
+                            crate::app::types::recording::RecordingStatusSeverity::Warning => {
+                                theme.warning
+                            }
+                            crate::app::types::recording::RecordingStatusSeverity::Error => {
+                                theme.error
+                            }
+                        },
+                    ))
                 })
                 .when(!can_save, |stack| {
                     let reason = if !has_recordings {
@@ -564,7 +577,7 @@ impl PlayerView {
                                                     .app
                                                     .measurement_state
                                                     .recording_state
-                                                    .setup_description = value;
+                                                    .setup_description = value.to_string();
                                             });
                                             cx.notify();
                                         });
@@ -678,7 +691,7 @@ impl PlayerView {
                                                             if let Some(slot) =
                                                                 rec.channel_speakers.get_mut(row)
                                                             {
-                                                                *slot = value;
+                                                                *slot = value.to_string();
                                                             }
                                                             rec.channel_speaker_autocomplete_open =
                                                                 Some(row);

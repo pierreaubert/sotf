@@ -1,0 +1,17 @@
+# The visible Refresh button recovers a one-shot fixture failure without
+# leaving the UI in a loading state.
+assert screen.focused == "Spinorama"
+wait_idle 2s
+assert_visible spinorama.refresh
+click spinorama.refresh
+wait_until spinorama.loading == true timeout=2s
+click spinorama.refresh
+wait_until spinorama.loading == false timeout=5s
+query spinorama.error
+assert spinorama.error == "Spinorama fixture catalog request failed"
+assert_visible spinorama.refresh
+click spinorama.refresh
+wait_until spinorama.loading == true timeout=2s
+wait_until spinorama.loading == false timeout=5s
+assert spinorama.error == null
+assert spinorama.catalog_count == 2

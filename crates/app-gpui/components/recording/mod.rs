@@ -27,6 +27,20 @@ use gpui_ui_kit::{
     WizardStep, WizardTheme,
 };
 
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 impl PlayerView {
     /// Main recording screen renderer - dispatches to the appropriate step
     pub(crate) fn render_recording_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -145,7 +159,7 @@ impl PlayerView {
 
         let navigation = HStack::new()
             .spacing(StackSpacing::Sm)
-            .child(
+            .child(dev_track!(
                 Button::new("back", back_label)
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Sm)
@@ -161,8 +175,9 @@ impl PlayerView {
                             cx.notify();
                         }),
                     ),
-            )
-            .child(
+                "recording.back"
+            ))
+            .child(dev_track!(
                 Button::new("next", next_label)
                     .variant(ButtonVariant::Primary)
                     .size(ButtonSize::Sm)
@@ -174,7 +189,8 @@ impl PlayerView {
                         });
                         cx.notify();
                     })),
-            );
+                "recording.next"
+            ));
         let navigation = navigation.build().flex_none();
 
         // Home button for navigation back to Library

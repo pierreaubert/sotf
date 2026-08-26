@@ -1,3 +1,5 @@
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::DevTrackExt;
 use crate::i18n::{HeadphoneEasyTranslations, HeadphoneEqTranslations};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -7,6 +9,19 @@ use gpui_ui_kit::{
     TextWeight, VStack,
 };
 use sotf_audio_player::autoeq::DetailLevel;
+
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
 
 impl PlayerView {
     // ========================================================================
@@ -112,10 +127,10 @@ impl PlayerView {
                                                 }),
                                         )
                                     })
-                                    .child(
+                                    .child(dev_track!(
                                         Button::new(
                                             "save-headphone-eq",
-                                            discovery_text.save_eq_file,
+                                            discovery_text.save_eq_file
                                         )
                                         .variant(ButtonVariant::Primary)
                                         .size(ButtonSize::Sm)
@@ -125,7 +140,8 @@ impl PlayerView {
                                                 view.save_headphone_eq_result(cx);
                                             }),
                                         ),
-                                    ),
+                                        "headphone.export"
+                                    )),
                             ),
                     )
             })
@@ -196,7 +212,7 @@ impl PlayerView {
                         HStack::new()
                             .spacing(StackSpacing::Xs)
                             .wrap(true)
-                            .child(
+                            .child(dev_track!(
                                 Button::new("apply-headphone-easy-chain", translations.apply)
                                     .variant(ButtonVariant::Primary)
                                     .size(ButtonSize::Sm)
@@ -204,7 +220,8 @@ impl PlayerView {
                                     .on_click_event(cx.listener(|view, _, _, cx| {
                                         view.apply_headphone_easy_result(cx);
                                     })),
-                            )
+                                "headphone.apply"
+                            ))
                             .child(
                                 Button::new("undo-headphone-easy-chain", translations.undo)
                                     .variant(ButtonVariant::Secondary)

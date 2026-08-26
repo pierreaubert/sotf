@@ -4,7 +4,10 @@ use super::misc::percent_decode;
 use anyhow::{Result, anyhow};
 use std::sync::mpsc::{self};
 
-pub(super) fn get_query(raw_query: &str, tx: &mpsc::Sender<DevCommand>) -> Result<DevQueryReply> {
+pub(super) fn get_query(
+    raw_query: &str,
+    tx: &mpsc::SyncSender<DevCommand>,
+) -> Result<DevQueryReply> {
     let mut path: Option<String> = None;
     for kv in raw_query.split('&').filter(|s| !s.is_empty()) {
         let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
@@ -26,7 +29,7 @@ pub(super) fn get_query(raw_query: &str, tx: &mpsc::Sender<DevCommand>) -> Resul
     Ok(reply)
 }
 
-pub(super) fn get_health(tx: &mpsc::Sender<DevCommand>) -> Result<DevQueryReply> {
+pub(super) fn get_health(tx: &mpsc::SyncSender<DevCommand>) -> Result<DevQueryReply> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     tx.send(DevCommand::Health { reply: reply_tx })
         .map_err(|_| anyhow!("dev-api queue closed"))?;
@@ -34,4 +37,23 @@ pub(super) fn get_health(tx: &mpsc::Sender<DevCommand>) -> Result<DevQueryReply>
         .recv_timeout(REPLY_TIMEOUT)
         .map_err(|_| anyhow!("dev-api reply timeout"))?;
     Ok(reply)
+}
+
+pub(super) fn get_accessibility(tx: &mpsc::SyncSender<DevCommand>) -> Result<DevQueryReply> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    tx.send(DevCommand::Accessibility { reply: reply_tx })
+        .map_err(|_| anyhow!("dev-api queue closed"))?;
+    let reply = reply_rx
+        .recv_timeout(REPLY_TIMEOUT)
+        .map_err(|_| anyhow!("dev-api reply timeout"))?;
+    Ok(reply)
+}
+
+pub(super) fn get_snapshot(tx: &mpsc::SyncSender<DevCommand>) -> Result<DevQueryReply> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    tx.send(DevCommand::Snapshot { reply: reply_tx })
+        .map_err(|_| anyhow!("GPUI command channel closed"))?;
+    reply_rx
+        .recv_timeout(REPLY_TIMEOUT)
+        .map_err(|_| anyhow!("GPUI snapshot reply timed out"))
 }

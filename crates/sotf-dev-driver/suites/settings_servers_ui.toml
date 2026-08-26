@@ -1,0 +1,9 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+readiness_timeout = "20s"
+
+[[scenario]]
+name = "settings-servers-secret-controls"
+path = "crates/sotf-dev-driver/scenarios/settings_servers_secrets.scn"
+timeout = "30s"
+tags = ["settings", "servers", "secrets", "ui", "accessibility"]

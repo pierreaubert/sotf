@@ -1,10 +1,37 @@
 use gpui::StatefulInteractiveElement;
 
-use crate::app::i18n::PhoneTranslations;
+use crate::app::i18n::{PhoneLibraryTranslations, PhoneToolTranslations, PhoneTranslations};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PhoneTool {
+    Recording,
+    RoomEq,
+    HeadphoneEq,
+    Spinorama,
+    ListeningTest,
+    Spectrum,
+    PluginGraph,
+    Streams,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PhoneLibraryChipAction {
+    ToggleMore,
+    Reset,
+    Apply,
+}
 
 impl PlayerView {
     fn phone_translations(&self, cx: &Context<Self>) -> PhoneTranslations {
         PhoneTranslations::for_language(self.state.read(cx).app.ui_state.language)
+    }
+
+    fn phone_tool_translations(&self, cx: &Context<Self>) -> PhoneToolTranslations {
+        PhoneToolTranslations::for_language(self.state.read(cx).app.ui_state.language)
+    }
+
+    fn phone_library_translations(&self, cx: &Context<Self>) -> PhoneLibraryTranslations {
+        PhoneLibraryTranslations::for_language(self.state.read(cx).app.ui_state.language)
     }
 
     fn render_phone_shell(
@@ -53,6 +80,7 @@ impl PlayerView {
         _layout_mode: crate::app::LayoutMode,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let translations = self.state.read(cx).app.ui_state.translations.clone();
         match screen {
             Screen::NowPlaying => self.render_phone_now_playing(cx),
             Screen::Settings => self.render_settings_screen_phone(cx),
@@ -64,29 +92,53 @@ impl PlayerView {
             Screen::Library => self.render_library_screen_phone(cx),
             Screen::Home => self.render_home_screen_phone(cx),
             Screen::HomeShelf => self.render_home_shelf_screen_phone(cx),
-            Screen::Playlists => self.render_phone_placeholder("Playlists", cx),
+            Screen::Playlists => self.render_playlists_screen(cx).into_any_element(),
             Screen::Spectrum => self.render_phone_spectrum_screen(cx),
             Screen::Recording => {
                 let content = self.render_recording_screen(cx).into_any_element();
-                self.render_phone_tool_wrapper("Recording", "Full-screen capture flow", content, cx)
+                self.render_phone_tool_wrapper(
+                    PhoneTool::Recording,
+                    translations.screen_recording,
+                    translations.recording_capture_desc,
+                    content,
+                    cx,
+                )
             }
             Screen::RoomEq => {
                 let content = self.render_room_eq_screen(cx).into_any_element();
-                self.render_phone_tool_wrapper("Room EQ", "Wizard", content, cx)
+                self.render_phone_tool_wrapper(
+                    PhoneTool::RoomEq,
+                    translations.screen_room_eq,
+                    self.phone_translations(cx).wizard,
+                    content,
+                    cx,
+                )
             }
             Screen::HeadphoneEq => {
                 let content = self.render_headphone_eq_screen(cx).into_any_element();
-                self.render_phone_tool_wrapper("Headphone EQ", "Wizard", content, cx)
+                self.render_phone_tool_wrapper(
+                    PhoneTool::HeadphoneEq,
+                    translations.screen_headphone_eq,
+                    self.phone_translations(cx).wizard,
+                    content,
+                    cx,
+                )
             }
             Screen::Spinorama => {
                 let content = self.render_spinorama_eq_screen(cx).into_any_element();
-                self.render_phone_tool_wrapper("Spinorama", "Speaker EQ", content, cx)
+                self.render_phone_tool_wrapper(
+                    PhoneTool::Spinorama,
+                    translations.screen_spinorama,
+                    translations.spinorama_generate_speaker_eq,
+                    content,
+                    cx,
+                )
             }
             Screen::PluginGraph => self.render_phone_plugin_graph_screen(cx),
             Screen::ListeningTest => {
-                let translations = self.state.read(cx).app.ui_state.translations.clone();
                 let content = self.render_listening_test_screen(cx).into_any_element();
                 self.render_phone_tool_wrapper(
+                    PhoneTool::ListeningTest,
                     translations.screen_listening_test,
                     translations.listening_test.trial.title,
                     content,
@@ -99,13 +151,35 @@ impl PlayerView {
 
     fn render_phone_tab_bar(&self, current_screen: Screen, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
-        let theme = self.state.read(cx).app.ui_state.theme.clone();
+        let (theme, translations) = {
+            let state = self.state.read(cx);
+            (
+                state.app.ui_state.theme.clone(),
+                state.app.ui_state.translations.clone(),
+            )
+        };
         let tabs = [
-            (Screen::Home, "Home", IconName::Home),
-            (Screen::Library, "Library", IconName::Library),
-            (Screen::NowPlaying, "Now", IconName::Play),
-            (Screen::StudioHub, "Studio", IconName::SlidersHorizontal),
-            (Screen::Settings, "Settings", IconName::Settings),
+            (Screen::Home, translations.screen_home, IconName::Home),
+            (
+                Screen::Library,
+                translations.screen_library,
+                IconName::Library,
+            ),
+            (
+                Screen::NowPlaying,
+                translations.screen_now_playing,
+                IconName::Play,
+            ),
+            (
+                Screen::StudioHub,
+                translations.screen_studio,
+                IconName::SlidersHorizontal,
+            ),
+            (
+                Screen::Settings,
+                translations.screen_settings,
+                IconName::Settings,
+            ),
         ];
 
         div()
@@ -124,7 +198,7 @@ impl PlayerView {
                     || (screen == Screen::StudioHub && current_screen.is_studio_tool())
                     || (screen == Screen::Settings && current_screen == Screen::SettingsDetail)
                     || (screen == Screen::NowPlaying && current_screen == Screen::Queue);
-                self.render_phone_tab_item(screen, label, icon, selected, &theme, &d)
+                self.render_phone_tab_item(screen, label, icon, selected, &theme, &d, cx)
             }))
             .into_any_element()
     }
@@ -138,6 +212,28 @@ impl PlayerView {
         let theme = self.state.read(cx).app.ui_state.theme.clone();
         let hidden = self.state.read(cx).app.ui_state.phone_tab_bar_hidden;
         let state_for_toggle = self.state.clone();
+        let text = self.phone_translations(cx);
+        let handle_label = if hidden {
+            text.show_navigation
+        } else {
+            text.hide_navigation
+        };
+        let handle_element_id: ElementId = "phone-tab-bar-handle".into();
+        let handle_focus = sidebar_focus_handle(&handle_element_id, cx);
+        let accessibility_props =
+            AriaProps::with_role(AriaRole::Button).state(AriaState::Expanded(!hidden));
+        cx.register_accessible(AccessibilityNode {
+            element_id: handle_element_id.clone(),
+            label: handle_label.into(),
+            props: accessibility_props.clone(),
+        });
+        let toggle = std::rc::Rc::new(move |cx: &mut App| {
+            state_for_toggle.update(cx, |state, _cx| {
+                state.app.ui_state.phone_tab_bar_hidden = !state.app.ui_state.phone_tab_bar_hidden;
+            });
+        });
+        let mouse_toggle = toggle.clone();
+        let key_toggle = toggle;
 
         let current_tab_icon = [
             (Screen::Home, IconName::Home),
@@ -164,7 +260,8 @@ impl PlayerView {
         };
 
         let handle = div()
-            .id("phone-tab-bar-handle")
+            .id(handle_element_id)
+            .track_focus(&handle_focus)
             .flex()
             .flex_col()
             .items_center()
@@ -175,6 +272,10 @@ impl PlayerView {
             .border_t_1()
             .border_color(theme.border)
             .cursor_pointer()
+            .focus_visible({
+                let theme = theme.clone();
+                move |style| style.border_2().border_color(theme.accent)
+            })
             .child(
                 div()
                     .flex()
@@ -192,12 +293,28 @@ impl PlayerView {
                     ),
             )
             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                state_for_toggle.update(cx, |state, _cx| {
-                    state.app.ui_state.phone_tab_bar_hidden =
-                        !state.app.ui_state.phone_tab_bar_hidden;
-                });
+                mouse_toggle(cx);
             })
-            .into_any_element();
+            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
+                let key = event.keystroke.key.as_str();
+                if key == "enter" || key == "space" {
+                    key_toggle(cx);
+                    cx.stop_propagation();
+                }
+            });
+
+        #[cfg(feature = "dev-api")]
+        let handle = {
+            use crate::app::dev_api::DevTrackExt;
+            handle
+                .dev_track_with_state(
+                    "phone.tab-bar-handle",
+                    crate::app::dev_api::DevElementState::default().expanded(!hidden),
+                )
+                .into_any_element()
+        };
+        #[cfg(not(feature = "dev-api"))]
+        let handle = handle.into_any_element();
 
         if hidden {
             return handle;
@@ -221,16 +338,35 @@ impl PlayerView {
         selected: bool,
         theme: &crate::theme::Theme,
         d: &Ds,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let state_entity = self.state.clone();
+        let element_id: ElementId = format!("phone-tab-{screen:?}").into();
+        let focus_handle = sidebar_focus_handle(&element_id, cx);
+        let accessibility_props =
+            AriaProps::with_role(AriaRole::Tab).state(AriaState::Selected(selected));
+        cx.register_accessible(AccessibilityNode {
+            element_id: element_id.clone(),
+            label: label.into(),
+            props: accessibility_props.clone(),
+        });
+        let activate = std::rc::Rc::new(move |cx: &mut App| {
+            state_entity.update(cx, |state, _cx| {
+                state.app.set_screen(screen, "PhoneTab");
+                state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+            });
+        });
+        let mouse_activate = activate.clone();
+        let key_activate = activate;
         let fg = if selected {
             theme.accent
         } else {
             theme.text_muted
         };
 
-        div()
-            .id(SharedString::from(format!("phone-tab-{screen:?}")))
+        let element = div()
+            .id(element_id)
+            .track_focus(&focus_handle)
             .flex()
             .flex_col()
             .items_center()
@@ -241,6 +377,10 @@ impl PlayerView {
             .rounded(d.r_md)
             .text_color(fg)
             .cursor_pointer()
+            .focus_visible({
+                let theme = theme.clone();
+                move |style| style.border_2().border_color(theme.accent)
+            })
             .when(selected, |el| el.bg(theme.surface_selected))
             .when(!selected, |el| {
                 let theme = theme.clone();
@@ -258,12 +398,30 @@ impl PlayerView {
                     .child(label),
             )
             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                state_entity.update(cx, |state, _cx| {
-                    state.app.set_screen(screen, "PhoneTab");
-                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
-                });
+                mouse_activate(cx);
             })
-            .into_any_element()
+            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
+                let key = event.keystroke.key.as_str();
+                if key == "enter" || key == "space" {
+                    key_activate(cx);
+                    cx.stop_propagation();
+                }
+            });
+
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            element
+                .dev_track_with_state(
+                    format!("phone.tab.{screen:?}"),
+                    crate::app::dev_api::DevElementState::default().selected(selected),
+                )
+                .into_any_element()
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            element.into_any_element()
+        }
     }
 
     fn render_phone_home_header(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -395,7 +553,7 @@ impl PlayerView {
                 .bg(theme.background)
                 .text_color(theme.text_muted)
                 .child(self.render_phone_home_header(cx))
-                                    .child(text.home_empty)
+                .child(text.home_empty)
                 .into_any_element();
         }
 
@@ -633,7 +791,7 @@ impl PlayerView {
                 div().flex_none().p(d.card).pb(d.grid).child(
                     gpui_ui_kit::SearchBar::new("phone-library-search")
                         .value(search_query)
-                            .placeholder(text.search_library)
+                        .placeholder(text.search_library)
                         .size(gpui_ui_kit::SearchBarSize::Sm)
                         .on_change(move |text, _window, cx| {
                             app_state.update(cx, |state, _| {
@@ -648,7 +806,7 @@ impl PlayerView {
                         }),
                 ),
             )
-            .child(self.render_phone_library_chips(filter_menu_open, &theme, &d))
+            .child(self.render_phone_library_chips(filter_menu_open, &theme, &d, cx))
             .child(
                 div()
                     .id("phone-library-grid-scroll")
@@ -678,52 +836,68 @@ impl PlayerView {
         filter_menu_open: bool,
         theme: &crate::theme::Theme,
         d: &Ds,
+        cx: &Context<Self>,
     ) -> AnyElement {
+        let text = self.phone_tool_translations(cx);
+        let library_text = self.phone_library_translations(cx);
         let chips = [
             (
-                "Year",
+                library_text.year,
                 Some(sotf_audio_player::LibrarySortOrder::Year),
                 None,
+                PhoneLibraryChipAction::Apply,
             ),
             (
-                "Genre",
+                library_text.genre,
                 Some(sotf_audio_player::LibrarySortOrder::Genre),
                 None,
+                PhoneLibraryChipAction::Apply,
             ),
             (
-                "Artist",
+                library_text.artist,
                 Some(sotf_audio_player::LibrarySortOrder::Artist),
                 None,
+                PhoneLibraryChipAction::Apply,
             ),
             (
-                "Album",
+                library_text.album,
                 Some(sotf_audio_player::LibrarySortOrder::Album),
                 None,
+                PhoneLibraryChipAction::Apply,
             ),
-            ("More", None, None),
+            (text.more, None, None, PhoneLibraryChipAction::ToggleMore),
         ];
         let overflow_chips = [
             (
-                "Tracks",
+                library_text.tracks,
                 Some(sotf_audio_player::LibrarySortOrder::Tracks),
                 None,
+                PhoneLibraryChipAction::Apply,
             ),
             (
-                "Composer",
+                library_text.composer,
                 Some(sotf_audio_player::LibrarySortOrder::Composer),
                 None,
+                PhoneLibraryChipAction::Apply,
             ),
             (
-                "Stereo",
+                library_text.stereo,
                 None,
                 Some(sotf_audio_player::ChannelFilter::Stereo),
+                PhoneLibraryChipAction::Apply,
             ),
             (
-                "Multichannel",
+                library_text.multichannel,
                 None,
                 Some(sotf_audio_player::ChannelFilter::SurroundPlus),
+                PhoneLibraryChipAction::Apply,
             ),
-            ("Reset", None, Some(sotf_audio_player::ChannelFilter::All)),
+            (
+                self.phone_translations(cx).reset,
+                None,
+                Some(sotf_audio_player::ChannelFilter::All),
+                PhoneLibraryChipAction::Reset,
+            ),
         ];
 
         div()
@@ -739,8 +913,8 @@ impl PlayerView {
                     .flex()
                     .gap(d.grid)
                     .overflow_x_scroll()
-                    .children(chips.into_iter().map(|(label, sort, filter)| {
-                        self.render_phone_library_chip(label, sort, filter, theme, d)
+                    .children(chips.into_iter().map(|(label, sort, filter, action)| {
+                        self.render_phone_library_chip(label, sort, filter, action, theme, d)
                     })),
             )
             .when(filter_menu_open, |el| {
@@ -750,9 +924,13 @@ impl PlayerView {
                         .flex()
                         .gap(d.grid)
                         .overflow_x_scroll()
-                        .children(overflow_chips.into_iter().map(|(label, sort, filter)| {
-                            self.render_phone_library_chip(label, sort, filter, theme, d)
-                        })),
+                        .children(overflow_chips.into_iter().map(
+                            |(label, sort, filter, action)| {
+                                self.render_phone_library_chip(
+                                    label, sort, filter, action, theme, d,
+                                )
+                            },
+                        )),
                 )
             })
             .into_any_element()
@@ -763,6 +941,7 @@ impl PlayerView {
         label: &'static str,
         sort: Option<sotf_audio_player::LibrarySortOrder>,
         filter: Option<sotf_audio_player::ChannelFilter>,
+        action: PhoneLibraryChipAction,
         theme: &crate::theme::Theme,
         d: &Ds,
     ) -> AnyElement {
@@ -789,11 +968,11 @@ impl PlayerView {
             .child(label)
             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                 state_entity.update(cx, |state, _cx| {
-                    if label == "More" {
+                    if action == PhoneLibraryChipAction::ToggleMore {
                         state.app.ui_state.filter_menu_open = !state.app.ui_state.filter_menu_open;
                         return;
                     }
-                    if label == "Reset" {
+                    if action == PhoneLibraryChipAction::Reset {
                         state
                             .app
                             .library_state
@@ -913,7 +1092,7 @@ impl PlayerView {
                                 .justify_center()
                                 .min_h(rems(12.0))
                                 .text_color(theme.text_muted)
-                            .child(text.queue_empty),
+                                .child(text.queue_empty),
                         )
                     })
                     .children(rows.into_iter().map(
@@ -1623,6 +1802,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let text = self.phone_translations(cx);
+        let tool_text = self.phone_tool_translations(cx);
         let (queue_rows, plugins) = {
             let state = self.state.read(cx);
             let start = state
@@ -1650,7 +1830,11 @@ impl PlayerView {
                     .map(|plugin| {
                         format!(
                             "{} {}",
-                            if plugin.enabled { "On" } else { "Off" },
+                            if plugin.enabled {
+                                tool_text.on
+                            } else {
+                                tool_text.off
+                            },
                             plugin.display_name()
                         )
                     })
@@ -1679,7 +1863,7 @@ impl PlayerView {
                     .text_size(d.text_sm)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_primary)
-                                .child(text.up_next),
+                    .child(text.up_next),
             )
             .children(queue_rows.into_iter().map(|item| {
                 let title = item
@@ -1716,7 +1900,7 @@ impl PlayerView {
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_primary)
                     .mt(d.grid)
-                                .child(text.plugin_chain),
+                    .child(text.plugin_chain),
             )
             .children(plugins.into_iter().map(|label| {
                 div()
@@ -1735,6 +1919,7 @@ impl PlayerView {
 
     fn render_studio_hub_phone(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let tool_text = self.phone_tool_translations(cx);
         let (theme, translations, release_channel) = {
             let state = self.state.read(cx);
             (
@@ -1744,9 +1929,17 @@ impl PlayerView {
             )
         };
         let tools = [
-            (Screen::Studio, "Plugin Rack", IconName::SlidersHorizontal),
-            (Screen::Spectrum, "Spectrum", IconName::AudioWaveform),
-            (Screen::EqCurve, "EQ", IconName::AudioWaveform),
+            (
+                Screen::Studio,
+                tool_text.plugin_rack,
+                IconName::SlidersHorizontal,
+            ),
+            (
+                Screen::Spectrum,
+                tool_text.spectrum,
+                IconName::AudioWaveform,
+            ),
+            (Screen::EqCurve, tool_text.eq, IconName::AudioWaveform),
             (Screen::RoomEq, translations.screen_room_eq, IconName::Brain),
             (
                 Screen::HeadphoneEq,
@@ -1758,8 +1951,12 @@ impl PlayerView {
                 translations.screen_recording,
                 IconName::Disc,
             ),
-            (Screen::Streams, "Streams", IconName::ListMusic),
-            (Screen::PluginGraph, "Plug Graph", IconName::Plug),
+            (
+                Screen::Streams,
+                translations.screen_streams,
+                IconName::ListMusic,
+            ),
+            (Screen::PluginGraph, tool_text.plugin_graph, IconName::Plug),
             (
                 Screen::ListeningTest,
                 translations.screen_listening_test,
@@ -1842,6 +2039,7 @@ impl PlayerView {
     fn render_phone_plugin_rack(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let text = self.phone_translations(cx);
+        let tool_text = self.phone_tool_translations(cx);
         let (theme, plugins, editing_idx, add_open, release_channel, rack_editing) = {
             let state = self.state.read(cx);
             (
@@ -1959,7 +2157,7 @@ impl PlayerView {
                                     .text_color(theme.text_on_accent)
                                     .cursor_pointer()
                                     .child(Icon::new(IconName::Plus).size(IconSize::Sm))
-                            .child(text.add)
+                                    .child(text.add)
                                     .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                                         state_for_add.update(cx, |state, _cx| {
                                             state.app.ui_state.active_menu =
@@ -1983,7 +2181,14 @@ impl PlayerView {
                     .flex_col()
                     .gap(d.grid)
                     .children(plugins.into_iter().enumerate().map(|(idx, plugin)| {
-                        self.render_phone_plugin_card(idx, plugin, rack_editing, &theme, &d)
+                        self.render_phone_plugin_card(
+                            idx,
+                            plugin,
+                            rack_editing,
+                            &theme,
+                            &d,
+                            tool_text,
+                        )
                     })),
             )
             .into_any_element()
@@ -2045,6 +2250,7 @@ impl PlayerView {
         rack_editing: bool,
         theme: &crate::theme::Theme,
         d: &Ds,
+        tool_text: PhoneToolTranslations,
     ) -> AnyElement {
         let state_for_open = self.state.clone();
         let state_for_bypass = self.state.clone();
@@ -2132,7 +2338,11 @@ impl PlayerView {
                     } else {
                         theme.text_muted
                     })
-                    .child(if plugin.enabled { "On" } else { "Bypass" })
+                    .child(if plugin.enabled {
+                        tool_text.on
+                    } else {
+                        tool_text.bypass
+                    })
                     .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                         cx.stop_propagation();
                         state_for_bypass.update(cx, |state, _cx| {
@@ -2201,6 +2411,7 @@ impl PlayerView {
     fn render_phone_plugin_parameter_sheet(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let text = self.phone_translations(cx);
+        let tool_text = self.phone_tool_translations(cx);
         let (theme, title, enabled, selected_idx, settings) = {
             let state = self.state.read(cx);
             let plugin = state.app.plugin_state.get_editing_plugin().cloned();
@@ -2281,7 +2492,11 @@ impl PlayerView {
                             } else {
                                 theme.text_muted
                             })
-                            .child(if enabled { "On" } else { "Bypass" })
+                            .child(if enabled {
+                                tool_text.on
+                            } else {
+                                tool_text.bypass
+                            })
                             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                                 state_for_bypass.update(cx, |state, _cx| {
                                     state.app.toggle_plugin(selected_idx);
@@ -2297,14 +2512,19 @@ impl PlayerView {
                     .min_h_0()
                     .p(d.card)
                     .child(match settings {
-                        Some(settings) if settings.eq_global_filters().is_some() => {
-                    self.render_phone_eq_parameter_sheet(selected_idx, settings, text, &theme, &d)
-                        }
+                        Some(settings) if settings.eq_global_filters().is_some() => self
+                            .render_phone_eq_parameter_sheet(
+                                selected_idx,
+                                settings,
+                                text,
+                                &theme,
+                                &d,
+                            ),
                         Some(settings) => self.render_phone_generic_parameter_sheet(
-                        selected_idx,
-                        settings,
-                        text,
-                        &theme,
+                            selected_idx,
+                            settings,
+                            text,
+                            &theme,
                             &d,
                         ),
                         None => div()
@@ -2313,7 +2533,7 @@ impl PlayerView {
                             .items_center()
                             .justify_center()
                             .text_color(theme.text_muted)
-                        .child(text.no_plugin_selected)
+                            .child(text.no_plugin_selected)
                             .into_any_element(),
                     }),
             )
@@ -2423,7 +2643,7 @@ impl PlayerView {
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.accent)
                     .cursor_pointer()
-                        .child(text.add_filter)
+                    .child(text.add_filter)
                     .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                         state_for_add.update(cx, |state, _cx| {
                             if let Err(err) = state.app.add_eq_band() {
@@ -2949,7 +3169,7 @@ impl PlayerView {
                                     .text_size(d.text_sm)
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(theme.text_primary)
-                            .child(text.filters),
+                                    .child(text.filters),
                             )
                             .child(
                                 Icon::new(IconName::ChevronUp)
@@ -2998,6 +3218,7 @@ impl PlayerView {
     }
 
     fn render_phone_spectrum_screen(&self, cx: &mut Context<Self>) -> AnyElement {
+        let text = self.phone_tool_translations(cx);
         let (hold, smooth) = {
             let state = self.state.read(cx);
             (
@@ -3008,13 +3229,14 @@ impl PlayerView {
         let content = self.render_spectrum_screen(cx).into_any_element();
 
         self.render_phone_tool_wrapper(
-            "Spectrum",
+            PhoneTool::Spectrum,
+            text.spectrum,
             if hold {
-                "Held analyzer frame"
+                text.held_analyzer_frame
             } else if smooth {
-                "Smoothed live analyzer"
+                text.smoothed_live_analyzer
             } else {
-                "Live analyzer"
+                text.live_analyzer
             },
             content,
             cx,
@@ -3024,6 +3246,7 @@ impl PlayerView {
     fn render_phone_plugin_graph_screen(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let text = self.phone_translations(cx);
+        let tool_text = self.phone_tool_translations(cx);
         let (theme, show_list, actions_open, plugins, release_channel) = {
             let state = self.state.read(cx);
             (
@@ -3076,7 +3299,7 @@ impl PlayerView {
                                     .text_color(theme.text_on_accent)
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .cursor_pointer()
-                            .child(text.open_rack_editor)
+                                    .child(text.open_rack_editor)
                                     .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                                         state_for_open_rack.update(cx, |state, _cx| {
                                             state.app.set_screen(Screen::Studio, "PhoneGraphRack");
@@ -3118,7 +3341,7 @@ impl PlayerView {
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(theme.error)
                                             .cursor_pointer()
-                            .child(text.remove)
+                                            .child(text.remove)
                                             .on_mouse_up(
                                                 MouseButton::Left,
                                                 move |_event, _window, cx| {
@@ -3188,7 +3411,11 @@ impl PlayerView {
                                 } else {
                                     theme.text_muted
                                 })
-                                .child(if plugin.enabled { "On" } else { "Off" }),
+                                .child(if plugin.enabled {
+                                    tool_text.on
+                                } else {
+                                    tool_text.off
+                                }),
                         )
                         .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                             state_for_select.update(cx, |state, _cx| {
@@ -3203,12 +3430,19 @@ impl PlayerView {
             self.render_plugin_graph_screen(cx).into_any_element()
         };
 
-        self.render_phone_tool_wrapper("Plug Graph", "Signal flow", content, cx)
+        self.render_phone_tool_wrapper(
+            PhoneTool::PluginGraph,
+            tool_text.plugin_graph,
+            tool_text.signal_flow,
+            content,
+            cx,
+        )
     }
 
     fn render_streams_screen_phone(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let text = self.phone_translations(cx);
+        let tool_text = self.phone_tool_translations(cx);
         let (theme, show_sources, streams, last_error, last_status) = {
             let state = self.state.read(cx);
             (
@@ -3267,18 +3501,19 @@ impl PlayerView {
                             .child(text.no_saved_streams),
                     )
                 })
-                .children(
-                    streams
-                        .into_iter()
-                        .enumerate()
-                    .map(|(idx, stream)| {
-                        self.render_phone_stream_row(idx, stream, text, &theme, &d)
-                    }),
-                )
+                .children(streams.into_iter().enumerate().map(|(idx, stream)| {
+                    self.render_phone_stream_row(idx, stream, text, &theme, &d)
+                }))
                 .into_any_element()
         };
 
-        self.render_phone_tool_wrapper("Streams", "Remote and internet sources", content, cx)
+        self.render_phone_tool_wrapper(
+            PhoneTool::Streams,
+            self.state.read(cx).app.ui_state.translations.screen_streams,
+            tool_text.remote_sources,
+            content,
+            cx,
+        )
     }
 
     fn render_phone_stream_row(
@@ -3346,7 +3581,7 @@ impl PlayerView {
                     .bg(theme.accent)
                     .text_color(theme.text_on_accent)
                     .font_weight(FontWeight::SEMIBOLD)
-                            .child(text.play)
+                    .child(text.play)
                     .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                         cx.stop_propagation();
                         state_for_play.update(cx, |state, _cx| {
@@ -3369,6 +3604,7 @@ impl PlayerView {
 
     fn render_phone_tool_wrapper(
         &self,
+        tool: PhoneTool,
         title: &'static str,
         subtitle: &'static str,
         content: AnyElement,
@@ -3376,6 +3612,7 @@ impl PlayerView {
     ) -> AnyElement {
         let d = Ds::from_cx(cx);
         let text = self.phone_translations(cx);
+        let tool_text = self.phone_tool_translations(cx);
         let (
             theme,
             subtitle_text,
@@ -3387,8 +3624,8 @@ impl PlayerView {
             streams_open,
         ) = {
             let state = self.state.read(cx);
-            let wizard_status = match title {
-                "Recording" => {
+            let wizard_status = match tool {
+                PhoneTool::Recording => {
                     let step = state.app.measurement_state.recording_state.step;
                     let steps = crate::app::types::RecordingStep::all();
                     let index = steps
@@ -3400,7 +3637,7 @@ impl PlayerView {
                         (index + 1) as f32 / steps.len() as f32,
                     ))
                 }
-                "Room EQ" => {
+                PhoneTool::RoomEq => {
                     let step = state.app.measurement_state.room_eq_state.step;
                     let steps = crate::app::types::RoomEqStep::all();
                     Some((
@@ -3413,7 +3650,7 @@ impl PlayerView {
                         (step.index() + 1) as f32 / steps.len() as f32,
                     ))
                 }
-                "Headphone EQ" => {
+                PhoneTool::HeadphoneEq => {
                     let step = state.app.measurement_state.headphone_eq_state.step;
                     let steps = crate::app::types::HeadphoneEqStep::all();
                     Some((
@@ -3426,7 +3663,7 @@ impl PlayerView {
                         (step.index() + 1) as f32 / steps.len() as f32,
                     ))
                 }
-                "Spinorama" => {
+                PhoneTool::Spinorama => {
                     let step = state.app.measurement_state.spinorama_eq_state.step;
                     let steps = sotf_audio_player::spinorama_eq_types::SpinoramaStep::all();
                     Some((
@@ -3448,11 +3685,11 @@ impl PlayerView {
                     .map(|(label, _progress)| label.clone())
                     .unwrap_or_else(|| subtitle.to_string()),
                 wizard_status.map(|(_label, progress)| progress),
-                match title {
-                    "Recording" => Some("recording"),
-                    "Room EQ" => Some("room_eq"),
-                    "Headphone EQ" => Some("headphone_eq"),
-                    "Spinorama" => Some("spinorama"),
+                match tool {
+                    PhoneTool::Recording => Some("recording"),
+                    PhoneTool::RoomEq => Some("room_eq"),
+                    PhoneTool::HeadphoneEq => Some("headphone_eq"),
+                    PhoneTool::Spinorama => Some("spinorama"),
                     _ => None,
                 },
                 state.app.ui_state.phone_spectrum_hold,
@@ -3549,7 +3786,7 @@ impl PlayerView {
                                                 .font_weight(FontWeight::SEMIBOLD)
                                                 .text_color(theme.text_primary)
                                                 .cursor_pointer()
-                            .child(text.back)
+                                                .child(text.back)
                                                 .on_mouse_up(MouseButton::Left, {
                                                     let wizard_back = wizard_back.clone();
                                                     move |_event, _window, cx| {
@@ -3573,7 +3810,7 @@ impl PlayerView {
                                                 .font_weight(FontWeight::SEMIBOLD)
                                                 .text_color(theme.text_on_accent)
                                                 .cursor_pointer()
-                            .child(text.next)
+                                                .child(text.next)
                                                 .on_mouse_up(MouseButton::Left, {
                                                     let wizard_next = wizard_next.clone();
                                                     move |_event, _window, cx| {
@@ -3586,9 +3823,9 @@ impl PlayerView {
                                                 }),
                                         )
                                     })
-                                    .when(title == "Spectrum", |el| {
+                                    .when(tool == PhoneTool::Spectrum, |el| {
                                         el.child(self.render_phone_tool_toggle(
-                                            "Hold",
+                                            tool_text.hold,
                                             IconName::Pause,
                                             spectrum_hold,
                                             "spectrum_hold",
@@ -3597,7 +3834,7 @@ impl PlayerView {
                                         ))
                                         .child(
                                             self.render_phone_tool_toggle(
-                                                "Smooth",
+                                                tool_text.smooth,
                                                 IconName::AudioWaveform,
                                                 spectrum_smoothed,
                                                 "spectrum_smoothed",
@@ -3606,9 +3843,13 @@ impl PlayerView {
                                             ),
                                         )
                                     })
-                                    .when(title == "Plug Graph", |el| {
+                                    .when(tool == PhoneTool::PluginGraph, |el| {
                                         el.child(self.render_phone_tool_toggle(
-                                            if graph_list { "Graph" } else { "List" },
+                                            if graph_list {
+                                                tool_text.graph
+                                            } else {
+                                                tool_text.list
+                                            },
                                             IconName::ListMusic,
                                             graph_list,
                                             "plugin_graph_list",
@@ -3617,7 +3858,7 @@ impl PlayerView {
                                         ))
                                         .child(
                                             self.render_phone_tool_toggle(
-                                                "Actions",
+                                                tool_text.actions,
                                                 IconName::Settings,
                                                 false,
                                                 "plugin_graph_actions",
@@ -3626,9 +3867,9 @@ impl PlayerView {
                                             ),
                                         )
                                     })
-                                    .when(title == "Streams", |el| {
+                                    .when(tool == PhoneTool::Streams, |el| {
                                         el.child(self.render_phone_tool_toggle(
-                                            "Sources",
+                                            tool_text.sources,
                                             IconName::ListMusic,
                                             streams_open,
                                             "stream_sources",
@@ -3731,11 +3972,7 @@ impl PlayerView {
             .into_any_element()
     }
 
-    fn move_phone_wizard_step(
-        state: &mut crate::app::AppState,
-        _kind: &str,
-        forward: bool,
-    ) {
+    fn move_phone_wizard_step(state: &mut crate::app::AppState, _kind: &str, forward: bool) {
         state.app.move_workflow_step(forward);
     }
 
@@ -3867,7 +4104,7 @@ impl PlayerView {
             .child(
                 gpui_ui_kit::SearchBar::new("phone-keybindings-search")
                     .value(query)
-                            .placeholder(text.search_shortcuts)
+                    .placeholder(text.search_shortcuts)
                     .size(gpui_ui_kit::SearchBarSize::Sm)
                     .on_change(move |text, _window, cx| {
                         state_for_search.update(cx, |state, _cx| {

@@ -1,0 +1,14 @@
+# Home shelves: deterministic content makes the collapsed state, visible
+# full-shelf affordance, and keyboard album traversal independently testable.
+click      sidebar.nav-home
+action     HomeSeedShelves
+sleep      150ms
+assert     screen.focused == "Home"
+assert     library.album_count == 16
+assert_visible home.see_all.favorite
+assert_accessible button See all
+assert     home.favorite_expanded == false
+key        right
+assert     screen.focused == "Home"
+accessibility
+screenshot home-shelves

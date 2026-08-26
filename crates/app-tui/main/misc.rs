@@ -7,7 +7,14 @@ use sotf_audio_player_tui::dev_api::{DevCommand, DevQueryReply, DevReply};
 use sotf_audio_player_tui::events::PlayerCommand;
 use sotf_audio_player_tui::media_controls::TuiMediaControls;
 use sotf_media_controls::{MediaPlayback, MediaPosition};
+#[cfg(feature = "dev-api")]
+use std::sync::OnceLock;
 use std::time::Duration;
+#[cfg(feature = "dev-api")]
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(feature = "dev-api")]
+static DEV_API_PROCESS_STARTED_AT: OnceLock<SystemTime> = OnceLock::new();
 
 pub(super) fn print_sotf_api_connection_qr() -> Result<(), Box<dyn std::error::Error>> {
     let mut config = sotf_audio_player::config::load_server_config()?;
@@ -401,10 +408,34 @@ pub(super) fn process_dev_command(
             };
             let _ = reply.send(dev_reply);
         }
+        DevCommand::Snapshot { reply } => {
+            let dev_reply = match tui_snapshot(app) {
+                Ok(value) => DevQueryReply::ok(value),
+                Err(error) => DevQueryReply::err(format!("{error:#}")),
+            };
+            let _ = reply.send(dev_reply);
+        }
         DevCommand::Health { reply } => {
+            let process_started_at_unix_ms = DEV_API_PROCESS_STARTED_AT
+                .get_or_init(SystemTime::now)
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
             let payload = serde_json::json!({
                 "ok": true,
                 "pid": std::process::id(),
+                "protocol_version": 1,
+                "dev_api_enabled": true,
+                "binary": {
+                    "package": env!("CARGO_PKG_NAME"),
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "build_id": option_env!("SOTF_BUILD_ID").unwrap_or(env!("CARGO_PKG_VERSION")),
+                    "git_commit": option_env!("SOTF_GIT_COMMIT").unwrap_or("unknown"),
+                    "features": ["dev-api"],
+                },
+                "run_id": std::env::var("SOTF_DEV_API_RUN_ID").ok(),
+                "process_started_at_unix_ms": process_started_at_unix_ms,
+                "qa_directory": std::env::var("SOTF_QA_DIR").ok(),
                 "screen": format!("{:?}", app.current_screen),
                 "queue_length": app.queue.len(),
             });
@@ -418,6 +449,73 @@ pub(super) fn process_dev_command(
             let _ = reply.send(DevReply::err("qa seed not yet implemented for TUI"));
         }
     }
+}
+
+#[cfg(feature = "dev-api")]
+fn tui_snapshot(app: &App) -> anyhow::Result<serde_json::Value> {
+    let query = |path| {
+        sotf_audio_player_tui::dev_api::queries::resolve(path, app)
+            .unwrap_or(serde_json::Value::Null)
+    };
+    let state = serde_json::json!({
+        "screen": query("screen.focused"),
+        "input_mode": query("input_mode"),
+        "configure_sub_screen": query("configure.sub_screen"),
+        "playback": {
+            "volume": query("playback.volume"),
+            "is_playing": query("playback.is_playing"),
+            "muted": query("playback.muted"),
+        },
+        "queue": {
+            "length": query("queue.length"),
+            "current_index": query("queue.current_index"),
+        },
+        "library": {
+            "album_count": query("library.album_count"),
+            "track_count": query("library.track_count"),
+        },
+        "dialogs": {
+            "metadata_editor": query("metadata.editor_open"),
+        },
+        "process_phase": "ready",
+    });
+    let mut snapshot = sotf_dev_api::Snapshot::new("tui", 0, state)?;
+    let revision = tui_snapshot_revision(&snapshot.state_hash);
+    snapshot.state_revision = revision;
+    snapshot.screen = snapshot
+        .state
+        .get("screen")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
+    snapshot.mode = snapshot
+        .state
+        .get("input_mode")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
+    if snapshot
+        .state
+        .pointer("/dialogs/metadata_editor")
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
+    {
+        snapshot.dialogs.push("metadata_editor".into());
+    }
+    serde_json::to_value(snapshot).map_err(anyhow::Error::from)
+}
+
+#[cfg(feature = "dev-api")]
+fn tui_snapshot_revision(state_hash: &str) -> u64 {
+    static REVISION: std::sync::OnceLock<std::sync::Mutex<(String, u64)>> =
+        std::sync::OnceLock::new();
+    let revision = REVISION.get_or_init(|| std::sync::Mutex::new((String::new(), 0)));
+    let mut revision = revision
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if revision.0 != state_hash {
+        revision.0 = state_hash.to_owned();
+        revision.1 = revision.1.saturating_add(1);
+    }
+    revision.1
 }
 
 #[cfg(feature = "dev-api")]

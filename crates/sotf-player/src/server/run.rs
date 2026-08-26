@@ -246,7 +246,12 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
             );
 
             handles.push(tokio::spawn(async move {
-                if let Err(e) = server.run(&bind_address, local_ip, cancel).await {
+                let result = if std::env::var_os("SOTF_SERVER_DISABLE_DISCOVERY").is_some() {
+                    server.run_http_only(&bind_address, local_ip, cancel).await
+                } else {
+                    server.run(&bind_address, local_ip, cancel).await
+                };
+                if let Err(e) = result {
                     log::error!("[server] DLNA server error: {}", e);
                     eprintln!("DLNA server error: {}", e);
                 }

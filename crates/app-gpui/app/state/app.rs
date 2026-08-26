@@ -21,6 +21,7 @@ use gpui_themes::{
 };
 use sotf_audio_player::QueuePlaybackEffect;
 pub use sotf_audio_player::federation_scan::FederationScanResult;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 mod consts;
@@ -115,16 +116,52 @@ pub struct PluginUiState {
 
 pub struct PlaylistState {
     pub controller: sotf_audio_player::PlaylistController,
+    /// Avoid repeated database reads from the render-time lazy loader.
+    pub loaded: bool,
+    pub name_input: String,
+    pub dialog: PlaylistDialog,
+    pub error: Option<String>,
+    /// The most recently deleted playlist, retained only until the user
+    /// restores it through the visible Undo action.
+    pub deleted_playlist: Option<DeletedPlaylist>,
+}
+
+pub struct DeletedPlaylist {
+    pub name: String,
+    pub description: Option<String>,
+    pub track_paths: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PlaylistDialog {
+    #[default]
+    None,
+    Create,
+    CreateFromQueue,
+    Rename,
+    ConfirmDelete,
 }
 
 pub struct SettingsState {
     pub expanded_sections: Vec<String>,
+    /// Secrets are masked by default and only revealed after an explicit
+    /// per-field user action. This state is deliberately ephemeral.
+    pub show_mpd_password: bool,
+    pub show_manual_remote_token: bool,
 }
 
 pub struct TutorialState {
     pub completed: bool,
     pub seen_hints: Vec<String>,
     pub current_hint: Option<crate::components::dialogs::tutorial::ContextualHint>,
+    /// Ephemeral visibility for the Listening Lab guide. Completion itself is
+    /// persisted in `EarTrainingProgress` because it is workflow progress.
+    pub listening_guide_open: bool,
+    /// Blind-trial fatigue prompt configuration and the last acknowledged
+    /// completed-trial count. These are UI-only session preferences.
+    pub listening_break_interval: usize,
+    pub listening_break_dismissed_at: usize,
+    pub listening_break_prompt_open: bool,
 }
 
 pub struct GeometryState {
@@ -277,14 +314,25 @@ impl App {
             },
             playlist: PlaylistState {
                 controller: sotf_audio_player::PlaylistController::new(),
+                loaded: false,
+                name_input: String::new(),
+                dialog: PlaylistDialog::None,
+                error: None,
+                deleted_playlist: None,
             },
             settings: SettingsState {
                 expanded_sections: vec!["library".to_string()],
+                show_mpd_password: false,
+                show_manual_remote_token: false,
             },
             tutorial: TutorialState {
                 completed: false,
                 seen_hints: Vec::new(),
                 current_hint: None,
+                listening_guide_open: false,
+                listening_break_interval: 10,
+                listening_break_dismissed_at: 0,
+                listening_break_prompt_open: false,
             },
             geometry: GeometryState {
                 last_saved_geometry: None,
@@ -450,6 +498,16 @@ impl App {
         }
     }
 
+    /// Re-enter Player mode at the last player destination the user visited.
+    pub fn enter_player_mode(&mut self, trigger: &str) {
+        self.set_screen(self.ui_state.last_player_screen, trigger);
+    }
+
+    /// Re-enter Studio & Measurement mode at the last tool the user visited.
+    pub fn enter_studio_mode(&mut self, trigger: &str) {
+        self.set_screen(self.ui_state.last_studio_screen, trigger);
+    }
+
     /// Set current screen with debug logging and state history capture.
     /// If the screen's maturity exceeds the current release channel, redirects to Library.
     pub fn set_screen(&mut self, screen: crate::app::Screen, trigger: &str) {
@@ -479,6 +537,32 @@ impl App {
                 format!("screen: {}", trigger),
             );
             self.ui_state.current_screen = target;
+            if matches!(
+                target,
+                crate::app::Screen::Studio
+                    | crate::app::Screen::StudioHub
+                    | crate::app::Screen::EqCurve
+                    | crate::app::Screen::Recording
+                    | crate::app::Screen::RoomEq
+                    | crate::app::Screen::HeadphoneEq
+                    | crate::app::Screen::Spinorama
+                    | crate::app::Screen::PluginGraph
+                    | crate::app::Screen::ListeningTest
+            ) {
+                self.ui_state.last_studio_screen = target;
+            } else if matches!(
+                target,
+                crate::app::Screen::Home
+                    | crate::app::Screen::HomeShelf
+                    | crate::app::Screen::NowPlaying
+                    | crate::app::Screen::Library
+                    | crate::app::Screen::Streams
+                    | crate::app::Screen::Queue
+                    | crate::app::Screen::Playlists
+                    | crate::app::Screen::Spectrum
+            ) {
+                self.ui_state.last_player_screen = target;
+            }
             self.plugin_state.clear_confirmations();
 
             // Trigger contextual hints for first-time screen visits

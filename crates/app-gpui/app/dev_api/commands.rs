@@ -85,12 +85,60 @@ pub enum DevCommand {
         keystroke: String,
         reply: mpsc::SyncSender<DevReply>,
     },
+    /// Dispatch text as individual real GPUI keystrokes in one bounded QA
+    /// request. This avoids one HTTP connection per character while retaining
+    /// the normal focused-input event path.
+    Text {
+        text: String,
+        reply: mpsc::SyncSender<DevReply>,
+    },
+    /// Deliver a bounded protocol-v2 pointer or scroll primitive.
+    Input {
+        input: sotf_dev_api::CoordinateInput,
+        reply: mpsc::SyncSender<DevReply>,
+    },
     /// Click a tracked element by selector. The element must have been
     /// registered via `dev_track(<selector>, ...)` in the UI tree on a
     /// recent frame.
     Click {
         selector: String,
         reply: mpsc::SyncSender<DevReply>,
+    },
+    /// Move the pointer over a tracked element without pressing a button.
+    Hover {
+        selector: String,
+        reply: mpsc::SyncSender<DevReply>,
+    },
+    /// Drag from one tracked element to another using a left-button gesture.
+    Drag {
+        source: String,
+        target: String,
+        reply: mpsc::SyncSender<DevReply>,
+    },
+    /// Scroll a tracked element by a vertical pixel delta.
+    Scroll {
+        selector: String,
+        delta_y: f32,
+        reply: mpsc::SyncSender<DevReply>,
+    },
+    /// Resize the app content area to a deterministic viewport.
+    Resize {
+        width: f32,
+        height: f32,
+        reply: mpsc::SyncSender<DevReply>,
+    },
+    /// Capture the current rendered frame under the isolated QA directory.
+    Screenshot {
+        name: String,
+        reply: mpsc::SyncSender<DevReply>,
+    },
+    /// Return the rendered accessibility tree for UI assertions.
+    Accessibility {
+        reply: mpsc::SyncSender<DevQueryReply>,
+    },
+    /// Return an allow-listed protocol-v2 state snapshot.
+    Snapshot {
+        reply: mpsc::SyncSender<DevQueryReply>,
     },
     /// Return a small readiness/status payload.
     Health {
@@ -108,9 +156,25 @@ pub enum DevCommand {
         payload: serde_json::Value,
         reply: mpsc::SyncSender<DevReply>,
     },
+    /// Install deterministic Headphone EQ discovery responses for rendered QA.
+    QaHeadphoneDiscoveryFixture {
+        payload: serde_json::Value,
+        reply: mpsc::SyncSender<DevReply>,
+    },
+    /// Install deterministic Spinorama discovery responses for rendered QA.
+    QaSpinoramaDiscoveryFixture {
+        payload: serde_json::Value,
+        reply: mpsc::SyncSender<DevReply>,
+    },
     /// Load deterministic RoomEQ recording fixture data and optionally start
     /// the real optimizer.
     QaRoomEq {
+        payload: serde_json::Value,
+        reply: mpsc::SyncSender<DevReply>,
+    },
+    /// Seed a RoomEQ recording fixture while deliberately leaving the RoomEQ
+    /// wizard at LoadData. The scenario must invoke the visible load control.
+    QaRoomEqUiFixture {
         payload: serde_json::Value,
         reply: mpsc::SyncSender<DevReply>,
     },

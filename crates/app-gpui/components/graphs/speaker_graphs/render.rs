@@ -23,6 +23,22 @@ impl PlayerView {
         theme: &Theme,
         available_width: f32,
     ) -> impl IntoElement {
+        let has_cea2034_curves = [
+            &result.on_axis_curve,
+            &result.lw_curve,
+            &result.er_curve,
+            &result.sp_curve,
+        ]
+        .iter()
+        .all(|curve| curve.len() == result.frequencies.len() && !curve.is_empty());
+
+        // A plain response measurement can produce a valid EQ result, but it
+        // cannot support the CEA-2034 review matrix. Keep the result summary
+        // and filters visible instead of building charts with missing series.
+        if !has_cea2034_curves {
+            return div();
+        }
+
         let gap = 8.0;
         let graph_ratio = 0.75;
         let graph_width = ((available_width - gap) / 2.0).max(600.0);
@@ -571,6 +587,13 @@ fn render_cea2034_from_result(
     corrected: bool,
 ) -> Div {
     let curves = result_to_spinorama_curves(result, corrected);
+    // A generic measured-response optimization does not necessarily contain
+    // the On-Axis and Listening-Window curves required by CEA-2034.  Passing
+    // empty series to the chart renderer produces neither a useful graph nor
+    // a valid plotting contract.
+    if !curves.is_valid() {
+        return div();
+    }
     render_spinorama_cea2034_graph(&curves, theme, width, height)
 }
 
@@ -606,11 +629,7 @@ fn render_tonal_balance_plot(
     };
 
     if original_curve.is_empty() {
-        return div().child(render_empty_state(
-            IconName::AudioWaveform,
-            "No data",
-            theme,
-        ));
+        return div();
     }
 
     // Manual linear regression helper

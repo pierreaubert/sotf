@@ -1,0 +1,16 @@
+# First-run Listening Lab guidance must be actionable, persist completion, and
+# remain reachable after acknowledgement.
+action      ListeningResetGuide
+wait_until  screen.focused == "ListeningTest" timeout=2s
+assert      listening.guide_open == true
+assert      listening.guide_completed == false
+assert_visible listening.guide.acknowledge
+click       listening.guide.acknowledge
+wait_until  listening.guide_completed == true timeout=2s
+assert      listening.guide_open == false
+focus       library
+action      SwitchToListeningTest
+wait_until  listening.guide_completed == true timeout=2s
+assert      listening.guide_open == false
+assert_accessible button Listening guide
+screenshot  listening-how-to-listen

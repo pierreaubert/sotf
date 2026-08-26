@@ -222,10 +222,50 @@ impl App {
         }
     }
 
+    /// Undo the most recent queue item removal. If that removal replaced the
+    /// actively playing item, return the restored source so the UI can keep the
+    /// audio engine and queue selection in sync. A stopped queue stays stopped.
+    pub fn undo_remove_from_queue(&mut self) -> QueuePlaybackEffect {
+        let was_playing = self.playback.is_playing;
+        let Some(removed_was_current) = self.queue_state.undo_remove() else {
+            return QueuePlaybackEffect::None;
+        };
+        self.sync_queue_index();
+
+        if was_playing && removed_was_current {
+            return self
+                .queue_state
+                .current_track_source()
+                .map(QueuePlaybackEffect::Reload)
+                .unwrap_or(QueuePlaybackEffect::Stop);
+        }
+        QueuePlaybackEffect::None
+    }
+
+    /// Reorder queue albums without interrupting playback. The controller
+    /// keeps the selected and currently-playing album attached to its item.
+    pub fn move_queue_item(&mut self, from: usize, to: usize) -> bool {
+        let moved = self.queue_state.move_item(from, to);
+        if moved {
+            self.sync_queue_index();
+        }
+        moved
+    }
+
     pub fn clear_queue(&mut self) {
         self.queue_state.clear();
         self.sync_queue_index();
         self.playback.is_playing = false;
+    }
+
+    /// Restore the queue exactly as it was before the latest clear. Restoring
+    /// does not restart playback; users retain explicit control over resume.
+    pub fn undo_clear_queue(&mut self) -> bool {
+        let restored = self.queue_state.undo_clear();
+        if restored {
+            self.sync_queue_index();
+        }
+        restored
     }
 
     /// Get the duration of the currently playing track in seconds

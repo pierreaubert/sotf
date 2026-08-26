@@ -25,6 +25,10 @@ impl PlayerView {
         let rack_visible = rack_node.is_some_and(|node| node.visible);
         let library_width = library_node.map(|node| node.width).unwrap_or(0.0);
         let rack_width = rack_node.map(|node| node.width).unwrap_or(0.0);
+        let queue_width = solved
+            .find("queue")
+            .filter(|node| node.visible)
+            .map_or(0.0, |node| node.width);
         let rack_mode = crate::ui::layout_tree::solved_rack_display_mode(&solved);
 
         let divider_theme = PaneDividerTheme {
@@ -245,7 +249,7 @@ impl PlayerView {
                     .flex_1()
                     .h_full()
                     .overflow_hidden()
-                    .child(self.render_queue_content(cx)),
+                    .child(self.render_queue_content(queue_width, cx)),
             )
             // Queue-Rack divider + Rack panel (only when rack is open)
             .when(rack_visible, |d| {
@@ -312,6 +316,10 @@ impl PlayerView {
         let rack_visible = rack_node.is_some_and(|node| node.visible);
         let library_height = library_node.map(|node| node.height).unwrap_or(0.0);
         let rack_height = rack_node.map(|node| node.height).unwrap_or(0.0);
+        let queue_width = solved
+            .find("queue")
+            .filter(|node| node.visible)
+            .map_or(0.0, |node| node.width);
         let rack_mode = crate::ui::layout_tree::solved_rack_display_mode(&solved);
 
         let divider_theme = PaneDividerTheme {
@@ -507,7 +515,7 @@ impl PlayerView {
                     .flex_1()
                     .w_full()
                     .overflow_hidden()
-                    .child(self.render_queue_content(cx)),
+                    .child(self.render_queue_content(queue_width, cx)),
             )
             // Queue-Rack divider + Rack panel (only when rack is open)
             .when(rack_visible, |d| {
@@ -602,8 +610,12 @@ impl PlayerView {
 
     /// Render queue content for 3-panel layout
     /// Meters visibility is controlled by hide_queue_meters_for_rack state field
-    pub fn render_queue_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        self.render_queue_screen(cx)
+    pub fn render_queue_content(
+        &self,
+        solved_queue_width: f32,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        self.render_queue_screen(Some(solved_queue_width), cx)
     }
 }
 use crate::app::i18n::PluginRackTranslations;

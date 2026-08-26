@@ -52,7 +52,7 @@ pub(super) fn common_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("f11", actions::VolumeDown, None),
         KeyBinding::new("f10", actions::ToggleMute, None),
         // Playback controls - PlayerView context to allow typing space in search
-        KeyBinding::new("space", actions::PlayPause, Some("PlayerView")),
+        KeyBinding::new("ctrl-space", actions::PlayPause, Some("PlayerView")),
         // Direct sort selection (number keys) - PlayerView context to allow typing numbers in search
         KeyBinding::new("1", actions::SetSortArtist, Some("PlayerView")),
         KeyBinding::new("2", actions::SetSortAlbum, Some("PlayerView")),

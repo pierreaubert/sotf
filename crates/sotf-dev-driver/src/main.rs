@@ -13,6 +13,10 @@
 //!   focus <screen-name>                   (sugar for SwitchTo<Screen>)
 //!   key <keystroke>                       (e.g. `cmd-shift-p`, `enter`, `a`)
 //!   click <selector>                      (selector must have been registered via dev_track(...))
+//!   assert_visible <selector>              (rendered selector has non-empty bounds)
+//!   assert_absent <selector>               (selector is not in the current rendered frame)
+//!   assert_in_viewport <selector>           (rendered selector is not clipped)
+//!   assert_non_overlapping <a> <b>           (rendered selectors do not overlap)
 //!   export_room_eq_json [path]             Export completed RoomEQ DSP JSON
 //!   elements                              (print every tracked selector; debugging aid)
 //!

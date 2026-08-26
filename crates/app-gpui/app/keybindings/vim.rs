@@ -45,7 +45,6 @@ pub(super) fn vim_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("z o", actions::ToggleExpand, Some("PlayerView")),
         KeyBinding::new("z c", actions::ToggleExpand, Some("PlayerView")),
         // Enter action - enter stays global but handler checks mode
-        KeyBinding::new("enter", actions::Enter, Some("PlayerView")),
         KeyBinding::new("o", actions::Enter, Some("PlayerView")),
         // Remove/delete - Vim style
         KeyBinding::new("d d", actions::RemoveItem, Some("PlayerView")),
@@ -59,9 +58,13 @@ pub(super) fn vim_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("g s", actions::ScanLibrary, Some("PlayerView")),
         KeyBinding::new("S", actions::SwitchToSettings, Some("PlayerView")),
         // Level meter controls - letter keys need PlayerView
-        KeyBinding::new("tab", actions::SelectNextMeterGroup, Some("PlayerView")),
         KeyBinding::new(
-            "shift-tab",
+            "ctrl-tab",
+            actions::SelectNextMeterGroup,
+            Some("PlayerView"),
+        ),
+        KeyBinding::new(
+            "ctrl-shift-tab",
             actions::SelectPrevMeterGroup,
             Some("PlayerView"),
         ),

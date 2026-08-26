@@ -505,8 +505,7 @@ fn save_recordings_writes_canonical_recordings_json() {
     let tmp = tempfile::tempdir().unwrap();
     app.recording.output_directory = tmp.path().to_string_lossy().to_string();
     app.recording.model.save_name = "my_session".to_string();
-    app.recording.model.playback_config.channel_mappings =
-        vec![ChannelMapping::single(0, "FL")];
+    app.recording.model.playback_config.channel_mappings = vec![ChannelMapping::single(0, "FL")];
     app.recording.model.playback_config.num_channels = 1;
     let mut ch = ChannelRecording::new(0, "FL".to_string());
     ch.state = ChannelRecordingState::Done;
@@ -514,7 +513,11 @@ fn save_recordings_writes_canonical_recordings_json() {
     app.recording.model.channel_recordings = vec![ch];
 
     save_recordings(&mut app);
-    assert!(app.recording.save.error.is_none(), "save_recordings errored: {:?}", app.recording.save.error);
+    assert!(
+        app.recording.save.error.is_none(),
+        "save_recordings errored: {:?}",
+        app.recording.save.error
+    );
     let rx = app
         .recording
         .save
@@ -544,7 +547,10 @@ fn save_recordings_writes_canonical_recordings_json() {
     );
 }
 
-fn quality_summary(trustworthy: bool, score: f32) -> sotf_audio_player::recording_types::TakeQualitySummary {
+fn quality_summary(
+    trustworthy: bool,
+    score: f32,
+) -> sotf_audio_player::recording_types::TakeQualitySummary {
     sotf_audio_player::recording_types::TakeQualitySummary {
         trustworthy,
         score,
@@ -684,7 +690,10 @@ fn poll_recording_discards_stale_generation_result() {
     // Old capture's result arrives after a new capture was spawned.
     let stale_generation = app.recording.model.capture_generation;
     app.recording.model.next_capture_generation();
-    *slot.lock().unwrap() = Some((stale_generation, Ok((vec![(0, done_recording_result(-10.0))], None))));
+    *slot.lock().unwrap() = Some((
+        stale_generation,
+        Ok((vec![(0, done_recording_result(-10.0))], None)),
+    ));
     // Stale result is drained but NOT applied: channel stays Recording and
     // no completion status is published.
     assert!(!poll_recording(&mut app));
@@ -750,7 +759,13 @@ fn num_positions_field_rebuilds_position_major_channel_list() {
     app.recording.selected_field = 12;
     assert_eq!(app.recording.model.recording_config.num_positions, 1);
     let speakers = app.recording.model.playback_config.channel_mappings.len();
-    let mics = app.recording.model.recording_config.channel_mappings.len().max(1);
+    let mics = app
+        .recording
+        .model
+        .recording_config
+        .channel_mappings
+        .len()
+        .max(1);
 
     adjust_recording_field(&mut app, 1);
     assert_eq!(app.recording.model.recording_config.num_positions, 2);

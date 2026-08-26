@@ -155,6 +155,31 @@ impl Queue {
         }
     }
 
+    /// Move an album to a new queue position while preserving the identity of
+    /// the current playback item. Returns `false` when either index is out of
+    /// bounds or when the requested position is unchanged.
+    pub fn move_item(&mut self, from: usize, to: usize) -> bool {
+        if from >= self.items.len() || to >= self.items.len() || from == to {
+            return false;
+        }
+
+        let item = self.items.remove(from);
+        self.items.insert(to, item);
+
+        if let Some(current) = self.current_index {
+            self.current_index = Some(if current == from {
+                to
+            } else if from < current && current <= to {
+                current - 1
+            } else if to <= current && current < from {
+                current + 1
+            } else {
+                current
+            });
+        }
+        true
+    }
+
     /// Remove all items from the queue.
     pub fn clear(&mut self) {
         self.items.clear();
@@ -427,6 +452,41 @@ mod tests {
         queue.clear();
         assert!(queue.is_empty());
         assert_eq!(queue.current_index, None);
+    }
+
+    #[test]
+    fn move_item_preserves_playing_album_and_updates_its_index() {
+        let mut queue = Queue::new();
+        queue.add(make_album("A", 1));
+        queue.add(make_album("B", 1));
+        queue.add(make_album("C", 1));
+        queue.start();
+        queue.next_track(); // B is playing.
+
+        assert!(queue.move_item(1, 2));
+        assert_eq!(queue.items[2].album.title, "B");
+        assert_eq!(queue.current_index, Some(2));
+        assert!(
+            queue
+                .current_track_source()
+                .unwrap()
+                .to_string()
+                .contains("/B/")
+        );
+
+        assert!(queue.move_item(0, 2));
+        assert_eq!(queue.items[1].album.title, "B");
+        assert_eq!(queue.current_index, Some(1));
+    }
+
+    #[test]
+    fn move_item_rejects_invalid_or_unchanged_positions() {
+        let mut queue = Queue::new();
+        queue.add(make_album("A", 1));
+
+        assert!(!queue.move_item(0, 0));
+        assert!(!queue.move_item(0, 1));
+        assert!(!queue.move_item(1, 0));
     }
 
     #[test]

@@ -210,16 +210,13 @@ pub fn poll_recording(app: &mut App) -> bool {
                         // parked as ReviewNeeded (user accepts with 'a' or
                         // re-records with Enter) instead of silently
                         // becoming a measurement.
-                        let needs_review = rec_result
-                            .quality
-                            .as_ref()
-                            .is_some_and(|q| !q.trustworthy);
+                        let needs_review =
+                            rec_result.quality.as_ref().is_some_and(|q| !q.trustworthy);
                         if needs_review {
                             ch.state = ChannelRecordingState::ReviewNeeded;
                             review_names.push(ch.channel_name.clone());
                             if first_verdict.is_none() {
-                                first_verdict =
-                                    rec_result.quality.as_ref().map(take_verdict_text);
+                                first_verdict = rec_result.quality.as_ref().map(take_verdict_text);
                             }
                         } else {
                             ch.state = ChannelRecordingState::Done;

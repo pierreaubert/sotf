@@ -7,9 +7,38 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, SearchBar, SearchBarSize, Spinner, SpinnerSize,
+    Button, ButtonSize, ButtonVariant, SearchBar, SearchBarSize, Spinner, SpinnerSize, Text,
 };
 use std::sync::Arc;
+
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::{DevElementState, DevTrackExt};
+
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
+macro_rules! dev_track_selected {
+    ($element:expr, $selector:expr, $selected:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            $element.dev_track_with_state($selector, DevElementState::default().selected($selected))
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
 
 const REMOTE_ALBUM_CARD_WIDTH_PX: f32 = 180.0;
 const REMOTE_ALBUM_CARD_MIN_HEIGHT_PX: f32 = 132.0;
@@ -253,7 +282,8 @@ impl PlayerView {
                                             theme.accent
                                         };
 
-                                        div()
+                                        dev_track_selected!(
+                                            div()
                                             .id(tab_id)
                                             .flex()
                                             .items_center()
@@ -381,7 +411,11 @@ impl PlayerView {
                                                     }
                                                     view_handle.update(cx, |_, cx| cx.notify());
                                                 },
-                                            )
+                                            ),
+                                            format!("library.tab.{id}"),
+                                            selected
+                                        )
+                                        .into_any_element()
                                     },
                                 )),
                         )
@@ -482,9 +516,10 @@ impl PlayerView {
                                 .w_96()
                                 .debug_selector(|| "library-search-bar".to_string())
                                 .child(
-                                    SearchBar::new("search-input")
+                                    dev_track!(
+                                        SearchBar::new("search-input")
                                         .value(search_query.clone())
-                        .placeholder(text.search_library)
+                                        .placeholder(text.search_library)
                                         .size(SearchBarSize::Sm)
                                         .on_change({
                                             let app_state = self.state.clone();
@@ -526,6 +561,9 @@ impl PlayerView {
                                                 view_handle.update(cx, |_, cx| cx.notify());
                                             }
                                         }),
+                                        "library.search_input"
+                                    )
+                                    .into_any_element(),
                                 ),
                         ),
                     )
@@ -1795,13 +1833,24 @@ impl PlayerView {
     /// Render album grid view with thumbnails
     pub(crate) fn render_library_grid(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
-        let (albums, selected_album_index, theme, sort_order) = {
+        let (
+            albums,
+            selected_album_index,
+            theme,
+            sort_order,
+            has_active_filters,
+            empty_results_label,
+            reset_label,
+        ) = {
             let state = self.state.read(cx);
             (
                 state.app.get_paginated_albums(),
                 state.app.library_state.selected_index,
                 state.app.ui_state.theme.clone(),
                 state.app.library_state.sort_order,
+                state.app.library_state.has_active_filters(),
+                format!("0 {}", state.app.ui_state.translations.library_albums),
+                PhoneTranslations::for_language(state.app.ui_state.language).reset,
             )
         };
 
@@ -1864,56 +1913,62 @@ impl PlayerView {
             let is_selected = selected_album_index == idx;
             let card_theme = theme.clone();
 
-            let album_card = div()
-                .id(("album-wrapper", idx))
-                .debug_selector(move || format!("library-album-wrapper-{}", idx))
-                .on_click(cx.listener(move |view, event: &ClickEvent, window, cx| {
-                    // Control-click on macOS should open the context menu even on a
-                    // one-button mouse / Magic Mouse where a native right click may
-                    // not be generated.
-                    if event.modifiers().control {
-                        view.open_album_context_menu(idx, event.position(), window, cx);
-                        return;
-                    }
-
-                    view.focus_handle.focus(window, cx);
-                    let click_count = event.click_count();
-                    view.state.update(cx, |state, _cx| {
-                        state.app.library_state.selected_index = idx;
-                        if click_count >= 2 {
-                            let queue_was_empty = state.app.queue_state.is_empty();
-                            match state.app.add_album_to_queue() {
-                                Ok(Some(path)) => Self::play_track(state, path),
-                                Ok(None) if queue_was_empty => {
-                                    if let Some(path) = state.app.start_queue() {
-                                        Self::play_track(state, path);
-                                    }
-                                }
-                                Err(e) => {
-                                    state.app.ui_state.toast_message =
-                                        Some(crate::app::ToastMessage::error(e));
-                                }
-                                _ => {}
-                            }
+            let album_card = dev_track!(
+                div()
+                    .id(("album-wrapper", idx))
+                    .debug_selector(move || format!("library-album-wrapper-{}", idx))
+                    .on_click(cx.listener(move |view, event: &ClickEvent, window, cx| {
+                        // Control-click on macOS should open the context menu even on a
+                        // one-button mouse / Magic Mouse where a native right click may
+                        // not be generated.
+                        if event.modifiers().control {
+                            view.open_album_context_menu(idx, event.position(), window, cx);
+                            return;
                         }
-                    });
-                    cx.notify();
-                }))
-                .on_mouse_up(
-                    MouseButton::Right,
-                    cx.listener(move |view, event: &MouseUpEvent, window, cx| {
-                        view.open_album_context_menu(idx, event.position, window, cx);
-                    }),
-                )
-                .child(
-                    AlbumCard::new(Arc::new((*album).clone()), idx, is_selected, card_theme)
-                        .mode(AlbumCardMode::Grid)
-                        .state(self.state.clone()),
-                );
 
-            elements.push(album_card.into_any_element());
+                        view.focus_handle.focus(window, cx);
+                        let click_count = event.click_count();
+                        view.state.update(cx, |state, _cx| {
+                            state.app.library_state.selected_index = idx;
+                            if click_count >= 2 {
+                                let queue_was_empty = state.app.queue_state.is_empty();
+                                match state.app.add_album_to_queue() {
+                                    Ok(Some(path)) => Self::play_track(state, path),
+                                    Ok(None) if queue_was_empty => {
+                                        if let Some(path) = state.app.start_queue() {
+                                            Self::play_track(state, path);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        state.app.ui_state.toast_message =
+                                            Some(crate::app::ToastMessage::error(e));
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        });
+                        cx.notify();
+                    }))
+                    .on_mouse_up(
+                        MouseButton::Right,
+                        cx.listener(move |view, event: &MouseUpEvent, window, cx| {
+                            view.open_album_context_menu(idx, event.position, window, cx);
+                        }),
+                    )
+                    .child(
+                        AlbumCard::new(Arc::new((*album).clone()), idx, is_selected, card_theme)
+                            .mode(AlbumCardMode::Grid)
+                            .state(self.state.clone()),
+                    ),
+                format!("library.album.{idx}")
+            )
+            .into_any_element();
+
+            elements.push(album_card);
         }
 
+        let clear_view = cx.entity().clone();
+        let clear_state = self.state.clone();
         div()
             .id("album-grid")
             .flex()
@@ -1925,6 +1980,40 @@ impl PlayerView {
             .overflow_y_scroll()
             .track_scroll(&self.grid_scroll_handle)
             .children(elements)
+            .when(albums.is_empty(), |el| {
+                el.child(dev_track!(
+                    div()
+                        .id("library-empty-results")
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .justify_center()
+                        .gap(d.gap)
+                        .p(d.card)
+                        .w_full()
+                        .child(Text::section_header(empty_results_label).color(theme.text_primary),)
+                        .when(has_active_filters, |empty| {
+                            empty.child(dev_track!(
+                                Button::new("clear-library-results", reset_label)
+                                    .variant(ButtonVariant::Secondary)
+                                    .size(ButtonSize::Sm)
+                                    .on_click(move |_, cx| {
+                                        clear_state.update(cx, |state, _| {
+                                            state.app.library_state.clear_all_filters();
+                                            state.app.library_state.ensure_cache_valid();
+                                            state.app.library_state.ensure_selection_cache_valid();
+                                            state.app.ui_state.filter_menu_open = false;
+                                            state.app.ui_state.input_mode =
+                                                crate::app::InputMode::Normal;
+                                        });
+                                        clear_view.update(cx, |_, cx| cx.notify());
+                                    }),
+                                "library.clear_results"
+                            ))
+                        }),
+                    "library.empty_results"
+                ))
+            })
     }
 
     /// Render a section divider with label and horizontal line
@@ -1966,23 +2055,50 @@ impl PlayerView {
         let is_active = current_filter == filter;
         let label_owned = label.to_string();
 
-        Button::new(
-            SharedString::from(format!("filter-btn-{}", label)),
-            SharedString::from(label_owned),
+        #[cfg(feature = "dev-api")]
+        let selector = match filter {
+            crate::app::state::library::ChannelFilter::All => "library.filter.all".to_string(),
+            crate::app::state::library::ChannelFilter::Mono => "library.filter.mono".to_string(),
+            crate::app::state::library::ChannelFilter::Stereo => {
+                "library.filter.stereo".to_string()
+            }
+            crate::app::state::library::ChannelFilter::Surround => {
+                "library.filter.surround".to_string()
+            }
+            crate::app::state::library::ChannelFilter::Surround71 => {
+                "library.filter.surround71".to_string()
+            }
+            crate::app::state::library::ChannelFilter::SurroundPlus => {
+                "library.filter.surround_plus".to_string()
+            }
+            crate::app::state::library::ChannelFilter::Mixed => "library.filter.mixed".to_string(),
+            crate::app::state::library::ChannelFilter::Specific(channels) => {
+                format!("library.filter.channels_{channels}")
+            }
+        };
+
+        dev_track_selected!(
+            Button::new(
+                SharedString::from(format!("filter-btn-{}", label)),
+                SharedString::from(label_owned),
+            )
+            .variant(if is_active {
+                ButtonVariant::Primary
+            } else {
+                ButtonVariant::Secondary
+            })
+            .size(ButtonSize::Xs)
+            .selected(is_active)
+            .theme(theme.to_button_theme())
+            .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                view.state.update(cx, |state, _cx| {
+                    state.app.set_channel_filter(filter);
+                });
+                cx.notify();
+            })),
+            selector,
+            is_active
         )
-        .variant(if is_active {
-            ButtonVariant::Primary
-        } else {
-            ButtonVariant::Secondary
-        })
-        .size(ButtonSize::Xs)
-        .selected(is_active)
-        .theme(theme.to_button_theme())
-        .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
-            view.state.update(cx, |state, _cx| {
-                state.app.set_channel_filter(filter);
-            });
-            cx.notify();
-        }))
+        .into_any_element()
     }
 }

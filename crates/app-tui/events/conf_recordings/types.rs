@@ -50,17 +50,15 @@ pub(super) type BassAnchorCaptureResultSlot = Arc<
 /// result when a newer capture has since been spawned.
 pub(super) type RecordingResultSlot = Arc<
     Mutex<
-        Option<
-            (
-                u64,
-                Result<
-                    (
-                        Vec<(usize, sotf_audio_player::recording_types::RecordingResult)>,
-                        Option<sotf_audio_player::recording_types::TransferMatrixLoopbackRecording>,
-                    ),
-                    String,
-                >,
-            ),
-        >,
+        Option<(
+            u64,
+            Result<
+                (
+                    Vec<(usize, sotf_audio_player::recording_types::RecordingResult)>,
+                    Option<sotf_audio_player::recording_types::TransferMatrixLoopbackRecording>,
+                ),
+                String,
+            >,
+        )>,
     >,
 >;

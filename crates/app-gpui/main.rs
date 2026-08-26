@@ -68,6 +68,8 @@ fn main() {
     let qa_dir = args.qa;
     #[cfg(feature = "dev-api")]
     let qa_mode = qa_dir.is_some();
+    #[cfg(feature = "dev-api")]
+    let qa_onboarding = args.qa_onboarding;
     if let Some(qa_dir) = qa_dir {
         sotf_audio_player::config::set_config_dir_override(qa_dir);
     }
@@ -219,6 +221,8 @@ fn main() {
             breadcrumb("GPUI Application::run callback entered");
             // Register design system global (platform default initially)
             cx.set_global(gpui_design::DesignSystemState::new());
+            #[cfg(feature = "dev-api")]
+            cx.set_global(gpui_ui_kit::accessibility::AccessibilityTree::new());
 
             // Load custom fonts
             let fonts = vec![
@@ -426,7 +430,7 @@ fn main() {
                         t0.elapsed().as_secs_f64() * 1000.0
                     );
                     #[cfg(feature = "dev-api")]
-                    if qa_mode {
+                    if qa_mode && !qa_onboarding {
                         temp_app.tutorial.completed = true;
                         temp_app.ui_state.input_mode =
                             sotf_audio_player_gpui::app::InputMode::Normal;
@@ -481,6 +485,10 @@ fn main() {
                             .and_then(|s| s.parse().ok())
                             .unwrap_or(7777);
                         sotf_audio_player_gpui::app::dev_api::start(cx, port, (*handle).into());
+                    } else if let Err(error) = window.as_ref() {
+                        eprintln!("failed to open QA window; dev-api cannot start: {error:#}");
+                        log::error!("failed to open QA window; dev-api cannot start: {error:#}");
+                        cx.quit();
                     }
                 } else {
                     log::warn!(

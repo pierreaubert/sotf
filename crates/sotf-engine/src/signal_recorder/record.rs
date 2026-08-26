@@ -195,8 +195,9 @@ fn capture_sweep_take(
             "[record_and_analyze] Looking for input device: {}",
             dev_name
         );
-        crate::devices::find_device(&host, dev_name, true)
-            .map_err(|e| actionable_capture_error("[record_and_analyze] Input device not usable", &e))?
+        crate::devices::find_device(&host, dev_name, true).map_err(|e| {
+            actionable_capture_error("[record_and_analyze] Input device not usable", &e)
+        })?
     } else {
         log::debug!("[record_and_analyze] Using default input device");
         host.default_input_device().ok_or_else(|| {
@@ -386,7 +387,10 @@ fn capture_sweep_take(
     } else {
         log::debug!("[record_and_analyze] Using default output device");
         host.default_output_device().ok_or_else(|| {
-            actionable_capture_error("[record_and_analyze]", &"No default output device available")
+            actionable_capture_error(
+                "[record_and_analyze]",
+                &"No default output device available",
+            )
         })?
     };
 
@@ -479,7 +483,9 @@ fn capture_sweep_take(
             plugins,
             hardware_channels,
         )
-        .map_err(|e| actionable_capture_error("[record_and_analyze] Failed to start playback", &e))?;
+        .map_err(|e| {
+            actionable_capture_error("[record_and_analyze] Failed to start playback", &e)
+        })?;
 
     log::debug!("[record_and_analyze] Playback started, waiting for completion...");
 
@@ -1210,9 +1216,7 @@ fn remove_stale_take_wavs(recorded_wav_path: &Path, log_tag: &str) {
             .strip_prefix(&prefix)
             .and_then(|rest| rest.strip_suffix(".wav"))
             .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
-        if is_take_wav
-            && let Err(e) = std::fs::remove_file(entry.path())
-        {
+        if is_take_wav && let Err(e) = std::fs::remove_file(entry.path()) {
             log::warn!(
                 "[{log_tag}] Could not remove stale take WAV {:?}: {e}",
                 entry.path()

@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/sotf-dev-api",
     "crates/sotf-testkit",
     "crates/sotf-test-macros",
     "crates/sotf-plugins/crates/sotf-host",
@@ -205,11 +206,11 @@ gpui-px = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit
 gpui-audio-kit = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 gpui-component-lab = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 gpui-design-tools = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-ui-kit = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "feat/issue-29-adaptive-overflow" }
+gpui-ui-kit = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 gpui-ui-kit-macros = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 gpui-themes = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 gpui-miniapp = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-builder = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "feat/issue-29-adaptive-overflow" }
+gpui-builder = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 gpui-design = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 gpui-keybinding = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 gpui-pretext = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
@@ -312,12 +313,14 @@ mpris-server = "0.9"
 ratatui-image = { version = "10", default-features = false, features = ["serde", "crossterm", "image-defaults"] }
 crossterm = "0.29"
 
-# GPUI framework - all packages must use the same git revision
-gpui = { version="0.2.2", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0" }
-gpui_macos = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0", features = ["font-kit"] }
-gpui_linux = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0" }
-gpui_windows = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0" }
-gpui_wgpu = { version="0.1.1", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0" }
+# GPUI framework. The toolkit vendors the framework under namespaced Cargo
+# packages; the dependency keys preserve the Rust crate names used by SOTF.
+# Keep every backend on the same gpui-toolkit revision.
+gpui = { package = "gpui-toolkit-gpui", version = "0.2.3", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui_macos = { package = "gpui-toolkit-gpui-macos", version = "0.1.1", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main", features = ["font-kit"] }
+gpui_linux = { package = "gpui-toolkit-gpui-linux", version = "0.1.0", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui_windows = { package = "gpui-toolkit-gpui-windows", version = "0.1.2", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui_wgpu = { package = "gpui-toolkit-gpui-wgpu", version = "0.1.2", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 
 # System and low-level
 objc = "0.2"
@@ -505,20 +508,11 @@ nnnoiseless = { path = "crates/3rdparties/nnnoiseless" }
 coreaudio-rs = { path = "crates/3rdparties/coreaudio-rs" }
 psm = { path = "crates/3rdparties/psm" }
 
-[patch."https://github.com/zed-industries/zed.git"]
-gpui = {
-  git = "https://github.com/pierreaubert/gpui-toolkit",
-  branch = "main",
-  package = "gpui"
-}
-gpui_wgpu = {
-  version = "0.1.1",
-  git = "https://github.com/pierreaubert/gpui-toolkit",
-  branch = "main",
-  package = "gpui_wgpu"
-}
-gpui_macos = { 
-  git = "https://github.com/pierreaubert/gpui-toolkit", 
-  branch = "main", 
-  package = "gpui_macos" 
-}
+# Keep Vello's crates.io wgpu dependency on the same Zed fork used by GPUI.
+# Dependency patches are root-workspace configuration and are not inherited
+# from the gpui-toolkit git dependency.
+wgpu = { git = "https://github.com/zed-industries/wgpu.git", rev = "357a0c56e0070480ad9daea5d2eaa83150b79e88" }
+wgpu-core = { git = "https://github.com/zed-industries/wgpu.git", rev = "357a0c56e0070480ad9daea5d2eaa83150b79e88" }
+wgpu-hal = { git = "https://github.com/zed-industries/wgpu.git", rev = "357a0c56e0070480ad9daea5d2eaa83150b79e88" }
+wgpu-types = { git = "https://github.com/zed-industries/wgpu.git", rev = "357a0c56e0070480ad9daea5d2eaa83150b79e88" }
+naga = { git = "https://github.com/zed-industries/wgpu.git", rev = "357a0c56e0070480ad9daea5d2eaa83150b79e88" }

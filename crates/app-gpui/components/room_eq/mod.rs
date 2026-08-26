@@ -18,6 +18,20 @@ use gpui_ui_kit::{
     WizardStep, WizardTheme,
 };
 
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 mod actions;
 mod custom_target_modal;
 pub mod render;
@@ -195,7 +209,7 @@ impl PlayerView {
 
         let navigation = HStack::new()
             .spacing(StackSpacing::Sm)
-            .child(
+            .child(dev_track!(
                 Button::new("back", back_label)
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Sm)
@@ -207,8 +221,9 @@ impl PlayerView {
                         });
                         cx.notify();
                     })),
-            )
-            .child(
+                "roomeq.back"
+            ))
+            .child(dev_track!(
                 Button::new("next", next_label)
                     .variant(ButtonVariant::Primary)
                     .size(ButtonSize::Sm)
@@ -220,7 +235,8 @@ impl PlayerView {
                         });
                         cx.notify();
                     })),
-            );
+                "roomeq.next"
+            ));
         let navigation = navigation.build().flex_none();
 
         // Home button for navigation back to Library

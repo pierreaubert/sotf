@@ -7,7 +7,7 @@ use sotf_audio::decoder::AudioSource;
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 
-use crate::{Album, Queue, QueueItem, Track};
+use crate::{Album, MusicLibrary, Queue, QueueItem, Track};
 
 /// Effect that a queue mutation has on playback.
 /// The UI inspects this to decide whether to start/stop the Player.
@@ -23,6 +23,19 @@ pub enum QueuePlaybackEffect {
     /// another item shifted into its slot). UI must reload the player from
     /// this source so playback follows the new `current_index`.
     Reload(AudioSource),
+}
+
+/// Outcome of appending a playlist to the queue.
+///
+/// A playlist can refer to files which no longer exist in the local library,
+/// and callers may enqueue it repeatedly.  Report both cases explicitly so a
+/// UI can offer useful recovery instead of silently doing nothing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PlaylistQueueAppend {
+    pub added: usize,
+    pub skipped_existing: usize,
+    pub skipped_missing: usize,
+    pub first_added_index: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -76,6 +89,55 @@ impl QueueController {
         #[cfg(not(feature = "testing"))]
         validate_album_has_files(&album)?;
         Ok(self.queue.add(album))
+    }
+
+    /// Append the active playlist's tracks as single-track queue items.
+    ///
+    /// Keeping one track per item preserves playlist ordering even when
+    /// neighbouring entries came from the same album.  Existing queue tracks
+    /// are intentionally not duplicated.
+    pub fn enqueue_playlist_tracks(
+        &mut self,
+        library: &MusicLibrary,
+        track_paths: &[PathBuf],
+    ) -> PlaylistQueueAppend {
+        let mut outcome = PlaylistQueueAppend::default();
+
+        for path in track_paths {
+            if self
+                .queue
+                .items
+                .iter()
+                .any(|item| item.album.tracks.iter().any(|track| &track.path == path))
+            {
+                outcome.skipped_existing += 1;
+                continue;
+            }
+
+            let Some(album) = library
+                .albums
+                .iter()
+                .find(|album| album.tracks.iter().any(|track| &track.path == path))
+            else {
+                outcome.skipped_missing += 1;
+                continue;
+            };
+
+            let mut single_track_album = album.clone();
+            single_track_album
+                .tracks
+                .retain(|track| &track.path == path);
+
+            match self.add_album(single_track_album) {
+                Ok(index) => {
+                    outcome.first_added_index.get_or_insert(index);
+                    outcome.added += 1;
+                }
+                Err(_) => outcome.skipped_missing += 1,
+            }
+        }
+
+        outcome
     }
 
     /// Add album to queue and immediately jump to it for playback.
@@ -168,6 +230,23 @@ impl QueueController {
         } else {
             (QueuePlaybackEffect::None, false)
         }
+    }
+
+    /// Move a queued album. Reordering does not restart playback: `Queue`
+    /// tracks the current item by its moved index, so its source remains valid.
+    pub fn move_item(&mut self, from: usize, to: usize) -> bool {
+        if !self.queue.move_item(from, to) {
+            return false;
+        }
+
+        if self.selected_index == from {
+            self.selected_index = to;
+        } else if from < self.selected_index && self.selected_index <= to {
+            self.selected_index -= 1;
+        } else if to <= self.selected_index && self.selected_index < from {
+            self.selected_index += 1;
+        }
+        true
     }
 
     /// Remove all items from the queue.
@@ -391,6 +470,42 @@ mod tests {
     }
 
     #[test]
+    fn enqueue_playlist_tracks_preserves_order_and_skips_duplicates() {
+        let mut album = make_album("Playlist", 2);
+        for (index, track) in album.tracks.iter_mut().enumerate() {
+            track.source = Some(AudioSource::Url {
+                url: format!("https://example.com/{index}.flac"),
+                format_hint: None,
+                seekable: true,
+            });
+        }
+        let paths = album
+            .tracks
+            .iter()
+            .map(|track| track.path.clone())
+            .collect::<Vec<_>>();
+        let library = MusicLibrary {
+            albums: vec![album],
+            ..Default::default()
+        };
+        let mut controller = QueueController::new();
+
+        let first = controller.enqueue_playlist_tracks(&library, &paths);
+        assert_eq!(first.added, 2);
+        assert_eq!(first.skipped_existing, 0);
+        assert_eq!(first.skipped_missing, 0);
+        assert_eq!(first.first_added_index, Some(0));
+        assert_eq!(controller.len(), 2);
+        assert_eq!(controller[0].album.tracks[0].path, paths[0]);
+        assert_eq!(controller[1].album.tracks[0].path, paths[1]);
+
+        let second = controller.enqueue_playlist_tracks(&library, &paths);
+        assert_eq!(second.added, 0);
+        assert_eq!(second.skipped_existing, 2);
+        assert_eq!(controller.len(), 2);
+    }
+
+    #[test]
     fn test_remove_current_stops_when_empty() {
         let mut ctrl = QueueController::new();
         add_test_album(&mut ctrl, make_album("A", 1));
@@ -457,5 +572,20 @@ mod tests {
         ctrl.clear();
         assert!(ctrl.is_empty());
         assert_eq!(ctrl.selected_index, 0);
+    }
+
+    #[test]
+    fn move_item_keeps_selected_and_playing_album_identity() {
+        let mut ctrl = QueueController::new();
+        add_test_album(&mut ctrl, make_album("A", 1));
+        add_test_album(&mut ctrl, make_album("B", 1));
+        add_test_album(&mut ctrl, make_album("C", 1));
+        ctrl.selected_index = 1;
+        ctrl.jump_to(1);
+
+        assert!(ctrl.move_item(1, 2));
+        assert_eq!(ctrl.selected_index, 2);
+        assert_eq!(ctrl.current_index(), Some(2));
+        assert_eq!(ctrl[2].album.title, "B");
     }
 }

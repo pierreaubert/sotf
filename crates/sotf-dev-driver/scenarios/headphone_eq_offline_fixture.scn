@@ -1,0 +1,46 @@
+# Hermetic Headphone EQ discovery. The test drives the same visible refresh
+# and selection controls used in production; the dev API only supplies the
+# network responses.
+assert screen.focused == "HeadphoneEq"
+wait_idle 2s
+assert_visible headphone.refresh
+assert_accessible button Refresh
+click headphone.refresh
+wait_until headphone.loading == false timeout=5s
+assert headphone.catalog_count == 2
+assert headphone.suggestion_count == 2
+assert_visible headphone.select.Fixture One
+assert_visible headphone.select.Fixture Two
+screenshot headphone-discovery-catalog
+click headphone.select.Fixture One
+wait_until headphone.loading == false timeout=5s
+assert headphone.selected == "Fixture One"
+assert headphone.curve_point_count == 3
+screenshot headphone-discovery-selected
+assert headphone.step == "MeasurementTarget"
+assert_visible headphone.next
+assert_accessible button Continue
+click headphone.next
+wait_until headphone.step == "Optimization" timeout=2s
+assert_visible headphone.optimize_start
+screenshot headphone-configure
+click headphone.optimize_start
+wait_until headphone.optimization_status != "Running" timeout=20s
+assert headphone.optimization_status == "Completed"
+assert_visible headphone.next
+click headphone.next
+wait_until headphone.step == "Listen" timeout=2s
+screenshot headphone-listen
+click headphone.next
+wait_until headphone.step == "Export" timeout=2s
+screenshot headphone-export
+wait_idle 250ms
+assert_visible headphone.apply
+click headphone.apply
+wait_until headphone.easy_applied == true timeout=2s
+assert headphone.easy_applied == true
+assert_visible headphone.export
+click headphone.export
+wait_until headphone.export_exists == true timeout=2s
+assert headphone.export_exists == true
+assert headphone.export_json_reloadable == true

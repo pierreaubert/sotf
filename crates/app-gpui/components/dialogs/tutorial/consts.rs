@@ -21,6 +21,20 @@ const TUTORIAL_IMAGES: [&str; TUTORIAL_SCREEN_COUNT] = [
     "tutorial/settings.webp",
 ];
 
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 impl PlayerView {
     pub(crate) fn render_tutorial_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
@@ -105,7 +119,7 @@ impl PlayerView {
                             .justify(StackJustify::SpaceBetween)
                             .align(StackAlign::Center)
                             // Checkbox
-                            .child(
+                            .child(dev_track!(
                                 Checkbox::new("tutorial-dont-show")
                                     .checked(dont_show)
                                     .label(dialog_text.dont_show_again)
@@ -131,7 +145,8 @@ impl PlayerView {
                                             });
                                         }
                                     }),
-                            )
+                                "onboarding.dont_show"
+                            ))
                             // Navigation buttons — use Button's own on_click (on_mouse_up)
                             // instead of .build().on_click(cx.listener(...)) which relies
                             // on Stateful<Div> click tracking and is less reliable.
@@ -139,7 +154,7 @@ impl PlayerView {
                                 HStack::new()
                                     .spacing(StackSpacing::Xs)
                                     .when(!is_first, |row| {
-                                        row.child(
+                                        row.child(dev_track!(
                                             Button::new("tutorial-prev", tutorial_text.previous)
                                                 .variant(ButtonVariant::Ghost)
                                                 .size(ButtonSize::Sm)
@@ -157,10 +172,11 @@ impl PlayerView {
                                                         });
                                                     }
                                                 }),
-                                        )
+                                            "onboarding.previous"
+                                        ))
                                     })
                                     .when(!is_last, |row| {
-                                        row.child(
+                                        row.child(dev_track!(
                                             Button::new("tutorial-next", tutorial_text.next)
                                                 .variant(ButtonVariant::Primary)
                                                 .size(ButtonSize::Sm)
@@ -180,10 +196,11 @@ impl PlayerView {
                                                         });
                                                     }
                                                 }),
-                                        )
+                                            "onboarding.next"
+                                        ))
                                     })
                                     .when(is_last, |row| {
-                                        row.child(
+                                        row.child(dev_track!(
                                             Button::new("tutorial-done", tutorial_text.get_started)
                                                 .variant(ButtonVariant::Primary)
                                                 .size(ButtonSize::Sm)
@@ -196,7 +213,8 @@ impl PlayerView {
                                                         });
                                                     }
                                                 }),
-                                        )
+                                            "onboarding.complete"
+                                        ))
                                     }),
                             ),
                     ),

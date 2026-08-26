@@ -559,14 +559,11 @@ fn app_gpui_unwrap_expect_production_audit_is_current() {
         ("app/federation/local.rs".to_string(), 2),
         ("app/midi_input.rs".to_string(), 3),
         ("app/remote/consts.rs".to_string(), 5),
-        ("components/headphone_eq/actions/misc.rs".to_string(), 2),
         ("components/plugins/spatial_spider/data.rs".to_string(), 13),
         (
             "components/plugins/ui_layout_renderer/render.rs".to_string(),
             1,
         ),
-        ("components/spinorama_eq/misc.rs".to_string(), 1),
-        ("components/spinorama_eq/types.rs".to_string(), 1),
     ]);
 
     assert_eq!(
@@ -731,6 +728,121 @@ fn test_settings_tabs_use_product_labels() {
         settings_tab_label(SettingsTab::ReleaseChannel, &translations),
         "Features"
     );
+
+    for language in Language::all() {
+        let translations = Translations::for_language(*language);
+        for tab in [SettingsTab::Theme, SettingsTab::Misc, SettingsTab::Metadata] {
+            assert!(
+                !settings_tab_label(tab, &translations).trim().is_empty(),
+                "settings tab label is missing for {}",
+                language.code()
+            );
+        }
+    }
+}
+
+#[test]
+fn queue_destructive_actions_are_visible_and_recoverable() {
+    let queue = app_source("components/home/queue/misc.rs");
+    let app_queue = app_source("app/queue.rs");
+    let queue_state = app_source("app/state/app/queue_state.rs");
+
+    assert!(queue.contains("queue-clear"));
+    assert!(queue.contains("queue-undo-clear"));
+    assert!(queue.contains("queue-undo-remove"));
+    assert!(queue.contains("queue-save-as-playlist"));
+    assert!(queue.contains("IconButton::with_child"));
+    assert!(queue.contains("\"queue-home-button\""));
+    assert!(queue.contains(".aria_label(translations.screen_library)"));
+    assert!(queue.contains("can_undo_clear"));
+    assert!(queue.contains("can_undo_remove"));
+    assert!(queue.contains("state.app.clear_queue()"));
+    assert!(queue.contains("state.app.undo_clear_queue()"));
+    assert!(queue.contains("state.app.undo_remove_from_queue()"));
+    assert!(app_queue.contains("pub fn undo_clear_queue"));
+    assert!(app_queue.contains("pub fn undo_remove_from_queue"));
+    assert!(queue_state.contains("struct ClearedQueueSnapshot"));
+    assert!(queue_state.contains("struct RemovedQueueSnapshot"));
+    assert!(queue_state.contains("pub fn undo_clear"));
+    assert!(queue_state.contains("pub fn undo_remove"));
+    assert!(queue.contains("PlaylistDialog::CreateFromQueue"));
+    assert!(app_source("components/playlists.rs").contains("create_playlist_with_tracks"));
+}
+
+#[test]
+fn playlists_crud_controls_are_rendered_and_driver_addressable() {
+    let playlists = app_source("components/playlists.rs");
+    let scenario = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../sotf-dev-driver/scenarios/gpui_playlists.scn"
+    ))
+    .expect("playlist scenario should exist");
+
+    for selector in [
+        "playlist.create",
+        "playlist.name_input",
+        "playlist.save",
+        "playlist.open.{index}",
+        "playlist.rename.{index}",
+        "playlist.delete_active",
+        "playlist.delete_confirm",
+        "playlist.undo_delete",
+    ] {
+        assert!(
+            playlists.contains(selector),
+            "playlist screen is missing driver selector {selector}"
+        );
+    }
+    for step in [
+        "click playlist.name_input",
+        "type \"SOTF QA Playlist #1\"",
+        "click playlist.delete_confirm",
+        "click playlist.undo_delete",
+        "click playlist.rename.0",
+    ] {
+        assert!(
+            scenario.contains(step),
+            "playlist scenario is missing {step}"
+        );
+    }
+}
+
+#[test]
+fn queue_reorder_controls_are_stably_named_and_domain_backed() {
+    let queue = app_source("components/home/queue/misc.rs");
+    let app_queue = app_source("app/queue.rs");
+    let queue_state = app_source("app/state/app/queue_state.rs");
+
+    assert!(queue.contains("queue-move-up"));
+    assert!(queue.contains("queue-move-down"));
+    assert!(queue.contains("translations.queue_move_up"));
+    assert!(queue.contains("translations.queue_move_down"));
+    assert!(queue.contains("state.app.move_queue_item"));
+    assert!(app_queue.contains("pub fn move_queue_item"));
+    assert!(queue_state.contains("pub fn move_item"));
+}
+
+#[test]
+fn sidebar_separates_player_from_studio_and_measurement_workflows() {
+    let sidebar = app_source("ui/render.rs");
+    let translations = app_source("app/i18n/translations.rs");
+
+    assert!(sidebar.contains("translations.screen_player"));
+    assert!(sidebar.contains("translations.screen_tools"));
+    for id in [
+        "nav-home",
+        "nav-library",
+        "nav-search",
+        "nav-playing",
+        "nav-queue",
+        "nav-playlists",
+        "nav-streams",
+    ] {
+        assert!(sidebar.contains(id), "Player navigation missing {id}");
+    }
+    assert!(sidebar.contains("\"nav-studio\""));
+    assert!(translations.contains("pub screen_player: &'static str"));
+    assert!(translations.contains("screen_tools: \"Studio & Measurement\""));
 }
 
 #[test]
@@ -752,10 +864,21 @@ fn listening_test_workflow_is_localized_in_every_supported_language() {
                 listening.eq.submit,
                 listening.eq.shortcuts,
                 listening.eq.add_ab_plugin,
+                listening.how_to_listen_title(),
+                listening.how_to_listen_reopen(),
+                listening.how_to_listen_acknowledge(),
+                listening.eq.chart_series(),
+                listening.eq.frequency_axis(),
+                listening.eq.gain_axis(),
+                listening.eq.adaptive_status(true),
+                listening.eq.adaptive_status(false),
+                listening.eq.clip_loop_status(true),
+                listening.eq.clip_loop_status(false),
                 listening.setup.title,
                 listening.setup.subtitle,
                 listening.setup.measure_prepare,
                 listening.setup.graph_hint,
+                listening.setup.cancel,
                 listening.setup.level.target_metric,
                 listening.setup.level.momentary_lufs,
                 listening.setup.level.short_term_lufs,
@@ -799,6 +922,22 @@ fn listening_test_exposes_configurable_matching_and_verified_media_reload() {
     let state = app_source("app/state/plugin.rs");
     let playback = app_source("ui/player_view.rs");
 
+    for literal in [
+        "\"Training EQ\"",
+        "\"Frequency (Hz)\"",
+        "\"Gain (dB)\"",
+        "\"Adaptive difficulty: on\"",
+        "\"Adaptive difficulty: off\"",
+        "\"Clip loop enabled\"",
+        "\"Clip loop disabled\"",
+        "\"Exercise: {}\"",
+    ] {
+        assert!(
+            !screen.contains(literal),
+            "Listening Test visible copy must come from translations: {literal}"
+        );
+    }
+
     for control in [
         "listening-metric-momentary",
         "listening-metric-short-term",
@@ -823,6 +962,38 @@ fn listening_test_exposes_configurable_matching_and_verified_media_reload() {
     assert!(state.contains("segment_start_ms"));
     assert!(playback.contains("play_listening_source_at"));
     assert!(playback.contains("track_queue_playback"));
+}
+
+#[test]
+fn listening_test_graph_parameter_edits_are_staged_until_done() {
+    let screen = app_source("components/listening_test.rs");
+
+    assert!(screen.contains("stage_listening_node_parameters"));
+    assert!(screen.contains("update_listening_node_parameters("));
+    assert!(screen.contains("stage_listening_rack_parameters"));
+    assert!(screen.contains("update_listening_rack_parameters(state, target, index, draft)"));
+    assert!(screen.contains("let valid_draft = matches!("));
+    assert!(screen.contains("&node_id_for_close"));
+    assert!(screen.contains("listening-cancel-node-{suffix}"));
+    assert!(screen.contains("listening-{suffix}-cancel-{index}"));
+}
+
+#[test]
+fn listening_test_has_persisted_reopenable_safety_guide() {
+    let screen = app_source("components/listening_test.rs");
+    let state = app_source("app/state/app.rs");
+    let progress = app_source("../sotf-player/src/ear_training.rs");
+
+    assert!(screen.contains("listening-guide-reopen"));
+    assert!(screen.contains("listening-guide-acknowledge"));
+    assert!(screen.contains("how_to_listen_items"));
+    assert!(screen.contains("mark_how_to_listen_completed"));
+    assert!(screen.contains("listening-fatigue-prompt"));
+    assert!(screen.contains("listening-break-interval"));
+    assert!(screen.contains("listening_break_prompt_open"));
+    assert!(state.contains("listening_guide_open"));
+    assert!(state.contains("listening_break_interval"));
+    assert!(progress.contains("how_to_listen_completed"));
 }
 
 #[test]
@@ -2543,6 +2714,7 @@ fn stream_translations_are_complete_and_visible_copy_is_extracted() {
                 text.no_saved_streams,
                 text.name,
                 text.seekable,
+                text.live,
                 text.url_placeholder,
                 text.save,
                 text.play,
@@ -2917,10 +3089,11 @@ fn dialog_server_and_phone_copy_is_complete_and_direct_literals_are_extracted() 
     use sotf_audio_player_gpui::i18n::{
         AppearanceTranslations, AudioDeviceTranslations, ContextMenuTranslations,
         DialogTranslations, EqDiscoveryTranslations, FederationTranslations,
-        FileDialogTranslations, FooterTranslations, MetadataEditorTranslations, PhoneTranslations,
-        PlaybackApplyTranslations, RecordingWorkflowTranslations, RoomEqWorkflowTranslations,
-        ServerSettingsTranslations, SettingsSurfaceTranslations, SpectrumTranslations,
-        TutorialTranslations, WorkflowTranslations,
+        FileDialogTranslations, FooterTranslations, MetadataEditorTranslations,
+        PhoneToolTranslations, PhoneTranslations, PlaybackApplyTranslations,
+        RecordingWorkflowTranslations, RoomEqWorkflowTranslations, ServerSettingsTranslations,
+        SettingsSurfaceTranslations, SpectrumTranslations, TutorialTranslations,
+        WorkflowTranslations,
     };
 
     for language in Language::all() {
@@ -2975,6 +3148,35 @@ fn dialog_server_and_phone_copy_is_complete_and_direct_literals_are_extracted() 
             .iter()
             .all(|value| !value.trim().is_empty()),
             "dialog copy is incomplete for {}",
+            language.code()
+        );
+
+        let phone_tools = PhoneToolTranslations::for_language(*language);
+        assert!(
+            [
+                phone_tools.spectrum,
+                phone_tools.held_analyzer_frame,
+                phone_tools.smoothed_live_analyzer,
+                phone_tools.live_analyzer,
+                phone_tools.plugin_graph,
+                phone_tools.signal_flow,
+                phone_tools.remote_sources,
+                phone_tools.on,
+                phone_tools.off,
+                phone_tools.hold,
+                phone_tools.smooth,
+                phone_tools.graph,
+                phone_tools.list,
+                phone_tools.actions,
+                phone_tools.sources,
+                phone_tools.more,
+                phone_tools.plugin_rack,
+                phone_tools.eq,
+                phone_tools.bypass,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty()),
+            "phone tool copy is incomplete for {}",
             language.code()
         );
         assert!(
@@ -3347,6 +3549,9 @@ fn dialog_server_and_phone_copy_is_complete_and_direct_literals_are_extracted() 
                 phone.search_shortcuts,
                 phone.magic_radio,
                 phone.back_to_genres,
+                phone.show_navigation,
+                phone.hide_navigation,
+                phone.wizard,
             ]
             .iter()
             .all(|value| !value.trim().is_empty()),
@@ -4792,4 +4997,124 @@ fn eq_drag_preview_is_taken_only_by_its_plugin() {
     assert_eq!(state.eq_drag_preview, Some(preview));
     assert_eq!(state.take_eq_drag_preview_for(4), Some(preview));
     assert_eq!(state.eq_drag_preview, None);
+}
+
+#[test]
+fn primary_navigation_publishes_rendered_selection_state_for_dev_scenarios() {
+    let sidebar = app_source("ui/render.rs");
+    let settings = app_source("components/mod.rs");
+
+    assert!(sidebar.contains("dev_track_with_state"));
+    assert!(sidebar.contains("DevElementState::default().selected(selected)"));
+    assert!(settings.contains("dev_track_with_state"));
+    assert!(settings.contains("DevElementState::default()"));
+    assert!(settings.contains(".selected(is_selected)"));
+}
+
+#[test]
+fn sidebar_output_devices_have_keyboard_and_accessibility_contracts() {
+    let sidebar = app_source("ui/render.rs");
+    assert!(
+        sidebar.contains("!device.name.trim().is_empty()"),
+        "unnamed output devices must not become focusable sidebar controls"
+    );
+    assert!(
+        sidebar.contains("!device.name.trim().is_empty() || !device.device_type.trim().is_empty()"),
+        "unnamed cast devices must not become focusable sidebar controls"
+    );
+    let output_device_item = sidebar
+        .split_once("fn render_sidebar_output_device_item")
+        .expect("output device sidebar item")
+        .1
+        .split_once("fn render_sidebar_cast_device_item")
+        .expect("output device sidebar item end")
+        .0;
+
+    assert!(output_device_item.contains(".track_focus(&focus_handle)"));
+    assert!(output_device_item.contains(".focus_visible"));
+    assert!(output_device_item.contains("AriaRole::Button"));
+    assert!(output_device_item.contains("key == \"enter\" || key == \"space\""));
+    assert!(output_device_item.contains("DevElementState::default().selected(selected)"));
+
+    let cast_device_item = sidebar
+        .split_once("fn render_sidebar_cast_device_item")
+        .expect("cast device sidebar item")
+        .1
+        .split_once("fn render_sidebar_item_base")
+        .expect("cast device sidebar item end")
+        .0;
+    assert!(cast_device_item.contains(".track_focus(&focus_handle)"));
+    assert!(cast_device_item.contains(".focus_visible"));
+    assert!(cast_device_item.contains("AriaRole::Button"));
+    assert!(cast_device_item.contains("key == \"enter\" || key == \"space\""));
+    assert!(cast_device_item.contains("DevElementState::default().selected(selected)"));
+}
+
+#[test]
+fn sidebar_device_actions_have_keyboard_and_accessibility_contracts() {
+    let sidebar = app_source("ui/render.rs");
+    let action_button = sidebar
+        .split_once("fn render_sidebar_action_button")
+        .expect("sidebar action button")
+        .1
+        .split_once("fn render_sidebar_cast_group_label")
+        .expect("sidebar action button end")
+        .0;
+
+    assert!(sidebar.contains("\"nav-refresh-devices\""));
+    assert!(sidebar.contains("\"nav-scan-cast\""));
+    assert!(action_button.contains(".track_focus(&focus_handle)"));
+    assert!(action_button.contains(".focus_visible"));
+    assert!(action_button.contains("AriaRole::Button"));
+    assert!(action_button.contains("key == \"enter\" || key == \"space\""));
+    assert!(action_button.contains(".dev_track(format!(\"sidebar.{id}\"))"));
+
+    let preferences_button = sidebar
+        .split_once("\"nav-preferences-button\"")
+        .expect("preferences sidebar button")
+        .1;
+    assert!(preferences_button.contains(".track_focus(&preferences_focus_handle)"));
+    assert!(preferences_button.contains("AriaRole::Button"));
+    assert!(preferences_button.contains("key == \"enter\" || key == \"space\""));
+    assert!(preferences_button.contains(".dev_track(\"sidebar.nav-preferences-button\")"));
+}
+
+#[test]
+fn recording_and_library_number_inputs_have_accessible_labels() {
+    let recording = app_source("components/recording/config/misc.rs");
+    assert!(recording.contains("translations.recording_channel_label"));
+    assert!(recording.contains("recording_text.single"));
+    assert!(recording.contains("recording_text.multi"));
+    assert!(recording.matches(".label(").count() >= 3);
+
+    let library = app_source("components/settings/library/misc.rs");
+    assert!(library.contains("NumberInput::new(\"scanner-threads-input\")"));
+    assert!(library.contains(".label(text.thread_count)"));
+}
+
+#[test]
+fn phone_primary_tabs_have_focus_keyboard_and_accessibility_contracts() {
+    let phone = app_source("ui/phone.rs");
+
+    assert!(phone.contains("AriaRole::Tab"));
+    assert!(phone.contains("AriaState::Selected(selected)"));
+    assert!(phone.contains(".track_focus(&focus_handle)"));
+    assert!(phone.contains(".focus_visible"));
+    assert!(phone.contains("key == \"enter\" || key == \"space\""));
+    assert!(phone.contains("AriaState::Expanded(!hidden)"));
+    assert!(phone.contains("text.show_navigation"));
+    assert!(phone.contains("text.hide_navigation"));
+    assert!(phone.contains("phone.tab.{screen:?}"));
+    assert!(phone.contains("phone.tab-bar-handle"));
+    assert!(phone.contains("DevElementState::default().expanded(!hidden)"));
+}
+
+#[test]
+fn headphone_eq_discovery_controls_are_rendered_fixture_targets() {
+    let measurements = app_source("components/headphone_eq/step_1_measurements.rs");
+
+    assert!(measurements.contains("\"headphone.refresh\""));
+    assert!(measurements.contains("format!(\"headphone.select.{}\", headphone)"));
+    assert!(measurements.contains("view.fetch_headphone_list(cx)"));
+    assert!(measurements.contains("view.select_headphone(&name, cx)"));
 }

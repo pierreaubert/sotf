@@ -40,4 +40,19 @@ dev-driver-tui: dev-driver-build-tui
 # Run every checked-in suite. This is intentionally long-running.
 [group('dev-driver')]
 dev-driver-all: dev-driver-smoke dev-driver-full dev-driver-roomeq dev-driver-tui
-	@echo "All sotf-dev-driver suites passed."
+    @echo "All sotf-dev-driver suites passed."
+
+# Build and run the state-aware desktop all-app fuzzer.
+[group('dev-driver')]
+dev-driver-fuzz target='desktop-gpui' seed='1' steps='1000':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{target}}" in
+      desktop-gpui) just dev-driver-build-gpui ;;
+      tui) just dev-driver-build-tui ;;
+      player-cli) cargo build -p app-cli --bin player-cli ;;
+    recorder-cli) cargo build -p app-cli --bin sotf-recorder-cli ;;
+    headless-server) just dev-driver-build-gpui ;;
+    *) ;;
+    esac
+    cargo run -p sotf-dev-driver -- fuzz --target "{{target}}" --seed "{{seed}}" --steps "{{steps}}"

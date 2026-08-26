@@ -1,12 +1,21 @@
-# Plugin graph (Studio Full) screen.
-#
-# Reproducible run:
-#   QA_DIR=$(mktemp -d)
-#   cargo run -p sotf-gpui --features dev-api --bin SotF -- --qa "$QA_DIR" &
-#   cargo run -p sotf-dev-driver -- crates/sotf-dev-driver/scenarios/plugin_graph.scn -v
-
-focus       plugin-graph
-assert      screen.focused == "PluginGraph"
-
-focus       library
-assert      screen.focused == "Library"
+# Plugin graph: the action only arranges a deterministic empty user chain.
+# Addition, bypass, invalid connection, cancellation, and deletion are driven
+# through the graph's documented keyboard interaction model.
+action     PluginClear
+click      sidebar.nav-plugin-graph
+assert     screen.focused == "PluginGraph"
+assert     plugins.user_count == 0
+key        a
+wait_until plugins.user_count == 1 timeout=2s
+assert     plugins.graph.selection_count == 1
+key        c
+assert     plugins.graph.connecting == true
+key        c
+wait_until toast.type == "Error" timeout=2s
+assert     plugins.graph.connecting == true
+key        escape
+wait_until plugins.graph.connecting == false timeout=2s
+accessibility
+screenshot plugin-graph-keyboard-invalid-edge
+key        delete
+wait_until plugins.user_count == 0 timeout=2s

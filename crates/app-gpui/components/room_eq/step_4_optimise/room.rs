@@ -16,6 +16,20 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{StrokeDashArray, line};
+
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
 use gpui_ui_kit::{
     Badge, BadgeVariant, Button, ButtonVariant, Card, Column, HStack, Progress, ProgressSize,
     ProgressVariant, Spinner, SpinnerSize, StackAlign, StackSpacing, Table, TableTheme, Text,
@@ -210,24 +224,41 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(if is_running {
-                                Button::new("cancel_optimization", translations.general_cancel)
-                                    .variant(ButtonVariant::Secondary)
-                                    .full_width(true)
-                                    .theme(theme.to_button_theme())
-                                    .on_click_event(cx.listener(|view, _, _, cx| {
-                                        view.cancel_room_eq_optimization(cx);
-                                    }))
-                            } else {
-                                Button::new(
-                                    "start_optimization",
-                                    translations.roomeq_start_optimization,
+                                dev_track!(
+                                    div().child(
+                                        Button::new(
+                                            "cancel_optimization",
+                                            translations.general_cancel,
+                                        )
+                                        .variant(ButtonVariant::Secondary)
+                                        .full_width(true)
+                                        .theme(theme.to_button_theme())
+                                        .on_click_event(
+                                            cx.listener(|view, _, _, cx| {
+                                                view.cancel_room_eq_optimization(cx);
+                                            })
+                                        ),
+                                    ),
+                                    "roomeq.optimize_cancel"
                                 )
-                                .variant(ButtonVariant::Primary)
-                                .full_width(true)
-                                .theme(theme.to_button_theme())
-                                .on_click_event(cx.listener(|view, _, _, cx| {
-                                    view.start_room_eq_optimization(cx);
-                                }))
+                            } else {
+                                dev_track!(
+                                    div().child(
+                                        Button::new(
+                                            "start_optimization",
+                                            translations.roomeq_start_optimization,
+                                        )
+                                        .variant(ButtonVariant::Primary)
+                                        .full_width(true)
+                                        .theme(theme.to_button_theme())
+                                        .on_click_event(
+                                            cx.listener(|view, _, _, cx| {
+                                                view.start_room_eq_optimization(cx);
+                                            })
+                                        ),
+                                    ),
+                                    "roomeq.optimize_start"
+                                )
                             })
                             .when(show_progress, |vstack| {
                                 let display_progress = if is_completed {
@@ -1026,6 +1057,10 @@ impl PlayerView {
                 .clone()
         });
 
+        // The running state changes the primary action into Cancel; request
+        // a frame before the worker starts so users can interrupt it.
+        cx.notify();
+
         let state_clone = self.state.clone();
 
         // Create async channel for progress updates from blocking thread.
@@ -1217,6 +1252,12 @@ impl PlayerView {
 
         // Spawn the optimization task
         cx.spawn(async move |_, cx| {
+            #[cfg(feature = "dev-api")]
+            if std::env::var_os("SOTF_QA_DIR").is_some() {
+                // Let the rendered Cancel action reach a genuinely running
+                // optimization in deterministic QA fixtures.
+                smol::Timer::after(std::time::Duration::from_secs(1)).await;
+            }
             // Update status
             state_clone.update(&mut cx.clone(), |state, cx| {
                 state.app.measurement_state.room_eq_state.status_message =

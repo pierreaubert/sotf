@@ -15,4 +15,6 @@ mod registry;
 mod server;
 
 pub use dev_element::DevTrackExt;
+pub use registry::DevElementState;
+pub use registry::clear as clear_tracked_elements;
 pub use server::start;

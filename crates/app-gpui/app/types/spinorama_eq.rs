@@ -3,6 +3,8 @@
 // ============================================================================
 
 use sotf_audio_player::ui_models::spinorama_eq::SpinoramaEqScreenModel;
+#[cfg(feature = "dev-api")]
+use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
 use super::room_eq::AutoEqField;
@@ -90,6 +92,38 @@ pub struct SpinoramaEqState {
     pub expanded_sections: Vec<gpui::SharedString>,
     /// Focus handle for the search input.
     pub search_focus_handle: Option<gpui::FocusHandle>,
+    /// Monotonic catalog request generation. A completion is only allowed to
+    /// update the visible catalog when it belongs to the most recent refresh.
+    /// This makes rapid retry/refresh behaviour deterministic even if a
+    /// previous network request completes late.
+    pub speaker_list_request_id: u64,
+    /// Hermetic discovery data used only by rendered dev-api fixtures.
+    #[cfg(feature = "dev-api")]
+    pub qa_discovery_fixture: Option<QaSpinoramaDiscoveryFixture>,
+}
+
+/// Offline replacements for the Spinorama speaker, version, and measurement
+/// discovery endpoints. Curves deliberately stay out of this seam: the
+/// rendered selection flow only needs attributed source choices.
+#[cfg(feature = "dev-api")]
+#[derive(Debug, Clone, Default)]
+pub struct QaSpinoramaDiscoveryFixture {
+    pub catalog: Vec<String>,
+    pub catalog_delay_ms: u64,
+    pub catalog_failures_remaining: usize,
+    pub catalog_failure_message: String,
+    pub versions: HashMap<String, Vec<String>>,
+    pub measurements: HashMap<(String, String), Vec<String>>,
+    /// Offline response curves keyed by speaker, version, and measurement.
+    /// They drive the normal local-curve optimizer path in rendered QA runs.
+    pub responses: HashMap<(String, String, String), QaSpinoramaResponse>,
+}
+
+#[cfg(feature = "dev-api")]
+#[derive(Debug, Clone)]
+pub struct QaSpinoramaResponse {
+    pub frequencies: Vec<f64>,
+    pub spl: Vec<f64>,
 }
 
 impl Default for SpinoramaEqState {
@@ -101,6 +135,9 @@ impl Default for SpinoramaEqState {
             selected_preset: "balanced".to_string(),
             expanded_sections: vec!["speaker".into(), "options".into()],
             search_focus_handle: None,
+            speaker_list_request_id: 0,
+            #[cfg(feature = "dev-api")]
+            qa_discovery_fixture: None,
         }
     }
 }
@@ -120,6 +157,12 @@ impl DerefMut for SpinoramaEqState {
 }
 
 impl SpinoramaEqState {
+    /// Start a catalog fetch and return its generation token.
+    pub fn begin_speaker_list_request(&mut self) -> u64 {
+        self.speaker_list_request_id = self.speaker_list_request_id.wrapping_add(1);
+        self.speaker_list_request_id
+    }
+
     /// Reset optimization state.
     pub fn reset_optimization(&mut self) {
         self.model.reset_optimization();

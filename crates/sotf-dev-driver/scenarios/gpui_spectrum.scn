@@ -4,6 +4,24 @@
 
 focus       spectrum
 assert      screen.focused == "Spectrum"
+assert      spectrum.has_data == false
+assert_visible spectrum.unavailable
+assert_visible spectrum.hold
+assert_visible spectrum.smoothing
+assert_accessible switch Hold
+assert_accessible switch Smoothing
+assert      spectrum.hold == false
+assert      spectrum.smoothing == false
+click       spectrum.hold
+wait_until  spectrum.hold == true timeout=2s
+click       spectrum.smoothing
+wait_until  spectrum.smoothing == true timeout=2s
+resize      700 600
+assert      screen.focused == "Spectrum"
+assert_accessible switch Hold
+assert_accessible switch Smoothing
+accessibility
+screenshot  spectrum-unavailable-narrow
 
 # Return to library.
 focus       library

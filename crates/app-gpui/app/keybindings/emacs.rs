@@ -44,7 +44,6 @@ pub(super) fn emacs_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("left", actions::ToggleExpand, Some("PlayerView")),
         KeyBinding::new("right", actions::ToggleExpand, Some("PlayerView")),
         // Enter action - PlayerView context so text editing can use Enter
-        KeyBinding::new("enter", actions::Enter, Some("PlayerView")),
         KeyBinding::new("ctrl-m", actions::Enter, None),
         KeyBinding::new("ctrl-j", actions::Enter, None),
         // Remove/delete - PlayerView context so text editing isn't intercepted
@@ -59,9 +58,13 @@ pub(super) fn emacs_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-x s", actions::ScanLibrary, None),
         KeyBinding::new("alt-x S", actions::SwitchToSettings, None),
         // Level meter controls - alt combos stay global
-        KeyBinding::new("tab", actions::SelectNextMeterGroup, Some("PlayerView")),
         KeyBinding::new(
-            "shift-tab",
+            "ctrl-tab",
+            actions::SelectNextMeterGroup,
+            Some("PlayerView"),
+        ),
+        KeyBinding::new(
+            "ctrl-shift-tab",
             actions::SelectPrevMeterGroup,
             Some("PlayerView"),
         ),

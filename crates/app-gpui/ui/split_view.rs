@@ -237,7 +237,7 @@ impl PlayerView {
                     .border_t_1()
                     .border_color(theme.border)
                     .overflow_hidden()
-                    .child(self.render_queue_screen(cx)),
+            .child(self.render_queue_screen(None, cx)),
             )
     }
 

@@ -1,5 +1,9 @@
 use sotf_audio::manager::StreamingState;
 use sotf_audio_player::PluginType;
+use sotf_audio_player::{Album, Track};
+use sotf_audio_player_gpui::app::i18n::{CastTranslations, Language};
+use sotf_audio_player_gpui::app::state::QueueState;
+use sotf_audio_player_gpui::app::types::recording::RecordingStatusSeverity;
 use sotf_audio_player_gpui::app::types::{
     ChannelMeasurement, DensityMode, HeadphoneEqResult, HeadphoneEqState, HeadphoneEqStep,
     OptimizationStatus, RecordingResult, RoomEqSpeakerConfig, SpinoramaEqResult, SpinoramaEqState,
@@ -14,6 +18,100 @@ use sotf_audio_player_gpui::{
     engine_stop_without_queue_should_clear, screen_shows_rack_data,
     should_auto_advance_on_engine_stop, silent_loudness,
 };
+use std::path::PathBuf;
+
+fn queue_test_album(title: &str) -> Album {
+    Album {
+        title: title.to_string(),
+        tracks: vec![Track {
+            path: PathBuf::from(format!("/test/{title}.flac")),
+            title: Some(title.to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn cast_scan_labels_are_present_for_every_supported_language() {
+    for language in [
+        Language::English,
+        Language::French,
+        Language::German,
+        Language::Spanish,
+    ] {
+        let text = CastTranslations::for_language(language);
+        assert!(!text.scan.trim().is_empty());
+        assert!(!text.scanning.trim().is_empty());
+    }
+}
+
+#[test]
+fn queue_remove_undo_restores_order_expansion_and_selection() {
+    let mut queue = QueueState::new();
+    queue.add_album(queue_test_album("A")).unwrap();
+    queue.add_album(queue_test_album("B")).unwrap();
+    queue.add_album(queue_test_album("C")).unwrap();
+    queue.expanded = vec![true, false, true];
+    queue.selected_index = 2;
+
+    queue.remove(1);
+    assert!(queue.can_undo_remove());
+    assert_eq!(queue.len(), 2);
+    assert_eq!(queue[1].album.title, "C");
+
+    assert_eq!(queue.undo_remove(), Some(false));
+    assert_eq!(queue.len(), 3);
+    assert_eq!(queue[1].album.title, "B");
+    assert_eq!(queue.expanded, vec![true, false, true]);
+    assert_eq!(queue.selected_index, 2);
+    assert!(!queue.can_undo_remove());
+}
+
+#[test]
+fn later_queue_mutation_invalidates_remove_undo() {
+    let mut queue = QueueState::new();
+    queue.add_album(queue_test_album("A")).unwrap();
+    queue.add_album(queue_test_album("B")).unwrap();
+    queue.remove(0);
+    assert!(queue.can_undo_remove());
+
+    queue.add_album(queue_test_album("C")).unwrap();
+    assert!(!queue.can_undo_remove());
+    assert_eq!(queue.undo_remove(), None);
+    assert_eq!(queue.len(), 2);
+}
+
+#[test]
+fn later_queue_mutation_invalidates_clear_undo() {
+    let mut queue = QueueState::new();
+    queue.add_album(queue_test_album("A")).unwrap();
+    queue.clear();
+    assert!(queue.can_undo_clear());
+
+    queue.add_album(queue_test_album("B")).unwrap();
+    assert!(!queue.can_undo_clear());
+    assert!(!queue.undo_clear());
+    assert_eq!(queue.len(), 1);
+    assert_eq!(queue[0].album.title, "B");
+}
+
+#[test]
+fn queue_move_keeps_expansion_selection_and_playback_item_aligned() {
+    let mut queue = QueueState::new();
+    queue.add_album(queue_test_album("A")).unwrap();
+    queue.add_album(queue_test_album("B")).unwrap();
+    queue.add_album(queue_test_album("C")).unwrap();
+    queue.expanded = vec![false, true, false];
+    queue.selected_index = 1;
+    queue.jump_to(1);
+
+    assert!(queue.move_item(1, 2));
+    assert_eq!(queue[2].album.title, "B");
+    assert_eq!(queue.expanded, vec![false, false, true]);
+    assert_eq!(queue.selected_index, 2);
+    assert_eq!(queue.current_index(), Some(2));
+}
 
 #[test]
 fn test_screen_variants() {
@@ -354,6 +452,24 @@ fn test_headphone_eq_ui_loss_type_uses_optimizer_source_of_truth() {
     let state = HeadphoneEqState::default();
     assert_eq!(state.ui_loss_type(), "flat");
     assert_eq!(state.optimizer_config.loss, "flat");
+}
+
+#[test]
+fn test_headphone_eq_request_ids_are_independent_and_monotonic() {
+    let mut state = HeadphoneEqState::default();
+
+    assert_eq!(state.begin_headphone_list_request(), 1);
+    assert_eq!(state.begin_download_request(), 1);
+    assert_eq!(state.begin_headphone_list_request(), 2);
+    assert_eq!(state.begin_download_request(), 2);
+}
+
+#[test]
+fn test_spinorama_speaker_catalog_request_ids_are_monotonic() {
+    let mut state = SpinoramaEqState::default();
+
+    assert_eq!(state.begin_speaker_list_request(), 1);
+    assert_eq!(state.begin_speaker_list_request(), 2);
 }
 
 #[test]
@@ -838,6 +954,20 @@ fn test_recording_state_default() {
     assert_eq!(state.signal_type, RecordingSignalType::Sweep);
     assert_eq!(state.signal_duration_secs, 5.0);
     assert!((state.signal_level_db - -6.0206).abs() < 0.0001);
+    assert_eq!(state.status_severity, RecordingStatusSeverity::Idle);
+}
+
+#[test]
+fn test_recording_status_keeps_message_and_severity_together() {
+    let mut state = RecordingState::default();
+    state.set_status("Échec de la capture", RecordingStatusSeverity::Error);
+
+    assert_eq!(state.status_message, "Échec de la capture");
+    assert_eq!(state.status_severity, RecordingStatusSeverity::Error);
+
+    state.clear_status();
+    assert!(state.status_message.is_empty());
+    assert_eq!(state.status_severity, RecordingStatusSeverity::Idle);
 }
 
 #[test]

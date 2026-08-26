@@ -6,6 +6,8 @@ use super::super::ui_plugin_shell::{plugin_accent_color as plugin_color, plugin_
 use super::plugin_drag_info::PluginDragInfo;
 use super::short::short_name;
 use super::short::short_name_with_permanent;
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::DevTrackExt;
 use crate::app::i18n::{DialogTranslations, PluginCommonTranslations, PluginRackTranslations};
 use crate::app::state::plugin::{PluginUiView, available_controllers};
 use crate::app::state::{DividerDragState, DividerType};
@@ -22,12 +24,27 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui::{MouseMoveEvent, MouseUpEvent};
 use gpui_audio_kit::db_to_position;
+use gpui_ui_kit::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use gpui_ui_kit::{
-    CollapseDirection, IconButton, IconButtonSize, IconButtonVariant, PaneDivider,
-    PaneDividerTheme, Select, SelectOption, SelectSize, Toggle, ToggleSize, ToggleStyle,
+    Button, ButtonSize, ButtonVariant, CollapseDirection, IconButton, IconButtonSize,
+    IconButtonVariant, PaneDivider, PaneDividerTheme, Select, SelectOption, SelectSize, Toggle,
+    ToggleSize, ToggleStyle,
 };
 use sotf_audio_player::{PluginType, UpmixerOutputSettings};
 use sotf_plugins::param_specs::{find_by_key as pk, index_of, upmixer::PARAMS as UP};
+
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
 
 /// Brief description for each plugin type (shown in add-plugin menu tooltips).
 pub(crate) fn plugin_description(
@@ -483,6 +500,13 @@ impl PlayerView {
         let is_empty = plugins_data.is_empty();
         let d = Ds::from_cx(cx);
         let show_add_plugin_menu = self.state.read(cx).app.plugin_ui.show_add_plugin_menu;
+        let add_slot_id = ElementId::from("plugin-add-slot");
+        let add_slot_accessibility = AriaProps::with_role(AriaRole::Button);
+        cx.register_accessible(AccessibilityNode {
+            element_id: add_slot_id.clone(),
+            label: text.add_plugin_to_start.into(),
+            props: add_slot_accessibility,
+        });
 
         // Split: main plugins, then "+", then Matrix + output monitor
         // The "+" always appears just before the Matrix plugin.
@@ -688,8 +712,8 @@ impl PlayerView {
                                                         cx,
                                                     )
                                                 })
-                                                .child(
-                                                    IconButton::with_child(
+                        .child(dev_track!(
+                            IconButton::with_child(
                                                         ("plugin-active", idx),
                                                         div()
                                                             .text_size(d.text_xs)
@@ -704,13 +728,14 @@ impl PlayerView {
                                                     .size(IconButtonSize::Sm)
                                                     .theme(active_theme.to_icon_button_theme())
                                                     .aria_label(active_tooltip)
-                                                    .on_click_event(move |_event, _window, cx| {
-                                                        state_for_active.update(cx, |state, _| {
-                                                            state.app.toggle_plugin(idx);
-                                                            state.app.update_level_meter_groups();
-                                                        });
-                                                    }),
-                                                ),
+                                .on_click_event(move |_event, _window, cx| {
+                                    state_for_active.update(cx, |state, _| {
+                                        state.app.toggle_plugin(idx);
+                                        state.app.update_level_meter_groups();
+                                    });
+                                }),
+                            format!("rack.plugin.{idx}.toggle")
+                        )),
                                         )
                                         // S (Solo) button — functional
                                         .child(
@@ -994,7 +1019,7 @@ impl PlayerView {
                                                                         .bg_color(theme_s.background_secondary)
                                                                         .on_text_change(move |text, _window, cx| {
                                                                             state_for_text.update(cx, |state, _cx| {
-                                                                                state.app.plugin_state.preset_state.plugin_preset_input = text;
+                            state.app.plugin_state.preset_state.plugin_preset_input = text.to_string();
                                                                             });
                                                                         }),
                                                                 )
@@ -1125,8 +1150,8 @@ impl PlayerView {
                         let drop_highlight = theme.feedback.drag_over_highlight;
                         let drop_border = theme.feedback.drag_over_border;
 
-                        div()
-                            .id("plugin-add-slot")
+                dev_track!(div()
+                    .id(add_slot_id.clone())
                             .w(rems(8.0))
                             .h(rems(6.5))
                             .flex()
@@ -1203,12 +1228,12 @@ impl PlayerView {
                                     cx.notify();
                                 },
                             ))
-                            .child(
-                                Icon::new(IconName::Plus)
-                                    .small()
-                                    .color(theme_add.text_secondary),
-                            )
-                    })
+                    .child(
+                        Icon::new(IconName::Plus)
+                            .small()
+                            .color(theme_add.text_secondary),
+                    ), "rack.add.open")
+            })
                     // Trailing permanent plugins (output matrix/monitor) after "+"
                     .children(tail_modules.iter().map(
                         |(idx, color, icon, _name, enabled, is_selected, plugin_type, is_permanent, is_input_mon, is_output_mon)| {
@@ -1820,7 +1845,6 @@ impl PlayerView {
         let categories = sotf_audio_player::plugin_categories::CATEGORIES;
 
         let mut category_rows: Vec<gpui::AnyElement> = Vec::new();
-        let mut global_idx = 0usize;
 
         for cat in categories {
             let cat_name = &cat.name;
@@ -1845,16 +1869,27 @@ impl PlayerView {
                 // The add workflow favors comprehension over rack density.
                 // Abbreviated names remain appropriate on compact rack cards.
                 let name = pt.name();
-                let icon = plugin_icon(&pt, false, false);
                 let description = plugin_description(&pt, common_text);
                 let theme_c = theme.clone();
-                let text_on_accent = theme_c.text_on_accent;
-                let btn_id = global_idx;
-                global_idx += 1;
-
+                let add_element_id = ElementId::from(SharedString::from(format!(
+                    "rack-add-{}",
+                    name.to_ascii_lowercase().replace([' ', '/'], "-")
+                )));
+                let add_accessibility = AriaProps::with_role(AriaRole::Button);
+                cx.register_accessible(AccessibilityNode {
+                    element_id: add_element_id.clone(),
+                    label: name.into(),
+                    props: add_accessibility,
+                });
+                #[cfg(feature = "dev-api")]
+                let add_selector = format!(
+                    "rack.add.{}",
+                    name.to_ascii_lowercase().replace([' ', '/'], "-")
+                );
+                let state_for_add = self.state.clone();
                 buttons.push(
                     div()
-                        .id(("add-plugin", btn_id))
+                        .id(SharedString::from(format!("rack-add-card-{name}")))
                         .flex()
                         .flex_col()
                         .items_start()
@@ -1867,31 +1902,25 @@ impl PlayerView {
                         .border_color(color)
                         .text_size(d.text_xs)
                         .text_color(color)
-                        .cursor_pointer()
-                        .hover(move |s| s.bg(color).text_color(text_on_accent))
                         .tooltip({
                             let theme = theme_c.clone();
                             move |_window, cx| make_tooltip(description, &theme, cx)
                         })
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                view.state.update(cx, |state, _cx| {
-                                    state.app.add_plugin(&pt);
-                                    state.app.update_level_meter_groups();
-                                    state.app.plugin_ui.show_add_plugin_menu = false;
-                                });
-                                cx.notify();
-                            }),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(d.grid)
-                                .child(Icon::new(icon).size(IconSize::Sm).color(color))
-                                .child(name),
-                        )
+                        .child(dev_track!(
+                            Button::new(add_element_id.clone(), name)
+                                .variant(ButtonVariant::Secondary)
+                                .size(ButtonSize::Sm)
+                                .theme(theme_c.to_button_theme())
+                                .on_click_event(move |_event, _window, cx| {
+                                    state_for_add.update(cx, |state, cx| {
+                                        state.app.add_plugin(&pt);
+                                        state.app.update_level_meter_groups();
+                                        state.app.plugin_ui.show_add_plugin_menu = false;
+                                        cx.notify();
+                                    });
+                                }),
+                            add_selector.clone()
+                        ))
                         .child(
                             div()
                                 .text_size(d.text_xs)

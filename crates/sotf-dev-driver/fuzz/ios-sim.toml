@@ -1,0 +1,35 @@
+schema_version = 1
+version = 1
+target = "ios-sim"
+fixture_profiles = ["default", "demo-audio"]
+
+[[actions]]
+id = "semantic-play-pause"
+family = "transport"
+weight = 100
+[actions.payload]
+type = "dev_action"
+name = "PlayPause"
+payload = {}
+
+[[actions]]
+id = "touch-centre"
+family = "touch"
+weight = 60
+[actions.payload]
+type = "coordinate"
+[actions.payload.input]
+kind = "touch"
+phase = "begin"
+id = 0
+x = 100.0
+y = 100.0
+viewport_revision = 0
+
+[[actions]]
+id = "settle"
+family = "timing"
+weight = 20
+[actions.payload]
+type = "wait"
+duration_ms = 20

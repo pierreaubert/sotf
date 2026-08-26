@@ -12,6 +12,20 @@ use gpui_ui_kit::{
     SpinnerSize, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            use crate::app::dev_api::DevTrackExt;
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 impl PlayerView {
     // ========================================================================
     // Step 1: Select Speaker
@@ -143,7 +157,7 @@ impl PlayerView {
                                         move |text, _window, cx| {
                                             log::info!("[SPINORAMA] on_text_change: {}", text);
                                             state_for_text.update(cx, |state, _cx| {
-                                                state.app.measurement_state.spinorama_eq_state.speaker_search = text;
+                            state.app.measurement_state.spinorama_eq_state.speaker_search = text.to_string();
                                                 state.app.measurement_state.spinorama_eq_state.update_suggestions();
                                             });
                                         }
@@ -160,19 +174,22 @@ impl PlayerView {
                             .child(
                                 HStack::new()
                                     .spacing(StackSpacing::Xs)
-                                    .child(
+                                    .child(dev_track!(
                                         Button::new(
-                                            "refresh-speakers",
+                        "refresh-speakers",
                                             format!("⟳ {}", discovery_text.refresh),
                                         )
                                             .variant(ButtonVariant::Secondary)
                                             .size(ButtonSize::Xs)
-                                            .disabled(is_loading)
                                             .theme(button_theme.clone())
                                             .on_click_event(cx.listener(|view, _, _, cx| {
-                                                    view.fetch_spinorama_speakers(cx);
-                                                })),
-                                    )
+                                                // A fresh catalog request supersedes an in-flight
+                                                // one, so users can recover from a slow request
+                                                // without waiting for its timeout.
+                                                view.fetch_spinorama_speakers(cx);
+                                            })),
+                                        "spinorama.refresh"
+                                    ))
                                     .when(is_loading, |hstack| {
                                         hstack
                                             .child(Spinner::new().size(SpinnerSize::Sm))
@@ -245,7 +262,7 @@ impl PlayerView {
                                 let text_primary = theme.text_primary;
                                 let text_on_accent = theme.text_on_accent;
 
-                                div()
+                                dev_track!(div()
                                     .id(SharedString::from(format!(
                                         "speaker-option-{}",
                                         speaker_name
@@ -277,7 +294,7 @@ impl PlayerView {
                                             }
                                         }),
                                     )
-                                    .child(speaker_name)
+                                    .child(speaker_name), format!("spinorama.select.{}", speaker))
                             })),
                     ),
             )

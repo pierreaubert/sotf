@@ -200,8 +200,8 @@ pub fn write_analysis_csv_extended(
         return Err("Cannot write CSV: Analysis result has no frequency points!".to_string());
     }
 
-    let mut file =
-        std::fs::File::create(output_path).map_err(|e| format!("Failed to create CSV file: {e}"))?;
+    let mut file = std::fs::File::create(output_path)
+        .map_err(|e| format!("Failed to create CSV file: {e}"))?;
 
     // The first eight columns mirror math-dsp's write_analysis_csv exactly.
     let mut header =
@@ -230,9 +230,8 @@ pub fn write_analysis_csv_extended(
         let c80 = result.clarity_c80_db.get(i).copied().unwrap_or(0.0);
         let gd = result.excess_group_delay_ms.get(i).copied().unwrap_or(0.0);
 
-        let mut row = format!(
-            "{freq:.6},{spl:.3},{phase:.6},{thd:.6},{rt60:.3},{c50:.3},{c80:.3},{gd:.6}"
-        );
+        let mut row =
+            format!("{freq:.6},{spl:.3},{phase:.6},{thd:.6},{rt60:.3},{c50:.3},{c80:.3},{gd:.6}");
         if let Some(values) = coherence {
             row.push_str(&format!(",{:.4}", values[i]));
         }

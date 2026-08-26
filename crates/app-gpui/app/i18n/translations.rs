@@ -380,6 +380,7 @@ pub struct StreamsTranslations {
     pub no_saved_streams: &'static str,
     pub name: &'static str,
     pub seekable: &'static str,
+    pub live: &'static str,
     pub url_placeholder: &'static str,
     pub save: &'static str,
     pub play: &'static str,
@@ -396,6 +397,7 @@ impl StreamsTranslations {
                 no_saved_streams: "No saved streams",
                 name: "Name",
                 seekable: "Seekable",
+                live: "Live",
                 url_placeholder: "https://example.com/live.m3u8 or spotify:track:id",
                 save: "Save",
                 play: "Play",
@@ -408,6 +410,7 @@ impl StreamsTranslations {
                 no_saved_streams: "Aucun flux enregistré",
                 name: "Nom",
                 seekable: "Navigation possible",
+                live: "En direct",
                 url_placeholder: "https://exemple.fr/direct.m3u8 ou spotify:track:id",
                 save: "Enregistrer",
                 play: "Lire",
@@ -420,6 +423,7 @@ impl StreamsTranslations {
                 no_saved_streams: "Keine gespeicherten Streams",
                 name: "Name",
                 seekable: "Suchlauf möglich",
+                live: "Live",
                 url_placeholder: "https://beispiel.de/live.m3u8 oder spotify:track:id",
                 save: "Speichern",
                 play: "Abspielen",
@@ -432,12 +436,315 @@ impl StreamsTranslations {
                 no_saved_streams: "No hay emisiones guardadas",
                 name: "Nombre",
                 seekable: "Permite desplazamiento",
+                live: "En directo",
                 url_placeholder: "https://ejemplo.es/directo.m3u8 o spotify:track:id",
                 save: "Guardar",
                 play: "Reproducir",
                 queue: "Cola",
                 remove: "Eliminar",
             },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PlaylistTranslations {
+    language: Language,
+    pub title: &'static str,
+    pub import_m3u8: &'static str,
+    pub new_playlist: &'static str,
+    pub undo_delete: &'static str,
+    pub create_playlist: &'static str,
+    pub save_queue_as_playlist: &'static str,
+    pub rename_playlist: &'static str,
+    pub name_placeholder: &'static str,
+    pub save: &'static str,
+    pub cancel: &'static str,
+    pub delete_confirmation: &'static str,
+    pub delete: &'static str,
+    pub empty_state: &'static str,
+    pub open: &'static str,
+    pub rename: &'static str,
+    pub add_selected_library_album: &'static str,
+    pub add_selected_queue_album: &'static str,
+    pub queue: &'static str,
+    pub play: &'static str,
+    pub export_m3u8: &'static str,
+    pub delete_playlist: &'static str,
+    pub empty_playlist: &'static str,
+    pub up: &'static str,
+    pub down: &'static str,
+    pub remove: &'static str,
+}
+
+impl PlaylistTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                language,
+                title: "Playlists",
+                import_m3u8: "Import M3U8",
+                new_playlist: "New playlist",
+                undo_delete: "Undo delete",
+                create_playlist: "Create playlist",
+                save_queue_as_playlist: "Save queue as playlist",
+                rename_playlist: "Rename playlist",
+                name_placeholder: "Playlist name",
+                save: "Save",
+                cancel: "Cancel",
+                delete_confirmation: "Delete playlist? This cannot be undone.",
+                delete: "Delete",
+                empty_state: "No playlists yet. Create one to save a queue collection.",
+                open: "Open",
+                rename: "Rename",
+                add_selected_library_album: "Add selected library album",
+                add_selected_queue_album: "Add selected queue album",
+                queue: "Queue",
+                play: "Play",
+                export_m3u8: "Export M3U8",
+                delete_playlist: "Delete playlist",
+                empty_playlist: "This playlist is empty.",
+                up: "Up",
+                down: "Down",
+                remove: "Remove",
+            },
+            Language::French => Self {
+                language,
+                title: "Listes de lecture",
+                import_m3u8: "Importer M3U8",
+                new_playlist: "Nouvelle liste",
+                undo_delete: "Annuler la suppression",
+                create_playlist: "Créer une liste",
+                save_queue_as_playlist: "Enregistrer la file comme liste",
+                rename_playlist: "Renommer la liste",
+                name_placeholder: "Nom de la liste",
+                save: "Enregistrer",
+                cancel: "Annuler",
+                delete_confirmation: "Supprimer la liste ? Cette action est irréversible.",
+                delete: "Supprimer",
+                empty_state: "Aucune liste pour le moment. Créez-en une pour enregistrer une file d’attente.",
+                open: "Ouvrir",
+                rename: "Renommer",
+                add_selected_library_album: "Ajouter l’album sélectionné de la bibliothèque",
+                add_selected_queue_album: "Ajouter l’album sélectionné de la file",
+                queue: "File d’attente",
+                play: "Lire",
+                export_m3u8: "Exporter en M3U8",
+                delete_playlist: "Supprimer la liste",
+                empty_playlist: "Cette liste est vide.",
+                up: "Monter",
+                down: "Descendre",
+                remove: "Retirer",
+            },
+            Language::German => Self {
+                language,
+                title: "Wiedergabelisten",
+                import_m3u8: "M3U8 importieren",
+                new_playlist: "Neue Wiedergabeliste",
+                undo_delete: "Löschen rückgängig",
+                create_playlist: "Wiedergabeliste erstellen",
+                save_queue_as_playlist: "Warteschlange als Wiedergabeliste speichern",
+                rename_playlist: "Wiedergabeliste umbenennen",
+                name_placeholder: "Name der Wiedergabeliste",
+                save: "Speichern",
+                cancel: "Abbrechen",
+                delete_confirmation: "Wiedergabeliste löschen? Dies kann nicht rückgängig gemacht werden.",
+                delete: "Löschen",
+                empty_state: "Noch keine Wiedergabelisten. Erstellen Sie eine, um eine Warteschlange zu speichern.",
+                open: "Öffnen",
+                rename: "Umbenennen",
+                add_selected_library_album: "Ausgewähltes Bibliotheksalbum hinzufügen",
+                add_selected_queue_album: "Ausgewähltes Warteschlangenalbum hinzufügen",
+                queue: "Warteschlange",
+                play: "Abspielen",
+                export_m3u8: "M3U8 exportieren",
+                delete_playlist: "Wiedergabeliste löschen",
+                empty_playlist: "Diese Wiedergabeliste ist leer.",
+                up: "Nach oben",
+                down: "Nach unten",
+                remove: "Entfernen",
+            },
+            Language::Spanish => Self {
+                language,
+                title: "Listas de reproducción",
+                import_m3u8: "Importar M3U8",
+                new_playlist: "Nueva lista",
+                undo_delete: "Deshacer eliminación",
+                create_playlist: "Crear lista",
+                save_queue_as_playlist: "Guardar cola como lista",
+                rename_playlist: "Renombrar lista",
+                name_placeholder: "Nombre de la lista",
+                save: "Guardar",
+                cancel: "Cancelar",
+                delete_confirmation: "¿Eliminar la lista? Esta acción no se puede deshacer.",
+                delete: "Eliminar",
+                empty_state: "Aún no hay listas. Cree una para guardar una cola.",
+                open: "Abrir",
+                rename: "Renombrar",
+                add_selected_library_album: "Añadir el álbum seleccionado de la biblioteca",
+                add_selected_queue_album: "Añadir el álbum seleccionado de la cola",
+                queue: "Cola",
+                play: "Reproducir",
+                export_m3u8: "Exportar M3U8",
+                delete_playlist: "Eliminar lista",
+                empty_playlist: "Esta lista está vacía.",
+                up: "Subir",
+                down: "Bajar",
+                remove: "Quitar",
+            },
+        }
+    }
+
+    pub fn tracks(self, count: usize) -> String {
+        match self.language {
+            Language::English => format!("{count} track{}", if count == 1 { "" } else { "s" }),
+            Language::French => format!("{count} piste{}", if count == 1 { "" } else { "s" }),
+            Language::German => format!("{count} Titel"),
+            Language::Spanish => format!("{count} pista{}", if count == 1 { "" } else { "s" }),
+        }
+    }
+
+    pub fn name_required(self) -> &'static str {
+        match self.language {
+            Language::English => "A playlist name is required.",
+            Language::French => "Un nom de liste de lecture est requis.",
+            Language::German => "Ein Name für die Wiedergabeliste ist erforderlich.",
+            Language::Spanish => "Se requiere un nombre para la lista.",
+        }
+    }
+
+    pub fn library_database_unavailable(self) -> &'static str {
+        match self.language {
+            Language::English => "The local library database is not available.",
+            Language::French => {
+                "La base de données de la bibliothèque locale n’est pas disponible."
+            }
+            Language::German => "Die lokale Bibliotheksdatenbank ist nicht verfügbar.",
+            Language::Spanish => "La base de datos de la biblioteca local no está disponible.",
+        }
+    }
+
+    pub fn select_library_album_first(self) -> &'static str {
+        match self.language {
+            Language::English => "Select an album in Library first.",
+            Language::French => "Sélectionnez d’abord un album dans la bibliothèque.",
+            Language::German => "Wählen Sie zuerst ein Album in der Bibliothek aus.",
+            Language::Spanish => "Primero seleccione un álbum en la biblioteca.",
+        }
+    }
+
+    pub fn select_queue_album_first(self) -> &'static str {
+        match self.language {
+            Language::English => "Select an album in Queue first.",
+            Language::French => "Sélectionnez d’abord un album dans la file d’attente.",
+            Language::German => "Wählen Sie zuerst ein Album in der Warteschlange aus.",
+            Language::Spanish => "Primero seleccione un álbum en la cola.",
+        }
+    }
+
+    pub fn restored(self) -> &'static str {
+        match self.language {
+            Language::English => "Playlist restored",
+            Language::French => "Liste de lecture restaurée",
+            Language::German => "Wiedergabeliste wiederhergestellt",
+            Language::Spanish => "Lista restaurada",
+        }
+    }
+
+    pub fn imported(self) -> &'static str {
+        match self.language {
+            Language::English => "Playlist imported",
+            Language::French => "Liste de lecture importée",
+            Language::German => "Wiedergabeliste importiert",
+            Language::Spanish => "Lista importada",
+        }
+    }
+
+    pub fn exported(self) -> &'static str {
+        match self.language {
+            Language::English => "Playlist exported",
+            Language::French => "Liste de lecture exportée",
+            Language::German => "Wiedergabeliste exportiert",
+            Language::Spanish => "Lista exportada",
+        }
+    }
+}
+
+impl PlaylistTranslations {
+    pub fn active_playlist_unavailable(self) -> &'static str {
+        match self.language {
+            Language::English => "The selected playlist could not be loaded.",
+            Language::French => "La liste de lecture sélectionnée n’a pas pu être chargée.",
+            Language::German => "Die ausgewählte Wiedergabeliste konnte nicht geladen werden.",
+            Language::Spanish => "No se pudo cargar la lista seleccionada.",
+        }
+    }
+
+    pub fn deleted_with_undo(self) -> &'static str {
+        match self.language {
+            Language::English => "Playlist deleted. Undo is available.",
+            Language::French => "Liste de lecture supprimée. Annulation disponible.",
+            Language::German => "Wiedergabeliste gelöscht. Rückgängig ist verfügbar.",
+            Language::Spanish => "Lista eliminada. Puede deshacer la acción.",
+        }
+    }
+
+    pub fn no_tracks_to_queue(self) -> &'static str {
+        match self.language {
+            Language::English => "This playlist has no tracks to queue.",
+            Language::French => "Cette liste de lecture ne contient aucun titre à mettre en file.",
+            Language::German => "Diese Wiedergabeliste enthält keine Titel für die Warteschlange.",
+            Language::Spanish => "Esta lista no tiene pistas para añadir a la cola.",
+        }
+    }
+
+    pub fn no_playlist_tracks_available(self) -> &'static str {
+        match self.language {
+            Language::English => "None of this playlist’s tracks are available in the library.",
+            Language::French => {
+                "Aucun titre de cette liste de lecture n’est disponible dans la bibliothèque."
+            }
+            Language::German => {
+                "Keiner der Titel dieser Wiedergabeliste ist in der Mediathek verfügbar."
+            }
+            Language::Spanish => "Ninguna pista de esta lista está disponible en la biblioteca.",
+        }
+    }
+
+    pub fn all_tracks_already_queued(self, count: usize) -> String {
+        match self.language {
+            Language::English => format!("All {count} playlist tracks are already in the queue."),
+            Language::French => format!("Les {count} titres de la liste sont déjà dans la file."),
+            Language::German => {
+                format!("Alle {count} Titel der Wiedergabeliste sind bereits in der Warteschlange.")
+            }
+            Language::Spanish => format!("Las {count} pistas de la lista ya están en la cola."),
+        }
+    }
+
+    pub fn queued_with_missing(self, added: usize, missing: usize) -> String {
+        match self.language {
+            Language::English => {
+                format!("Queued {added} tracks; {missing} unavailable tracks were skipped.")
+            }
+            Language::French => format!(
+                "{added} titres ajoutés à la file ; {missing} indisponibles ont été ignorés."
+            ),
+            Language::German => format!(
+                "{added} Titel wurden eingereiht; {missing} nicht verfügbare Titel wurden übersprungen."
+            ),
+            Language::Spanish => format!(
+                "Se añadieron {added} pistas a la cola; se omitieron {missing} no disponibles."
+            ),
+        }
+    }
+
+    pub fn added_to_playlist(self, album: &str) -> String {
+        match self.language {
+            Language::English => format!("Added {album} to playlist"),
+            Language::French => format!("{album} ajouté à la liste de lecture"),
+            Language::German => format!("{album} wurde zur Wiedergabeliste hinzugefügt"),
+            Language::Spanish => format!("{album} se añadió a la lista"),
         }
     }
 }
@@ -2496,6 +2803,9 @@ pub struct PhoneTranslations {
     pub search_shortcuts: &'static str,
     pub magic_radio: &'static str,
     pub back_to_genres: &'static str,
+    pub show_navigation: &'static str,
+    pub hide_navigation: &'static str,
+    pub wizard: &'static str,
 }
 
 impl PhoneTranslations {
@@ -2528,6 +2838,9 @@ impl PhoneTranslations {
                 search_shortcuts: "Search shortcuts",
                 magic_radio: "Magic Radio",
                 back_to_genres: "← Back to Genres",
+                show_navigation: "Show navigation",
+                hide_navigation: "Hide navigation",
+                wizard: "Wizard",
             },
             Language::French => Self {
                 home: "Accueil",
@@ -2556,6 +2869,9 @@ impl PhoneTranslations {
                 search_shortcuts: "Rechercher des raccourcis",
                 magic_radio: "Radio magique",
                 back_to_genres: "← Retour aux genres",
+                show_navigation: "Afficher la navigation",
+                hide_navigation: "Masquer la navigation",
+                wizard: "Assistant",
             },
             Language::German => Self {
                 home: "Startseite",
@@ -2584,6 +2900,9 @@ impl PhoneTranslations {
                 search_shortcuts: "Tastenkürzel durchsuchen",
                 magic_radio: "Magic Radio",
                 back_to_genres: "← Zurück zu den Genres",
+                show_navigation: "Navigation anzeigen",
+                hide_navigation: "Navigation ausblenden",
+                wizard: "Assistent",
             },
             Language::Spanish => Self {
                 home: "Inicio",
@@ -2612,6 +2931,185 @@ impl PhoneTranslations {
                 search_shortcuts: "Buscar atajos",
                 magic_radio: "Radio mágica",
                 back_to_genres: "← Volver a los géneros",
+                show_navigation: "Mostrar navegación",
+                hide_navigation: "Ocultar navegación",
+                wizard: "Asistente",
+            },
+        }
+    }
+}
+
+/// Copy used by the compact phone-only tool wrappers. Kept separate from
+/// `PhoneTranslations` so each translation bundle remains focused and below
+/// the project struct-field budget.
+#[derive(Debug, Clone, Copy)]
+pub struct PhoneToolTranslations {
+    pub spectrum: &'static str,
+    pub held_analyzer_frame: &'static str,
+    pub smoothed_live_analyzer: &'static str,
+    pub live_analyzer: &'static str,
+    pub plugin_graph: &'static str,
+    pub signal_flow: &'static str,
+    pub remote_sources: &'static str,
+    pub on: &'static str,
+    pub off: &'static str,
+    pub hold: &'static str,
+    pub smooth: &'static str,
+    pub graph: &'static str,
+    pub list: &'static str,
+    pub actions: &'static str,
+    pub sources: &'static str,
+    pub more: &'static str,
+    pub plugin_rack: &'static str,
+    pub eq: &'static str,
+    pub bypass: &'static str,
+}
+
+impl PhoneToolTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                spectrum: "Spectrum",
+                held_analyzer_frame: "Held analyzer frame",
+                smoothed_live_analyzer: "Smoothed live analyzer",
+                live_analyzer: "Live analyzer",
+                plugin_graph: "Plugin Graph",
+                signal_flow: "Signal flow",
+                remote_sources: "Remote and internet sources",
+                on: "On",
+                off: "Off",
+                hold: "Hold",
+                smooth: "Smooth",
+                graph: "Graph",
+                list: "List",
+                actions: "Actions",
+                sources: "Sources",
+                more: "More",
+                plugin_rack: "Plugin Rack",
+                eq: "EQ",
+                bypass: "Bypass",
+            },
+            Language::French => Self {
+                spectrum: "Spectre",
+                held_analyzer_frame: "Image d’analyse figée",
+                smoothed_live_analyzer: "Analyseur en direct lissé",
+                live_analyzer: "Analyseur en direct",
+                plugin_graph: "Graphe des modules",
+                signal_flow: "Flux du signal",
+                remote_sources: "Sources distantes et Internet",
+                on: "Activé",
+                off: "Désactivé",
+                hold: "Figer",
+                smooth: "Lisser",
+                graph: "Graphe",
+                list: "Liste",
+                actions: "Actions",
+                sources: "Sources",
+                more: "Plus",
+                plugin_rack: "Rack de modules",
+                eq: "Égaliseur",
+                bypass: "Contourner",
+            },
+            Language::German => Self {
+                spectrum: "Spektrum",
+                held_analyzer_frame: "Gehaltenes Analysatorbild",
+                smoothed_live_analyzer: "Geglätteter Live-Analysator",
+                live_analyzer: "Live-Analysator",
+                plugin_graph: "Plugin-Diagramm",
+                signal_flow: "Signalfluss",
+                remote_sources: "Remote- und Internetquellen",
+                on: "Ein",
+                off: "Aus",
+                hold: "Halten",
+                smooth: "Glätten",
+                graph: "Diagramm",
+                list: "Liste",
+                actions: "Aktionen",
+                sources: "Quellen",
+                more: "Mehr",
+                plugin_rack: "Plugin-Rack",
+                eq: "EQ",
+                bypass: "Umgehen",
+            },
+            Language::Spanish => Self {
+                spectrum: "Espectro",
+                held_analyzer_frame: "Fotograma de analizador retenido",
+                smoothed_live_analyzer: "Analizador en directo suavizado",
+                live_analyzer: "Analizador en directo",
+                plugin_graph: "Gráfico de complementos",
+                signal_flow: "Flujo de señal",
+                remote_sources: "Fuentes remotas y de Internet",
+                on: "Activado",
+                off: "Desactivado",
+                hold: "Retener",
+                smooth: "Suavizar",
+                graph: "Gráfico",
+                list: "Lista",
+                actions: "Acciones",
+                sources: "Fuentes",
+                more: "Más",
+                plugin_rack: "Rack de complementos",
+                eq: "EQ",
+                bypass: "Omitir",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PhoneLibraryTranslations {
+    pub year: &'static str,
+    pub genre: &'static str,
+    pub artist: &'static str,
+    pub album: &'static str,
+    pub tracks: &'static str,
+    pub composer: &'static str,
+    pub stereo: &'static str,
+    pub multichannel: &'static str,
+}
+
+impl PhoneLibraryTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                year: "Year",
+                genre: "Genre",
+                artist: "Artist",
+                album: "Album",
+                tracks: "Tracks",
+                composer: "Composer",
+                stereo: "Stereo",
+                multichannel: "Multichannel",
+            },
+            Language::French => Self {
+                year: "Année",
+                genre: "Genre",
+                artist: "Artiste",
+                album: "Album",
+                tracks: "Pistes",
+                composer: "Compositeur",
+                stereo: "Stéréo",
+                multichannel: "Multicanal",
+            },
+            Language::German => Self {
+                year: "Jahr",
+                genre: "Genre",
+                artist: "Künstler",
+                album: "Album",
+                tracks: "Titel",
+                composer: "Komponist",
+                stereo: "Stereo",
+                multichannel: "Mehrkanal",
+            },
+            Language::Spanish => Self {
+                year: "Año",
+                genre: "Género",
+                artist: "Artista",
+                album: "Álbum",
+                tracks: "Pistas",
+                composer: "Compositor",
+                stereo: "Estéreo",
+                multichannel: "Multicanal",
             },
         }
     }
@@ -4220,6 +4718,8 @@ pub struct FooterTranslations {
     pub pause: &'static str,
     pub seek_forward_30s: &'static str,
     pub next_track: &'static str,
+    pub shuffle: &'static str,
+    pub repeat: &'static str,
 }
 
 impl FooterTranslations {
@@ -4235,6 +4735,8 @@ impl FooterTranslations {
                 pause: "Pause",
                 seek_forward_30s: "Seek forward 30 seconds",
                 next_track: "Next track",
+                shuffle: "Shuffle",
+                repeat: "Repeat",
             },
             Language::French => Self {
                 hal_input_active: "Entrée HAL active",
@@ -4246,6 +4748,8 @@ impl FooterTranslations {
                 pause: "Pause",
                 seek_forward_30s: "Avancer de 30 secondes",
                 next_track: "Piste suivante",
+                shuffle: "Lecture aléatoire",
+                repeat: "Répéter",
             },
             Language::German => Self {
                 hal_input_active: "HAL-Eingang aktiv",
@@ -4257,10 +4761,14 @@ impl FooterTranslations {
                 pause: "Pause",
                 seek_forward_30s: "30 Sekunden vor",
                 next_track: "Nächster Titel",
+                shuffle: "Zufallswiedergabe",
+                repeat: "Wiederholen",
             },
             Language::Spanish => Self {
                 hal_input_active: "Entrada HAL activa",
                 processing_system_audio: "Procesando el audio del sistema",
+                shuffle: "Aleatorio",
+                repeat: "Repetir",
                 hide: "Ocultar",
                 previous_track: "Pista anterior",
                 seek_back_30s: "Retroceder 30 segundos",
@@ -4547,6 +5055,7 @@ impl ABCompareTranslations {
 #[derive(Debug, Clone, Copy)]
 pub struct SpectrumTranslations {
     pub no_signal: &'static str,
+    pub data_unavailable: &'static str,
     pub tilt: &'static str,
     pub reference: &'static str,
     pub analyzer: &'static str,
@@ -4554,6 +5063,7 @@ pub struct SpectrumTranslations {
     pub minimum_frequency: &'static str,
     pub maximum_frequency: &'static str,
     pub smoothing: &'static str,
+    pub hold: &'static str,
     pub none: &'static str,
     pub standard: &'static str,
     pub custom: &'static str,
@@ -4565,6 +5075,7 @@ impl SpectrumTranslations {
         match language {
             Language::English => Self {
                 no_signal: "No signal",
+                data_unavailable: "No spectrum data available. Play audio to see visualization.",
                 tilt: "Tilt",
                 reference: "Reference",
                 analyzer: "Spectrum Analyzer",
@@ -4572,6 +5083,7 @@ impl SpectrumTranslations {
                 minimum_frequency: "Min Hz",
                 maximum_frequency: "Max Hz",
                 smoothing: "Smoothing",
+                hold: "Hold",
                 none: "None",
                 standard: "Standard",
                 custom: "Custom",
@@ -4579,6 +5091,7 @@ impl SpectrumTranslations {
             },
             Language::French => Self {
                 no_signal: "Aucun signal",
+                data_unavailable: "Aucune donn\u{e9}e spectrale disponible. Lancez la lecture pour voir la visualisation.",
                 tilt: "Inclinaison",
                 reference: "Référence",
                 analyzer: "Analyseur de spectre",
@@ -4586,6 +5099,7 @@ impl SpectrumTranslations {
                 minimum_frequency: "Hz min.",
                 maximum_frequency: "Hz max.",
                 smoothing: "Lissage",
+                hold: "Maintenir",
                 none: "Aucune",
                 standard: "Standard",
                 custom: "Personnalisé",
@@ -4593,6 +5107,7 @@ impl SpectrumTranslations {
             },
             Language::German => Self {
                 no_signal: "Kein Signal",
+                data_unavailable: "Keine Spektraldaten verfügbar. Starten Sie die Wiedergabe, um die Visualisierung zu sehen.",
                 tilt: "Neigung",
                 reference: "Referenz",
                 analyzer: "Spektrumanalysator",
@@ -4600,6 +5115,7 @@ impl SpectrumTranslations {
                 minimum_frequency: "Min. Hz",
                 maximum_frequency: "Max. Hz",
                 smoothing: "Glättung",
+                hold: "Halten",
                 none: "Keine",
                 standard: "Standard",
                 custom: "Benutzerdefiniert",
@@ -4607,6 +5123,7 @@ impl SpectrumTranslations {
             },
             Language::Spanish => Self {
                 no_signal: "Sin señal",
+                data_unavailable: "No hay datos de espectro disponibles. Reproduzca audio para ver la visualización.",
                 tilt: "Inclinación",
                 reference: "Referencia",
                 analyzer: "Analizador de espectro",
@@ -4614,6 +5131,7 @@ impl SpectrumTranslations {
                 minimum_frequency: "Hz mín.",
                 maximum_frequency: "Hz máx.",
                 smoothing: "Suavizado",
+                hold: "Mantener",
                 none: "Ninguna",
                 standard: "Estándar",
                 custom: "Personalizado",
@@ -4629,6 +5147,8 @@ pub struct CastTranslations {
     pub no_devices: &'static str,
     pub preferences: &'static str,
     pub refresh: &'static str,
+    pub scan: &'static str,
+    pub scanning: &'static str,
 }
 
 impl CastTranslations {
@@ -4639,24 +5159,32 @@ impl CastTranslations {
                 no_devices: "No Cast devices found",
                 preferences: "Preferences",
                 refresh: "Refresh",
+                scan: "Scan Cast",
+                scanning: "Scanning",
             },
             Language::French => Self {
                 cast: "Diffuser",
                 no_devices: "Aucun appareil de diffusion trouvé",
                 preferences: "Préférences",
                 refresh: "Actualiser",
+                scan: "Rechercher des appareils",
+                scanning: "Recherche en cours",
             },
             Language::German => Self {
                 cast: "Übertragen",
                 no_devices: "Keine Übertragungsgeräte gefunden",
                 preferences: "Einstellungen",
                 refresh: "Aktualisieren",
+                scan: "Geräte suchen",
+                scanning: "Suche läuft",
             },
             Language::Spanish => Self {
                 cast: "Transmitir",
                 no_devices: "No se encontraron dispositivos de transmisión",
                 preferences: "Preferencias",
                 refresh: "Actualizar",
+                scan: "Buscar dispositivos",
+                scanning: "Buscando dispositivos",
             },
         }
     }
@@ -6473,14 +7001,143 @@ impl PluginGraphTranslations {
 
 #[derive(Debug, Clone)]
 pub struct ListeningTestTranslations {
+    language: Language,
     pub eq: EqTrainingTranslations,
     pub setup: ListeningTestSetupTranslations,
     pub trial: ListeningTestTrialTranslations,
     pub status: ListeningTestStatusTranslations,
 }
 
+impl ListeningTestTranslations {
+    pub fn parameter_reset(&self) -> &'static str {
+        match self.language {
+            Language::English => "Reset",
+            Language::French => "Réinitialiser",
+            Language::German => "Zurücksetzen",
+            Language::Spanish => "Restablecer",
+        }
+    }
+
+    pub fn parameter_editor(&self, expert: bool) -> &'static str {
+        match (self.language, expert) {
+            (Language::English, false) => "Edit parameters",
+            (Language::English, true) => "Expert JSON",
+            (Language::French, false) => "Modifier les paramètres",
+            (Language::French, true) => "JSON expert",
+            (Language::German, false) => "Parameter bearbeiten",
+            (Language::German, true) => "Experten-JSON",
+            (Language::Spanish, false) => "Editar parámetros",
+            (Language::Spanish, true) => "JSON experto",
+        }
+    }
+
+    pub fn how_to_listen_title(&self) -> &'static str {
+        match self.language {
+            Language::English => "How to listen",
+            Language::French => "Comment écouter",
+            Language::German => "So hören Sie richtig",
+            Language::Spanish => "Cómo escuchar",
+        }
+    }
+
+    pub fn how_to_listen_reopen(&self) -> &'static str {
+        match self.language {
+            Language::English => "Listening guide",
+            Language::French => "Guide d’écoute",
+            Language::German => "Hörleitfaden",
+            Language::Spanish => "Guía de escucha",
+        }
+    }
+
+    pub fn how_to_listen_acknowledge(&self) -> &'static str {
+        match self.language {
+            Language::English => "I’m ready to listen",
+            Language::French => "Je suis prêt à écouter",
+            Language::German => "Ich bin bereit zuzuhören",
+            Language::Spanish => "Estoy listo para escuchar",
+        }
+    }
+
+    pub fn how_to_listen_items(&self) -> [&'static str; 7] {
+        match self.language {
+            Language::English => [
+                "Verify the intended output device.",
+                "State whether you use headphones or speakers; with speakers, keep one listening position.",
+                "Use a quiet room and disable unrelated normalization, crossfade, and effects.",
+                "Begin at a safe level and acknowledge that the paths must be level-matched.",
+                "Choose a short representative loop and check both paths for artifacts.",
+                "Cue controls are safe to use; blind modes keep path identities hidden.",
+                "Take a break when listening becomes tiring.",
+            ],
+            Language::French => [
+                "Vérifiez le périphérique de sortie choisi.",
+                "Indiquez casque ou enceintes ; avec des enceintes, gardez une seule position d’écoute.",
+                "Utilisez une pièce calme et désactivez normalisation, fondu et effets sans rapport.",
+                "Commencez à un niveau sûr et vérifiez l’égalisation de niveau des chemins.",
+                "Choisissez une boucle courte représentative et vérifiez les deux chemins.",
+                "Les commandes de repère sont sûres ; les modes aveugles cachent les identités.",
+                "Faites une pause dès que l’écoute devient fatigante.",
+            ],
+            Language::German => [
+                "Prüfen Sie das gewünschte Ausgabegerät.",
+                "Legen Sie Kopfhörer oder Lautsprecher fest; bei Lautsprechern bleiben Sie an einer Hörposition.",
+                "Nutzen Sie einen ruhigen Raum und deaktivieren Sie fremde Normalisierung, Überblendung und Effekte.",
+                "Beginnen Sie mit sicherem Pegel und prüfen Sie den Pegelabgleich der Wege.",
+                "Wählen Sie eine kurze repräsentative Schleife und prüfen Sie beide Wege auf Artefakte.",
+                "Hinweissteuerungen sind sicher; Blindmodi verbergen die Identitäten.",
+                "Machen Sie eine Pause, wenn das Hören ermüdend wird.",
+            ],
+            Language::Spanish => [
+                "Verifique el dispositivo de salida previsto.",
+                "Indique auriculares o altavoces; con altavoces mantenga una posición de escucha.",
+                "Use una sala silenciosa y desactive normalización, fundido y efectos ajenos.",
+                "Empiece a un nivel seguro y compruebe que las rutas estén igualadas en nivel.",
+                "Elija un bucle corto representativo y compruebe artefactos en ambas rutas.",
+                "Los controles de señal son seguros; los modos ciegos ocultan las identidades.",
+                "Tome un descanso cuando la escucha resulte fatigante.",
+            ],
+        }
+    }
+
+    pub fn fatigue_interval(&self) -> &'static str {
+        match self.language {
+            Language::English => "Break reminder interval",
+            Language::French => "Intervalle de rappel de pause",
+            Language::German => "Intervall für Pausenerinnerung",
+            Language::Spanish => "Intervalo de recordatorio de pausa",
+        }
+    }
+
+    pub fn fatigue_prompt(&self, completed_trials: usize) -> String {
+        match self.language {
+            Language::English => format!(
+                "You have completed {completed_trials} blind trials. Take a short listening break before continuing."
+            ),
+            Language::French => format!(
+                "Vous avez terminé {completed_trials} essais à l’aveugle. Faites une courte pause avant de continuer."
+            ),
+            Language::German => format!(
+                "Sie haben {completed_trials} Blindversuche abgeschlossen. Machen Sie vor dem Fortsetzen eine kurze Hörpause."
+            ),
+            Language::Spanish => format!(
+                "Ha completado {completed_trials} ensayos ciegos. Tome una breve pausa antes de continuar."
+            ),
+        }
+    }
+
+    pub fn fatigue_continue(&self) -> &'static str {
+        match self.language {
+            Language::English => "Continue when ready",
+            Language::French => "Continuer lorsque vous êtes prêt",
+            Language::German => "Fortsetzen, wenn Sie bereit sind",
+            Language::Spanish => "Continuar cuando esté listo",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct EqTrainingTranslations {
+    language: Language,
     pub mode_eq: &'static str,
     pub mode_blind: &'static str,
     pub suite_subtitle: &'static str,
@@ -6511,6 +7168,140 @@ pub struct EqTrainingTranslations {
     pub original_active: &'static str,
     pub correct: &'static str,
     pub learning: EqTrainingLearningTranslations,
+}
+
+impl EqTrainingTranslations {
+    pub fn chart_series(&self) -> &'static str {
+        match self.language {
+            Language::English => "Training EQ",
+            Language::French => "EQ d’entraînement",
+            Language::German => "Trainings-EQ",
+            Language::Spanish => "EQ de entrenamiento",
+        }
+    }
+
+    pub fn frequency_axis(&self) -> &'static str {
+        match self.language {
+            Language::English => "Frequency (Hz)",
+            Language::French => "Fréquence (Hz)",
+            Language::German => "Frequenz (Hz)",
+            Language::Spanish => "Frecuencia (Hz)",
+        }
+    }
+
+    pub fn gain_axis(&self) -> &'static str {
+        match self.language {
+            Language::English => "Gain (dB)",
+            Language::French => "Gain (dB)",
+            Language::German => "Verstärkung (dB)",
+            Language::Spanish => "Ganancia (dB)",
+        }
+    }
+
+    pub fn adaptive_status(&self, enabled: bool) -> &'static str {
+        match (self.language, enabled) {
+            (Language::English, true) => "Adaptive difficulty: on",
+            (Language::English, false) => "Adaptive difficulty: off",
+            (Language::French, true) => "Difficulté adaptative : activée",
+            (Language::French, false) => "Difficulté adaptative : désactivée",
+            (Language::German, true) => "Adaptive Schwierigkeit: an",
+            (Language::German, false) => "Adaptive Schwierigkeit: aus",
+            (Language::Spanish, true) => "Dificultad adaptativa: activada",
+            (Language::Spanish, false) => "Dificultad adaptativa: desactivada",
+        }
+    }
+
+    pub fn clip_loop_status(&self, enabled: bool) -> &'static str {
+        match (self.language, enabled) {
+            (Language::English, true) => "Clip loop enabled",
+            (Language::English, false) => "Clip loop disabled",
+            (Language::French, true) => "Boucle de l’extrait activée",
+            (Language::French, false) => "Boucle de l’extrait désactivée",
+            (Language::German, true) => "Clip-Schleife aktiviert",
+            (Language::German, false) => "Clip-Schleife deaktiviert",
+            (Language::Spanish, true) => "Bucle del clip activado",
+            (Language::Spanish, false) => "Bucle del clip desactivado",
+        }
+    }
+
+    pub fn clip_loop_range(&self, start: f64, end: f64) -> String {
+        match self.language {
+            Language::English => format!("Loop {start:.1}–{end:.1} s"),
+            Language::French => format!("Boucle {start:.1}–{end:.1} s"),
+            Language::German => format!("Schleife {start:.1}–{end:.1} s"),
+            Language::Spanish => format!("Bucle {start:.1}–{end:.1} s"),
+        }
+    }
+
+    pub fn accuracy(&self, value: f64) -> String {
+        match self.language {
+            Language::English => format!("Accuracy {value:.0}%"),
+            Language::French => format!("Précision {value:.0} %"),
+            Language::German => format!("Genauigkeit {value:.0} %"),
+            Language::Spanish => format!("Precisión {value:.0} %"),
+        }
+    }
+
+    pub fn trial_progress(&self, current: usize, total: usize, accuracy: f64) -> String {
+        match self.language {
+            Language::English => format!("Trial {current}/{total} · Accuracy {accuracy:.0}%"),
+            Language::French => format!("Essai {current}/{total} · Précision {accuracy:.0} %"),
+            Language::German => format!("Versuch {current}/{total} · Genauigkeit {accuracy:.0} %"),
+            Language::Spanish => format!("Ensayo {current}/{total} · Precisión {accuracy:.0} %"),
+        }
+    }
+    pub fn streak(&self, count: usize) -> String {
+        match self.language {
+            Language::English => format!("70% streak {count}"),
+            Language::French => format!("Série à 70 % : {count}"),
+            Language::German => format!("70-%-Serie: {count}"),
+            Language::Spanish => format!("Racha del 70 %: {count}"),
+        }
+    }
+
+    pub fn exercise_display(
+        &self,
+        exercise: sotf_audio_player::ear_training::EqTrainingExercise,
+    ) -> &'static str {
+        use sotf_audio_player::ear_training::EqTrainingExercise;
+
+        match (self.language, exercise) {
+            (Language::English, EqTrainingExercise::BandIdentification) => {
+                "Exercise: band identification"
+            }
+            (Language::English, EqTrainingExercise::BoostCutIdentification) => {
+                "Exercise: boost or cut"
+            }
+            (Language::English, EqTrainingExercise::GainIdentification) => {
+                "Exercise: gain identification"
+            }
+            (Language::French, EqTrainingExercise::BandIdentification) => {
+                "Exercice : identification de bande"
+            }
+            (Language::French, EqTrainingExercise::BoostCutIdentification) => {
+                "Exercice : gain ou coupe"
+            }
+            (Language::French, EqTrainingExercise::GainIdentification) => {
+                "Exercice : identification du gain"
+            }
+            (Language::German, EqTrainingExercise::BandIdentification) => "Übung: Band erkennen",
+            (Language::German, EqTrainingExercise::BoostCutIdentification) => {
+                "Übung: Anhebung oder Absenkung"
+            }
+            (Language::German, EqTrainingExercise::GainIdentification) => {
+                "Übung: Verstärkung erkennen"
+            }
+            (Language::Spanish, EqTrainingExercise::BandIdentification) => {
+                "Ejercicio: identificar la banda"
+            }
+            (Language::Spanish, EqTrainingExercise::BoostCutIdentification) => {
+                "Ejercicio: realce o corte"
+            }
+            (Language::Spanish, EqTrainingExercise::GainIdentification) => {
+                "Ejercicio: identificar la ganancia"
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -6548,6 +7339,7 @@ pub struct ListeningTestSetupTranslations {
     pub remove: &'static str,
     pub graph_hint: &'static str,
     pub done: &'static str,
+    pub cancel: &'static str,
     pub level_title: &'static str,
     pub level_description: &'static str,
     pub level: ListeningTestLevelTranslations,
@@ -7154,6 +7946,8 @@ pub struct Translations {
     pub menu_keyboard_shortcuts: &'static str,
 
     // Screen names
+    pub screen_home: &'static str,
+    pub screen_player: &'static str,
     pub screen_library: &'static str,
     pub screen_queue: &'static str,
     pub screen_studio: &'static str,
@@ -7166,6 +7960,9 @@ pub struct Translations {
     pub screen_headphone_eq: &'static str,
     pub screen_spinorama: &'static str,
     pub screen_settings: &'static str,
+    pub screen_now_playing: &'static str,
+    pub screen_playlists: &'static str,
+    pub screen_streams: &'static str,
     pub listening_test: ListeningTestTranslations,
     pub autoeq_form: AutoEqFormTranslations,
 
@@ -7195,6 +7992,12 @@ pub struct Translations {
     pub queue_channels: &'static str,
     pub queue_disc: &'static str,
     pub queue_albums: &'static str,
+    pub queue_clear: &'static str,
+    pub queue_undo_clear: &'static str,
+    pub queue_undo_remove: &'static str,
+    pub queue_save_as_playlist: &'static str,
+    pub queue_move_up: &'static str,
+    pub queue_move_down: &'static str,
 
     // Level meters
 
@@ -7256,11 +8059,14 @@ pub struct Translations {
 
     // Settings tabs
     pub settings_tab_library: &'static str,
+    pub settings_tab_theme: &'static str,
     pub settings_tab_language: &'static str,
     pub settings_tab_keybindings: &'static str,
     pub settings_tab_audio_device: &'static str,
+    pub settings_tab_misc: &'static str,
     pub settings_tab_federation: &'static str,
     pub settings_tab_servers: &'static str,
+    pub settings_tab_metadata: &'static str,
     pub settings_tab_release_channel: &'static str,
     pub settings_release_channel_title: &'static str,
     pub settings_release_channel_description: &'static str,
@@ -7547,20 +8353,27 @@ impl Translations {
             menu_about: "About",
             menu_keyboard_shortcuts: "Keyboard Shortcuts",
 
+            screen_home: "Home",
+            screen_player: "Player",
             screen_library: "Library",
             screen_queue: "Queue",
             screen_studio: "Studio",
             screen_studio_rack: "Studio Rack",
-            screen_studio_full: "Studio Full",
-            screen_tools: "Tools",
+            screen_studio_full: "Plugin Graph",
+            screen_tools: "Studio & Measurement",
             screen_recording: "Recording",
             screen_room_eq: "Room EQ",
             screen_listening_test: "Ear Training",
             screen_headphone_eq: "Headphone EQ",
             screen_spinorama: "Spinorama EQ",
             screen_settings: "Settings",
+            screen_now_playing: "Now Playing",
+            screen_playlists: "Playlists",
+            screen_streams: "Streams",
             listening_test: ListeningTestTranslations {
+                language: Language::English,
                 eq: EqTrainingTranslations {
+                    language: Language::English,
                     mode_eq: "EQ Band Trainer",
                     mode_blind: "Blind A/B + ABX",
                     suite_subtitle: "Critical-listening practice",
@@ -7618,11 +8431,12 @@ impl Translations {
                     simple_rack: "Simple linear rack",
                     add_processor: "Add processor",
                     edit_graph: "Edit as routed graph",
-                    edit_json: "Edit JSON",
+                    edit_json: "Expert JSON…",
                     editing: "Editing",
                     remove: "Remove",
                     graph_hint: "Double-click a node to edit its parameter JSON.",
                     done: "Done",
+                    cancel: "Cancel",
                     level_title: "Repeatable level match",
                     level_description: "Renders both paths offline from the same synchronized media segment using the selected programme-level metric.",
                     level: ListeningTestLevelTranslations {
@@ -7726,6 +8540,12 @@ impl Translations {
             queue_channels: "Channels:",
             queue_disc: "Disc",
             queue_albums: "albums",
+            queue_clear: "Clear queue",
+            queue_undo_clear: "Undo clear",
+            queue_undo_remove: "Undo remove",
+            queue_save_as_playlist: "Save as playlist",
+            queue_move_up: "Move up",
+            queue_move_down: "Move down",
 
             devices_title: "Audio Output Devices",
             directories_add: "Add Directory",
@@ -7770,11 +8590,14 @@ impl Translations {
             settings_default_badge: "Default",
 
             settings_tab_library: "Local Library",
+            settings_tab_theme: "Appearance",
             settings_tab_language: "Language",
             settings_tab_keybindings: "Keybindings",
             settings_tab_audio_device: "Audio Device",
+            settings_tab_misc: "Resources",
             settings_tab_federation: "Streaming",
             settings_tab_servers: "Server",
+            settings_tab_metadata: "Metadata",
             settings_tab_release_channel: "Features",
             settings_release_channel_title: "Feature Release Channel",
             settings_release_channel_description: "Control which features are visible. Stable shows only production-ready features. Beta and Alpha unlock experimental features.",
@@ -8035,20 +8858,27 @@ impl Translations {
             menu_about: "À propos",
             menu_keyboard_shortcuts: "Raccourcis clavier",
 
+            screen_home: "Accueil",
+            screen_player: "Lecteur",
             screen_library: "Bibliothèque",
             screen_queue: "File d'attente",
             screen_studio: "Studio",
             screen_studio_rack: "Studio Rack",
-            screen_studio_full: "Studio Complet",
-            screen_tools: "Outils",
+            screen_studio_full: "Graphe des modules",
+            screen_tools: "Studio et mesure",
             screen_recording: "Enregistrement",
             screen_room_eq: "EQ Pièce",
             screen_listening_test: "Entraînement auditif",
             screen_headphone_eq: "EQ Casque",
             screen_spinorama: "Spinorama EQ",
             screen_settings: "Paramètres",
+            screen_now_playing: "Lecture en cours",
+            screen_playlists: "Listes de lecture",
+            screen_streams: "Flux",
             listening_test: ListeningTestTranslations {
+                language: Language::French,
                 eq: EqTrainingTranslations {
+                    language: Language::French,
                     mode_eq: "Entraînement aux bandes EQ",
                     mode_blind: "A/B aveugle + ABX",
                     suite_subtitle: "Pratique de l’écoute critique",
@@ -8106,11 +8936,12 @@ impl Translations {
                     simple_rack: "Rack linéaire simple",
                     add_processor: "Ajouter un processeur",
                     edit_graph: "Modifier comme graphe routé",
-                    edit_json: "Modifier le JSON",
+                    edit_json: "JSON expert…",
                     editing: "Modification",
                     remove: "Supprimer",
                     graph_hint: "Double-cliquez sur un nœud pour modifier ses paramètres JSON.",
                     done: "Terminé",
+                    cancel: "Annuler",
                     level_title: "Égalisation de niveau reproductible",
                     level_description: "Rend les deux chemins hors ligne à partir du même segment multimédia synchronisé avec la métrique de niveau choisie.",
                     level: ListeningTestLevelTranslations {
@@ -8214,6 +9045,12 @@ impl Translations {
             queue_channels: "Canaux :",
             queue_disc: "Disque",
             queue_albums: "albums",
+            queue_clear: "Vider la file",
+            queue_undo_clear: "Annuler l’effacement",
+            queue_undo_remove: "Annuler le retrait",
+            queue_save_as_playlist: "Enregistrer comme liste",
+            queue_move_up: "Déplacer vers le haut",
+            queue_move_down: "Déplacer vers le bas",
 
             devices_title: "Périphériques de sortie audio",
             directories_add: "Ajouter un répertoire",
@@ -8258,11 +9095,14 @@ impl Translations {
             settings_default_badge: "Par défaut",
 
             settings_tab_library: "Bibliothèque locale",
+            settings_tab_theme: "Apparence",
             settings_tab_language: "Langue",
             settings_tab_keybindings: "Raccourcis",
             settings_tab_audio_device: "Périphérique audio",
+            settings_tab_misc: "Ressources",
             settings_tab_federation: "Streaming",
             settings_tab_servers: "Server",
+            settings_tab_metadata: "Métadonnées",
             settings_tab_release_channel: "Fonctions",
             settings_release_channel_title: "Canal de fonctionnalités",
             settings_release_channel_description: "Contrôlez les fonctionnalités visibles. Stable affiche uniquement les fonctions prêtes pour la production. Bêta et Alpha débloquent les fonctions expérimentales.",
@@ -8523,20 +9363,27 @@ impl Translations {
             menu_about: "Über",
             menu_keyboard_shortcuts: "Tastenkürzel",
 
+            screen_home: "Startseite",
+            screen_player: "Wiedergabe",
             screen_library: "Bibliothek",
             screen_queue: "Warteschlange",
             screen_studio: "Studio",
             screen_studio_rack: "Studio Rack",
-            screen_studio_full: "Studio Voll",
-            screen_tools: "Werkzeuge",
+            screen_studio_full: "Plugin-Diagramm",
+            screen_tools: "Studio und Messung",
             screen_recording: "Aufnahme",
             screen_room_eq: "Raum-EQ",
             screen_listening_test: "Gehörtraining",
             screen_headphone_eq: "Kopfhörer-EQ",
             screen_spinorama: "Spinorama EQ",
             screen_settings: "Einstellungen",
+            screen_now_playing: "Wiedergabe läuft",
+            screen_playlists: "Wiedergabelisten",
+            screen_streams: "Streams",
             listening_test: ListeningTestTranslations {
+                language: Language::German,
                 eq: EqTrainingTranslations {
+                    language: Language::German,
                     mode_eq: "EQ-Bandtraining",
                     mode_blind: "Blindes A/B + ABX",
                     suite_subtitle: "Training für kritisches Hören",
@@ -8594,11 +9441,12 @@ impl Translations {
                     simple_rack: "Einfaches lineares Rack",
                     add_processor: "Prozessor hinzufügen",
                     edit_graph: "Als Routing-Graph bearbeiten",
-                    edit_json: "JSON bearbeiten",
+                    edit_json: "Experten-JSON…",
                     editing: "Bearbeitung",
                     remove: "Entfernen",
                     graph_hint: "Doppelklicken Sie auf einen Knoten, um sein Parameter-JSON zu bearbeiten.",
                     done: "Fertig",
+                    cancel: "Abbrechen",
                     level_title: "Reproduzierbarer Pegelabgleich",
                     level_description: "Rendert beide Pfade offline aus demselben synchronisierten Mediensegment mit der gewählten Programmpegelmetrik.",
                     level: ListeningTestLevelTranslations {
@@ -8702,6 +9550,12 @@ impl Translations {
             queue_channels: "Kanäle:",
             queue_disc: "Disc",
             queue_albums: "Alben",
+            queue_clear: "Warteschlange leeren",
+            queue_undo_clear: "Leeren rückgängig",
+            queue_undo_remove: "Entfernen rückgängig",
+            queue_save_as_playlist: "Als Wiedergabeliste speichern",
+            queue_move_up: "Nach oben verschieben",
+            queue_move_down: "Nach unten verschieben",
 
             devices_title: "Audioausgabegeräte",
             directories_add: "Verzeichnis hinzufügen",
@@ -8746,11 +9600,14 @@ impl Translations {
             settings_default_badge: "Standard",
 
             settings_tab_library: "Lokale Bibliothek",
+            settings_tab_theme: "Erscheinungsbild",
             settings_tab_language: "Sprache",
             settings_tab_keybindings: "Tastenkürzel",
             settings_tab_audio_device: "Audiogerät",
+            settings_tab_misc: "Ressourcen",
             settings_tab_federation: "Streaming",
             settings_tab_servers: "Server",
+            settings_tab_metadata: "Metadaten",
             settings_tab_release_channel: "Funktionen",
             settings_release_channel_title: "Feature-Kanal",
             settings_release_channel_description: "Steuern Sie, welche Funktionen sichtbar sind. Stabil zeigt nur produktionsreife Funktionen. Beta und Alpha schalten experimentelle Funktionen frei.",
@@ -9011,20 +9868,27 @@ impl Translations {
             menu_about: "Acerca de",
             menu_keyboard_shortcuts: "Atajos de teclado",
 
+            screen_home: "Inicio",
+            screen_player: "Reproductor",
             screen_library: "Biblioteca",
             screen_queue: "Cola",
             screen_studio: "Estudio",
             screen_studio_rack: "Estudio Rack",
-            screen_studio_full: "Estudio Completo",
-            screen_tools: "Herramientas",
+            screen_studio_full: "Gráfico de complementos",
+            screen_tools: "Estudio y medición",
             screen_recording: "Grabación",
             screen_room_eq: "EQ de sala",
             screen_listening_test: "Entrenamiento auditivo",
             screen_headphone_eq: "EQ de auriculares",
             screen_spinorama: "Spinorama EQ",
             screen_settings: "Ajustes",
+            screen_now_playing: "Reproduciendo",
+            screen_playlists: "Listas de reproducción",
+            screen_streams: "Emisiones",
             listening_test: ListeningTestTranslations {
+                language: Language::Spanish,
                 eq: EqTrainingTranslations {
+                    language: Language::Spanish,
                     mode_eq: "Entrenador de bandas EQ",
                     mode_blind: "A/B a ciegas + ABX",
                     suite_subtitle: "Práctica de escucha crítica",
@@ -9082,11 +9946,12 @@ impl Translations {
                     simple_rack: "Rack lineal sencillo",
                     add_processor: "Añadir procesador",
                     edit_graph: "Editar como grafo enrutado",
-                    edit_json: "Editar JSON",
+                    edit_json: "JSON experto…",
                     editing: "Editando",
                     remove: "Eliminar",
                     graph_hint: "Haga doble clic en un nodo para editar sus parámetros JSON.",
                     done: "Listo",
+                    cancel: "Cancelar",
                     level_title: "Igualación de nivel reproducible",
                     level_description: "Renderiza ambas rutas sin conexión desde el mismo segmento multimedia sincronizado con la métrica de nivel elegida.",
                     level: ListeningTestLevelTranslations {
@@ -9190,6 +10055,12 @@ impl Translations {
             queue_channels: "Canales:",
             queue_disc: "Disco",
             queue_albums: "álbumes",
+            queue_clear: "Vaciar cola",
+            queue_undo_clear: "Deshacer vaciado",
+            queue_undo_remove: "Deshacer eliminación",
+            queue_save_as_playlist: "Guardar como lista",
+            queue_move_up: "Mover arriba",
+            queue_move_down: "Mover abajo",
 
             devices_title: "Dispositivos de salida de audio",
             directories_add: "Añadir directorio",
@@ -9234,11 +10105,14 @@ impl Translations {
             settings_default_badge: "Predeterminado",
 
             settings_tab_library: "Biblioteca local",
+            settings_tab_theme: "Apariencia",
             settings_tab_language: "Idioma",
             settings_tab_keybindings: "Atajos de teclado",
             settings_tab_audio_device: "Dispositivo de audio",
+            settings_tab_misc: "Recursos",
             settings_tab_federation: "Streaming",
             settings_tab_servers: "Server",
+            settings_tab_metadata: "Metadatos",
             settings_tab_release_channel: "Funciones",
             settings_release_channel_title: "Canal de funciones",
             settings_release_channel_description: "Controle qué funciones son visibles. Estable muestra solo funciones listas para producción. Beta y Alpha desbloquean funciones experimentales.",

@@ -908,6 +908,8 @@ impl PlayerView {
                         rec.recording_directory = Some(full_path);
                         if let Some(message) = status_message {
                             rec.status_message = message;
+                            rec.status_severity =
+                                crate::app::types::recording::RecordingStatusSeverity::Warning;
                         }
                     });
                 }
@@ -1427,6 +1429,11 @@ impl PlayerView {
                                         "speaker_{}_ch_0",
                                         speaker_idx
                                     )))
+                                    .label(format!(
+                                        "{} {}",
+                                        translations.recording_channel_label,
+                                        speaker_idx + 1
+                                    ))
                                     .value((interface_ch + 1) as f64)
                                     .min(1.0)
                                     .max(128.0)
@@ -1562,6 +1569,10 @@ impl PlayerView {
         div().w(px(80.0)).child(
             // intentional: speaker-mode dropdown width
             Select::new(SharedString::from(format!("speaker_mode_{}", speaker_idx)))
+                .label(format!(
+                    "{} / {}",
+                    recording_text.single, recording_text.multi
+                ))
                 .options(options)
                 .selected(selected)
                 .is_open(is_open)
@@ -1674,6 +1685,7 @@ impl PlayerView {
                                     "speaker_{}_ch_{}",
                                     speaker_idx, ch_idx
                                 )))
+                                .label(format!("{} {}", recording_text.multi, ch_idx + 1))
                                 .value((interface_ch + 1) as f64)
                                 .min(1.0)
                                 .max(128.0)
