@@ -116,7 +116,7 @@ librespot-metadata = { version = "0.6" }
 librespot-oauth = { version = "0.6" }
 librespot-protocol = { version = "0.6" }
 oauth2 = { version = "4.4" }
-rcgen = "0.13"
+rcgen = "0.14"
 rustls = "0.23"
 socket2 = "0.6"
 tokio-rustls = "0.26"
