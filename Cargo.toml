@@ -114,7 +114,7 @@ librespot-core = { version = "0.6" }
 librespot-playback = { version = "0.6" }
 librespot-metadata = { version = "0.6" }
 librespot-oauth = { version = "0.6" }
-librespot-protocol = { version = "0.6" }
+librespot-protocol = { version = "0.8" }
 oauth2 = { version = "4.4" }
 rcgen = "0.13"
 rustls = "0.23"
