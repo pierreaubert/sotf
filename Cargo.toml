@@ -332,7 +332,7 @@ arc-swap = "1"
 # Utilities
 unicode-segmentation = "1"
 sha2 = "0.10"
-toml = "0.8"
+toml = "1.1"
 approx = "0.5"
 unicode-normalization = "0.1"
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
