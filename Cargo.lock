@@ -5497,7 +5497,7 @@ dependencies = [
  "hyper-rustls 0.27.9",
  "hyper-util",
  "librespot-oauth",
- "librespot-protocol",
+ "librespot-protocol 0.6.0",
  "log",
  "nonzero_ext",
  "num-bigint",
@@ -5538,7 +5538,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "librespot-core",
- "librespot-protocol",
+ "librespot-protocol 0.6.0",
  "log",
  "protobuf",
  "serde",
@@ -5585,6 +5585,16 @@ name = "librespot-protocol"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80802f52b5a1b3a2157454e6aca483a627fbf7b942e0a5fea037ebf3ed8b0546"
+dependencies = [
+ "protobuf",
+ "protobuf-codegen",
+]
+
+[[package]]
+name = "librespot-protocol"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e01f0b2d39f83fa162eb91d4a16313bcf99e77daf258abe8f7b7bcb1160b084"
 dependencies = [
  "protobuf",
  "protobuf-codegen",
@@ -11236,7 +11246,7 @@ dependencies = [
  "librespot-core",
  "librespot-oauth",
  "librespot-playback",
- "librespot-protocol",
+ "librespot-protocol 0.8.0",
  "log",
  "oauth2",
  "reqwest 0.11.27",
