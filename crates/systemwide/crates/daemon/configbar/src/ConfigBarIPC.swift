@@ -5,6 +5,23 @@ public enum ConfigBarIPCError: Error, Equatable {
     case lineTooLong
 }
 
+public enum ConfigBarConfigurationError: LocalizedError, Equatable {
+    case tooLarge(maxBytes: Int)
+    case encodedCommandTooLarge(maxBytes: Int)
+    case topLevelMustBeObject
+
+    public var errorDescription: String? {
+        switch self {
+        case .tooLarge(let maxBytes):
+            return "Configuration exceeds the \(maxBytes / 1024) KiB size limit"
+        case .encodedCommandTooLarge(let maxBytes):
+            return "Configuration exceeds the daemon's \(maxBytes / 1024) KiB command limit"
+        case .topLevelMustBeObject:
+            return "Configuration must contain a JSON object"
+        }
+    }
+}
+
 /// Small, platform-level helpers used by the configbar's line-oriented daemon
 /// protocol. Keeping framing and write-all behavior separate makes the socket
 /// contract testable without constructing the SwiftUI application.
@@ -46,7 +63,51 @@ public enum ConfigBarIPC {
     public static let structuredMaxResponseBytes = 256 * 1024
     public static let pluginCatalogMaxResponseBytes = 1024 * 1024
     public static let defaultResponseTimeoutMicros: useconds_t = 1_000_000
-    public static let pipelineMutationResponseTimeoutMicros: useconds_t = 5_000_000
+    // A failed CoreAudio start can consume its 10-second startup bound and
+    // pipeline recovery can make a second bounded attempt. Keep this larger
+    // than that complete transaction while the UI remains asynchronous.
+    public static let pipelineMutationResponseTimeoutMicros: useconds_t = 30_000_000
+    public static let maximumConfigurationFileBytes = 1024 * 1024
+    public static let maximumDaemonCommandBytes = 64 * 1024
+
+    /// Read at most one byte beyond the configured limit, then parse a plugin
+    /// artifact without ever materialising an unbounded file in the UI process.
+    public static func loadConfigurationArtifact(
+        from url: URL,
+        maxBytes: Int = maximumConfigurationFileBytes
+    ) throws -> [String: Any] {
+        precondition(maxBytes > 0 && maxBytes < Int.max)
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+
+        var data = Data()
+        while data.count <= maxBytes {
+            let remaining = maxBytes + 1 - data.count
+            guard let chunk = try handle.read(upToCount: remaining), !chunk.isEmpty else {
+                break
+            }
+            data.append(chunk)
+        }
+        guard data.count <= maxBytes else {
+            throw ConfigBarConfigurationError.tooLarge(maxBytes: maxBytes)
+        }
+        let json = try JSONSerialization.jsonObject(with: data)
+        guard let artifact = json as? [String: Any] else {
+            throw ConfigBarConfigurationError.topLevelMustBeObject
+        }
+        let command: [String: Any] = [
+            "command": "load_plugin_artifact",
+            "artifact": artifact
+        ]
+        let encodedCommand = try JSONSerialization.data(withJSONObject: command)
+        // The daemon's line bound includes the newline appended by the client.
+        guard encodedCommand.count < maximumDaemonCommandBytes else {
+            throw ConfigBarConfigurationError.encodedCommandTooLarge(
+                maxBytes: maximumDaemonCommandBytes
+            )
+        }
+        return artifact
+    }
 
     /// Bound response allocation according to the requested endpoint instead
     /// of granting every command the plugin catalog's 1 MiB budget.
@@ -82,6 +143,13 @@ public enum ConfigBarIPC {
         default:
             return defaultResponseTimeoutMicros
         }
+    }
+
+    /// Any protocol-shaped reply proves the process is reachable. In
+    /// particular, an older daemon may reject the newer `ping` command but
+    /// must be adopted rather than repeatedly killed during an upgrade.
+    public static func responseShowsDaemonReachable(_ object: [String: Any]) -> Bool {
+        object["success"] as? Bool != nil
     }
 
     public typealias SendFunction = (
@@ -125,18 +193,17 @@ public enum ConfigBarIPC {
         }
     }
 
-    /// Probe a live daemon using the same line-oriented status command as the
-    /// Configbar startup path. This is deliberately small and synchronous so
-    /// callers can place it on a background queue; it also makes adoption
-    /// behavior testable with a real Unix-domain listener.
+    /// Probe the daemon without acquiring runtime-state locks. Full status is
+    /// intentionally not used here: CoreAudio startup and pipeline replacement
+    /// can hold those locks for several seconds while the daemon is healthy.
     public static func probeDaemon(
         socketPath: String,
-        timeoutMilliseconds: Int32 = 250
+        timeoutMilliseconds: Int32 = 1_000
     ) -> Bool {
         guard let socketFD = connectUnixSocket(socketPath) else { return false }
         defer { Darwin.close(socketFD) }
 
-        let command = Data("{\"command\":\"status\"}\n".utf8)
+        let command = Data("{\"command\":\"ping\"}\n".utf8)
         guard writeAll(fd: socketFD, data: command) else { return false }
 
         var framer = ConfigBarLineFramer(maxLineBytes: 64 * 1024)
@@ -173,7 +240,7 @@ public enum ConfigBarIPC {
             else {
                 continue
             }
-            return object["success"] as? Bool == true
+            return responseShowsDaemonReachable(object)
         }
 
         return false

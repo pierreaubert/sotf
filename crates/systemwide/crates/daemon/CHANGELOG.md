@@ -52,10 +52,15 @@
   shape while retaining legacy aliases, and add a wire-shape regression test.
 - Add a checked-in shared-memory ABI manifest consumed by Rust and packaged for
   Swift HAL validation, plus plain/encrypted reconfiguration stress coverage.
+- Add a lock-independent `ping` command for Configbar startup and watchdog
+  probes, so a healthy daemon is not killed while full status waits behind
+  CoreAudio or pipeline locks.
 - Keep status and metering IPC replies on a one-second deadline while allowing
-  five seconds for synchronous device and pipeline mutations, so slower
-  CoreAudio output startup is not reported as a failed selection after the
-  daemon applied it.
+  thirty seconds for the bounded start-and-recovery pipeline transaction.
+  Config files are size-bounded and parsed off the AppKit main thread.
+- Publish `engine_ready=true` only after the physical output stream produces a
+  hardware callback; startup errors and the twelve-second readiness deadline
+  enter the existing transactional recovery path.
 - Bound Configbar IPC responses by command class: 64 KiB normally, 256 KiB for
   snapshots/plugin state/dumps, and 1 MiB only for the plugin catalog.
 

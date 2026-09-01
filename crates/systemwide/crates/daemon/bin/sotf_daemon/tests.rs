@@ -1920,6 +1920,7 @@ mod command_roundtrip_tests {
 
     #[test]
     fn parse_all_command_variants() {
+        assert!(matches!(parse(r#"{"command":"ping"}"#), Command::Ping));
         assert!(matches!(parse(r#"{"command":"status"}"#), Command::Status));
         assert!(matches!(
             parse(r#"{"command":"get_snapshot"}"#),
@@ -2062,8 +2063,71 @@ mod command_roundtrip_tests {
     }
 
     #[test]
+    fn playback_readiness_requires_callback_and_surfaces_startup_error() {
+        let mut state = AudioEngineManager::new().get_engine_state();
+        assert_eq!(AudioDaemon::playback_startup_observation(&state), Ok(false));
+
+        state.playback_callback_count = 1;
+        assert_eq!(AudioDaemon::playback_startup_observation(&state), Ok(true));
+
+        state.last_error = Some("device failed".to_string());
+        assert_eq!(
+            AudioDaemon::playback_startup_observation(&state),
+            Err("Playback startup failed: device failed".to_string())
+        );
+    }
+
+    #[test]
+    fn playback_callback_policy_only_bypasses_explicit_test_drivers() {
+        let macos_hal = driver_common::DriverStatus::new(
+            true,
+            true,
+            true,
+            48_000,
+            2,
+            512,
+            "macOS CoreAudio HAL",
+            true,
+        );
+        assert!(AudioDaemon::requires_playback_callback(&macos_hal));
+
+        let lab = driver_common::DriverStatus::new(
+            true,
+            true,
+            true,
+            48_000,
+            2,
+            512,
+            "Systemwide Lab Driver",
+            true,
+        );
+        assert!(!AudioDaemon::requires_playback_callback(&lab));
+
+        let fake =
+            driver_common::DriverStatus::new(true, true, true, 48_000, 2, 512, "Fake HAL", true);
+        assert!(!AudioDaemon::requires_playback_callback(&fake));
+
+        let null = driver_common::DriverStatus::new(false, false, false, 0, 0, 0, "None", false);
+        assert!(!AudioDaemon::requires_playback_callback(&null));
+
+        let other_production_driver =
+            driver_common::DriverStatus::new(true, true, true, 48_000, 2, 512, "PipeWire", true);
+        assert!(AudioDaemon::requires_playback_callback(
+            &other_production_driver
+        ));
+    }
+
+    #[test]
+    fn ping_returns_without_runtime_snapshot() {
+        let response = run_command(Command::Ping);
+        assert!(response.success);
+        assert!(response.data.is_none());
+    }
+
+    #[test]
     fn command_name_matches_parsed_variant() {
         let cases: Vec<(&str, &str)> = vec![
+            (r#"{"command":"ping"}"#, "ping"),
             (r#"{"command":"status"}"#, "status"),
             (r#"{"command":"get_snapshot"}"#, "get_snapshot"),
             (r#"{"command":"snapshot"}"#, "get_snapshot"),
@@ -2330,23 +2394,25 @@ mod command_roundtrip_tests {
     #[test]
     #[serial]
     fn handle_set_input_channels_succeeds() {
-        let resp = run_command(Command::SetInputChannels { channels: 4 });
+        let resp = with_lab_driver(|| run_command(Command::SetInputChannels { channels: 4 }));
         assert!(resp.success, "{:?}", resp.error);
     }
 
     #[test]
     #[serial]
     fn handle_set_output_channels_succeeds() {
-        let resp = run_command(Command::SetOutputChannels { channels: 6 });
+        let resp = with_lab_driver(|| run_command(Command::SetOutputChannels { channels: 6 }));
         assert!(resp.success, "{:?}", resp.error);
     }
 
     #[test]
     #[serial]
     fn handle_set_pipeline_channels_succeeds() {
-        let resp = run_command(Command::SetPipelineChannels {
-            input_channels: Some(4),
-            output_channels: Some(6),
+        let resp = with_lab_driver(|| {
+            run_command(Command::SetPipelineChannels {
+                input_channels: Some(4),
+                output_channels: Some(6),
+            })
         });
         assert!(resp.success, "{:?}", resp.error);
     }
@@ -2428,10 +2494,12 @@ mod command_roundtrip_tests {
     #[test]
     #[serial]
     fn handle_load_plugins_empty_succeeds() {
-        let resp = run_command(Command::LoadPlugins {
-            plugins: vec![],
-            input_channels: 2,
-            output_channels: 2,
+        let resp = with_lab_driver(|| {
+            run_command(Command::LoadPlugins {
+                plugins: vec![],
+                input_channels: 2,
+                output_channels: 2,
+            })
         });
         assert!(resp.success, "{:?}", resp.error);
     }

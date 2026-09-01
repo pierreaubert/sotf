@@ -397,6 +397,54 @@ impl Drop for ClientSlot {
 }
 
 impl AudioDaemon {
+    pub(super) fn requires_playback_callback(driver_status: &driver_common::DriverStatus) -> bool {
+        if !driver_status.platform_supported || driver_status.driver_name == "Systemwide Lab Driver"
+        {
+            return false;
+        }
+        #[cfg(test)]
+        if driver_status.driver_name == "Fake HAL" {
+            return false;
+        }
+        true
+    }
+
+    pub(super) fn playback_startup_observation(
+        state: &sotf_audio::engine::AudioEngineState,
+    ) -> Result<bool, String> {
+        if let Some(error) = state
+            .last_error
+            .as_deref()
+            .filter(|error| !error.is_empty())
+        {
+            return Err(format!("Playback startup failed: {error}"));
+        }
+        Ok(state.playback_callback_count > 0)
+    }
+
+    fn wait_for_playback_ready(&self) -> Result<(), String> {
+        const READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(12);
+        const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(20);
+
+        let deadline = std::time::Instant::now() + READY_TIMEOUT;
+        loop {
+            if !*self.running.lock() {
+                return Err("Daemon shutdown requested during playback startup".to_string());
+            }
+            let state = self.manager.lock().get_engine_state();
+            if Self::playback_startup_observation(&state)? {
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(format!(
+                    "Playback did not reach a hardware callback within {}s",
+                    READY_TIMEOUT.as_secs()
+                ));
+            }
+            std::thread::sleep(POLL_INTERVAL);
+        }
+    }
+
     pub(super) fn new() -> Self {
         Self {
             manager: Arc::new(Mutex::new(AudioEngineManager::new())),
@@ -442,6 +490,10 @@ impl AudioDaemon {
 
     pub(super) fn handle_command(&self, cmd: Command) -> Response {
         match cmd {
+            // Lifecycle probes must remain independent of engine, pipeline,
+            // driver, and key-manager locks so legitimate reconfiguration
+            // cannot be mistaken for a dead daemon.
+            Command::Ping => Response::ok_empty(),
             Command::Status => self.handle_status(),
             Command::GetSnapshot => self.handle_get_snapshot(),
             Command::DumpState => self.handle_dump_state(),
@@ -1055,6 +1107,13 @@ impl AudioDaemon {
             return response;
         }
 
+        // Shutdown cancellation is terminal for this daemon lifetime. Do not
+        // restart the old plan while the accept loop is trying to stop and join
+        // workers.
+        if !*self.running.lock() {
+            return response;
+        }
+
         if previous_plan.is_none() {
             let error = response
                 .error
@@ -1161,6 +1220,12 @@ impl AudioDaemon {
                 effective_driver_sample_rate,
                 effective_driver_buffer_frames,
             )
+            .map_err(|error| error.to_string())
+        };
+        let result = if Self::requires_playback_callback(&driver_status) {
+            result.and_then(|()| self.wait_for_playback_ready())
+        } else {
+            result
         };
 
         match result {

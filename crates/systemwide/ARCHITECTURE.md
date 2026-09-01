@@ -519,7 +519,13 @@ Key observations:
 - Daemon startup owns driver initialization and initial playback.
 - Configbar status and metering polling run off the main thread through one
   serialized, reconnecting client connection. Mutations use a separate serial
-  queue and roll back optimistic UI state on failure.
+  queue and roll back optimistic UI state on failure. Lifecycle adoption and
+  watchdog checks use lock-independent `ping` rather than full `status`, so
+  CoreAudio startup or pipeline replacement cannot trigger a false restart.
+- Plugin configuration files are parsed on a background queue with a 1 MiB
+  file bound and the daemon's 64 KiB encoded-command bound. Pipeline mutations
+  retain a thirty-second client deadline covering bounded startup and recovery
+  without blocking AppKit.
 - If CoreAudio is still recovering after install/restart, the toolbar treats an
   empty physical-output list as a transient recovery state and polls until
   hardware devices reappear.
@@ -598,7 +604,9 @@ Key observations:
 - The user-facing "play music" action may happen outside SOTF by playing audio
   in another macOS app.
 - In systemwide mode, `engine_ready` in shared memory gates whether the HAL side
-  should feed audio to the daemon.
+  should feed audio to the daemon. The daemon publishes it only after observing
+  the first physical-output hardware callback; a startup error or twelve-second
+  readiness deadline keeps it false and invokes pipeline recovery.
 - While `engine_ready=true`, the daemon-owned `HalDriver` keeps
   `daemon_heartbeat_ms` fresh independently of audio reads. This avoids an
   idle-start deadlock where HAL accepts a later playback client but refuses to

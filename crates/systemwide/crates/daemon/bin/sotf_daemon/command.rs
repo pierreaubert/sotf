@@ -7,6 +7,8 @@ use sotf_audio::PluginConfig;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "command")]
 pub(super) enum Command {
+    #[serde(rename = "ping")]
+    Ping,
     #[serde(rename = "status")]
     Status,
     #[serde(rename = "get_snapshot", alias = "snapshot")]
@@ -123,6 +125,7 @@ impl Command {
     /// attributes on each variant.
     pub(super) fn name(&self) -> &'static str {
         match self {
+            Command::Ping => "ping",
             Command::Status => "status",
             Command::GetSnapshot => "get_snapshot",
             Command::DumpState => "dump_state",

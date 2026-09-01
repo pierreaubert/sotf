@@ -562,7 +562,7 @@ fn configbar_plugin_chain_loader_delegates_artifact_planning_to_daemon() {
 
     assert!(
         source.contains("\"command\": \"load_plugin_artifact\"")
-            && source.contains("\"artifact\": json")
+            && source.contains("\"artifact\": artifact")
             && !source.contains("private func normalizedPluginConfigs"),
         "toolbar should send whole plugin artifacts to the daemon instead of normalizing them locally"
     );
