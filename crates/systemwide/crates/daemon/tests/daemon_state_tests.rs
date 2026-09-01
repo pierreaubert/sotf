@@ -561,10 +561,10 @@ fn configbar_plugin_chain_loader_delegates_artifact_planning_to_daemon() {
     let source = include_str!("../configbar/src/ConfigBar.swift");
 
     assert!(
-        source.contains("\"command\": \"load_plugin_artifact\"")
-            && source.contains("\"artifact\": artifact")
+        source.contains("\"command\": \"load_plugin_artifact_path\"")
+            && source.contains("\"path\": url.path")
             && !source.contains("private func normalizedPluginConfigs"),
-        "toolbar should send whole plugin artifacts to the daemon instead of normalizing them locally"
+        "toolbar should delegate file parsing and artifact planning to the daemon"
     );
     assert!(
         !source.contains("allPlugins.append(contentsOf: channelPlugins)"),

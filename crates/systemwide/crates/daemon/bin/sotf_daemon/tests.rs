@@ -744,6 +744,12 @@ mod ipc_safety_tests {
         assert_eq!(cmd.name(), "load_plugin_artifact");
 
         let cmd: Command = serde_json::from_str(
+            r#"{"command":"load_plugin_artifact_path","path":"/tmp/room-eq.json"}"#,
+        )
+        .unwrap();
+        assert_eq!(cmd.name(), "load_plugin_artifact_path");
+
+        let cmd: Command = serde_json::from_str(
             r#"{"command":"reorder_graph","order":[20,10],"base_generation":3}"#,
         )
         .unwrap();

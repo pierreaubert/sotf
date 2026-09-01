@@ -77,6 +77,33 @@ final class AudioRingBuffer {
         return toWrite
     }
 
+    /// Write one channel from an interleaved source, publishing the write
+    /// position once for the whole block instead of once per sample.
+    @discardableResult
+    fileprivate func writeStrided(
+        _ samples: UnsafePointer<Float>,
+        count: Int,
+        stride: Int
+    ) -> Int {
+        let available = availableToWrite
+        let toWrite = min(count, available)
+        guard toWrite > 0 else { return 0 }
+
+        let writeIndex = Int(writePosition % UInt64(capacity))
+        let firstPart = min(toWrite, capacity - writeIndex)
+        for index in 0..<firstPart {
+            buffer[writeIndex + index] = samples[index * stride]
+        }
+        let secondPart = toWrite - firstPart
+        for index in 0..<secondPart {
+            buffer[index] = samples[(firstPart + index) * stride]
+        }
+
+        OSMemoryBarrier()
+        writePosition += UInt64(toWrite)
+        return toWrite
+    }
+
     /// Read samples from the buffer
     /// Returns number of samples actually read
     @discardableResult
@@ -111,6 +138,33 @@ final class AudioRingBuffer {
             memset(samples.advanced(by: toRead), 0, (count - toRead) * MemoryLayout<Float>.size)
         }
 
+        return toRead
+    }
+
+    /// Read one channel into an interleaved destination, publishing the read
+    /// position once for the whole block instead of once per sample.
+    @discardableResult
+    fileprivate func readStrided(
+        _ samples: UnsafeMutablePointer<Float>,
+        count: Int,
+        stride: Int
+    ) -> Int {
+        let available = availableToRead
+        let toRead = min(count, available)
+        guard toRead > 0 else { return 0 }
+
+        let readIndex = Int(readPosition % UInt64(capacity))
+        let firstPart = min(toRead, capacity - readIndex)
+        for index in 0..<firstPart {
+            samples[index * stride] = buffer[readIndex + index]
+        }
+        let secondPart = toRead - firstPart
+        for index in 0..<secondPart {
+            samples[(firstPart + index) * stride] = buffer[index]
+        }
+
+        OSMemoryBarrier()
+        readPosition += UInt64(toRead)
         return toRead
     }
 
@@ -182,17 +236,12 @@ final class MultiChannelRingBuffer {
 
         if toWrite == 0 { return 0 }
 
-        // Use UnsafeBufferPointer for bounds-safe access
-        let sampleBuffer = UnsafeBufferPointer(start: samples, count: toWrite * channelCount)
-
-        // Deinterleave and write to each channel
-        for frame in 0..<toWrite {
-            for channel in 0..<channelCount {
-                let index = frame * channelCount + channel
-                guard index < sampleBuffer.count else { break }
-                var sample = sampleBuffer[index]
-                channelBuffers[channel].write(&sample, count: 1)
-            }
+        for channel in 0..<channelCount {
+            channelBuffers[channel].writeStrided(
+                samples.advanced(by: channel),
+                count: toWrite,
+                stride: channelCount
+            )
         }
 
         return toWrite
@@ -217,26 +266,22 @@ final class MultiChannelRingBuffer {
             return 0
         }
 
-        // Use UnsafeMutableBufferPointer for bounds-safe access
-        let sampleBuffer = UnsafeMutableBufferPointer(start: samples, count: frameCount * channelCount)
-
-        // Read from each channel and interleave
-        for frame in 0..<toRead {
-            for channel in 0..<channelCount {
-                let index = frame * channelCount + channel
-                guard index < sampleBuffer.count else { break }
-                var sample: Float = 0
-                channelBuffers[channel].read(&sample, count: 1)
-                sampleBuffer[index] = sample
-            }
+        for channel in 0..<channelCount {
+            channelBuffers[channel].readStrided(
+                samples.advanced(by: channel),
+                count: toRead,
+                stride: channelCount
+            )
         }
 
         // Fill remaining with silence
         if toRead < frameCount {
             let startIndex = toRead * channelCount
-            for i in startIndex..<sampleBuffer.count {
-                sampleBuffer[i] = 0
-            }
+            memset(
+                samples.advanced(by: startIndex),
+                0,
+                (frameCount * channelCount - startIndex) * MemoryLayout<Float>.size
+            )
         }
 
         return toRead

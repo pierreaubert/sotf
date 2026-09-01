@@ -10214,6 +10214,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "sotf-engine",
+ "sotf-player",
  "sotf-plugins",
  "tempfile",
 ]

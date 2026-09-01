@@ -22,6 +22,7 @@ driver-common = { workspace = true }
 parking_lot = { workspace = true }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
+sotf-player = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 ctrlc = { workspace = true }

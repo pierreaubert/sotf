@@ -45,6 +45,12 @@ pub(super) enum Command {
         #[serde(default)]
         base_generation: Option<u64>,
     },
+    #[serde(rename = "load_plugin_artifact_path")]
+    LoadPluginArtifactPath {
+        path: String,
+        #[serde(default)]
+        base_generation: Option<u64>,
+    },
     #[serde(rename = "reorder_graph")]
     ReorderGraph {
         order: Vec<usize>,
@@ -139,6 +145,7 @@ impl Command {
             Command::SetDevice { .. } => "set_device",
             Command::LoadPlugins { .. } => "load_plugins",
             Command::LoadPluginArtifact { .. } => "load_plugin_artifact",
+            Command::LoadPluginArtifactPath { .. } => "load_plugin_artifact_path",
             Command::ReorderGraph { .. } => "reorder_graph",
             Command::SetInputChannels { .. } => "set_input_channels",
             Command::SetOutputChannels { .. } => "set_output_channels",

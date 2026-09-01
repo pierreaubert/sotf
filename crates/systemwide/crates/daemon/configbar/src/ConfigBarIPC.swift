@@ -130,6 +130,7 @@ public enum ConfigBarIPC {
         case "set_device",
              "load_plugins",
              "load_plugin_artifact",
+             "load_plugin_artifact_path",
              "add_plugin",
              "remove_plugin",
              "update_plugin",

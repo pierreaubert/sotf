@@ -737,7 +737,9 @@ final class HALDriverTests {
 
         let channels = 6  // 5.1 surround
         let frames = 64
-        let buffer = MultiChannelRingBuffer(channelCount: channels, framesCapacity: 1024)
+        // Capacity one frame larger than the block makes the second pass wrap
+        // at the end of every per-channel ring.
+        let buffer = MultiChannelRingBuffer(channelCount: channels, framesCapacity: frames + 1)
 
         // Create interleaved multi-channel data
         var writeData = [Float](repeating: 0, count: frames * channels)
@@ -772,6 +774,20 @@ final class HALDriverTests {
                     return false
                 }
             }
+        }
+
+        guard buffer.writeInterleaved(&writeData, frameCount: frames) == frames else {
+            halLog("  FAIL: Wrapped write did not accept the whole block")
+            return false
+        }
+        readData = [Float](repeating: 0, count: frames * channels)
+        guard buffer.readInterleaved(&readData, frameCount: frames) == frames else {
+            halLog("  FAIL: Wrapped read did not return the whole block")
+            return false
+        }
+        guard readData == writeData else {
+            halLog("  FAIL: Wrapped interleaved data mismatch")
+            return false
         }
 
         halLog("    PASS")

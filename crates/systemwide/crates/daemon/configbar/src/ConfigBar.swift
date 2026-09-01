@@ -3254,33 +3254,20 @@ struct ConfigurationView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             loadingPluginConfiguration = true
-            ConfigBarAsyncOperation.perform(
-                on: DispatchQueue.global(qos: .userInitiated),
-                work: { Result { try ConfigBarIPC.loadConfigurationArtifact(from: url) } },
-                completion: { result in
-                    switch result {
-                    case .success(let artifact):
-                        let command: [String: Any] = [
-                            "command": "load_plugin_artifact",
-                            "artifact": artifact
-                        ]
-                        client.sendCommandAsync(command) { response in
-                            loadingPluginConfiguration = false
-                            if response?.success == true {
-                                print("✅ Plugin configuration loaded from: \(url.path)")
-                                pluginRackRefreshToken += 1
-                            } else {
-                                errorMessage = response?.error ?? "Failed to apply plugin configuration"
-                                showingError = true
-                            }
-                        }
-                    case .failure(let error):
-                        loadingPluginConfiguration = false
-                        errorMessage = "Failed to read configuration: \(error.localizedDescription)"
-                        showingError = true
-                    }
+            let command: [String: Any] = [
+                "command": "load_plugin_artifact_path",
+                "path": url.path
+            ]
+            client.sendCommandAsync(command) { response in
+                loadingPluginConfiguration = false
+                if response?.success == true {
+                    print("✅ Plugin configuration loaded from: \(url.path)")
+                    pluginRackRefreshToken += 1
+                } else {
+                    errorMessage = response?.error ?? "Failed to apply plugin configuration"
+                    showingError = true
                 }
-            )
+            }
         }
     }
 

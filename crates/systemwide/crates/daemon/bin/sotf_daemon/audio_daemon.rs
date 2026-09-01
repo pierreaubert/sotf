@@ -325,6 +325,7 @@ impl RuntimeTelemetry {
             ),
             "load_plugins"
             | "load_plugin_artifact"
+            | "load_plugin_artifact_path"
             | "add_plugin"
             | "remove_plugin"
             | "update_plugin"
@@ -522,6 +523,13 @@ impl AudioDaemon {
             } => {
                 let _mutation = self.pipeline_mutation.lock();
                 self.handle_load_plugin_artifact(artifact, base_generation)
+            }
+            Command::LoadPluginArtifactPath {
+                path,
+                base_generation,
+            } => {
+                let _mutation = self.pipeline_mutation.lock();
+                self.handle_load_plugin_artifact_path(&path, base_generation)
             }
             Command::ReorderGraph {
                 order,
@@ -1363,6 +1371,115 @@ impl AudioDaemon {
             )),
             Err(e) => Response::err(format!("Invalid plugin artifact: {}", e)),
         }
+    }
+
+    pub(super) fn handle_load_plugin_artifact_path(
+        &self,
+        path: &str,
+        base_generation: Option<u64>,
+    ) -> Response {
+        if let Some(base_generation) = base_generation {
+            let current_generation = self.system_state.lock().applied_generation().unwrap_or(0);
+            if base_generation != current_generation {
+                return Response::err(format!(
+                    "Plugin artifact generation conflict: editor based on generation {base_generation}, current generation is {current_generation}. Refresh before applying."
+                ));
+            }
+        }
+
+        let driver_status = self.driver_manager.lock().status();
+        let sample_rate = if driver_status.sample_rate > 0 {
+            driver_status.sample_rate
+        } else {
+            48_000
+        };
+        let file_plan = match crate::plugin_artifact::plan_plugin_artifact_file(
+            std::path::Path::new(path),
+            f64::from(sample_rate),
+        ) {
+            Ok(plan) => plan,
+            Err(error) => return Response::err(format!("Invalid plugin artifact: {error}")),
+        };
+
+        if let Some(required_channels) = file_plan.required_channels
+            && let Err(error) = self.validate_output_device_channels(required_channels, sample_rate)
+        {
+            return Response::err(error);
+        }
+
+        match file_plan.plan {
+            PluginArtifactPlan::RackChain { plugins } => {
+                let channels = {
+                    let state = self.system_state.lock();
+                    (state.input_channels(), state.output_channels())
+                };
+                self.handle_load_plugins_with_channels(plugins, channels.0, channels.1)
+            }
+            PluginArtifactPlan::Graph { graph } => {
+                let required_channels = file_plan.required_channels.unwrap_or_else(|| {
+                    let state = self.system_state.lock();
+                    state.output_channels()
+                });
+                self.handle_load_plugin_graph_with_channels(
+                    graph,
+                    required_channels,
+                    required_channels,
+                )
+            }
+            PluginArtifactPlan::UnsupportedGraph { reason } => Response::err(format!(
+                "Unsupported graph plugin artifact: {reason}. Use a graph-aware loader instead of flattening it into a rack."
+            )),
+        }
+    }
+
+    fn validate_output_device_channels(
+        &self,
+        required_channels: usize,
+        sample_rate: u32,
+    ) -> Result<(), String> {
+        use cpal::traits::DeviceTrait;
+
+        let selected_device = self
+            .system_state
+            .lock()
+            .selected_output_device()
+            .or_else(|| {
+                self.manager
+                    .lock()
+                    .get_engine_state()
+                    .playback_output_device
+            });
+        let Some(selected_device) = selected_device else {
+            return Ok(());
+        };
+        let host = sotf_audio::devices::get_host_for_device(Some(&selected_device));
+        let device_name = sotf_audio::devices::strip_asio_prefix(&selected_device);
+        let device = sotf_audio::devices::find_device(&host, device_name, false)
+            .map_err(|error| format!("Cannot inspect output device '{device_name}': {error}"))?;
+        let max_channels = device
+            .supported_output_configs()
+            .map_err(|error| format!("Cannot inspect output formats for '{device_name}': {error}"))?
+            .filter(|config| {
+                config.min_sample_rate() <= sample_rate && sample_rate <= config.max_sample_rate()
+            })
+            .map(|config| usize::from(config.channels()))
+            .max()
+            .or_else(|| {
+                device
+                    .default_output_config()
+                    .ok()
+                    .map(|config| usize::from(config.channels()))
+            })
+            .ok_or_else(|| {
+                format!("Output device '{device_name}' does not report a usable channel layout")
+            })?;
+
+        if required_channels > max_channels {
+            return Err(format!(
+                "This RoomEQ configuration requires {required_channels} output channels, but '{device_name}' supports at most {max_channels} channels at {sample_rate} Hz. Select a compatible audio device before loading it."
+            ));
+        }
+        Ok(())
     }
 
     pub(super) fn handle_reorder_graph(
