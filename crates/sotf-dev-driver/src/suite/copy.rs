@@ -64,6 +64,7 @@ pub(super) fn copy_room_eq_fixture(config: &RoomEqConfig, scenario_dir: &Path) -
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::copy_room_eq_fixture;
     use crate::suite::types::RoomEqConfig;

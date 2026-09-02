@@ -549,7 +549,7 @@ fn loudness_true_peak_and_centered_correlation_are_partition_invariant_across_ra
     fn render(sample_rate: u32, partitions: &[usize]) -> (f64, f64, f32) {
         let frames = sample_rate as usize / 3 + 37;
         let mut input = vec![0.0_f32; frames * 2];
-        for (frame, stereo) in input.chunks_exact_mut(2).enumerate() {
+        for (frame, stereo) in input.as_chunks_mut::<2>().0.iter_mut().enumerate() {
             let signal = (std::f64::consts::TAU * 0.459 * frame as f64).sin() as f32 * 0.91;
             stereo[0] = signal + 0.03;
             stereo[1] = signal * 0.27 - 0.19;
@@ -673,7 +673,7 @@ fn exact_whole_program_matches_rolling_reference_and_callback_partitions() {
         let sample_rate = 48_000_u32;
         let frames = sample_rate as usize * 8;
         let mut signal = vec![0.0_f32; frames * 2];
-        for (frame, stereo) in signal.chunks_exact_mut(2).enumerate() {
+        for (frame, stereo) in signal.as_chunks_mut::<2>().0.iter_mut().enumerate() {
             let amplitude = match frame / sample_rate as usize {
                 0..=1 => 0.01,
                 2..=4 => 0.2,

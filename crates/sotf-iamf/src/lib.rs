@@ -307,9 +307,7 @@ impl IamfDecoder {
         let out_ch = self.output_layout.total_channels;
 
         // Reset decoded buffer slots (no allocation — just sets Options to None)
-        for slot in &mut self.decoded_bufs {
-            *slot = None;
-        }
+        self.decoded_bufs.fill(None);
 
         // Decode substream audio frames into pre-allocated slots
         for frame_obu in &temporal_unit.audio_frames {

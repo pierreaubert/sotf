@@ -436,8 +436,20 @@ mod tests {
         let mut reducer = SpectralHissReducer::new(2);
         reducer.initialize(48_000).unwrap();
         reducer.process(&mut stereo);
-        assert!(stereo.chunks_exact(2).all(|frame| frame[1] == 0.0));
-        assert!(stereo.chunks_exact(2).any(|frame| frame[0] != 0.0));
+        assert!(
+            stereo
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .all(|frame| frame[1] == 0.0)
+        );
+        assert!(
+            stereo
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .any(|frame| frame[0] != 0.0)
+        );
     }
 
     #[test]

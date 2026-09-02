@@ -2108,9 +2108,7 @@ impl Plugin for UpmixerPlugin {
         self.decorrelation.decor_lfo_phase = 0.0;
         self.hr_state.prev_hr_scale = 0.0;
         self.steering.coherence_history_idx = 0;
-        for h in &mut self.steering.coherence_history {
-            *h = [0.0; 5];
-        }
+        self.steering.coherence_history.fill([0.0; 5]);
 
         // Force recomputation of blended decorrelation filters
         self.decorrelation.prev_decorrelation_strength = -1.0;

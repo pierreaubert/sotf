@@ -43,6 +43,7 @@ external-plugin-au = [
     "dep:objc2-core-audio-types",
     "dep:objc2-core-foundation",
 ]
+worker-test-backend = []
 
 [dependencies]
 gpui-builder = { workspace = true }

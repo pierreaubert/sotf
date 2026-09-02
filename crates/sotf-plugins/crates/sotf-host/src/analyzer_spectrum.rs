@@ -839,9 +839,7 @@ mod tests {
             assert!(data.frequencies.iter().all(|value| value.is_finite()));
             assert!(data.magnitudes.iter().all(|value| !value.is_nan()));
             assert!(
-                data.magnitudes
-                    .iter()
-                    .any(|value| *value == f32::NEG_INFINITY),
+                data.magnitudes.contains(&f32::NEG_INFINITY),
                 "expected an explicit empty band at {sample_rate} Hz"
             );
         }

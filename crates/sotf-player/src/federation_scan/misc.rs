@@ -14,6 +14,7 @@ pub(super) fn peer_fingerprints_match(expected: &str, actual: &str) -> bool {
 }
 
 /// Shared DNS resolution step.
+#[allow(clippy::result_large_err)]
 pub(super) async fn resolve_dns(
     host: &str,
     port: u16,

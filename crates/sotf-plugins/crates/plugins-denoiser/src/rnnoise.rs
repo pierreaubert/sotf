@@ -399,7 +399,7 @@ mod tests {
         // channel-biased suppression decisions without assuming a broadband
         // scalar gain (the exact defect this implementation removes).
         let mut swapped_input = input.to_vec();
-        for frame in swapped_input.chunks_exact_mut(2) {
+        for frame in swapped_input.as_chunks_mut::<2>().0 {
             frame.swap(0, 1);
         }
         let mut swapped_backend = RnnoiseBackend::new();
@@ -407,7 +407,7 @@ mod tests {
         swapped_backend.process(&mut swapped_input, RNNOISE_FRAME_SIZE, 2, false);
         let mut swapped_output = vec![0.0; RNNOISE_FRAME_SIZE * 2];
         swapped_backend.process(&mut swapped_output, RNNOISE_FRAME_SIZE, 2, false);
-        for frame in swapped_output.chunks_exact_mut(2) {
+        for frame in swapped_output.as_chunks_mut::<2>().0 {
             frame.swap(0, 1);
         }
         let max_swap_error = output
@@ -437,17 +437,21 @@ mod tests {
         let output_bytes =
             include_bytes!("../../../../3rdparties/nnnoiseless/tests/reference_output.raw");
         let input: Vec<f32> = input_bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]) as f32)
             .collect();
         let reference: Vec<i16> = output_bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]))
             .collect();
         let mut state = nnnoiseless::DenoiseState::new();
         let mut frame = [0.0; RNNOISE_FRAME_SIZE];
         let mut actual = Vec::with_capacity(reference.len());
-        for (index, input_frame) in input.chunks_exact(RNNOISE_FRAME_SIZE).enumerate() {
+        for (index, input_frame) in input.as_chunks::<RNNOISE_FRAME_SIZE>().0.iter().enumerate() {
             state.process_frame(&mut frame, input_frame);
             if index > 0 {
                 actual.extend(frame.iter().map(|sample| *sample as i16));
@@ -660,7 +664,9 @@ mod tests {
         let left_power: f32 = output.iter().step_by(2).map(|s| s * s).sum();
         let right_power: f32 = output.iter().skip(1).step_by(2).map(|s| s * s).sum();
         let cross: f32 = output
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|stereo| stereo[0] * stereo[1])
             .sum();
         assert!(left_power > 1e-5, "anti-phase left channel was collapsed");

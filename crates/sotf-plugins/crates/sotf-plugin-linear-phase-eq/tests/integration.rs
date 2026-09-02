@@ -114,7 +114,9 @@ fn dry_mix_passthrough() {
 
     let latency = 544usize;
     let max_error = output
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .enumerate()
         .map(|(frame, out)| {
             let expected = if frame >= latency {

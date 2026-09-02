@@ -1369,6 +1369,7 @@ pub(super) fn analyze_sweep_takes(
     // (frequencies, values) on the deconvolution FFT grid; repeats only.
     let mut coherence_grid: Option<(Vec<f32>, Vec<f32>)> = None;
     let mut measured_grid: Option<(Vec<f32>, Vec<f32>)> = None;
+    #[allow(clippy::needless_late_init)]
     let noise_floor_grid: Option<(Vec<f32>, Vec<f32>)>;
 
     if single_take {

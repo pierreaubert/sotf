@@ -344,7 +344,7 @@ fn stereo_metrics(samples: &[f32]) -> StereoMetrics {
     let mut right_power = 0.0_f32;
     let mut max_jump = 0.0_f32;
     let mut previous = [0.0_f32; 2];
-    for (frame, stereo) in samples.chunks_exact(2).enumerate() {
+    for (frame, stereo) in samples.as_chunks::<2>().0.iter().enumerate() {
         for channel in 0..2 {
             peak = peak.max(stereo[channel].abs());
             sum_power += stereo[channel] * stereo[channel];

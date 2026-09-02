@@ -670,7 +670,7 @@ mod tests {
         // Processing → mock sink channel.
         let (sink_tx, sink_rx) = sync_channel::<ProcessingMessage>(64);
         // Shared event bus.
-        let (event_tx, _event_rx) = std::sync::mpsc::channel::<ThreadEvent>();
+        let (event_tx, _event_rx) = crossbeam::channel::unbounded::<ThreadEvent>();
         // Recycle channel: processing thread sends buffers back to decoder.
         let (decoder_recycle_tx, decoder_recycle_rx) = sync_channel::<Vec<f32>>(64);
         // Recycle channel: mock sink → processing thread (left empty; allocations

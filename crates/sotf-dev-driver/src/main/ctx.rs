@@ -235,6 +235,7 @@ fn elapsed_ms(started: Instant) -> u64 {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod timing_tests {
     use super::*;
 

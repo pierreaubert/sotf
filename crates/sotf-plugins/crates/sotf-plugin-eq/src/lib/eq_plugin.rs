@@ -697,7 +697,7 @@ impl EqPlugin {
             let (left_filters, right_filters) = filters.split_at_mut(1);
             let left_filters = &mut left_filters[0];
             let right_filters = &mut right_filters[0];
-            for frame in buffer.chunks_exact_mut(2).take(num_frames) {
+            for frame in buffer.as_chunks_mut::<2>().0.iter_mut().take(num_frames) {
                 let mut left = frame[0] as f64;
                 for stages in left_filters.iter_mut() {
                     for stage in stages {

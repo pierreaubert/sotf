@@ -29,10 +29,8 @@ impl MockTcpServer {
         let addr = listener.local_addr().expect("failed to get local address");
 
         std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                if let Ok(stream) = stream {
-                    handler(stream);
-                }
+            for stream in listener.incoming().flatten() {
+                handler(stream);
             }
         });
 

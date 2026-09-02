@@ -252,6 +252,7 @@ fn apply_plugin_update_once(
 
 /// Retry a host replacement when its control-thread snapshot becomes stale
 /// before the processing thread reaches its commit boundary.
+#[allow(clippy::too_many_arguments)]
 pub(in crate::engine::manager_thread) fn apply_plugin_update(
     processing: &mut ProcessingThread,
     playback: &mut PlaybackThread,

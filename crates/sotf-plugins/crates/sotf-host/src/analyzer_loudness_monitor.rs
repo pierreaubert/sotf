@@ -715,12 +715,12 @@ impl LoudnessMonitor {
                 .chunks_exact(input_channels)
                 .zip(scratch.chunks_exact_mut(self.loudness_channels))
             {
-                for channel in 0..input_channels {
+                for (channel, sample) in input_frame.iter().enumerate().take(input_channels) {
                     let output_channel = self.loudness_channel_indices[channel];
                     output_frame[output_channel] = if self.loudness_channels == 7 {
-                        input_frame[channel]
+                        *sample
                     } else {
-                        input_frame[channel] * self.loudness_gains[channel]
+                        *sample * self.loudness_gains[channel]
                     };
                 }
             }

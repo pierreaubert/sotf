@@ -378,7 +378,9 @@ fn lr_multiway_recombination_is_allpass_at_every_test_frequency() {
         let input_rms =
             (input[start..].iter().map(|x| x * x).sum::<f32>() / (frames - start) as f32).sqrt();
         let output_rms = (split[start * 4..]
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|bands| bands.iter().sum::<f32>())
             .map(|x| x * x)
             .sum::<f32>()

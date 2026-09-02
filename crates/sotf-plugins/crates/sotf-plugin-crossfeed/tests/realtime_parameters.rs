@@ -46,8 +46,10 @@ fn realtime_parameter_updates_and_reset_do_not_allocate() {
 
 #[test]
 fn hrtf_processing_does_not_allocate() {
-    let mut params = CrossfeedPluginParams::default();
-    params.mode = sotf_plugin_crossfeed::CrossfeedMode::Hrtf;
+    let params = CrossfeedPluginParams {
+        mode: sotf_plugin_crossfeed::CrossfeedMode::Hrtf,
+        ..CrossfeedPluginParams::default()
+    };
     let mut plugin = CrossfeedPlugin::new(params).unwrap();
     plugin.initialize(48_000).unwrap();
     let mut buffer = vec![0.0; 256 * 2];

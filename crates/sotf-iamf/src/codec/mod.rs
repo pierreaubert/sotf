@@ -48,7 +48,9 @@ impl SubstreamDecoder for LpcmDecoder {
             16 => {
                 // IAMF LPCM is big-endian per spec
                 let samples = payload
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|chunk| {
                         let val = i16::from_be_bytes([chunk[0], chunk[1]]);
                         val as f32 / 32768.0
@@ -59,7 +61,9 @@ impl SubstreamDecoder for LpcmDecoder {
             24 => {
                 // IAMF LPCM is big-endian per spec
                 let samples = payload
-                    .chunks_exact(3)
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
                     .map(|chunk| {
                         let val = (i32::from(chunk[0]) << 16)
                             | (i32::from(chunk[1]) << 8)
@@ -78,7 +82,9 @@ impl SubstreamDecoder for LpcmDecoder {
             32 => {
                 // IAMF LPCM is big-endian per spec
                 let samples = payload
-                    .chunks_exact(4)
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
                     .map(|chunk| f32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
                     .collect();
                 Ok(samples)
