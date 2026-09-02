@@ -418,6 +418,21 @@ fn systemwide_lab_scenario_matrix_over_unix_socket() {
     assert!(initial["data"]["desired"]["output_channels"].is_number());
     assert!(initial["data"]["diagnostics"]["faults"].is_array());
 
+    let current_generation = initial["data"]["applied"]["generation"]
+        .as_u64()
+        .unwrap_or(0);
+    let stale_intent = format!(
+        r#"{{"command":"set_pipeline_channels","input_channels":2,"output_channels":2,"base_generation":{}}}"#,
+        current_generation.saturating_add(1)
+    );
+    let stale_response = daemon.send(&stale_intent);
+    assert_eq!(stale_response["success"], false);
+    assert!(
+        stale_response["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("generation conflict"))
+    );
+
     let initial_driver_config = daemon.send(r#"{"command":"get_driver_config"}"#);
     assert_eq!(initial_driver_config["success"], true);
     assert_eq!(initial_driver_config["data"]["sample_rate"], 48_000);

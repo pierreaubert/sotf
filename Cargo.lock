@@ -10240,7 +10240,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-dev-api"
-version = "0.7.12"
+version = "0.7.13"
 dependencies = [
  "hex",
  "serde",
@@ -10282,7 +10282,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-docs-gen"
-version = "0.7.12"
+version = "0.7.13"
 dependencies = [
  "sotf-host",
  "sotf-plugins",
@@ -10376,7 +10376,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-gpui"
-version = "0.7.12"
+version = "0.7.13"
 dependencies = [
  "anyhow",
  "autoeq",
@@ -11147,7 +11147,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugins"
-version = "0.7.12"
+version = "0.7.13"
 dependencies = [
  "anyhow",
  "arc-swap",

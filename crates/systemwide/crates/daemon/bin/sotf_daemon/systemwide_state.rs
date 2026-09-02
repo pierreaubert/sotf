@@ -1,13 +1,8 @@
-use super::driver_manager::DriverManager;
-use super::pipeline_reconfigure_outcome::handle_driver_config_change;
 use super::pipeline_spec::PipelineSpec;
 use super::pipeline_supervisor::PipelineSupervisor;
 use super::types::PipelinePlan;
-use parking_lot::Mutex;
 use sotf_audio::PluginConfig;
 use sotf_audio::engine::PluginGraphConfig;
-use sotf_audio::manager::AudioEngineManager;
-use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct PipelineRecovery {
@@ -56,6 +51,9 @@ impl SystemwideState {
 
     pub(super) fn applied_generation(&self) -> Option<u64> {
         self.pipeline.applied_generation()
+    }
+    pub(super) fn generation(&self) -> u64 {
+        self.pipeline.generation()
     }
 
     pub(super) fn applied_output_device(&self) -> Option<String> {
@@ -145,43 +143,4 @@ impl SystemwideState {
     pub(super) fn commit_idle_reconfigure(&mut self, plan: &PipelinePlan) {
         self.pipeline.commit_idle_reconfigure(plan);
     }
-}
-
-/// Spawn a background thread that polls the driver for config changes
-pub(super) fn spawn_driver_config_watcher(
-    driver_manager: Arc<Mutex<DriverManager>>,
-    audio_manager: Arc<Mutex<AudioEngineManager>>,
-    running: Arc<Mutex<bool>>,
-    system_state: Arc<Mutex<SystemwideState>>,
-    pipeline_mutation: Arc<Mutex<()>>,
-) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(move || {
-        use std::time::Duration;
-
-        // Driver polling is a control-plane concern; 100 ms keeps negotiated
-        // changes responsive without waking a dedicated thread twenty times
-        // per second while the system is idle.
-        let poll_interval = Duration::from_millis(100);
-
-        log::info!("Driver config watcher thread started");
-
-        loop {
-            if !*running.lock() {
-                break;
-            }
-
-            // Poll driver for config changes
-            let config_change = driver_manager.lock().poll_config_change();
-            if let Some(config) = config_change {
-                // Serialize driver-initiated restarts with IPC mutations so
-                // neither path applies a stale desired pipeline.
-                let _mutation = pipeline_mutation.lock();
-                handle_driver_config_change(&driver_manager, &audio_manager, config, &system_state);
-            }
-
-            std::thread::sleep(poll_interval);
-        }
-
-        log::info!("Driver config watcher thread stopped");
-    })
 }

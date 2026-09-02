@@ -30,6 +30,8 @@ mod configured;
 mod consts;
 #[path = "sotf_daemon/default.rs"]
 mod default;
+#[path = "sotf_daemon/device_registry.rs"]
+mod device_registry;
 #[path = "sotf_daemon/loudness.rs"]
 mod loudness;
 #[path = "sotf_daemon/misc.rs"]
@@ -67,6 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // stale socket. The control socket is independently configurable, so it
     // cannot be the identity of the HAL transport owner.
     let secure_socket_path = get_secure_socket_path();
+    #[cfg_attr(not(all(target_os = "macos", feature = "hal")), allow(unused_mut))]
     let mut ownership_resources = vec![secure_socket_path.clone()];
     #[cfg(all(target_os = "macos", feature = "hal"))]
     ownership_resources.extend([

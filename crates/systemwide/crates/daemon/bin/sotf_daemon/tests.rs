@@ -1,12 +1,14 @@
 #![allow(clippy::field_reassign_with_default)]
 use super::audio_daemon::try_acquire_client_slot;
 use super::audio_daemon::{
-    AudioDaemon, METERING_LATENCY_BUDGET_MICROS, PIPELINE_RESPONSE_BUDGET_BYTES, RuntimeTelemetry,
+    AudioDaemon, CaptureResumeTracker, METERING_LATENCY_BUDGET_MICROS,
+    PIPELINE_RESPONSE_BUDGET_BYTES, PLAYBACK_IDLE_REBUILD_THRESHOLD, RuntimeTelemetry,
     pipeline_timing_after_config_request, rack_plugins_to_linear_graph, reorder_linear_graph,
 };
 use super::command::Command;
 use super::configured::configured_output_device_from_value;
 use super::consts::{MAX_HAL_CHANNELS, MAX_IPC_CLIENTS, MAX_IPC_COMMAND_BYTES};
+use super::device_registry::DeviceRegistry;
 use super::driver_manager::DriverManager;
 use super::loudness::{loudness_data_to_json, loudness_info_to_json};
 use super::misc::push_metering_faults;
@@ -16,6 +18,7 @@ use super::misc::{
     build_driver_plugin_chain, build_driver_plugin_graph, is_safe_output_device_name,
     parameter_descriptor_to_json,
 };
+use super::pipeline_reconfigure_outcome::acknowledged_config_for_outcome;
 use super::pipeline_reconfigure_outcome::handle_driver_config_change;
 use super::pipeline_reconfigure_outcome::reconfigure_audio_pipeline;
 use super::pipeline_spec::{PipelineSpec, pipeline_spec_to_json};
@@ -27,8 +30,8 @@ use super::response::Response;
 use super::response::serialize_response_safely;
 use super::security::{KeyManager, PeerClass};
 use super::systemwide_state::SystemwideState;
-use super::types::IpcLine;
 use super::types::read_ipc_line_bounded;
+use super::types::{IpcLine, PipelineReconfigureOutcome};
 use crate::plugin_artifact::{PluginArtifactPlan, plan_plugin_artifact};
 use driver_common::DriverConfig;
 use parking_lot::Mutex;
@@ -39,6 +42,7 @@ use sotf_audio::manager::AudioEngineManager;
 use sotf_audio::plugins::PluginType;
 use std::io::{BufRead, BufReader, Cursor, Write};
 use std::os::unix::net::UnixStream;
+use std::sync::mpsc;
 use std::sync::{Arc, Barrier};
 
 fn test_plugin(plugin_type: &str) -> PluginConfig {
@@ -784,6 +788,7 @@ mod ipc_safety_tests {
         status: DriverStatus,
         engine_ready: bool,
         last_requested_config: Option<DriverConfig>,
+        requested_configs: Vec<DriverConfig>,
         last_ack: Option<(DriverConfig, ConfigResult)>,
         pending_config_change: Option<DriverConfig>,
         fail_next_config: Option<String>,
@@ -832,12 +837,22 @@ mod ipc_safety_tests {
         fn request_config(&mut self, config: DriverConfig) -> ConfigResult {
             let mut state = self.state.lock();
             state.last_requested_config = Some(config);
+            state.requested_configs.push(config);
             if let Some(error) = state.fail_next_config.take() {
                 ConfigResult::error(error)
             } else if state.config_failures_remaining > 0 {
                 state.config_failures_remaining -= 1;
                 ConfigResult::error("queued config failure")
             } else {
+                if config.sample_rate > 0 {
+                    state.status.sample_rate = config.sample_rate;
+                }
+                if config.buffer_frames > 0 {
+                    state.status.buffer_frames = config.buffer_frames;
+                }
+                if config.channel_count > 0 {
+                    state.status.channel_count = config.channel_count;
+                }
                 ConfigResult::Accepted
             }
         }
@@ -860,6 +875,7 @@ mod ipc_safety_tests {
             status: DriverStatus::new(true, true, true, 48_000, 2, 512, "Fake HAL", true),
             engine_ready: false,
             last_requested_config: None,
+            requested_configs: Vec::new(),
             last_ack: None,
             pending_config_change: None,
             fail_next_config: None,
@@ -907,6 +923,7 @@ mod ipc_safety_tests {
             key_manager: Arc::new(Mutex::new(KeyManager::for_test())),
             pipeline_mutation: Arc::new(Mutex::new(())),
             runtime_telemetry: Arc::new(RuntimeTelemetry::default()),
+            device_registry: Arc::new(Mutex::new(DeviceRegistry::default())),
         }
     }
 
@@ -1047,6 +1064,7 @@ mod ipc_safety_tests {
         supervisor.commit_idle_reconfigure(&plan);
         assert_eq!(supervisor.input_channels(), 10);
         assert_eq!(supervisor.output_channels(), 4);
+        assert_eq!(supervisor.generation(), 2);
         assert!(supervisor.applied_generation().is_none());
     }
 
@@ -1125,6 +1143,158 @@ mod ipc_safety_tests {
         );
         assert_eq!(state.input_channels(), 6);
         assert_eq!(state.output_channels(), 2);
+    }
+
+    #[test]
+    fn restored_driver_pipeline_acknowledges_restored_channel_geometry() {
+        let (actual, result) = acknowledged_config_for_outcome(
+            48_000,
+            512,
+            10,
+            48_000,
+            PipelineReconfigureOutcome::Restored { input_channels: 2 },
+        );
+
+        assert_eq!(actual, DriverConfig::new(48_000, 512, 2));
+        assert_eq!(
+            result,
+            driver_common::ConfigResult::negotiated(48_000, 512, 2)
+        );
+    }
+
+    #[test]
+    fn snapshot_waits_for_pipeline_mutation_to_finish() {
+        let daemon = test_daemon_with_driver(fake_driver_state());
+        let mutation = daemon.pipeline_mutation.lock();
+        let snapshot_daemon = daemon.clone();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
+
+        let snapshot_thread = std::thread::spawn(move || {
+            started_tx.send(()).expect("signal snapshot start");
+            let snapshot = snapshot_daemon.snapshot_json();
+            finished_tx.send(snapshot).expect("return snapshot");
+        });
+
+        started_rx.recv().expect("snapshot thread started");
+        assert!(
+            finished_rx
+                .recv_timeout(std::time::Duration::from_millis(50))
+                .is_err(),
+            "snapshot must not observe a transition while mutation lock is held"
+        );
+
+        drop(mutation);
+        let snapshot = finished_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("snapshot completes after transition");
+        assert_eq!(snapshot["schema_version"], 1);
+        snapshot_thread.join().expect("snapshot thread joins");
+    }
+
+    #[test]
+    fn pipeline_commands_share_one_transition_boundary() {
+        let daemon = test_daemon_with_driver(fake_driver_state());
+        let mutation = daemon.pipeline_mutation.lock();
+        let command_daemon = daemon.clone();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
+
+        let command_thread = std::thread::spawn(move || {
+            started_tx.send(()).expect("signal command start");
+            let response =
+                command_daemon.handle_command(Command::SetOutputChannels { channels: 0 });
+            finished_tx.send(response).expect("return command response");
+        });
+
+        started_rx.recv().expect("command thread started");
+        assert!(
+            finished_rx
+                .recv_timeout(std::time::Duration::from_millis(50))
+                .is_err(),
+            "pipeline command must wait for the active transition"
+        );
+
+        drop(mutation);
+        let response = finished_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("command completes after transition");
+        assert!(!response.success);
+        command_thread.join().expect("command thread joins");
+    }
+
+    #[test]
+    fn capture_resume_rebuilds_once_only_after_long_idle() {
+        let started = std::time::Instant::now();
+        let mut tracker = CaptureResumeTracker::new(started, 3, false);
+
+        assert!(!tracker.observe(
+            started + PLAYBACK_IDLE_REBUILD_THRESHOLD - std::time::Duration::from_millis(1),
+            3,
+            false,
+        ));
+        assert!(tracker.observe(started + PLAYBACK_IDLE_REBUILD_THRESHOLD, 3, true,));
+        assert!(!tracker.observe(
+            started + PLAYBACK_IDLE_REBUILD_THRESHOLD + std::time::Duration::from_secs(1),
+            3,
+            true,
+        ));
+    }
+
+    #[test]
+    fn capture_resume_does_not_rebuild_after_explicit_pipeline_change() {
+        let started = std::time::Instant::now();
+        let mut tracker = CaptureResumeTracker::new(started, 3, false);
+
+        assert!(!tracker.observe(started + PLAYBACK_IDLE_REBUILD_THRESHOLD, 4, true,));
+    }
+
+    #[test]
+    fn stale_pipeline_intent_is_rejected_before_handler_side_effects() {
+        let daemon = test_daemon_with_driver(fake_driver_state());
+        {
+            let mut state = daemon.system_state.lock();
+            let plan = state
+                .prepare_plan(Vec::new(), 2, 2, 2)
+                .expect("valid baseline plan");
+            state.commit_applied(&plan);
+        }
+
+        let response = daemon
+            .handle_command_at_generation(Command::SetOutputChannels { channels: 6 }, Some(0));
+
+        assert!(!response.success);
+        assert!(
+            response
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("generation conflict"))
+        );
+        let state = daemon.system_state.lock();
+        assert_eq!(state.applied_generation(), Some(1));
+        assert_eq!(state.output_channels(), 2);
+    }
+
+    #[test]
+    fn room_eq_channel_validation_rejects_incompatible_selected_device() {
+        let daemon = test_daemon_with_driver(fake_driver_state());
+        daemon
+            .system_state
+            .lock()
+            .set_desired_output_device(Some("Fake Speakers".to_string()))
+            .expect("safe fake output device");
+        daemon
+            .device_registry
+            .lock()
+            .seed_max_output_channels("Fake Speakers", 48_000, 2);
+
+        let error = daemon
+            .validate_output_device_channels(6, 48_000)
+            .expect_err("six-channel RoomEQ config must be rejected on stereo device");
+
+        assert!(error.contains("requires 6 output channels"));
+        assert!(error.contains("supports at most 2 channels"));
+        assert!(error.contains("Fake Speakers"));
     }
 
     #[test]
@@ -1616,6 +1786,7 @@ mod ipc_safety_tests {
         assert!(response["data"]["output"].is_object());
         assert!(response["data"]["sources"]["input"].is_object());
         assert!(response["data"]["sources"]["output"].is_object());
+        assert_eq!(response["data"]["generation"], 0);
     }
 
     #[test]
@@ -1874,6 +2045,44 @@ mod ipc_safety_tests {
                 .any(|fault| fault["code"] == "pipeline_recovery_required")
         );
     }
+
+    #[test]
+    fn ipc_pipeline_rollback_requests_previous_hal_geometry() {
+        let driver_state = fake_driver_state();
+        driver_state.lock().status.driver_name = "Fake HAL With Callback";
+        let daemon = test_daemon_with_driver(Arc::clone(&driver_state));
+
+        let requested_plan = {
+            let mut state = daemon.system_state.lock();
+            let previous_plan = state
+                .prepare_with_selected_device("Definitely Missing Physical Output".to_string())
+                .expect("safe explicit output name");
+            state.commit_applied(&previous_plan);
+            state
+                .prepare_plan(vec![test_plugin("definitely_invalid_plugin")], 6, 2, 6)
+                .expect("valid requested geometry")
+        };
+        let driver_status = driver_state.lock().status.clone();
+
+        let response = daemon.apply_pipeline_plan(requested_plan, driver_status, 48_000, 512);
+
+        assert!(
+            !response.success,
+            "invalid plugin must fail the requested start"
+        );
+        let requested_channels: Vec<u32> = driver_state
+            .lock()
+            .requested_configs
+            .iter()
+            .map(|config| config.channel_count)
+            .collect();
+        assert_eq!(
+            requested_channels,
+            vec![6, 2],
+            "rollback must restore HAL to the previous graph's input geometry"
+        );
+        assert!(!driver_state.lock().engine_ready);
+    }
 }
 
 #[test]
@@ -1902,7 +2111,7 @@ fn pipeline_supervisor_preserves_graph_when_output_device_changes() {
 
 /// Phase 4.2: full command/response round-trips without a real audio device.
 ///
-/// These tests exercise JSON parsing for every `Command` variant and direct
+/// These tests exercise JSON parsing into `Command` variants and direct
 /// `AudioDaemon::handle_command` invocation. They run serially because some
 /// mutating commands start the engine's cpal output stream, and contending for
 /// the default output device across tests would be flaky.
@@ -2374,6 +2583,7 @@ mod command_roundtrip_tests {
         assert!(data.get("input").is_some());
         assert!(data.get("output").is_some());
         assert!(data.get("sources").is_some());
+        assert!(data.get("generation").is_some());
         assert!(data["sources"].get("input").is_some());
         assert!(data["sources"].get("output").is_some());
     }
@@ -2550,6 +2760,7 @@ mod command_roundtrip_tests {
             key_manager: Arc::new(Mutex::new(KeyManager::default())),
             pipeline_mutation: Arc::new(Mutex::new(())),
             runtime_telemetry: Arc::new(RuntimeTelemetry::default()),
+            device_registry: Arc::new(Mutex::new(DeviceRegistry::default())),
         };
         let resp = daemon.handle_command(Command::Status);
         assert!(resp.success, "{:?}", resp.error);

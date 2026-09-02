@@ -41,6 +41,7 @@ pub(super) fn bare_output(channels: Vec<(String, ChannelDspChain)>) -> DspChainO
         global_plugins: Vec::new(),
         channels: channels.into_iter().collect(),
         metadata: None,
+        deployed_source_curves: Default::default(),
     }
 }
 
@@ -260,6 +261,7 @@ fn test_build_room_eq_graph_ctc_uses_stereo_input_and_speaker_branches() {
         loss_type: None,
         iterations: 1,
         timestamp: "test".to_string(),
+        effective_config: None,
         mixed_phase_per_channel: None,
         optimizer_evidence: None,
         inter_channel_deviation: None,
@@ -409,6 +411,7 @@ fn test_build_room_eq_graph_tracks_global_variable_channel_widths() {
         loss_type: None,
         iterations: 1,
         timestamp: "test".to_string(),
+        effective_config: None,
         mixed_phase_per_channel: None,
         optimizer_evidence: None,
         inter_channel_deviation: None,
@@ -539,6 +542,7 @@ fn test_factored_graph_lfe_chain_route_owned_gain_overrides_route_gain() {
         loss_type: None,
         iterations: 1,
         timestamp: "test".to_string(),
+        effective_config: None,
         mixed_phase_per_channel: None,
         optimizer_evidence: None,
         inter_channel_deviation: None,
@@ -556,6 +560,7 @@ fn test_factored_graph_lfe_chain_route_owned_gain_overrides_route_gain() {
             enabled: true,
             crossover_type: "LR24".to_string(),
             crossover_frequency_hz: Some(80.0),
+            lfe_low_pass_hz: 120.0,
             redirected_bass_enabled: true,
             lfe_channel: "LFE".to_string(),
             lfe_playback_gain_db: 10.0,
@@ -576,6 +581,7 @@ fn test_factored_graph_lfe_chain_route_owned_gain_overrides_route_gain() {
                 physical_sub_output: "LFE".to_string(),
                 input_channels: vec!["L".to_string(), "LFE".to_string()],
                 output_channels: vec!["L".to_string(), "LFE".to_string()],
+                input_trim_db: Default::default(),
                 routes: vec![
                     BassManagementRoute {
                         group_id: Some("lcr".to_string()),
@@ -695,6 +701,7 @@ fn test_factored_graph_all_destinations_no_sources_builds_cleanly() {
         loss_type: None,
         iterations: 1,
         timestamp: "test".to_string(),
+        effective_config: None,
         mixed_phase_per_channel: None,
         optimizer_evidence: None,
         inter_channel_deviation: None,
@@ -712,6 +719,7 @@ fn test_factored_graph_all_destinations_no_sources_builds_cleanly() {
             enabled: true,
             crossover_type: "LR24".to_string(),
             crossover_frequency_hz: Some(80.0),
+            lfe_low_pass_hz: 120.0,
             redirected_bass_enabled: false,
             lfe_channel: "B".to_string(),
             lfe_playback_gain_db: 0.0,
@@ -732,6 +740,7 @@ fn test_factored_graph_all_destinations_no_sources_builds_cleanly() {
                 physical_sub_output: "B".to_string(),
                 input_channels: vec!["A".to_string(), "B".to_string()],
                 output_channels: vec!["A".to_string(), "B".to_string()],
+                input_trim_db: Default::default(),
                 // A single route with an unknown kind: builder marks
                 // is_source[A] and is_destination[B] via the tag pass
                 // but doesn't populate HP/LP mode arrays. After the

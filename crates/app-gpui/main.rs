@@ -3,8 +3,6 @@
 
 use clap::Parser;
 use gpui::*;
-#[cfg(feature = "mimalloc-allocator")]
-use mimalloc::MiMalloc;
 use sotf_audio_player::{Player, ReleaseChannel};
 use sotf_audio_player_gpui::app::actions::*;
 use sotf_audio_player_gpui::app::player_handle::PlayerHandle;

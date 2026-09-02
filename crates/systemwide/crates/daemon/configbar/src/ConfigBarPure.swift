@@ -182,6 +182,50 @@ public struct EncryptionToggleGuard {
     }
 }
 
+/// Coalesces authoritative rack refreshes without dropping a request that
+/// arrives while an earlier daemon read is still in flight.
+public struct ConfigBarRefreshGate {
+    public private(set) var isRefreshing = false
+    public private(set) var hasPendingRefresh = false
+
+    public init() {}
+
+    /// Returns true when the caller should start a daemon read immediately.
+    @discardableResult
+    public mutating func request() -> Bool {
+        guard !isRefreshing else {
+            hasPendingRefresh = true
+            return false
+        }
+        isRefreshing = true
+        return true
+    }
+
+    /// Completes one daemon read. Returns true when one coalesced follow-up
+    /// read must start immediately; the gate remains busy in that case.
+    @discardableResult
+    public mutating func complete() -> Bool {
+        guard isRefreshing else { return false }
+        if hasPendingRefresh {
+            hasPendingRefresh = false
+            return true
+        }
+        isRefreshing = false
+        return false
+    }
+}
+
+public func configBarMutationErrorMessage(
+    daemonError: String?,
+    fallback: String
+) -> String {
+    guard let daemonError else { return fallback }
+    if daemonError.localizedCaseInsensitiveContains("generation conflict") {
+        return "The pipeline changed while this view was open. Refreshed to the current version; please retry."
+    }
+    return daemonError
+}
+
 /// Pure window-dismissal policy used by the AppKit window subclass. Keeping
 /// the decision outside AppKit makes the accessory-app lifecycle behavior
 /// testable without creating a live NSWindow in a test process.

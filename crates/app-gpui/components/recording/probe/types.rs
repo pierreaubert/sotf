@@ -478,7 +478,7 @@ impl PlayerView {
     /// visible Run Probe control has been activated.
     #[cfg(feature = "dev-api")]
     fn complete_qa_fake_probe_capture(&mut self, cx: &mut Context<Self>) -> bool {
-        let completed = self.state.update(cx, |state, cx| {
+        self.state.update(cx, |state, cx| {
             let rec = &mut state.app.measurement_state.recording_state;
             if rec.qa_fake_capture.is_none() {
                 return false;
@@ -513,8 +513,7 @@ impl PlayerView {
             );
             cx.notify();
             true
-        });
-        completed
+        })
     }
 
     /// Request cancellation of an in-progress probe capture. The engine

@@ -9,6 +9,28 @@ use parking_lot::Mutex;
 use sotf_audio::manager::AudioEngineManager;
 use std::sync::Arc;
 
+pub(super) fn acknowledged_config_for_outcome(
+    requested_rate: u32,
+    requested_frames: u32,
+    requested_channels: u32,
+    actual_rate: u32,
+    outcome: PipelineReconfigureOutcome,
+) -> (DriverConfig, driver_common::ConfigResult) {
+    let active_channels = match outcome {
+        PipelineReconfigureOutcome::Restored { input_channels } => input_channels as u32,
+        PipelineReconfigureOutcome::IdleUpdated | PipelineReconfigureOutcome::Restarted => {
+            requested_channels
+        }
+    };
+    let actual = DriverConfig::new(actual_rate, requested_frames, active_channels);
+    let result = if actual_rate != requested_rate || active_channels != requested_channels {
+        driver_common::ConfigResult::negotiated(actual_rate, requested_frames, active_channels)
+    } else {
+        driver_common::ConfigResult::Accepted
+    };
+    (actual, result)
+}
+
 /// Handle a driver-initiated config change
 pub(super) fn handle_driver_config_change(
     driver_manager: &Arc<Mutex<DriverManager>>,
@@ -79,8 +101,6 @@ pub(super) fn handle_driver_config_change(
             .unwrap_or(48000)
     };
 
-    let negotiated = actual_rate != requested_rate;
-
     // Reconfigure audio pipeline
     // Stop publishing input frames while the old engine is being torn down.
     // A failed restart must not leave HAL believing that a stopped engine is
@@ -94,40 +114,41 @@ pub(super) fn handle_driver_config_change(
         requested_channels as usize,
     ) {
         Ok(outcome) => {
-            if matches!(
+            system_state.lock().clear_pipeline_recovery();
+            let (active_config, result) = acknowledged_config_for_outcome(
+                requested_rate,
+                requested_frames,
+                requested_channels,
+                actual_rate,
                 outcome,
-                PipelineReconfigureOutcome::Restarted | PipelineReconfigureOutcome::Restored
-            ) {
-                // Set engine_ready so driver continues sending audio.
-                driver_manager.lock().set_engine_ready(true);
+            );
+            if result != driver_common::ConfigResult::Accepted {
+                log::info!(
+                    "Config negotiated: requested {}Hz/{}ch, using {}Hz/{}ch",
+                    requested_rate,
+                    requested_channels,
+                    active_config.sample_rate,
+                    active_config.channel_count
+                );
             }
 
-            system_state.lock().clear_pipeline_recovery();
+            driver_manager
+                .lock()
+                .acknowledge_config_change(active_config, result);
 
-            let result = if negotiated {
-                log::info!(
-                    "Config negotiated: requested {}Hz, using {}Hz",
-                    requested_rate,
-                    actual_rate
-                );
-                driver_common::ConfigResult::negotiated(
-                    actual_rate,
-                    requested_frames,
-                    requested_channels,
-                )
-            } else {
-                driver_common::ConfigResult::Accepted
-            };
-
-            driver_manager.lock().acknowledge_config_change(
-                DriverConfig::new(actual_rate, requested_frames, config.channel_count),
-                result,
-            );
+            if matches!(
+                outcome,
+                PipelineReconfigureOutcome::Restarted | PipelineReconfigureOutcome::Restored { .. }
+            ) {
+                // Publish readiness only after HAL has acknowledged the exact
+                // geometry consumed by the running engine.
+                driver_manager.lock().set_engine_ready(true);
+            }
             log::info!(
                 "Config accepted: {}Hz, {} frames, {} channels, outcome={:?}",
                 actual_rate,
                 requested_frames,
-                requested_channels,
+                active_config.channel_count,
                 outcome
             );
         }
@@ -228,7 +249,9 @@ pub(super) fn reconfigure_audio_pipeline(
                 log::warn!(
                     "Restored the last working driver pipeline after reconfiguration failure"
                 );
-                return Ok(PipelineReconfigureOutcome::Restored);
+                return Ok(PipelineReconfigureOutcome::Restored {
+                    input_channels: previous_plan.spec.input_channels,
+                });
             }
 
             Err(format!(

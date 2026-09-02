@@ -83,5 +83,5 @@ pub(super) struct PipelinePlan {
 pub(super) enum PipelineReconfigureOutcome {
     IdleUpdated,
     Restarted,
-    Restored,
+    Restored { input_channels: usize },
 }

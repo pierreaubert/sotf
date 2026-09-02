@@ -1,20 +1,23 @@
 //! Lock-order invariant for the daemon.
 //!
-//! The daemon holds three coarse `parking_lot::Mutex`-protected objects
-//! that can be acquired together: `driver_manager`, `manager`, and a
-//! handful of small per-state mutexes (`selected_device`, `current_plugins`,
-//! `current_input_channels`, `current_output_channels`, etc.).
+//! Pipeline-changing commands first acquire `pipeline_mutation`, then touch
+//! the coarse `parking_lot::Mutex`-protected runtime owners. Read-only
+//! snapshots also acquire `pipeline_mutation` so they never stitch together
+//! values from the middle of a transition.
 //!
 //! **The canonical lock order is:**
 //!
-//! 1. `driver_manager`
-//! 2. `manager`
-//! 3. per-state mutexes (`selected_device`, `current_plugins`, ...)
+//! 1. `pipeline_mutation`
+//! 2. `driver_manager`
+//! 3. `manager`
+//! 4. `system_state`
+//! 5. `key_manager` / `running` (never held across runtime effects)
 //!
-//! The config-watcher thread acquires `driver_manager -> manager`, and
-//! every IPC handler that touches both follows the same order. Holding
-//! `manager` while trying to acquire `driver_manager` is a deadlock
-//! waiting to happen.
+//! IPC dispatch, automatic startup, and the config-watcher all acquire the
+//! transition lock before beginning a multi-effect pipeline change. Component
+//! locks should be released between effects where possible; if two must be
+//! nested, they follow the order above. Holding `manager` while trying to
+//! acquire `driver_manager` is a lock-order violation.
 //!
 //! Historically the invariant was documented only in line comments next
 //! to `handle_stop` and `handle_load_plugins_with_channels`. The helpers
@@ -35,8 +38,9 @@ use parking_lot::{Mutex, MutexGuard};
 /// warning identifying the caller (file:line) and the lock name, then
 /// fall back to a bounded blocking wait.
 ///
-/// Use this at sites that are part of the documented `driver_manager ->
-/// manager -> per-state` chain. The warning is the signal that a future
+/// Use this at sites that are part of the documented `pipeline_mutation ->
+/// driver_manager -> manager -> system_state` chain. The warning is the
+/// signal that a future
 /// contributor introduced a path where two threads grab the same lock in
 /// conflicting orders -- it does not by itself prove a deadlock, but
 /// when combined with the printed call sites it is enough to triage one.

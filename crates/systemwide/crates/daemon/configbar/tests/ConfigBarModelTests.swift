@@ -377,6 +377,34 @@ final class ConfigBarModelTests: XCTestCase {
         XCTAssertTrue(state.confirmed)
     }
 
+    func testRackRefreshGateCoalescesRequestsReceivedWhileBusy() {
+        var gate = ConfigBarRefreshGate()
+
+        XCTAssertTrue(gate.request())
+        XCTAssertTrue(gate.isRefreshing)
+        XCTAssertFalse(gate.request())
+        XCTAssertFalse(gate.request())
+        XCTAssertTrue(gate.hasPendingRefresh)
+
+        XCTAssertTrue(gate.complete(), "one queued refresh must run next")
+        XCTAssertTrue(gate.isRefreshing)
+        XCTAssertFalse(gate.hasPendingRefresh)
+        XCTAssertFalse(gate.complete(), "the follow-up completes the refresh cycle")
+        XCTAssertFalse(gate.isRefreshing)
+    }
+
+    func testGenerationConflictUsesActionableRackMessage() {
+        let message = configBarMutationErrorMessage(
+            daemonError: "Pipeline generation conflict: intent was based on generation 1, current generation is 7.",
+            fallback: "Failed to update plugin"
+        )
+
+        XCTAssertEqual(
+            message,
+            "The pipeline changed while this view was open. Refreshed to the current version; please retry."
+        )
+    }
+
     // MARK: - Daemon watchdog policy
 
     func testWatchdogToleratesTransientProbeFailureButRestartsOnRepeatedOnes() {

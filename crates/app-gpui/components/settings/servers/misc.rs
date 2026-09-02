@@ -1135,7 +1135,7 @@ pub(crate) fn server_secret_field(
                     .password(!revealed)
                     .aria_label(SharedString::from(label.to_string()))
                     .on_text_change(move |value, window, cx| {
-                        on_text_change(&value, window, cx);
+                on_text_change(value, window, cx);
                     })
                     .on_change(move |value, window, cx| {
                         on_confirm(value, window, cx);
@@ -1193,7 +1193,7 @@ fn server_editable_field_with_mode(
                     .password(secret)
                     .aria_label(SharedString::from(label.to_string()))
                     .on_text_change(move |value, window, cx| {
-                        on_text_change(&value, window, cx);
+                on_text_change(value, window, cx);
                     })
                     .on_change(move |value, window, cx| {
                         on_confirm(value, window, cx);

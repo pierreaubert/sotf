@@ -390,6 +390,7 @@ class AudioEngineClient {
     }
 
     struct Status {
+        let generation: UInt64?
         let state: AudioState
         let volume: Float
         let muted: Bool
@@ -407,6 +408,7 @@ class AudioEngineClient {
         let playbackEffectiveSampleRate: Int?
 
         static let fallback = Status(
+            generation: nil,
             state: .idle,
             volume: 1.0,
             muted: false,
@@ -426,7 +428,11 @@ class AudioEngineClient {
     }
 
     func getStatus(reuseConnection: Bool = false) -> Status {
-        let command = ["command": "status"]
+        // Configuration UI state must come from one daemon snapshot. The old
+        // flat `status` response sampled a different instant than device,
+        // plugin, and recovery state and made the toolbar reconcile partial
+        // authorities locally.
+        let command = ["command": "get_snapshot"]
 
         let response = reuseConnection
             ? sendPersistentCommand(command)
@@ -437,24 +443,32 @@ class AudioEngineClient {
             return .fallback
         }
 
-        let stateStr = data["state"]?.value as? String ?? "Idle"
+        let desired = data["desired"]?.value as? [String: Any] ?? [:]
+        let applied = data["applied"]?.value as? [String: Any] ?? [:]
+        let observed = data["observed"]?.value as? [String: Any] ?? [:]
+        let engine = observed["engine"] as? [String: Any] ?? [:]
+        let generation = uint64Value(data["generation"]?.value)
+            ?? uint64Value(applied["generation"])
+
+        let stateStr = engine["state"] as? String ?? "Idle"
         let state = AudioState(rawValue: stateStr) ?? .idle
-        let volume = (data["volume"]?.value as? Double).map { Float($0) } ?? 1.0
-        let muted = data["muted"]?.value as? Bool ?? false
-        let selectedDevice = data["selected_device"]?.value as? String
-        let sampleRate = data["sample_rate"]?.value as? Int
-        let inputChannels = data["input_channels"]?.value as? Int
-        let outputChannels = data["output_channels"]?.value as? Int
-        let channels = data["channels"]?.value as? Int
-        let playbackCallbackCount = data["playback_callback_count"]?.value as? Int
-        let playbackBufferFillPercent = data["playback_buffer_fill_percent"]?.value as? Int
-        let playbackStreamErrorCount = data["playback_stream_error_count"]?.value as? Int
-        let playbackFramesReceived = data["playback_frames_received"]?.value as? Int
-        let playbackFramesWritten = data["playback_frames_written"]?.value as? Int
-        let playbackFramesDropped = data["playback_frames_dropped"]?.value as? Int
-        let playbackEffectiveSampleRate = data["playback_effective_sample_rate"]?.value as? Int
+        let volume = (engine["volume"] as? Double).map { Float($0) } ?? 1.0
+        let muted = engine["muted"] as? Bool ?? false
+        let selectedDevice = desired["output_device"] as? String
+        let sampleRate = engine["sample_rate"] as? Int
+        let inputChannels = desired["input_channels"] as? Int
+        let outputChannels = desired["output_channels"] as? Int
+        let channels = engine["channels"] as? Int
+        let playbackCallbackCount = engine["playback_callback_count"] as? Int
+        let playbackBufferFillPercent = engine["playback_buffer_fill_percent"] as? Int
+        let playbackStreamErrorCount = engine["playback_stream_error_count"] as? Int
+        let playbackFramesReceived = engine["playback_frames_received"] as? Int
+        let playbackFramesWritten = engine["playback_frames_written"] as? Int
+        let playbackFramesDropped = engine["playback_frames_dropped"] as? Int
+        let playbackEffectiveSampleRate = engine["playback_effective_sample_rate"] as? Int
 
         return Status(
+            generation: generation,
             state: state,
             volume: volume,
             muted: muted,
@@ -577,6 +591,7 @@ class AudioEngineClient {
     // MARK: - Metering Commands
 
     struct MeteringData {
+        var generation: UInt64?
         var input: LoudnessData?
         var output: LoudnessData?
     }
@@ -594,6 +609,7 @@ class AudioEngineClient {
         }
 
         var metering = MeteringData()
+        metering.generation = uint64Value(data["generation"]?.value)
 
         if let inputDict = data["input"]?.value as? [String: Any] {
             metering.input = parseLoudnessDict(inputDict)
@@ -1948,6 +1964,7 @@ struct ConfigurationView: View {
     @State private var programmaticSampleRateSync = false
     @State private var programmaticBufferFramesSync = false
     @State private var statusWatermark = ConfigBarStatusWatermark()
+    @State private var daemonPipelineGeneration: UInt64? = nil
 
     let channelOptions = Array(1...32)
     let sampleRateOptions: [UInt32] = [44100, 48000, 96000]
@@ -2185,7 +2202,11 @@ struct ConfigurationView: View {
                             deviceMutationGeneration &+= 1
                             let mutationGeneration = deviceMutationGeneration
                             deviceMutationInFlight = true
-                            client.sendCommandAsync(["command": "set_device", "device": newDevice]) { response in
+                            var command: [String: Any] = ["command": "set_device", "device": newDevice]
+                            if let daemonPipelineGeneration {
+                                command["base_generation"] = daemonPipelineGeneration
+                            }
+                            client.sendCommandAsync(command) { response in
                                 guard mutationGeneration == deviceMutationGeneration,
                                       acceptsStatusSnapshot(statusGeneration) else { return }
                                 deviceMutationInFlight = false
@@ -2697,6 +2718,7 @@ struct ConfigurationView: View {
         snapshotGeneration: UInt64
     ) {
         guard acceptsStatusSnapshot(snapshotGeneration) else { return }
+        daemonPipelineGeneration = status.generation
         if !channelMutationInFlight {
             if let inputChannels = status.inputChannels, inputChannels > 0 {
                 let confirmed = min(max(inputChannels, 1), 32)
@@ -2776,6 +2798,13 @@ struct ConfigurationView: View {
         var nextOutputPeaks = outputPeaks
 
         if let metering = metering {
+            if let meterGeneration = metering.generation,
+               let daemonPipelineGeneration,
+               meterGeneration != daemonPipelineGeneration {
+                inputPeaks = decayedPeaks(inputPeaks)
+                outputPeaks = decayedPeaks(outputPeaks)
+                return
+            }
             // Input peaks from pre-processing monitor
             if let input = metering.input {
                 if !input.channelPeaks.isEmpty {
@@ -3213,11 +3242,14 @@ struct ConfigurationView: View {
         let mutationGeneration = channelMutationGeneration
         channelMutationInFlight = true
 
-        let command: [String: Any] = [
+        var command: [String: Any] = [
             "command": "set_pipeline_channels",
             "input_channels": requestedInputChannels,
             "output_channels": requestedOutputChannels
         ]
+        if let daemonPipelineGeneration {
+            command["base_generation"] = daemonPipelineGeneration
+        }
 
         client.sendCommandAsync(command) { response in
             guard mutationGeneration == channelMutationGeneration,
@@ -3254,10 +3286,13 @@ struct ConfigurationView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             loadingPluginConfiguration = true
-            let command: [String: Any] = [
+            var command: [String: Any] = [
                 "command": "load_plugin_artifact_path",
                 "path": url.path
             ]
+            if let daemonPipelineGeneration {
+                command["base_generation"] = daemonPipelineGeneration
+            }
             client.sendCommandAsync(command) { response in
                 loadingPluginConfiguration = false
                 if response?.success == true {

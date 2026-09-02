@@ -1988,7 +1988,7 @@ impl PlayerView {
 
         let element = gpui_ui_kit::accessibility::apply_native_accessibility(
             element,
-            &format!("{device_name} {display_type}"),
+            format!("{device_name} {display_type}"),
             &accessibility_props,
         );
 

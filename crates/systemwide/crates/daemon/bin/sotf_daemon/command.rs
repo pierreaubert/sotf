@@ -124,6 +124,57 @@ pub(super) enum Command {
 }
 
 impl Command {
+    /// Commands whose effects participate in the single Systemwide pipeline
+    /// transaction. The dispatcher acquires the transition lock once before
+    /// invoking any command-specific logic.
+    pub(super) fn requires_pipeline_serialization(&self) -> bool {
+        matches!(
+            self,
+            Command::Load { .. }
+                | Command::Play
+                | Command::Pause
+                | Command::Stop
+                | Command::Seek { .. }
+                | Command::SetDevice { .. }
+                | Command::LoadPlugins { .. }
+                | Command::LoadPluginArtifact { .. }
+                | Command::LoadPluginArtifactPath { .. }
+                | Command::ReorderGraph { .. }
+                | Command::SetInputChannels { .. }
+                | Command::SetOutputChannels { .. }
+                | Command::SetPipelineChannels { .. }
+                | Command::AddPlugin { .. }
+                | Command::RemovePlugin { .. }
+                | Command::UpdatePlugin { .. }
+                | Command::ReorderPlugins { .. }
+                | Command::SetRackPluginState { .. }
+                | Command::SetSampleRate { .. }
+                | Command::SetBufferFrames { .. }
+                | Command::SetEncryption { .. }
+                | Command::RotateEncryptionKey
+        )
+    }
+
+    /// Commands built from a previously rendered pipeline snapshot.
+    pub(super) fn accepts_pipeline_base_generation(&self) -> bool {
+        matches!(
+            self,
+            Command::SetDevice { .. }
+                | Command::LoadPlugins { .. }
+                | Command::LoadPluginArtifact { .. }
+                | Command::LoadPluginArtifactPath { .. }
+                | Command::ReorderGraph { .. }
+                | Command::SetInputChannels { .. }
+                | Command::SetOutputChannels { .. }
+                | Command::SetPipelineChannels { .. }
+                | Command::AddPlugin { .. }
+                | Command::RemovePlugin { .. }
+                | Command::UpdatePlugin { .. }
+                | Command::ReorderPlugins { .. }
+                | Command::SetRackPluginState { .. }
+        )
+    }
+
     /// Return the wire name (`#[serde(rename = ...)]`) for this command.
     ///
     /// Used to gate which commands a given peer UID may invoke (see

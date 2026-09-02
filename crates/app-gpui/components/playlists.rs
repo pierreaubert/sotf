@@ -723,7 +723,7 @@ impl PlayerView {
                     Some(text.queued_with_missing(outcome.added, outcome.skipped_missing))
                 };
 
-                let source = if play_now {
+                if play_now {
                     outcome.first_added_index.and_then(|index| {
                         match app.queue_state.jump_to(index) {
                             sotf_audio_player::QueuePlaybackEffect::Play(source) => Some(source),
@@ -732,8 +732,7 @@ impl PlayerView {
                     })
                 } else {
                     None
-                };
-                source
+                }
             };
 
             if let Some(source) = source {

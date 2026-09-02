@@ -76,9 +76,12 @@ capture drivers:
   expires. Reads and writes are frame-aligned and never expose a partially
   published interleaved frame.
 - Pipeline mutations are serialized across IPC clients and apply failures roll
-  back to the last applied plan when possible. A failed transition leaves an
-  explicit recovery diagnostic instead of silently claiming that the old audio
-  stream is still live. If both the requested apply and restore fail, the
+  back to the last applied plan when possible. Rollback explicitly restores
+  the previous plan's HAL input geometry even when the pre-transition driver
+  snapshot is stale after a successful channel-count request.
+  A failed transition leaves an explicit recovery diagnostic instead of
+  silently claiming that the old audio stream is still live. If both the
+  requested apply and restore fail, the
   process-lifetime `pipeline_recovery` state remains set, `engine_ready` stays
   cleared, and status/snapshot responses expose `restart_daemon` as the
   actionable recovery step. The state clears only after a successful apply.
@@ -425,13 +428,13 @@ The current controls are:
 
 | Area | Current mutation path | Missing control |
 | --- | --- | --- |
-| Desired audio graph | `PipelineSupervisor.prepare_plan()`, reducer-style setters, and `commit_applied()` own normal plugin/channel/device changes | Driver startup and idle reconfigure use explicit supervisor methods; the mutation mutex spans concurrent IPC read-modify-apply sequences. |
+| Desired audio graph | `PipelineSupervisor.prepare_plan()`, reducer-style setters, and `commit_applied()` own normal plugin/channel/device changes. `AudioDaemon::handle_command_at_generation` is the common serialized IPC intent boundary. | Move the remaining effect implementations behind a dedicated controller type; the dispatcher now provides one validation/serialization point but does not yet own every adapter. |
 | Toolbar configuration | Swift `@State` mirrors daemon snapshots and sends patch-style channel/device intents or complete plugin artifacts | Configbar synchronizes programmatic state without echoing commands and serializes mutations off the main thread. Remaining UI caches are presentation state, not daemon authority. |
 | Driver/HAL transport | `DriverManager` and `SharedAudioBuffer` publish active format, config handshake, readiness, heartbeat, and encryption fingerprint | Shared memory remains both transport and tempting state source. Only `DriverManager`/`HalDriver` should write protocol fields; higher layers should read them through typed status snapshots. |
-| Runtime engine | `AudioEngineManager` owns playback state, stream counters, plugin runtime, volume, mute, and cached plugin data | Command handlers still stop/restart the engine while holding or acquiring other state locks. Move multi-step transitions into one controller with one lock-order policy and rollback/diagnostic output. |
-| Metering | Loudness monitor indices are derived from `AppliedPipeline`; data comes from engine plugin cache | `get_metering` can return correctly shaped zeros without saying whether this is "no audio", "no analyzer data yet", "stale plugin index", or "engine not receiving frames". Add metering provenance/status fields. |
+| Runtime engine | `AudioEngineManager` owns playback state, stream counters, plugin runtime, volume, mute, and cached plugin data. IPC, startup, snapshots, and driver recovery share the `pipeline_mutation` transition boundary. | Move the remaining stop/configure/start/commit effects into one controller method; do not add handler-specific transaction implementations. |
+| Metering | Loudness monitor indices are derived from `AppliedPipeline`; data comes from the engine plugin cache. `get_metering` publishes source provenance plus the control generation and Configbar rejects samples from another pipeline generation. | Fold the versioned meter event into a push/event transport if 10 Hz polling becomes a measurable control-plane cost. |
 | Encryption | `KeyManager` owns desired key state; shared memory publishes active fingerprint; readers/writers cache ciphers | Key rotation is observable through fingerprints, reload mismatch diagnostics, and RT-safe reader/writer mismatch counters. Reload happens on control paths; audio callbacks only suppress unsafe frames. |
-| Device discovery | Daemon lists CPAL devices; toolbar also queries CoreAudio directly for UI details | Two enumerators can disagree after CoreAudio churn. Daemon should publish the authoritative device snapshot and a timestamp/error; toolbar-only enumeration should be advisory UI metadata. |
+| Device discovery | Daemon `DeviceRegistry` coalesces CPAL enumeration and selected-device channel-capability probes behind a bounded two-second cache generation; toolbar also queries CoreAudio directly for advisory UI details | Add CoreAudio change-listener invalidation so hot-plug refresh does not rely only on the TTL. Toolbar-only enumeration must never become daemon authority. |
 
 The control rule for future changes:
 
@@ -443,6 +446,16 @@ The control rule for future changes:
    locally cached fields.
 
 Implemented first controls:
+
+- Pipeline-changing IPC intents enter through one serialized dispatcher;
+  automatic startup and driver recovery use the same transition lock.
+  `base_generation` is extracted protocol-wide and checked while that lock is
+  held, so stale device/channel/rack intents cannot overwrite a newer applied
+  pipeline. Snapshot construction takes the transition lock and therefore
+  cannot observe the middle of stop/configure/start/commit.
+- Driver recovery reports the channel geometry of a successfully restored
+  previous plan, acknowledges that exact geometry to HAL, and publishes
+  `engine_ready` only after acknowledgement.
 
 - `PipelineSupervisor` now exposes reducer-style methods for startup output
   device adoption and idle HAL reconfiguration. Startup and idle config-change
@@ -522,15 +535,25 @@ Key observations:
   queue and roll back optimistic UI state on failure. Lifecycle adoption and
   watchdog checks use lock-independent `ping` rather than full `status`, so
   CoreAudio startup or pipeline replacement cannot trigger a false restart.
-- Plugin configuration files are parsed on a background queue with a 1 MiB
-  file bound and the daemon's 64 KiB encoded-command bound. Pipeline mutations
-  retain a thirty-second client deadline covering bounded startup and recovery
-  without blocking AppKit.
+- Configbar sends an absolute plugin-artifact path in a small bounded IPC
+  command; the daemon opens it without following symlinks and parses up to its
+  64 MiB artifact bound off the UI thread. Pipeline mutations retain a
+  thirty-second client deadline covering bounded startup and recovery without
+  blocking AppKit.
 - If CoreAudio is still recovering after install/restart, the toolbar treats an
   empty physical-output list as a transient recovery state and polls until
   hardware devices reappear.
 - The menu bar icon is a status signal: startup/idle is explicitly dark,
   active playback is white, and errors are red.
+
+- The driver watcher treats HAL capture resuming after at least thirty seconds
+  idle as a physical-stream recovery boundary. It transactionally rebuilds the
+  already-applied pipeline once, because a CoreAudio output stream can continue
+  receiving callbacks while producing silence. Any explicit pipeline generation
+  change resets the idle observation and prevents a redundant rebuild.
+- Plugin-rack refreshes are coalesced while a daemon read is in flight. A stale
+  generation rejection refreshes authoritative rack state and asks the user to
+  retry; Configbar never replays an index-based mutation against a newer graph.
 
 ### Runtime ownership and recovery
 
@@ -549,8 +572,9 @@ SIGINT and SIGTERM clear the daemon running flag. The shutdown path clears HAL
 client handler and the config watcher, and removes the daemon-owned socket after
 revalidating that the entry is still a Unix socket.
 When a pipeline transition fails after stopping the engine, the supervisor
-restores the last applied plan where possible and exposes a recovery diagnostic
-in the next status/snapshot response.
+restores the last applied plan where possible, explicitly re-requests that
+plan's HAL input geometry, and exposes a recovery diagnostic in the next
+status/snapshot response.
 
 ## Use Case: User Plays Music
 
@@ -800,9 +824,13 @@ Important details:
 
 ### 1. Introduce A Single Daemon State Owner
 
-`PipelineSupervisor` now owns the audio pipeline subset of daemon state. The
-next step is to lift the same idea into a broader `SystemwideController` that
-owns all desired daemon state and serializes effects:
+`SystemwideController` is the daemon's runtime owner and serialized command
+boundary. It owns the engine, driver, pipeline state, key manager, transition
+lock, device registry, and snapshot construction; `AudioDaemon` remains a
+compatibility name at the process/socket entry point. `PipelineSupervisor`
+continues to reduce the audio-pipeline subset. Remaining work is to express
+the controller's stop/configure/start operations as explicit effects rather
+than adding new handler-specific orchestration:
 
 ```mermaid
 classDiagram

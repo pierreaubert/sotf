@@ -116,10 +116,22 @@ PackageKit record remains available at `/var/log/install.log`.
   pipeline, driver, or key-manager state locks. Full status and mutation
   requests retain separate bounded deadlines; configuration parsing is
   size-bounded and off the main thread.
+- Pipeline-changing IPC commands, automatic playback startup, and
+  driver-initiated reconfiguration share one transition lock. Snapshot reads
+  take the same lock, and Configbar renders configuration status from
+  `get_snapshot`; generation-tagged UI intents are rejected if a newer
+  pipeline committed before they execute.
+- Daemon device enumeration and RoomEQ output-channel capability checks use a
+  short-lived, generation-tagged registry, avoiding repeated synchronous CPAL
+  probes during Configbar recovery polling and consecutive configuration loads.
 - Daemon `engine_ready` is committed only after the physical output stream
   reports its first hardware callback. Startup failure leaves readiness false
   and enters transactional pipeline recovery.
 
+- When HAL capture resumes after at least thirty seconds idle, the daemon
+  transactionally rebuilds the currently applied physical playback stream once.
+  Configbar also coalesces overlapping plugin-rack refreshes; stale-generation
+  mutations refresh daemon-owned state and require an explicit retry.
 - A daemon acquires process-lifetime ownership locks for its canonicalized
   control socket, HAL shared memory, HAL-readable key copy, and daemon-private
   key before construction, key rotation, or stale-socket cleanup. Distinct

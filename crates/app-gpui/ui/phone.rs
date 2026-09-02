@@ -5660,26 +5660,6 @@ impl PlayerView {
         phone_dev_track!(element, format!("phone.settings.{tab:?}"))
     }
 
-    fn render_phone_placeholder(&self, title: &'static str, cx: &mut Context<Self>) -> AnyElement {
-        let d = Ds::from_cx(cx);
-        let theme = self.state.read(cx).app.ui_state.theme.clone();
-
-        div()
-            .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .p(d.card)
-            .bg(theme.background)
-            .child(
-                div()
-                    .text_size(d.text_sm)
-                    .text_color(theme.text_muted)
-                    .child(format!("{title} is not available yet.")),
-            )
-            .into_any_element()
-    }
-
     fn render_phone_transport_button(
         &self,
         id: &'static str,

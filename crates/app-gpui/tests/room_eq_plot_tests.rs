@@ -77,6 +77,7 @@ fn room_eq_report_uses_dsp_output_curves_without_recomputing() {
         global_plugins: Vec::new(),
         channels,
         metadata: None,
+        deployed_source_curves: Default::default(),
     };
 
     let report = room_eq_report_data_from_dsp_output(&output);
@@ -135,6 +136,7 @@ fn room_eq_report_channel_without_embedded_data_uses_legacy_fallback_guard() {
         global_plugins: Vec::new(),
         channels,
         metadata: None,
+        deployed_source_curves: Default::default(),
     };
 
     let report = room_eq_report_data_from_dsp_output(&output);

@@ -192,7 +192,11 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
             Some(i) => json!(i),
             None => Value::Null,
         },
-        "queue.first_title" => json!(app.queue_state.get(0).map(|item| item.album.title.as_str())),
+        "queue.first_title" => json!(
+            app.queue_state
+                .first()
+                .map(|item| item.album.title.as_str())
+        ),
         "queue.second_title" => json!(app.queue_state.get(1).map(|item| item.album.title.as_str())),
         "queue.can_undo_clear" => json!(app.queue_state.can_undo_clear()),
         "queue.can_undo_remove" => json!(app.queue_state.can_undo_remove()),

@@ -48,6 +48,9 @@ impl PipelineSupervisor {
     pub(super) fn applied_generation(&self) -> Option<u64> {
         self.applied.as_ref().map(|p| p.generation)
     }
+    pub(super) fn generation(&self) -> u64 {
+        self.generation
+    }
 
     pub(super) fn applied_output_device(&self) -> Option<String> {
         self.applied
@@ -238,10 +241,12 @@ impl PipelineSupervisor {
             ));
         }
         self.desired.output_device = output_device;
+        self.generation = self.generation.saturating_add(1);
         Ok(())
     }
 
     pub(super) fn commit_idle_reconfigure(&mut self, plan: &PipelinePlan) {
+        self.generation = self.generation.saturating_add(1);
         self.desired = plan.spec.clone();
     }
 }

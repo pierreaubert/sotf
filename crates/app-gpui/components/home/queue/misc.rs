@@ -54,7 +54,7 @@ impl PlayerView {
         // persisted ratios. The solver accounts for panel minimums, collapsed
         // panels, the app shell/sidebar, and responsive layout adjustments.
         let available_queue_width = solved_queue_width.unwrap_or_else(|| {
-            crate::ui::layout_tree::solve_app_layout(window_width, window_height, &layout)
+            crate::ui::layout_tree::solve_app_layout(window_width, window_height, layout)
                 .find("queue")
                 .filter(|slot| slot.visible)
                 .map_or(0.0, |slot| slot.width)

@@ -198,6 +198,7 @@ mod macos {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn capture_viewport(
         cx: &mut VisualTestAppContext,
         output: &Path,

@@ -542,25 +542,26 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Use owned strings throughout so the dynamic per-channel rows
             // can be formatted in place.
-            let mut rows: Vec<(Option<usize>, String, String)> = Vec::new();
-            rows.push((None, "── Devices ──".to_string(), String::new()));
-            rows.push((Some(0), "Playback Device".to_string(), playback_name));
-            rows.push((Some(1), "Recording Device".to_string(), recording_name));
-            rows.push((
-                Some(2),
-                "Speaker Config".to_string(),
-                s.model
-                    .playback_config
-                    .speaker_configuration
-                    .as_str()
-                    .to_string(),
-            ));
-            rows.push((None, "── Signal ──".to_string(), String::new()));
-            rows.push((
-                Some(3),
-                "Signal Type".to_string(),
-                s.model.signal_type.as_str().to_string(),
-            ));
+            let mut rows: Vec<(Option<usize>, String, String)> = vec![
+                (None, "── Devices ──".to_string(), String::new()),
+                (Some(0), "Playback Device".to_string(), playback_name),
+                (Some(1), "Recording Device".to_string(), recording_name),
+                (
+                    Some(2),
+                    "Speaker Config".to_string(),
+                    s.model
+                        .playback_config
+                        .speaker_configuration
+                        .as_str()
+                        .to_string(),
+                ),
+                (None, "── Signal ──".to_string(), String::new()),
+                (
+                    Some(3),
+                    "Signal Type".to_string(),
+                    s.model.signal_type.as_str().to_string(),
+                ),
+            ];
             // Task 10: the duration knob is ignored for sweeps (the
             // octave-scaled sweep is self-timed) — say so on the label so
             // users are not misled. The field stays editable: it still

@@ -49,6 +49,7 @@ pub(super) fn output(
         global_plugins: Vec::new(),
         channels,
         metadata: None,
+        deployed_source_curves: Default::default(),
     }
 }
 

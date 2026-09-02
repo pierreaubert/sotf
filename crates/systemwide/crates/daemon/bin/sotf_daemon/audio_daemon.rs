@@ -5,16 +5,17 @@ use super::consts::MAX_HAL_CHANNELS;
 use super::consts::empty_loudness_json;
 use super::consts::get_socket_path;
 use super::consts::metering_source_json;
+use super::device_registry::DeviceRegistry;
 use super::driver_manager::{DriverManager, get_driver_status};
 use super::loudness::loudness_data_to_json;
 use super::loudness::loudness_info_to_json;
 use super::misc::bind_unix_socket;
 use super::misc::build_driver_plugin_chain;
 use super::misc::is_safe_output_device_name;
-use super::misc::list_audio_devices;
 use super::misc::push_metering_faults;
 use super::misc::socket_is_unix_socket;
 use super::misc::transport_snapshot_and_faults;
+use super::pipeline_reconfigure_outcome::handle_driver_config_change;
 use super::pipeline_spec::pipeline_spec_to_json;
 use super::plugin::plugin_parameter_descriptors;
 use super::plugin::plugin_type_category;
@@ -28,7 +29,6 @@ use super::security::{
     verify_peer_credentials,
 };
 use super::systemwide_state::SystemwideState;
-use super::systemwide_state::spawn_driver_config_watcher;
 use super::types::IpcLine;
 use super::types::PipelinePlan;
 use super::types::read_ipc_line_bounded;
@@ -46,6 +46,7 @@ use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 
 use super::consts::MAX_IPC_CLIENTS;
 
@@ -256,6 +257,7 @@ pub(super) fn rack_plugins_to_linear_graph(
 }
 
 pub(super) const METERING_LATENCY_BUDGET_MICROS: u64 = 5_000;
+pub(super) const PLAYBACK_IDLE_REBUILD_THRESHOLD: Duration = Duration::from_secs(30);
 const PIPELINE_LATENCY_BUDGET_MICROS: u64 = 1_000_000;
 const METERING_RESPONSE_BUDGET_BYTES: usize = 64 * 1024;
 pub(super) const PIPELINE_RESPONSE_BUDGET_BYTES: usize = 256 * 1024;
@@ -357,8 +359,52 @@ impl RuntimeTelemetry {
     }
 }
 
+#[derive(Debug)]
+pub(super) struct CaptureResumeTracker {
+    generation: u64,
+    capture_active: bool,
+    inactive_since: Option<Instant>,
+}
+
+impl CaptureResumeTracker {
+    pub(super) fn new(now: Instant, generation: u64, capture_active: bool) -> Self {
+        Self {
+            generation,
+            capture_active,
+            inactive_since: (!capture_active).then_some(now),
+        }
+    }
+
+    /// Returns true once when capture resumes after a sufficiently long idle.
+    /// A pipeline generation change represents an explicit user/driver
+    /// transition and resets the timer, so its own stream rebuild is never
+    /// followed by a redundant automatic rebuild.
+    pub(super) fn observe(&mut self, now: Instant, generation: u64, capture_active: bool) -> bool {
+        if generation != self.generation {
+            self.generation = generation;
+            self.capture_active = capture_active;
+            self.inactive_since = (!capture_active).then_some(now);
+            return false;
+        }
+
+        let resumed_after_long_idle = capture_active
+            && !self.capture_active
+            && self.inactive_since.is_some_and(|inactive_since| {
+                now.saturating_duration_since(inactive_since) >= PLAYBACK_IDLE_REBUILD_THRESHOLD
+            });
+
+        if capture_active {
+            self.inactive_since = None;
+        } else if self.capture_active || self.inactive_since.is_none() {
+            self.inactive_since = Some(now);
+        }
+        self.capture_active = capture_active;
+        resumed_after_long_idle
+    }
+}
+
 #[derive(Clone)]
-pub(super) struct AudioDaemon {
+pub(super) struct SystemwideController {
     pub(super) manager: Arc<Mutex<AudioEngineManager>>,
     pub(super) running: Arc<Mutex<bool>>,
     pub(super) driver_manager: Arc<Mutex<DriverManager>>,
@@ -370,7 +416,13 @@ pub(super) struct AudioDaemon {
     pub(super) pipeline_mutation: Arc<Mutex<()>>,
     /// Low-overhead IPC latency and serialized-size regression telemetry.
     pub(super) runtime_telemetry: Arc<RuntimeTelemetry>,
+    /// Bounded view of synchronous CoreAudio/CPAL discovery and capabilities.
+    pub(super) device_registry: Arc<Mutex<DeviceRegistry>>,
 }
+
+/// Compatibility name for the daemon process entry point. Runtime ownership
+/// lives in `SystemwideController`; the process/socket layer only hosts it.
+pub(super) use SystemwideController as AudioDaemon;
 
 /// Try to reserve one bounded client-handler slot without taking a mutex in
 /// the accept loop. The matching permit releases it when the handler exits.
@@ -397,7 +449,7 @@ impl Drop for ClientSlot {
     }
 }
 
-impl AudioDaemon {
+impl SystemwideController {
     pub(super) fn requires_playback_callback(driver_status: &driver_common::DriverStatus) -> bool {
         if !driver_status.platform_supported || driver_status.driver_name == "Systemwide Lab Driver"
         {
@@ -455,12 +507,18 @@ impl AudioDaemon {
             key_manager: Arc::new(Mutex::new(KeyManager::default())),
             pipeline_mutation: Arc::new(Mutex::new(())),
             runtime_telemetry: Arc::new(RuntimeTelemetry::default()),
+            device_registry: Arc::new(Mutex::new(DeviceRegistry::default())),
         }
     }
 
     pub(super) fn spawn_initial_driver_playback(&self) {
         let daemon = self.clone();
         std::thread::spawn(move || {
+            // Startup is a pipeline mutation just like an IPC request or a
+            // driver-initiated reconfiguration. Holding this guard for the
+            // entire transition prevents startup from interleaving its
+            // stop/configure/start/commit sequence with either of those paths.
+            let _mutation = daemon.pipeline_mutation.lock();
             println!("Auto-starting driver playback (2ch)...");
 
             let output_device = configured_output_device_from_env();
@@ -489,7 +547,122 @@ impl AudioDaemon {
         });
     }
 
+    fn spawn_driver_config_watcher(&self) -> std::thread::JoinHandle<()> {
+        let daemon = self.clone();
+        std::thread::spawn(move || {
+            let poll_interval = Duration::from_millis(100);
+            let initial_driver_status = daemon.driver_manager.lock().status();
+            let initial_generation = daemon.system_state.lock().generation();
+            let mut capture_resume = CaptureResumeTracker::new(
+                Instant::now(),
+                initial_generation,
+                initial_driver_status.capture_active,
+            );
+            log::info!("Driver config watcher thread started");
+            loop {
+                if !*daemon.running.lock() {
+                    break;
+                }
+
+                let config_change = daemon.driver_manager.lock().poll_config_change();
+                if let Some(config) = config_change {
+                    // Driver callbacks are intents handled by the same
+                    // serialized control boundary as startup and IPC.
+                    let _mutation = daemon.pipeline_mutation.lock();
+                    handle_driver_config_change(
+                        &daemon.driver_manager,
+                        &daemon.manager,
+                        config,
+                        &daemon.system_state,
+                    );
+                }
+
+                let driver_status = daemon.driver_manager.lock().status();
+                let generation = daemon.system_state.lock().generation();
+                if capture_resume.observe(Instant::now(), generation, driver_status.capture_active)
+                {
+                    // A long-idle CoreAudio stream can keep accepting callback
+                    // buffers while emitting silence. Rebuild the already
+                    // applied plan once when HAL capture resumes. The
+                    // generation recheck under the transition lock prevents a
+                    // concurrent explicit mutation from being replayed.
+                    let _mutation = daemon.pipeline_mutation.lock();
+                    let current_driver_status = daemon.driver_manager.lock().status();
+                    let current_generation = daemon.system_state.lock().generation();
+                    if current_generation == generation && current_driver_status.capture_active {
+                        let fallback_input_channels =
+                            usize::try_from(current_driver_status.channel_count)
+                                .ok()
+                                .filter(|channels| *channels > 0)
+                                .unwrap_or(2);
+                        let plan = {
+                            let state = daemon.system_state.lock();
+                            state.applied_spec().and_then(|spec| {
+                                state.prepare_from_spec(spec, fallback_input_channels).ok()
+                            })
+                        };
+                        if let Some(plan) = plan {
+                            let sample_rate = if current_driver_status.sample_rate > 0 {
+                                current_driver_status.sample_rate
+                            } else {
+                                48_000
+                            };
+                            let buffer_frames = if current_driver_status.buffer_frames > 0 {
+                                current_driver_status.buffer_frames
+                            } else {
+                                512
+                            };
+                            log::info!(
+                                "HAL capture resumed after long idle; rebuilding physical playback stream"
+                            );
+                            let response = daemon.apply_pipeline_plan(
+                                plan,
+                                current_driver_status,
+                                sample_rate,
+                                buffer_frames,
+                            );
+                            if response.success {
+                                log::info!("Long-idle physical playback rebuild succeeded");
+                            } else {
+                                log::error!(
+                                    "Long-idle physical playback rebuild failed: {}",
+                                    response.error.as_deref().unwrap_or("unknown error")
+                                );
+                            }
+                        }
+                    }
+                }
+
+                std::thread::sleep(poll_interval);
+            }
+            log::info!("Driver config watcher thread stopped");
+        })
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn handle_command(&self, cmd: Command) -> Response {
+        self.handle_command_at_generation(cmd, None)
+    }
+
+    pub(super) fn handle_command_at_generation(
+        &self,
+        cmd: Command,
+        base_generation: Option<u64>,
+    ) -> Response {
+        let _mutation = cmd
+            .requires_pipeline_serialization()
+            .then(|| self.pipeline_mutation.lock());
+        if cmd.accepts_pipeline_base_generation()
+            && let Some(base_generation) = base_generation
+        {
+            let current_generation = self.system_state.lock().generation();
+            if base_generation != current_generation {
+                return Response::err(format!(
+                    "Pipeline generation conflict: intent was based on generation {base_generation}, current generation is {current_generation}. Refresh and retry."
+                ));
+            }
+        }
+
         match cmd {
             // Lifecycle probes must remain independent of engine, pipeline,
             // driver, and key-manager locks so legitimate reconfiguration
@@ -505,81 +678,50 @@ impl AudioDaemon {
             Command::Seek { position } => self.handle_seek(position),
             Command::SetVolume { volume } => self.handle_set_volume(volume),
             Command::ListDevices => self.handle_list_devices(),
-            Command::SetDevice { device } => {
-                let _mutation = self.pipeline_mutation.lock();
-                self.handle_set_device(&device)
-            }
+            Command::SetDevice { device } => self.handle_set_device(&device),
             Command::LoadPlugins {
                 plugins,
                 input_channels,
                 output_channels,
-            } => {
-                let _mutation = self.pipeline_mutation.lock();
-                self.handle_load_plugins_with_channels(plugins, input_channels, output_channels)
-            }
+            } => self.handle_load_plugins_with_channels(plugins, input_channels, output_channels),
             Command::LoadPluginArtifact {
                 artifact,
                 base_generation,
-            } => {
-                let _mutation = self.pipeline_mutation.lock();
-                self.handle_load_plugin_artifact(artifact, base_generation)
-            }
+            } => self.handle_load_plugin_artifact(artifact, base_generation),
             Command::LoadPluginArtifactPath {
                 path,
                 base_generation,
-            } => {
-                let _mutation = self.pipeline_mutation.lock();
-                self.handle_load_plugin_artifact_path(&path, base_generation)
-            }
+            } => self.handle_load_plugin_artifact_path(&path, base_generation),
             Command::ReorderGraph {
                 order,
                 base_generation,
-            } => {
-                let _mutation = self.pipeline_mutation.lock();
-                self.handle_reorder_graph(order, base_generation)
-            }
+            } => self.handle_reorder_graph(order, base_generation),
             Command::SetInputChannels { channels } => {
-                let _mutation = self.pipeline_mutation.lock();
                 self.handle_set_pipeline_channels(Some(channels), None)
             }
             Command::SetOutputChannels { channels } => {
-                let _mutation = self.pipeline_mutation.lock();
                 self.handle_set_pipeline_channels(None, Some(channels))
             }
             Command::SetPipelineChannels {
                 input_channels,
                 output_channels,
-            } => {
-                let _mutation = self.pipeline_mutation.lock();
-                self.handle_set_pipeline_channels(input_channels, output_channels)
-            }
+            } => self.handle_set_pipeline_channels(input_channels, output_channels),
             Command::GetLoudness => self.handle_get_loudness(),
             Command::GetMetering => self.handle_get_metering(),
             Command::GetPlugins => self.handle_get_plugins(),
             Command::GetAvailablePlugins => self.handle_get_available_plugins(),
-            Command::AddPlugin { plugin, index } => {
-                let _mutation = self.pipeline_mutation.lock();
-                self.handle_add_plugin(plugin, index)
-            }
-            Command::RemovePlugin { index } => {
-                let _mutation = self.pipeline_mutation.lock();
-                self.handle_remove_plugin(index)
-            }
+            Command::AddPlugin { plugin, index } => self.handle_add_plugin(plugin, index),
+            Command::RemovePlugin { index } => self.handle_remove_plugin(index),
             Command::UpdatePlugin { index, parameters } => {
-                let _mutation = self.pipeline_mutation.lock();
                 self.handle_update_plugin(index, parameters)
             }
-            Command::ReorderPlugins { order } => {
-                let _mutation = self.pipeline_mutation.lock();
-                self.handle_reorder_plugins(order)
-            }
+            Command::ReorderPlugins { order } => self.handle_reorder_plugins(order),
             Command::SetRackPluginState {
                 index,
                 input_channels,
                 bypassed,
                 base_generation,
             } => {
-                let _mutation = self.pipeline_mutation.lock();
                 self.handle_set_rack_plugin_state(index, input_channels, bypassed, base_generation)
             }
             Command::DriverStatus => self.handle_driver_status(),
@@ -652,6 +794,14 @@ impl AudioDaemon {
     }
 
     pub(super) fn snapshot_json(&self) -> Value {
+        // Pipeline state, driver geometry, readiness, and engine lifecycle are
+        // one logical observation. Do not let a stop/configure/start/commit
+        // transition run between the component snapshots below.
+        let _mutation = self.pipeline_mutation.lock();
+        self.snapshot_json_while_pipeline_stable()
+    }
+
+    fn snapshot_json_while_pipeline_stable(&self) -> Value {
         let driver_status = self.driver_manager.lock().status();
         let key_status = self.key_manager.lock().status();
 
@@ -667,6 +817,7 @@ impl AudioDaemon {
         let desired = pipeline.desired_spec();
         let applied = pipeline.applied_spec();
         let applied_generation = pipeline.applied_generation();
+        let generation = pipeline.generation();
         let applied_output_device = pipeline.applied_output_device();
         let pipeline_recovery = pipeline.pipeline_recovery();
         drop(pipeline);
@@ -720,6 +871,7 @@ impl AudioDaemon {
 
         serde_json::json!({
             "schema_version": 1,
+            "generation": generation,
             "desired": pipeline_spec_to_json(&desired),
             "applied": {
                 "generation": applied_generation,
@@ -919,7 +1071,6 @@ impl AudioDaemon {
     }
 
     pub(super) fn handle_play(&self) -> Response {
-        let _mutation = self.pipeline_mutation.lock();
         let driver_status = self.driver_manager.lock().status();
         let driver_sample_rate = if driver_status.sample_rate > 0 {
             driver_status.sample_rate
@@ -995,8 +1146,11 @@ impl AudioDaemon {
     }
 
     pub(super) fn handle_list_devices(&self) -> Response {
-        match list_audio_devices() {
-            Ok(devices) => Response::ok(serde_json::json!({ "devices": devices })),
+        match self.device_registry.lock().list_devices() {
+            Ok((generation, devices)) => Response::ok(serde_json::json!({
+                "generation": generation,
+                "devices": devices,
+            })),
             Err(e) => Response::err(format!("Failed to list devices: {}", e)),
         }
     }
@@ -1079,6 +1233,7 @@ impl AudioDaemon {
                 Response::ok_empty()
             }
             Err(e) => {
+                self.device_registry.lock().invalidate();
                 log::warn!("Failed to set device '{}': {}", device, e);
                 Response::err(format!("Device '{}' not found. {}", device, e))
             }
@@ -1104,12 +1259,8 @@ impl AudioDaemon {
                 .and_then(|spec| state.prepare_from_spec(spec, fallback_input_channels).ok())
         };
 
-        let response = self.apply_pipeline_plan_once(
-            plan,
-            driver_status.clone(),
-            driver_sample_rate,
-            driver_buffer_frames,
-        );
+        let response =
+            self.apply_pipeline_plan_once(plan, driver_sample_rate, driver_buffer_frames, false);
         if response.success {
             self.system_state.lock().clear_pipeline_recovery();
             return response;
@@ -1136,9 +1287,9 @@ impl AudioDaemon {
         };
         let restore = self.apply_pipeline_plan_once(
             previous_plan,
-            driver_status,
             driver_sample_rate,
             driver_buffer_frames,
+            true,
         );
         if restore.success {
             self.system_state.lock().clear_pipeline_recovery();
@@ -1165,9 +1316,9 @@ impl AudioDaemon {
     fn apply_pipeline_plan_once(
         &self,
         plan: PipelinePlan,
-        driver_status: driver_common::DriverStatus,
         driver_sample_rate: u32,
         driver_buffer_frames: u32,
+        force_driver_config: bool,
     ) -> Response {
         self.driver_manager.lock().set_engine_ready(false);
 
@@ -1179,8 +1330,10 @@ impl AudioDaemon {
         let mut effective_driver_sample_rate = driver_sample_rate;
         let mut effective_driver_buffer_frames = driver_buffer_frames;
 
-        if driver_status.driver_installed
-            && driver_status.channel_count != plan.spec.input_channels as u32
+        let current_driver_status = self.driver_manager.lock().status();
+        if current_driver_status.driver_installed
+            && (force_driver_config
+                || current_driver_status.channel_count != plan.spec.input_channels as u32)
         {
             let result = self.driver_manager.lock().request_config(DriverConfig::new(
                 driver_sample_rate,
@@ -1230,7 +1383,7 @@ impl AudioDaemon {
             )
             .map_err(|error| error.to_string())
         };
-        let result = if Self::requires_playback_callback(&driver_status) {
+        let result = if Self::requires_playback_callback(&current_driver_status) {
             result.and_then(|()| self.wait_for_playback_ready())
         } else {
             result
@@ -1343,7 +1496,7 @@ impl AudioDaemon {
         base_generation: Option<u64>,
     ) -> Response {
         if let Some(base_generation) = base_generation {
-            let current_generation = self.system_state.lock().applied_generation().unwrap_or(0);
+            let current_generation = self.system_state.lock().generation();
             if base_generation != current_generation {
                 return Response::err(format!(
                     "Plugin artifact generation conflict: editor based on generation {base_generation}, current generation is {current_generation}. Refresh before applying."
@@ -1379,7 +1532,7 @@ impl AudioDaemon {
         base_generation: Option<u64>,
     ) -> Response {
         if let Some(base_generation) = base_generation {
-            let current_generation = self.system_state.lock().applied_generation().unwrap_or(0);
+            let current_generation = self.system_state.lock().generation();
             if base_generation != current_generation {
                 return Response::err(format!(
                     "Plugin artifact generation conflict: editor based on generation {base_generation}, current generation is {current_generation}. Refresh before applying."
@@ -1432,13 +1585,11 @@ impl AudioDaemon {
         }
     }
 
-    fn validate_output_device_channels(
+    pub(super) fn validate_output_device_channels(
         &self,
         required_channels: usize,
         sample_rate: u32,
     ) -> Result<(), String> {
-        use cpal::traits::DeviceTrait;
-
         let selected_device = self
             .system_state
             .lock()
@@ -1452,27 +1603,11 @@ impl AudioDaemon {
         let Some(selected_device) = selected_device else {
             return Ok(());
         };
-        let host = sotf_audio::devices::get_host_for_device(Some(&selected_device));
         let device_name = sotf_audio::devices::strip_asio_prefix(&selected_device);
-        let device = sotf_audio::devices::find_device(&host, device_name, false)
-            .map_err(|error| format!("Cannot inspect output device '{device_name}': {error}"))?;
-        let max_channels = device
-            .supported_output_configs()
-            .map_err(|error| format!("Cannot inspect output formats for '{device_name}': {error}"))?
-            .filter(|config| {
-                config.min_sample_rate() <= sample_rate && sample_rate <= config.max_sample_rate()
-            })
-            .map(|config| usize::from(config.channels()))
-            .max()
-            .or_else(|| {
-                device
-                    .default_output_config()
-                    .ok()
-                    .map(|config| usize::from(config.channels()))
-            })
-            .ok_or_else(|| {
-                format!("Output device '{device_name}' does not report a usable channel layout")
-            })?;
+        let max_channels = self
+            .device_registry
+            .lock()
+            .max_output_channels(&selected_device, sample_rate)?;
 
         if required_channels > max_channels {
             return Err(format!(
@@ -1488,7 +1623,7 @@ impl AudioDaemon {
         base_generation: Option<u64>,
     ) -> Response {
         if let Some(base_generation) = base_generation {
-            let current_generation = self.system_state.lock().applied_generation().unwrap_or(0);
+            let current_generation = self.system_state.lock().generation();
             if base_generation != current_generation {
                 return Response::err(format!(
                     "Graph generation conflict: editor based on generation {base_generation}, current generation is {current_generation}. Refresh before reordering."
@@ -1570,7 +1705,7 @@ impl AudioDaemon {
                 "topology": "graph",
                 "nodes": plan.spec.user_graph.as_ref().map_or(0, |graph| graph.nodes.len()),
                 "edges": plan.spec.user_graph.as_ref().map_or(0, |graph| graph.edges.len()),
-                "generation": self.system_state.lock().applied_generation(),
+                "generation": self.system_state.lock().generation(),
             }));
         }
 
@@ -1630,7 +1765,11 @@ impl AudioDaemon {
     }
 
     pub(super) fn handle_get_metering(&self) -> Response {
-        Response::ok(self.metering_snapshot())
+        let _mutation = self.pipeline_mutation.lock();
+        let generation = self.system_state.lock().generation();
+        let mut metering = self.metering_snapshot();
+        metering["generation"] = serde_json::json!(generation);
+        Response::ok(metering)
     }
 
     // =========================================================================
@@ -1644,7 +1783,7 @@ impl AudioDaemon {
                 "topology": "graph",
                 "graph": graph,
                 "plugins": [],
-                "generation": state.applied_generation(),
+            "generation": state.generation(),
             }));
         }
         let input_channels = state.input_channels().max(1);
@@ -1669,7 +1808,7 @@ impl AudioDaemon {
         Response::ok(serde_json::json!({
             "topology": "rack",
             "plugins": result,
-            "generation": self.system_state.lock().applied_generation(),
+            "generation": self.system_state.lock().generation(),
         }))
     }
 
@@ -1834,7 +1973,7 @@ impl AudioDaemon {
         base_generation: Option<u64>,
     ) -> Response {
         if let Some(base_generation) = base_generation {
-            let current_generation = self.system_state.lock().applied_generation().unwrap_or(0);
+            let current_generation = self.system_state.lock().generation();
             if base_generation != current_generation {
                 return Response::err(format!(
                     "Rack generation conflict: editor based on generation {base_generation}, current generation is {current_generation}. Refresh before changing plugin state."
@@ -2222,6 +2361,16 @@ impl AudioDaemon {
                 }
                 Ok(IpcLine::Line(command_line)) => {
                     let mut command_telemetry = None;
+                    // `base_generation` is a protocol-wide concurrency token.
+                    // Serde enum variants intentionally remain backwards
+                    // compatible, so extract it before decoding the command.
+                    let base_generation = serde_json::from_str::<Value>(&command_line)
+                        .ok()
+                        .and_then(|value| {
+                            value
+                                .get("base_generation")
+                                .and_then(serde_json::Value::as_u64)
+                        });
                     let response = match serde_json::from_str::<Command>(&command_line) {
                         Ok(cmd) => {
                             let command_name = cmd.name();
@@ -2242,7 +2391,7 @@ impl AudioDaemon {
                                     cmd.name()
                                 ))
                             } else {
-                                self.handle_command(cmd)
+                                self.handle_command_at_generation(cmd, base_generation)
                             };
                             command_telemetry = Some((command_name, command_started.elapsed()));
                             response
@@ -2282,20 +2431,7 @@ impl AudioDaemon {
         })?;
 
         // Start driver config watcher thread
-        let config_watcher = {
-            let driver_manager = Arc::clone(&self.driver_manager);
-            let audio_manager = Arc::clone(&self.manager);
-            let running = Arc::clone(&self.running);
-            let pipeline = Arc::clone(&self.system_state);
-            let pipeline_mutation = Arc::clone(&self.pipeline_mutation);
-            spawn_driver_config_watcher(
-                driver_manager,
-                audio_manager,
-                running,
-                pipeline,
-                pipeline_mutation,
-            )
-        };
+        let config_watcher = self.spawn_driver_config_watcher();
 
         // Bind the socket. To avoid a TOCTOU race window between an
         // existence check and a follow-up unlink (which would allow a

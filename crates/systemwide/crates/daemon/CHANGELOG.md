@@ -66,6 +66,10 @@
 
 ## Diagnostics and recovery UX (QA-SYS-003)
 
+- Recover physical output streams that remain callback-active but silent after
+  a long idle by rebuilding the applied pipeline once when HAL capture resumes.
+- Coalesce Configbar plugin-rack refreshes and replace raw generation-conflict
+  errors with an authoritative refresh plus explicit retry guidance.
 - Pipeline apply failures now preserve an explicit process-lifetime recovery
   state. If restoring the previous plan also fails, `engine_ready` remains
   false and `status`/`get_snapshot` expose `pipeline_recovery_required` and

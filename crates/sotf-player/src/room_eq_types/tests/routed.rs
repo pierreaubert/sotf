@@ -141,6 +141,7 @@ pub(super) fn routed_bass_output() -> DspChainOutput {
         loss_type: None,
         iterations: 1,
         timestamp: "test".to_string(),
+        effective_config: None,
         mixed_phase_per_channel: None,
         optimizer_evidence: None,
         inter_channel_deviation: None,
@@ -158,6 +159,7 @@ pub(super) fn routed_bass_output() -> DspChainOutput {
             enabled: true,
             crossover_type: "LR24".to_string(),
             crossover_frequency_hz: Some(80.0),
+            lfe_low_pass_hz: 120.0,
             redirected_bass_enabled: true,
             lfe_channel: "LFE".to_string(),
             lfe_playback_gain_db: 10.0,
@@ -186,6 +188,7 @@ pub(super) fn routed_bass_output() -> DspChainOutput {
                 physical_sub_output: "Sub".to_string(),
                 input_channels: vec!["L".to_string(), "Sub".to_string()],
                 output_channels: vec!["L".to_string(), "Sub".to_string()],
+                input_trim_db: Default::default(),
                 routes: vec![
                     BassManagementRoute {
                         group_id: Some("lcr".to_string()),

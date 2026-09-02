@@ -195,10 +195,10 @@ final class ConfigBarUITests: XCTestCase {
                       let command = try? JSONSerialization.jsonObject(with: request) as? [String: Any]
                 else { return }
                 let response: String
-                if command["command"] as? String == "status" {
-                    response = "{\"success\":true,\"data\":{\"state\":\"Idle\",\"volume\":1.0},\"error\":null}\n"
+                if command["command"] as? String == "get_snapshot" {
+                    response = "{\"success\":true,\"data\":{\"schema_version\":1,\"generation\":8,\"desired\":{\"input_channels\":2,\"output_channels\":2},\"applied\":{\"generation\":7},\"observed\":{\"engine\":{\"state\":\"Idle\",\"volume\":1.0,\"muted\":false}}},\"error\":null}\n"
                 } else {
-                    response = "{\"success\":true,\"data\":{},\"error\":null}\n"
+                    response = "{\"success\":true,\"data\":{\"generation\":8},\"error\":null}\n"
                 }
                 self.sendLine(response, on: clientFD)
             }
@@ -207,13 +207,15 @@ final class ConfigBarUITests: XCTestCase {
 
         let statusDone = expectation(description: "status poll completes")
         let meteringDone = expectation(description: "metering poll completes")
-        AudioEngineClient.pollStatus { status, reachable in
-            XCTAssertEqual(status.state, .idle)
-            XCTAssertTrue(reachable)
+            AudioEngineClient.pollStatus { status, reachable in
+                XCTAssertEqual(status.state, .idle)
+                XCTAssertEqual(status.generation, 8)
+                XCTAssertTrue(reachable)
             statusDone.fulfill()
         }
         AudioEngineClient.pollMetering { metering in
             XCTAssertNotNil(metering)
+            XCTAssertEqual(metering?.generation, 8)
             meteringDone.fulfill()
         }
 

@@ -484,10 +484,8 @@ mod tests {
             .iter()
             .map(|track| track.path.clone())
             .collect::<Vec<_>>();
-        let library = MusicLibrary {
-            albums: vec![album],
-            ..Default::default()
-        };
+        let mut library = MusicLibrary::new();
+        library.albums = vec![album];
         let mut controller = QueueController::new();
 
         let first = controller.enqueue_playlist_tracks(&library, &paths);

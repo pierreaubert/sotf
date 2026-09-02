@@ -1227,6 +1227,7 @@ mod tests {
                 global_plugins: Vec::new(),
                 channels: HashMap::new(),
                 metadata: None,
+                deployed_source_curves: Default::default(),
             }),
             artifact_dir: PathBuf::from("/tmp/room_eq"),
         });

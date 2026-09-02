@@ -182,11 +182,12 @@ fn configbar_reconciles_device_picker_from_daemon_status() {
 
     assert!(
         source.contains("let selectedDevice: String?")
-            && source.contains("data[\"selected_device\"]?.value as? String")
+            && source.contains("let selectedDevice = desired[\"output_device\"] as? String")
             && source.contains("let inputChannels: Int?")
-            && source.contains("data[\"input_channels\"]?.value as? Int")
+            && source.contains("let inputChannels = desired[\"input_channels\"] as? Int")
             && source.contains("let outputChannels: Int?")
-            && source.contains("data[\"output_channels\"]?.value as? Int")
+            && source.contains("let outputChannels = desired[\"output_channels\"] as? Int")
+            && source.contains("let command = [\"command\": \"get_snapshot\"]")
             && source.contains("applyLoadedDevices(daemonSelectedDevice: status.selectedDevice)")
             && source.contains("programmaticDeviceSelection = daemonDevice"),
         "toolbar should parse selected_device from status and update its picker without re-owning daemon state"
@@ -563,6 +564,7 @@ fn configbar_plugin_chain_loader_delegates_artifact_planning_to_daemon() {
     assert!(
         source.contains("\"command\": \"load_plugin_artifact_path\"")
             && source.contains("\"path\": url.path")
+            && source.contains("command[\"base_generation\"] = daemonPipelineGeneration")
             && !source.contains("private func normalizedPluginConfigs"),
         "toolbar should delegate file parsing and artifact planning to the daemon"
     );

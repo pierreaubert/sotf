@@ -20,7 +20,7 @@ struct PluginRackView: View {
     @State private var editingPluginID: UUID? = nil
     @State private var errorMessage: String? = nil
     @State private var loadingAvailablePlugins = false
-    @State private var refreshingPlugins = false
+    @State private var refreshGate = ConfigBarRefreshGate()
     @State private var graphRevision = 0
 
     var body: some View {
@@ -39,7 +39,7 @@ struct PluginRackView: View {
                 Spacer()
 
                 Button(action: { refreshPlugins() }) {
-                    if refreshingPlugins {
+                    if refreshGate.isRefreshing {
                         ProgressView()
                             .controlSize(.small)
                     } else {
@@ -47,7 +47,7 @@ struct PluginRackView: View {
                     }
                 }
                 .buttonStyle(.borderless)
-                .disabled(refreshingPlugins)
+                .disabled(refreshGate.isRefreshing)
                 .help("Refresh plugin list")
 
                 if graph == nil {
@@ -106,7 +106,7 @@ struct PluginRackView: View {
                     )
                     .id(graphRevision)
                 }
-            } else if refreshingPlugins && plugins.isEmpty {
+            } else if refreshGate.isRefreshing && plugins.isEmpty {
                 HStack {
                     Spacer()
                     VStack(spacing: 8) {
@@ -307,16 +307,20 @@ struct PluginRackView: View {
         }
     }
 
-    private func refreshPlugins() {
-        guard !refreshingPlugins else { return }
-        refreshingPlugins = true
-        errorMessage = nil
+    private func refreshPlugins(preserveError: Bool = false) {
+        guard refreshGate.request() else { return }
+        if !preserveError {
+            errorMessage = nil
+        }
 
+        performPluginRefresh(preserveError: preserveError)
+    }
+
+    private func performPluginRefresh(preserveError: Bool) {
         DispatchQueue.global(qos: .utility).async {
             let result = AudioEngineClient().getPluginPipeline()
 
             DispatchQueue.main.async {
-                refreshingPlugins = false
                 if let result = result {
                     graph = result.graph
                     graphGeneration = result.generation
@@ -336,8 +340,22 @@ struct PluginRackView: View {
                 } else {
                     errorMessage = "Failed to fetch plugins from daemon"
                 }
+                if refreshGate.complete() {
+                    performPluginRefresh(preserveError: preserveError || errorMessage != nil)
+                }
             }
         }
+    }
+
+    private func handleMutationFailure(
+        _ response: AudioEngineClient.Response?,
+        fallback: String
+    ) {
+        errorMessage = configBarMutationErrorMessage(
+            daemonError: response?.error,
+            fallback: fallback
+        )
+        refreshPlugins(preserveError: true)
     }
 
     private func applyGraphMutation(_ candidate: PluginGraphModel) -> Bool {
@@ -351,8 +369,10 @@ struct PluginRackView: View {
         }
         client.sendCommandAsync(command) { response in
             guard response?.success == true else {
-                errorMessage = response?.error ?? "Graph validation or engine apply failed; refresh before retrying."
-                refreshPlugins()
+                handleMutationFailure(
+                    response,
+                    fallback: "Graph validation or engine apply failed; refresh before retrying."
+                )
                 return
             }
             graph = candidate
@@ -376,11 +396,13 @@ struct PluginRackView: View {
 
         client.sendCommandAsync(command) { response in
             if response?.success != true {
-                errorMessage = response?.error ?? "Graph reorder failed; refresh before retrying."
+                handleMutationFailure(
+                    response,
+                    fallback: "Graph reorder failed; refresh before retrying."
+                )
+            } else {
+                refreshPlugins()
             }
-            // The daemon owns graph order and generation. Reconcile both
-            // success and failure with a fresh authoritative response.
-            refreshPlugins()
         }
         return true
     }
@@ -404,14 +426,18 @@ struct PluginRackView: View {
     private func addPlugin(type: String, parameters: [String: Any]? = nil) {
         errorMessage = nil
         let pluginParameters = parameters ?? availablePlugins.first { $0.type_ == type }?.defaultParameters ?? [:]
-        client.sendCommandAsync([
+        var command: [String: Any] = [
             "command": "add_plugin",
             "plugin": ["plugin_type": type, "parameters": pluginParameters],
-        ]) { response in
+        ]
+        if let graphGeneration {
+            command["base_generation"] = graphGeneration
+        }
+        client.sendCommandAsync(command) { response in
             if response?.success == true {
                 refreshPlugins()
             } else {
-                errorMessage = response?.error ?? "Failed to add plugin"
+                handleMutationFailure(response, fallback: "Failed to add plugin")
             }
         }
     }
@@ -426,11 +452,15 @@ struct PluginRackView: View {
            editingPluginID == plugins[index].id {
             editingPluginID = nil
         }
-        client.sendCommandAsync(["command": "remove_plugin", "index": index]) { response in
+        var command: [String: Any] = ["command": "remove_plugin", "index": index]
+        if let graphGeneration {
+            command["base_generation"] = graphGeneration
+        }
+        client.sendCommandAsync(command) { response in
             if response?.success == true {
                 refreshPlugins()
             } else {
-                errorMessage = response?.error ?? "Failed to remove plugin"
+                handleMutationFailure(response, fallback: "Failed to remove plugin")
             }
         }
     }
@@ -443,14 +473,17 @@ struct PluginRackView: View {
         }
 
         plugins[index].parameters = parameters
-        client.sendCommandAsync([
+        var command: [String: Any] = [
             "command": "update_plugin",
             "index": index,
             "parameters": parameters,
-        ]) { response in
+        ]
+        if let graphGeneration {
+            command["base_generation"] = graphGeneration
+        }
+        client.sendCommandAsync(command) { response in
             if response?.success != true {
-                errorMessage = response?.error ?? "Failed to update plugin"
-                refreshPlugins()
+                handleMutationFailure(response, fallback: "Failed to update plugin")
             }
         }
         return true
@@ -460,11 +493,15 @@ struct PluginRackView: View {
         errorMessage = nil
         var indices = Array(0..<plugins.count)
         indices.move(fromOffsets: source, toOffset: destination)
-        client.sendCommandAsync(["command": "reorder_plugins", "order": indices]) { response in
+        var command: [String: Any] = ["command": "reorder_plugins", "order": indices]
+        if let graphGeneration {
+            command["base_generation"] = graphGeneration
+        }
+        client.sendCommandAsync(command) { response in
             if response?.success == true {
                 refreshPlugins()
             } else {
-                errorMessage = response?.error ?? "Failed to reorder plugins"
+                handleMutationFailure(response, fallback: "Failed to reorder plugins")
             }
         }
     }
@@ -503,11 +540,12 @@ struct PluginRackView: View {
 
         client.sendCommandAsync(command) { response in
             if response?.success != true {
-                errorMessage = response?.error ?? "Failed to update plugin state"
+                handleMutationFailure(response, fallback: "Failed to update plugin state")
+            } else {
+                // A successful state patch promotes the rack to a graph.
+                // Reconcile with daemon-owned state and its new generation.
+                refreshPlugins()
             }
-            // A successful state patch promotes the rack to a graph. Refresh
-            // on both paths so the UI always reflects daemon-owned state.
-            refreshPlugins()
         }
     }
 }
