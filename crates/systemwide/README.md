@@ -112,6 +112,14 @@ PackageKit record remains available at `/var/log/install.log`.
 
 ## Runtime safety contract
 
+- Configbar lifecycle probes use daemon `ping`, which does not acquire engine,
+  pipeline, driver, or key-manager state locks. Full status and mutation
+  requests retain separate bounded deadlines; configuration parsing is
+  size-bounded and off the main thread.
+- Daemon `engine_ready` is committed only after the physical output stream
+  reports its first hardware callback. Startup failure leaves readiness false
+  and enters transactional pipeline recovery.
+
 - A daemon acquires process-lifetime ownership locks for its canonicalized
   control socket, HAL shared memory, HAL-readable key copy, and daemon-private
   key before construction, key rotation, or stale-socket cleanup. Distinct

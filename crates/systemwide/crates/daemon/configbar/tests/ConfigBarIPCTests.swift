@@ -55,9 +55,13 @@ final class ConfigBarIPCTests: XCTestCase {
             guard clientFD >= 0 else { return }
             defer { Darwin.close(clientFD) }
             var request = [UInt8](repeating: 0, count: 128)
-            _ = request.withUnsafeMutableBytes { buffer in
+            let received = request.withUnsafeMutableBytes { buffer in
                 Darwin.recv(clientFD, buffer.baseAddress, buffer.count, 0)
             }
+            guard received > 0,
+                  String(data: Data(request.prefix(received)), encoding: .utf8)
+                    == "{\"command\":\"ping\"}\n"
+            else { return }
             let response = Data("{\"success\":true,\"data\":{},\"error\":null}\n".utf8)
             _ = response.withUnsafeBytes { buffer in
                 Darwin.send(clientFD, buffer.baseAddress, buffer.count, 0)
@@ -128,6 +132,15 @@ final class ConfigBarIPCTests: XCTestCase {
         )
     }
 
+    func testProbeTreatsOlderDaemonCommandRejectionAsReachable() {
+        XCTAssertTrue(ConfigBarIPC.responseShowsDaemonReachable(["success": true]))
+        XCTAssertTrue(ConfigBarIPC.responseShowsDaemonReachable([
+            "success": false,
+            "error": "unknown command"
+        ]))
+        XCTAssertFalse(ConfigBarIPC.responseShowsDaemonReachable(["error": "malformed response"]))
+    }
+
     func testResponseTimeoutsAreCommandSpecific() {
         XCTAssertEqual(
             ConfigBarIPC.responseTimeoutMicros(for: ["command": "status"]),
@@ -164,6 +177,62 @@ final class ConfigBarIPCTests: XCTestCase {
             ConfigBarIPC.defaultResponseTimeoutMicros,
             ConfigBarIPC.pipelineMutationResponseTimeoutMicros
         )
+        XCTAssertEqual(ConfigBarIPC.pipelineMutationResponseTimeoutMicros, 30_000_000)
+    }
+
+    func testConfigurationLoaderReturnsTopLevelObject() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("plugins.json")
+        try Data(#"{"plugins":[]}"#.utf8).write(to: url)
+
+        let artifact = try ConfigBarIPC.loadConfigurationArtifact(from: url)
+        XCTAssertNotNil(artifact["plugins"] as? [Any])
+    }
+
+    func testConfigurationLoaderRejectsOversizedInputBeforeParsing() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data(repeating: UInt8(ascii: " "), count: 9).write(to: url)
+
+        XCTAssertThrowsError(
+            try ConfigBarIPC.loadConfigurationArtifact(from: url, maxBytes: 8)
+        ) { error in
+            XCTAssertEqual(error as? ConfigBarConfigurationError, .tooLarge(maxBytes: 8))
+        }
+    }
+
+    func testConfigurationLoaderRejectsNonObjectJSON() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data("[]".utf8).write(to: url)
+
+        XCTAssertThrowsError(try ConfigBarIPC.loadConfigurationArtifact(from: url)) { error in
+            XCTAssertEqual(error as? ConfigBarConfigurationError, .topLevelMustBeObject)
+        }
+    }
+
+    func testConfigurationLoaderRejectsArtifactAboveDaemonCommandLimit() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let oversized = String(
+            repeating: "x",
+            count: ConfigBarIPC.maximumDaemonCommandBytes
+        )
+        let data = try JSONSerialization.data(withJSONObject: ["value": oversized])
+        try data.write(to: url)
+
+        XCTAssertThrowsError(try ConfigBarIPC.loadConfigurationArtifact(from: url)) { error in
+            XCTAssertEqual(
+                error as? ConfigBarConfigurationError,
+                .encodedCommandTooLarge(maxBytes: ConfigBarIPC.maximumDaemonCommandBytes)
+            )
+        }
     }
 
     func testLineFramerHandlesFragmentedAndMultipleLines() throws {

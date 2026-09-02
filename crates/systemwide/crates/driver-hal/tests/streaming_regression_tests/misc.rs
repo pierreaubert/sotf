@@ -647,6 +647,23 @@ fn swift_write_mix_falls_back_to_secondary_buffer() {
 }
 
 #[test]
+fn swift_interleaved_loopback_publishes_once_per_channel_block() {
+    let source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/RingBuffer.swift");
+    let write = function_body(&source, "func writeInterleaved");
+    let read = function_body(&source, "func readInterleaved");
+
+    assert!(
+        write.contains("writeStrided") && read.contains("readStrided"),
+        "interleaved loopback must batch ring position publication per channel block"
+    );
+    assert!(
+        !write.contains("count: 1") && !read.contains("count: 1"),
+        "interleaved loopback must not perform one ring operation per sample"
+    );
+}
+
+#[test]
 fn swift_hal_supports_daemon_requested_channel_counts_up_to_32() {
     let hal_source =
         read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");

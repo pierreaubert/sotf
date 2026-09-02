@@ -7,6 +7,8 @@ use sotf_audio::PluginConfig;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "command")]
 pub(super) enum Command {
+    #[serde(rename = "ping")]
+    Ping,
     #[serde(rename = "status")]
     Status,
     #[serde(rename = "get_snapshot", alias = "snapshot")]
@@ -40,6 +42,12 @@ pub(super) enum Command {
     #[serde(rename = "load_plugin_artifact")]
     LoadPluginArtifact {
         artifact: Value,
+        #[serde(default)]
+        base_generation: Option<u64>,
+    },
+    #[serde(rename = "load_plugin_artifact_path")]
+    LoadPluginArtifactPath {
+        path: String,
         #[serde(default)]
         base_generation: Option<u64>,
     },
@@ -123,6 +131,7 @@ impl Command {
     /// attributes on each variant.
     pub(super) fn name(&self) -> &'static str {
         match self {
+            Command::Ping => "ping",
             Command::Status => "status",
             Command::GetSnapshot => "get_snapshot",
             Command::DumpState => "dump_state",
@@ -136,6 +145,7 @@ impl Command {
             Command::SetDevice { .. } => "set_device",
             Command::LoadPlugins { .. } => "load_plugins",
             Command::LoadPluginArtifact { .. } => "load_plugin_artifact",
+            Command::LoadPluginArtifactPath { .. } => "load_plugin_artifact_path",
             Command::ReorderGraph { .. } => "reorder_graph",
             Command::SetInputChannels { .. } => "set_input_channels",
             Command::SetOutputChannels { .. } => "set_output_channels",

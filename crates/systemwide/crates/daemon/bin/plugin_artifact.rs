@@ -1,12 +1,93 @@
 use serde_json::Value;
 use sotf_audio::PluginConfig;
 use sotf_audio::engine::PluginGraphConfig;
+use sotf_audio_player::room_eq_types::{DspChainOutput, build_room_eq_plugin_graph_config};
+
+const MAX_PLUGIN_ARTIFACT_FILE_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub enum PluginArtifactPlan {
     RackChain { plugins: Vec<PluginConfig> },
     Graph { graph: PluginGraphConfig },
     UnsupportedGraph { reason: String },
+}
+
+#[derive(Debug, Clone)]
+pub struct PluginArtifactFilePlan {
+    pub plan: PluginArtifactPlan,
+    pub required_channels: Option<usize>,
+}
+
+/// Load a configuration directly in the daemon so large RoomEQ artifacts do
+/// not get materialised as Foundation dictionaries, re-encoded, and copied
+/// through the line-oriented control socket.
+pub fn plan_plugin_artifact_file(
+    path: &std::path::Path,
+    sample_rate: f64,
+) -> Result<PluginArtifactFilePlan, String> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW);
+    }
+    let mut file = options
+        .open(path)
+        .map_err(|error| format!("cannot open configuration '{}': {error}", path.display()))?;
+    let metadata = file
+        .metadata()
+        .map_err(|error| format!("cannot inspect configuration '{}': {error}", path.display()))?;
+    if !metadata.is_file() {
+        return Err(format!(
+            "configuration '{}' is not a regular file",
+            path.display()
+        ));
+    }
+    if metadata.len() > MAX_PLUGIN_ARTIFACT_FILE_BYTES {
+        return Err(format!(
+            "configuration is too large ({} MiB; maximum is {} MiB)",
+            metadata.len() / (1024 * 1024),
+            MAX_PLUGIN_ARTIFACT_FILE_BYTES / (1024 * 1024)
+        ));
+    }
+
+    let room_eq_file = file
+        .try_clone()
+        .map_err(|error| format!("cannot read configuration '{}': {error}", path.display()))?;
+    let room_eq_result: Result<DspChainOutput, _> =
+        serde_json::from_reader(std::io::BufReader::new(std::io::Read::take(
+            room_eq_file,
+            MAX_PLUGIN_ARTIFACT_FILE_BYTES + 1,
+        )));
+    if let Ok(output) = room_eq_result
+        && !output.channels.is_empty()
+    {
+        let graph = build_room_eq_plugin_graph_config(&output, sample_rate)
+            .map_err(|error| format!("invalid RoomEQ configuration: {error}"))?;
+        let required_channels = graph
+            .nodes
+            .iter()
+            .map(|node| node.input_channels)
+            .max()
+            .unwrap_or(output.channels.len());
+        return Ok(PluginArtifactFilePlan {
+            plan: PluginArtifactPlan::Graph { graph },
+            required_channels: Some(required_channels),
+        });
+    }
+
+    std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(0))
+        .map_err(|error| format!("cannot rewind configuration '{}': {error}", path.display()))?;
+    let artifact: Value = serde_json::from_reader(std::io::BufReader::new(std::io::Read::take(
+        file,
+        MAX_PLUGIN_ARTIFACT_FILE_BYTES + 1,
+    )))
+    .map_err(|error| format!("invalid JSON configuration: {error}"))?;
+    Ok(PluginArtifactFilePlan {
+        plan: plan_plugin_artifact(artifact)?,
+        required_channels: None,
+    })
 }
 
 pub fn plan_plugin_artifact(artifact: Value) -> Result<PluginArtifactPlan, String> {
@@ -127,6 +208,60 @@ fn is_system_plugin_type(plugin_type: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn room_eq_file_builds_channel_accurate_graph() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("room-eq.json");
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&serde_json::json!({
+                "version": "0.5",
+                "channels": {
+                    "L": {"channel": "L", "plugins": [{"plugin_type": "gain", "parameters": {"gain_db": -1.0}}]},
+                    "R": {"channel": "R", "plugins": [{"plugin_type": "gain", "parameters": {"gain_db": -2.0}}]}
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let file_plan = plan_plugin_artifact_file(&path, 48_000.0).unwrap();
+        assert_eq!(file_plan.required_channels, Some(2));
+        assert!(matches!(file_plan.plan, PluginArtifactPlan::Graph { .. }));
+    }
+
+    #[test]
+    #[ignore = "requires SOTF_GENERATED_ROOM_EQ_DIR"]
+    fn all_generated_room_eq_files_build_graphs() {
+        fn visit(path: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(path).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    visit(&path, files);
+                } else if path
+                    .extension()
+                    .is_some_and(|extension| extension == "json")
+                {
+                    files.push(path);
+                }
+            }
+        }
+
+        let root = std::env::var_os("SOTF_GENERATED_ROOM_EQ_DIR")
+            .expect("set SOTF_GENERATED_ROOM_EQ_DIR to the measured artifact directory");
+        let mut files = Vec::new();
+        visit(std::path::Path::new(&root), &mut files);
+        assert!(!files.is_empty(), "no JSON artifacts found");
+        for path in files {
+            let plan = plan_plugin_artifact_file(&path, 48_000.0)
+                .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            assert!(
+                plan.required_channels.is_some(),
+                "{} did not produce a RoomEQ graph",
+                path.display()
+            );
+        }
+    }
 
     #[test]
     fn array_artifact_plans_as_rack_chain() {

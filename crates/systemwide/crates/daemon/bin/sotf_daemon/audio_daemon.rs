@@ -325,6 +325,7 @@ impl RuntimeTelemetry {
             ),
             "load_plugins"
             | "load_plugin_artifact"
+            | "load_plugin_artifact_path"
             | "add_plugin"
             | "remove_plugin"
             | "update_plugin"
@@ -397,6 +398,54 @@ impl Drop for ClientSlot {
 }
 
 impl AudioDaemon {
+    pub(super) fn requires_playback_callback(driver_status: &driver_common::DriverStatus) -> bool {
+        if !driver_status.platform_supported || driver_status.driver_name == "Systemwide Lab Driver"
+        {
+            return false;
+        }
+        #[cfg(test)]
+        if driver_status.driver_name == "Fake HAL" {
+            return false;
+        }
+        true
+    }
+
+    pub(super) fn playback_startup_observation(
+        state: &sotf_audio::engine::AudioEngineState,
+    ) -> Result<bool, String> {
+        if let Some(error) = state
+            .last_error
+            .as_deref()
+            .filter(|error| !error.is_empty())
+        {
+            return Err(format!("Playback startup failed: {error}"));
+        }
+        Ok(state.playback_callback_count > 0)
+    }
+
+    fn wait_for_playback_ready(&self) -> Result<(), String> {
+        const READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(12);
+        const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(20);
+
+        let deadline = std::time::Instant::now() + READY_TIMEOUT;
+        loop {
+            if !*self.running.lock() {
+                return Err("Daemon shutdown requested during playback startup".to_string());
+            }
+            let state = self.manager.lock().get_engine_state();
+            if Self::playback_startup_observation(&state)? {
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(format!(
+                    "Playback did not reach a hardware callback within {}s",
+                    READY_TIMEOUT.as_secs()
+                ));
+            }
+            std::thread::sleep(POLL_INTERVAL);
+        }
+    }
+
     pub(super) fn new() -> Self {
         Self {
             manager: Arc::new(Mutex::new(AudioEngineManager::new())),
@@ -442,6 +491,10 @@ impl AudioDaemon {
 
     pub(super) fn handle_command(&self, cmd: Command) -> Response {
         match cmd {
+            // Lifecycle probes must remain independent of engine, pipeline,
+            // driver, and key-manager locks so legitimate reconfiguration
+            // cannot be mistaken for a dead daemon.
+            Command::Ping => Response::ok_empty(),
             Command::Status => self.handle_status(),
             Command::GetSnapshot => self.handle_get_snapshot(),
             Command::DumpState => self.handle_dump_state(),
@@ -470,6 +523,13 @@ impl AudioDaemon {
             } => {
                 let _mutation = self.pipeline_mutation.lock();
                 self.handle_load_plugin_artifact(artifact, base_generation)
+            }
+            Command::LoadPluginArtifactPath {
+                path,
+                base_generation,
+            } => {
+                let _mutation = self.pipeline_mutation.lock();
+                self.handle_load_plugin_artifact_path(&path, base_generation)
             }
             Command::ReorderGraph {
                 order,
@@ -1055,6 +1115,13 @@ impl AudioDaemon {
             return response;
         }
 
+        // Shutdown cancellation is terminal for this daemon lifetime. Do not
+        // restart the old plan while the accept loop is trying to stop and join
+        // workers.
+        if !*self.running.lock() {
+            return response;
+        }
+
         if previous_plan.is_none() {
             let error = response
                 .error
@@ -1161,6 +1228,12 @@ impl AudioDaemon {
                 effective_driver_sample_rate,
                 effective_driver_buffer_frames,
             )
+            .map_err(|error| error.to_string())
+        };
+        let result = if Self::requires_playback_callback(&driver_status) {
+            result.and_then(|()| self.wait_for_playback_ready())
+        } else {
+            result
         };
 
         match result {
@@ -1298,6 +1371,115 @@ impl AudioDaemon {
             )),
             Err(e) => Response::err(format!("Invalid plugin artifact: {}", e)),
         }
+    }
+
+    pub(super) fn handle_load_plugin_artifact_path(
+        &self,
+        path: &str,
+        base_generation: Option<u64>,
+    ) -> Response {
+        if let Some(base_generation) = base_generation {
+            let current_generation = self.system_state.lock().applied_generation().unwrap_or(0);
+            if base_generation != current_generation {
+                return Response::err(format!(
+                    "Plugin artifact generation conflict: editor based on generation {base_generation}, current generation is {current_generation}. Refresh before applying."
+                ));
+            }
+        }
+
+        let driver_status = self.driver_manager.lock().status();
+        let sample_rate = if driver_status.sample_rate > 0 {
+            driver_status.sample_rate
+        } else {
+            48_000
+        };
+        let file_plan = match crate::plugin_artifact::plan_plugin_artifact_file(
+            std::path::Path::new(path),
+            f64::from(sample_rate),
+        ) {
+            Ok(plan) => plan,
+            Err(error) => return Response::err(format!("Invalid plugin artifact: {error}")),
+        };
+
+        if let Some(required_channels) = file_plan.required_channels
+            && let Err(error) = self.validate_output_device_channels(required_channels, sample_rate)
+        {
+            return Response::err(error);
+        }
+
+        match file_plan.plan {
+            PluginArtifactPlan::RackChain { plugins } => {
+                let channels = {
+                    let state = self.system_state.lock();
+                    (state.input_channels(), state.output_channels())
+                };
+                self.handle_load_plugins_with_channels(plugins, channels.0, channels.1)
+            }
+            PluginArtifactPlan::Graph { graph } => {
+                let required_channels = file_plan.required_channels.unwrap_or_else(|| {
+                    let state = self.system_state.lock();
+                    state.output_channels()
+                });
+                self.handle_load_plugin_graph_with_channels(
+                    graph,
+                    required_channels,
+                    required_channels,
+                )
+            }
+            PluginArtifactPlan::UnsupportedGraph { reason } => Response::err(format!(
+                "Unsupported graph plugin artifact: {reason}. Use a graph-aware loader instead of flattening it into a rack."
+            )),
+        }
+    }
+
+    fn validate_output_device_channels(
+        &self,
+        required_channels: usize,
+        sample_rate: u32,
+    ) -> Result<(), String> {
+        use cpal::traits::DeviceTrait;
+
+        let selected_device = self
+            .system_state
+            .lock()
+            .selected_output_device()
+            .or_else(|| {
+                self.manager
+                    .lock()
+                    .get_engine_state()
+                    .playback_output_device
+            });
+        let Some(selected_device) = selected_device else {
+            return Ok(());
+        };
+        let host = sotf_audio::devices::get_host_for_device(Some(&selected_device));
+        let device_name = sotf_audio::devices::strip_asio_prefix(&selected_device);
+        let device = sotf_audio::devices::find_device(&host, device_name, false)
+            .map_err(|error| format!("Cannot inspect output device '{device_name}': {error}"))?;
+        let max_channels = device
+            .supported_output_configs()
+            .map_err(|error| format!("Cannot inspect output formats for '{device_name}': {error}"))?
+            .filter(|config| {
+                config.min_sample_rate() <= sample_rate && sample_rate <= config.max_sample_rate()
+            })
+            .map(|config| usize::from(config.channels()))
+            .max()
+            .or_else(|| {
+                device
+                    .default_output_config()
+                    .ok()
+                    .map(|config| usize::from(config.channels()))
+            })
+            .ok_or_else(|| {
+                format!("Output device '{device_name}' does not report a usable channel layout")
+            })?;
+
+        if required_channels > max_channels {
+            return Err(format!(
+                "This RoomEQ configuration requires {required_channels} output channels, but '{device_name}' supports at most {max_channels} channels at {sample_rate} Hz. Select a compatible audio device before loading it."
+            ));
+        }
+        Ok(())
     }
 
     pub(super) fn handle_reorder_graph(

@@ -114,6 +114,15 @@ fn daemon_status_roundtrip_over_unix_socket() {
 
 #[test]
 #[serial]
+fn daemon_ping_roundtrip_over_unix_socket() {
+    let daemon = DaemonFixture::start();
+    let response = daemon.send(r#"{"command":"ping"}"#);
+    assert_eq!(response["success"], true, "{response}");
+    daemon.shutdown();
+}
+
+#[test]
+#[serial]
 fn second_daemon_cannot_take_ownership_of_a_live_runtime() {
     let daemon = DaemonFixture::start();
 
