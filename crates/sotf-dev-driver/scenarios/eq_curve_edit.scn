@@ -1,0 +1,75 @@
+# EQ Curve: every mutation below is driven through the rendered rack/editor.
+# Start wide enough to exercise the full graph action row.
+action PluginClear
+resize 1600 2000
+wait_idle
+click sidebar.nav-studio-rack
+assert screen.focused == "Studio"
+wait_idle
+click rack.add.open
+wait_idle
+assert_visible rack.add.eq
+scroll rack.add.menu -450
+wait_idle
+assert_in_viewport rack.add.eq
+screenshot eq-add-menu
+click rack.add.eq
+wait_until plugins.user_count == 1 timeout=2s
+assert plugins.first_user_type == "EQ"
+assert plugins.plugin.2.param_count == 20
+drag rack.detail.divider rack.plugin.2.toggle
+wait_idle
+screenshot eq-editor-initial
+
+# The default five-band rack is full. Remove and re-add a band through the
+# named controls so the add workflow and resulting curve point are visible.
+assert_in_viewport eq.band.remove
+assert_accessible button Remove selected band
+assert_accessible button Reset selected band
+assert_accessible button Add band
+click eq.band.remove
+wait_until plugins.plugin.2.param_count == 16 timeout=2s
+wait_idle
+assert_in_viewport eq.band.add
+click eq.band.add
+wait_until plugins.plugin.2.param_count == 20 timeout=2s
+wait_idle
+assert_in_viewport eq.band.4.point
+assert_visible eq.band.4.point
+
+# Select the new band and drag it to another rendered control point. The
+# frequency must follow the pointer rather than remaining at the 1 kHz default.
+click eq.band.4.point
+query plugins.plugin.2.param.16.value
+assert plugins.plugin.2.param.16.value == 1000 tolerance=0.01
+drag eq.band.4.point eq.chart
+assert plugins.plugin.2.param.16.value > 500
+assert plugins.plugin.2.param.16.value < 800
+screenshot eq-curve-pointer-drag
+
+# Clicking a point focuses the chart, so its documented keyboard nudge acts on
+# the selected band. Exact entry then uses the metadata-backed number editor.
+click eq.band.4.point
+wait_idle
+key right
+assert plugins.plugin.2.param.16.value > 505
+assert_in_viewport eq.param.18
+click eq.param.18
+wait_idle
+assert_in_viewport plugin.param.2.18.exact
+assert_accessible textbox Gain value
+click plugin.param.2.18.exact
+wait_idle
+assert_focused plugin-number-input-2-18
+key cmd-a
+type "6.5"
+key enter
+assert plugins.plugin.2.param.18.value == 6.5 tolerance=0.01
+screenshot eq-curve-exact-entry
+
+# Reset is a visible, localized action—not an undiscoverable double-click only.
+click eq.band.reset
+assert plugins.plugin.2.param.16.value == 1000 tolerance=0.01
+assert plugins.plugin.2.param.17.value == 1 tolerance=0.01
+assert plugins.plugin.2.param.18.value == 0 tolerance=0.01
+screenshot eq-curve-reset

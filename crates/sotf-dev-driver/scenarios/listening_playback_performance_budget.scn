@@ -1,0 +1,46 @@
+# Verify active playback does not rebuild the full Listening Test workbench at
+# the engine's 100 ms polling cadence. The shared footer clock remains current
+# to whole seconds while the expensive workbench stays below 4 draws/second.
+focus library
+wait_until library.album_count > 0 timeout=10s
+action ListeningResetGuide
+wait_until screen.focused == "ListeningTest" timeout=2s
+wait_until listening.guide_open == true timeout=2s
+assert_visible listening.guide.acknowledge
+click listening.guide.acknowledge
+wait_until listening.guide_open == false timeout=2s
+wait_idle 2s
+sleep 1s
+
+action QaPerformanceStart
+assert performance.active == true
+wait_until playback.is_playing == true timeout=2s
+sleep 2s
+action QaPerformanceStop
+assert performance.active == false
+
+query performance.elapsed_ms
+query performance.frame_count_all_windows
+query performance.frame_count
+query performance.frames_per_second
+query performance.update_count
+query performance.updates_per_second
+query performance.draw_p95_ms
+query performance.draw_max_ms
+query performance.dirty_to_draw_p95_ms
+query performance.allocations_per_second
+query performance.allocated_bytes_per_second
+
+assert performance.elapsed_ms > 1900
+assert performance.elapsed_ms < 3000
+assert performance.update_count > 0
+assert performance.updates_per_second > 8
+assert performance.updates_per_second < 12
+assert performance.frame_count_all_windows > 0
+assert performance.frame_count > 0
+assert performance.frames_per_second > 0.5
+assert performance.frames_per_second < 4
+assert performance.draw_p95_ms < 16.7
+assert performance.draw_max_ms < 25
+assert performance.dirty_to_draw_p95_ms < 16.7
+assert playback.is_playing == false

@@ -1,0 +1,34 @@
+# 2026-08-27: Spinorama catalog refreshes could historically share global
+# result state, allowing a slow old response to replace a newer request. The
+# request generation guard is in components/spinorama_eq/types.rs; this fixture
+# forces slow-success -> fast-failure -> successful visible Retry.
+# Run after building the desktop with dev-api:
+#   cargo run -p sotf-dev-driver -- run-suite crates/sotf-dev-driver/suites/spinorama_ui.toml -v
+assert screen.focused == "Spinorama"
+wait_idle 2s
+assert_visible spinorama.refresh
+
+# Start a slow successful request, then supersede it through the same visible
+# Refresh control with a fast failure.
+click spinorama.refresh
+wait_until spinorama.loading == true timeout=2s
+click spinorama.refresh
+wait_until spinorama.loading == false timeout=2s
+assert spinorama.error == "Newest Spinorama request failed"
+assert spinorama.catalog_count == 0
+assert_visible spinorama.refresh
+screenshot spinorama-latest-request-failed
+
+# Let the old success arrive. It must not clear/replace the newest failure.
+sleep 900ms
+assert spinorama.loading == false
+assert spinorama.error == "Newest Spinorama request failed"
+assert spinorama.catalog_count == 0
+
+# Retry through the visible control and prove the retained failure recovers.
+click spinorama.refresh
+wait_until spinorama.loading == true timeout=2s
+wait_until spinorama.loading == false timeout=2s
+assert spinorama.error == null
+assert spinorama.catalog_count == 2
+screenshot spinorama-latest-request-retry-success

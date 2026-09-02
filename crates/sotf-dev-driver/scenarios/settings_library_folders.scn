@@ -1,0 +1,75 @@
+# 2026-08-27 — Library Settings previously committed unreadable folders,
+# removed configured roots immediately, and exposed scan failures only through
+# transient toasts. The fix lives in app/library.rs and
+# components/settings/library/misc.rs: validation precedes mutation, removal is
+# confirmed, add/remove persist immediately, and folder/scan failures retain an
+# inline Retry path. The dev-only picker fixture models the native dialog result
+# while every product mutation below still starts from a visible control.
+#
+# Reproduce after building the dev-API desktop binary:
+#   cargo run -p sotf-dev-driver -- run-suite \
+#     crates/sotf-dev-driver/suites/settings_library_ui.toml -v
+
+focus       settings
+assert      screen.focused == "Settings"
+assert      settings.active_tab == "Library"
+assert      settings.library_folder_count == 1
+assert_visible settings.library.directory.0
+assert_visible settings.library.add
+assert_accessible button Add Directory
+assert_accessible button Remove
+screenshot  settings-library-initial
+
+# Destructive removal is cancellable and leaves both live and persisted state
+# untouched until the explicit confirmation.
+click       settings.library.remove.0
+assert      settings.library_remove_pending == 0
+assert_visible settings.library.remove.0.cancel
+assert_visible settings.library.remove.0.confirm
+assert      settings.library_folder_count == 1
+screenshot  settings-library-remove-confirmation
+click       settings.library.remove.0.cancel
+assert      settings.library_remove_pending == null
+assert      settings.library_folder_count == 1
+
+click       settings.library.remove.0
+click       settings.library.remove.0.confirm
+assert      settings.library_remove_pending == null
+assert      settings.library_folder_count == 0
+assert      settings.persisted_library_folder_count == 0
+assert_absent settings.library.directory.0
+
+# Permission failure is diagnosed inline and does not mutate configuration.
+action      SettingsSetLibraryPickerFixture {"result":"permission_denied"}
+click       settings.library.add
+assert      settings.library_folder_error == "PermissionDenied"
+assert      settings.library_folder_count == 0
+assert      settings.persisted_library_folder_count == 0
+assert_visible settings.library.folder-error
+assert_visible settings.library.retry-folder
+assert_accessible button Choose another folder
+screenshot  settings-library-permission-denied
+
+# Retry consumes a successful native-picker result, clears the diagnosis, and
+# persists the restored root immediately.
+action      SettingsSetLibraryPickerFixture {"result":"selected"}
+click       settings.library.retry-folder
+assert      settings.library_folder_error == null
+assert      settings.library_folder_count == 1
+assert      settings.persisted_library_folder_count == 1
+assert_visible settings.library.directory.0
+screenshot  settings-library-retry-success
+
+# The background scan exposes a stable progress state and completes with real
+# fixture counts rather than merely changing a label.
+timing_start scan
+click       settings.library.scan
+wait_until  settings.library_scan_in_progress == true timeout=2s
+screenshot  settings-library-scan-progress
+wait_until  settings.library_scan_in_progress == false timeout=30s
+timing_end   scan max=5s
+assert      settings.library_scan_tracks > 0
+assert      settings.library_scan_albums > 0
+assert      settings.library_scan_error == null
+assert      settings.persisted_library_folder_count == 1
+screenshot  settings-library-scan-complete

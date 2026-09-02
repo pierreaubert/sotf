@@ -1,0 +1,11 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+size = "1200x832"
+
+[[scenario]]
+name = "settings-keybindings-conflict-runtime-reset"
+path = "crates/sotf-dev-driver/scenarios/settings_keybindings.scn"
+timeout = "45s"
+tags = ["gpui", "settings", "keybindings", "persistence", "accessibility", "keyboard"]

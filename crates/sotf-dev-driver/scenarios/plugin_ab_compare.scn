@@ -1,0 +1,63 @@
+# A/B Compare: configure both rendered sub-racks, switch by pointer and
+# keyboard, then verify the explicit bypass state.
+action PluginClear
+resize 1400 1100
+wait_idle
+click sidebar.nav-studio-rack
+assert screen.focused == "Studio"
+wait_idle
+
+click rack.add.open
+wait_idle
+scroll rack.add.menu -1800
+wait_idle
+assert_in_viewport rack.add.a-b-compare
+click rack.add.a-b-compare
+wait_idle
+wait_until plugins.user_count == 1 timeout=2s
+assert plugins.first_user_type == "A/B Compare"
+assert plugins.plugin.2.param_count == 16
+drag rack.detail.divider rack.plugin.2.toggle
+wait_idle
+
+# The comparison risk and all primary actions must be visible and named.
+assert_visible ab.warning.level-latency
+assert_accessible button Use A
+assert_accessible button Use B
+assert_accessible button Bypass
+
+# Configure different visible chains so level and latency can genuinely differ.
+assert_in_viewport ab.path.0.add
+click ab.path.0.add
+wait_idle
+assert_visible ab.path.0.add.gain
+click ab.path.0.add.gain
+wait_idle
+assert_visible ab.path.0.plugin.0.gain
+
+click ab.path.1.add
+wait_idle
+assert_visible ab.path.1.add.delay
+click ab.path.1.add.delay
+wait_idle
+assert_visible ab.path.1.plugin.0.delay
+screenshot ab-paths-configured
+
+# Pointer switching drives the same model parameter shown by the generic controls.
+click ab.path.1.select
+assert plugins.plugin.2.param.0.value == 1 tolerance=0.01
+assert_accessible button Path B active
+screenshot ab-path-b-active
+
+# The documented A shortcut has parity with the visible switch button.
+key a
+assert plugins.plugin.2.param.0.value == -1 tolerance=0.01
+assert_accessible button Path A active
+screenshot ab-path-a-keyboard
+
+# Bypass is an explicit rendered action and produces an unmistakable dry state.
+click ab.bypass.toggle
+assert plugins.plugin.2.param.3.value == 1 tolerance=0.01
+assert_visible ab.bypass.active
+assert_accessible button Resume
+screenshot ab-bypassed

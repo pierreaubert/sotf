@@ -1,0 +1,18 @@
+# Release-critical Studio matrix point: 1024x768, 150% German text, Dark
+# theme, normal motion, and Alpha feature visibility.
+wait_idle 1s
+assert window.width == 1024 tolerance=1
+assert window.height == 768 tolerance=1
+assert settings.theme == "Dark"
+assert settings.language == "German"
+assert settings.font_scale == 1.5 tolerance=0.01
+assert settings.reduce_motion == false
+assert settings.release_channel == "Alpha"
+click sidebar.nav-studio-rack
+assert screen.focused == "Studio"
+wait_idle 1s
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_accessible button Fügen Sie zunächst ein Plugin hinzu
+accessibility
+screenshot release-matrix-studio-1024-german-dark-150

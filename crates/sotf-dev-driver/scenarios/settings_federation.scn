@@ -1,0 +1,65 @@
+# Streaming account state must be cancellable, retain failures inline, persist
+# login/logout, and never expose credentials through the accessibility bridge.
+action SettingsSetTab {"tab":"Federation"}
+assert screen.focused == "Settings"
+assert settings.active_tab == "Federation"
+assert settings.federation_source_count == 0
+wait_idle 1s
+screenshot settings-federation-initial
+assert_accessible button + Subsonic
+assert_visible settings.federation.add.subsonic
+assert_visible settings.federation.add.tidal
+
+click settings.federation.add.tidal
+wait_until settings.federation_source_count == 1
+wait_idle 500ms
+assert_visible settings.federation.source.0
+assert_accessible_masked textbox Access Token
+assert_visible settings.federation.tidal.login
+
+# A visible Login action enters a deterministic device-code flow. Cancel must
+# remove the active flow and leave the account signed out.
+click settings.federation.tidal.login
+action SettingsSetTidalLoginFixture {"result":"prompt"}
+wait_until settings.federation_tidal_login_active == true
+wait_idle 500ms
+assert_visible settings.federation.tidal.cancel
+assert_accessible button Cancel
+screenshot settings-federation-login-prompt
+click settings.federation.tidal.cancel
+wait_until settings.federation_tidal_login_active == false
+wait_idle 500ms
+assert settings.federation_tidal_logged_in == false
+assert settings.federation_login_error == null
+assert_visible settings.federation.tidal.login
+
+# Failure is retained inline and the Login action remains available for retry.
+click settings.federation.tidal.login
+action SettingsSetTidalLoginFixture {"result":"failed"}
+wait_until settings.federation_tidal_login_active == false
+wait_idle 500ms
+assert settings.federation_login_error == "Invalid credentials or network unavailable."
+assert_visible settings.federation.login-error
+assert_visible settings.federation.tidal.login
+screenshot settings-federation-login-failed
+
+# Completion uses the real source persistence path but exposes only booleans.
+click settings.federation.tidal.login
+action SettingsSetTidalLoginFixture {"result":"completed"}
+wait_until settings.federation_tidal_logged_in == true
+wait_idle 500ms
+assert settings.federation_tidal_persisted_logged_in == true
+assert settings.federation_tidal_login_active == false
+assert settings.federation_login_error == null
+assert_visible settings.federation.tidal.logout
+assert_accessible button Logout
+screenshot settings-federation-logged-in
+
+click settings.federation.tidal.logout
+wait_until settings.federation_tidal_logged_in == false
+wait_idle 500ms
+assert settings.federation_tidal_persisted_logged_in == false
+assert settings.federation_tidal_login_active == false
+assert settings.federation_login_error == null
+assert_visible settings.federation.tidal.login
+screenshot settings-federation-logged-out

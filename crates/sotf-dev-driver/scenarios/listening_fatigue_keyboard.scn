@@ -1,0 +1,37 @@
+# Keyboard-only ABX trials must trigger fatigue guidance at the configured
+# interval; the visible Continue control resumes the session without losing it.
+focus       library
+wait_until  library.album_count > 0 timeout=10s
+wait_idle   2s
+action      AddToQueue
+wait_until  queue.length > 0 timeout=3s
+action      PlayPause
+wait_until  playback.is_playing == true timeout=3s
+action      ListeningResetGuide
+click       listening.guide.acknowledge
+click       sidebar.nav-ab-compare
+click       listening.capture.a
+click       listening.capture.b
+click       listening.session.prepare
+wait_until  listening.session_ready == true timeout=20s
+action      ListeningSetBreakInterval {"trials":2}
+assert      listening.break_interval == 2
+key         ctrl-x
+wait_until  listening.pending_mode == "Abx" timeout=2s
+key         alt-3
+key         alt-a
+wait_until  listening.completed_trials == 1 timeout=2s
+assert      listening.break_open == false
+key         ctrl-x
+wait_until  listening.pending_mode == "Abx" timeout=2s
+key         alt-3
+key         alt-b
+wait_until  listening.completed_trials == 2 timeout=2s
+wait_until  listening.break_open == true timeout=2s
+assert_visible listening.break.continue
+assert_accessible button Continue
+click       listening.break.continue
+wait_until  listening.break_open == false timeout=2s
+assert      listening.session_ready == true
+accessibility
+screenshot  listening-fatigue-resumed

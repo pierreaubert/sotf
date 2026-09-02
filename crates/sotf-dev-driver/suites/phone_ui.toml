@@ -1,0 +1,13 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "25s"
+size = "390x844"
+phone_layout = true
+
+[[scenario]]
+name = "phone-routes-accessibility"
+path = "crates/sotf-dev-driver/scenarios/phone_routes_accessibility.scn"
+timeout = "120s"
+seed_demo_audio = true
+tags = ["gpui", "phone", "routes", "accessibility", "keyboard", "visual"]

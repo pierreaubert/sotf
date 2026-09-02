@@ -1,0 +1,37 @@
+# Indirect-copy localization regression at 150% scale. This specifically
+# exercises labels selected through local bindings and match/if expressions,
+# which the original direct-literal source gate could not see.
+
+wait_idle 1s
+assert settings.language == "French"
+assert settings.font_scale == 1.5 tolerance=0.01
+assert settings.reduce_motion == true
+assert_accessible button Réduire la barre latérale
+
+focus settings
+wait_until screen.focused == "Settings" timeout=2s
+click settings.tab.Metadata
+assert settings.active_tab == "Metadata"
+assert_in_viewport settings.metadata.search-toggle
+assert_accessible button Désactiver la recherche de métadonnées
+screenshot indirect-localization-metadata-french
+assert_perceptual_snapshot indirect-localization-metadata-french crates/sotf-dev-driver/baselines/gpui/settings-metadata-light-french-1024x768-150.png ssim=0.002 changed=0.0005
+
+click settings.tab.Servers
+assert settings.active_tab == "Servers"
+assert_accessible button Afficher le QR
+screenshot indirect-localization-servers-french
+
+focus room-e-q
+wait_until screen.focused == "RoomEq" timeout=2s
+assert roomeq.step == "LoadData"
+click roomeq.load_from_recording
+wait_idle 2s
+click roomeq.next
+assert roomeq.step == "Delay"
+click roomeq.next
+assert roomeq.step == "Process"
+click roomeq.select_simple
+assert roomeq.step == "Configure"
+assert_accessible button Personnaliser
+screenshot indirect-localization-roomeq-french

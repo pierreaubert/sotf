@@ -1,0 +1,32 @@
+# Blind A/B: arrange a hermetic local track, then capture both rendered paths,
+# prepare measured level matching, switch concealed cues, and commit a choice.
+focus       library
+wait_until  library.album_count > 0 timeout=10s
+wait_idle   2s
+action      AddToQueue
+wait_until  queue.length > 0 timeout=3s
+action      PlayPause
+wait_until  playback.is_playing == true timeout=3s
+action      ListeningResetGuide
+click       listening.guide.acknowledge
+click       sidebar.nav-ab-compare
+wait_until  listening.surface == "BlindComparison" timeout=2s
+assert_visible listening.capture.a
+assert_visible listening.capture.b
+click       listening.capture.a
+click       listening.capture.b
+wait_until  listening.paths_ready == true timeout=2s
+assert_visible listening.session.prepare
+click       listening.session.prepare
+wait_until  listening.session_ready == true timeout=20s
+key         ctrl-b
+wait_until  listening.pending_mode == "BlindAb" timeout=2s
+assert      listening.runtime_active == true
+key         alt-1
+key         alt-2
+key         alt-a
+wait_until  listening.completed_trials == 1 timeout=2s
+assert      listening.pending_mode == null
+assert      listening.runtime_active == true
+accessibility
+screenshot  listening-blind-ab-committed

@@ -1,0 +1,18 @@
+# Release-critical Recording matrix point: 1440x900, Spanish, high contrast,
+# 100% text, reduced motion, and Alpha workflow visibility.
+wait_idle 1s
+assert window.width == 1440 tolerance=1
+assert window.height == 900 tolerance=1
+assert settings.theme == "BlackAndWhite"
+assert settings.language == "Spanish"
+assert settings.font_scale == 1.0 tolerance=0.01
+assert settings.reduce_motion == true
+assert settings.release_channel == "Alpha"
+focus recording
+wait_until screen.focused == "Recording" timeout=2s
+assert recording.step == "Config"
+assert_visible recording.next
+assert_in_viewport recording.next
+assert_accessible button Cerrar
+accessibility
+screenshot release-matrix-recording-1440-spanish-high-contrast

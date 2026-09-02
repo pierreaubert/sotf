@@ -1,0 +1,19 @@
+# Release-critical Listening matrix point: 1024x768, 200% Spanish text,
+# Tritanopia palette, reduced motion, and Alpha feature visibility.
+wait_idle 1s
+assert window.width == 1024 tolerance=1
+assert window.height == 768 tolerance=1
+assert settings.theme == "Tritanopia"
+assert settings.language == "Spanish"
+assert settings.font_scale == 2.0 tolerance=0.01
+assert settings.reduce_motion == true
+assert settings.release_channel == "Alpha"
+action ListeningResetGuide
+wait_until screen.focused == "ListeningTest" timeout=2s
+assert listening.guide_open == true
+assert_visible listening.guide.acknowledge
+assert_in_viewport listening.guide.acknowledge
+accessibility
+screenshot release-matrix-listening-1024-spanish-tritanopia-200
+click listening.guide.acknowledge
+wait_until listening.guide_open == false timeout=2s

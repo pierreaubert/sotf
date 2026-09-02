@@ -1,0 +1,17 @@
+# Release-critical Player matrix point: compact viewport, 200% French text,
+# Light theme, reduced motion, and the production feature channel.
+wait_idle 1s
+assert window.width == 700 tolerance=1
+assert window.height == 600 tolerance=1
+assert settings.theme == "Light"
+assert settings.language == "French"
+assert settings.font_scale == 2.0 tolerance=0.01
+assert settings.reduce_motion == true
+assert settings.release_channel == "Prod"
+focus library
+wait_until library.album_count > 0 timeout=10s
+assert_visible library.tab.album
+assert_in_viewport library.tab.album
+assert_accessible button Library
+accessibility
+screenshot release-matrix-player-700-french-light-200

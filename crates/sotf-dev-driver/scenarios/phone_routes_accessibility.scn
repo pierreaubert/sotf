@@ -1,0 +1,295 @@
+# Phone-shell release route and primary-control contract. The suite runner
+# forces the production phone renderer in a desktop QA process; every route
+# change below still uses a rendered control.
+
+assert          screen.focused == "Library"
+sleep           300ms
+sleep           300ms
+screenshot      phone-library-start
+assert_visible  phone.library-chip.sort.Year
+assert_visible  phone.library-chip.sort.Genre
+assert_accessible button Year
+assert_accessible button Genre
+click           phone.library-chip.sort.Year
+assert_focused  phone.library-chip.sort.Year
+key             tab
+assert_focused  phone.library-chip.sort.Genre
+key             enter
+wait_until      library.sort_order == "Genre" timeout=2s
+action          AddToQueue
+wait_until      queue.length == 1 timeout=2s
+assert_visible  phone.tab.Home
+assert_visible  phone.tab.Library
+assert_visible  phone.tab.NowPlaying
+assert_visible  phone.tab.StudioHub
+assert_visible  phone.tab.Settings
+assert_accessible tab Home
+assert_accessible tab Library
+assert_accessible tab Now Playing
+assert_accessible tab Studio
+assert_accessible tab Settings
+
+# The tab bar participates in a logical keyboard order.
+click           phone.tab.Home
+assert          screen.focused == "Home"
+assert_focused  phone-tab-Home
+key             tab
+assert_focused  phone-tab-Library
+key             enter
+sleep           300ms
+assert          screen.focused == "Library"
+
+# Home primary actions and the phone-only HomeShelf route are named and
+# keyboard-operable. Back restores focus to the originating See-all control.
+click           phone.tab.Home
+action          HomeSeedShelves
+sleep           200ms
+assert_visible  phone.home.search
+assert_accessible button Search albums, artists, tracks
+assert_visible  phone.home.see-all.RecentlyPlayed
+assert_accessible button See all Recently Played
+click           phone.home.see-all.RecentlyPlayed
+wait_idle       300ms
+assert          screen.focused == "HomeShelf"
+assert_visible  phone.screen.back
+assert_accessible button Back
+sleep           300ms
+screenshot      phone-home-shelf
+click           phone.screen.back
+assert          screen.focused == "Home"
+assert_focused  phone-home-see-all-RecentlyPlayed
+key             enter
+assert          screen.focused == "HomeShelf"
+click           phone.screen.back
+click           phone.home.search
+assert          screen.focused == "Library"
+
+# Studio hub cards are real buttons, not pointer-only tiles. EQ Curve is a
+# phone-only routed screen and re-entry through Enter proves card keyboard
+# activation after Back restores focus.
+click           phone.tab.StudioHub
+assert          screen.focused == "StudioHub"
+sleep           200ms
+assert_visible  phone.studio.Studio
+assert_visible  phone.studio.Spectrum
+assert_visible  phone.studio.EqCurve
+assert_accessible button Plugin Rack
+assert_accessible button Spectrum
+assert_accessible button EQ
+sleep           300ms
+screenshot      phone-studio-hub
+click           phone.studio.Studio
+assert          screen.focused == "Studio"
+assert_visible  phone.plugin-rack.back
+assert_visible  phone.plugin-rack.edit
+assert_visible  phone.plugin-rack.add
+assert_accessible button Back
+assert_accessible button Edit
+assert_accessible button Add
+click           phone.plugin-rack.add
+assert_visible  phone.plugin-picker.EQ
+assert_accessible button EQ
+click           phone.plugin-picker.EQ
+assert_visible  phone.plugin.2
+assert_visible  phone.plugin.2.bypass
+assert_accessible button EQ, EQ
+assert_accessible button EQ: On
+click           phone.plugin.2.bypass
+assert_focused  phone-plugin-2-bypass
+wait_until      plugins.first_user_enabled == false timeout=2s
+key             space
+wait_until      plugins.first_user_enabled == true timeout=2s
+click           phone.plugin.2
+assert_visible  phone.plugin-sheet.back
+assert_visible  phone.plugin-sheet.bypass
+assert_visible phone.plugin-sheet.add-filter
+assert_visible phone.plugin-sheet.band.0.reset
+assert_visible phone.plugin-sheet.band.0.delete
+assert_accessible button Back
+assert_accessible button EQ: On
+assert_accessible button Add Filter
+assert_accessible button Reset
+assert_accessible button Delete Filter
+assert_visible  phone.plugin-param.2.0.decrease
+assert_visible  phone.plugin-param.2.0.increase
+assert_accessible button Decrease Frequency
+assert_accessible button Increase Frequency
+click           phone.plugin-param.2.0.decrease
+assert_focused  phone-param-2-0-decrease
+key             space
+sleep           200ms
+screenshot      phone-plugin-sheet
+click phone.plugin-sheet.band.0.reset
+assert_focused phone-plugin-sheet-band-0-reset
+key space
+sleep 200ms
+click           phone.plugin-sheet.bypass
+assert_focused  phone-plugin-sheet-bypass
+wait_until      plugins.first_user_enabled == false timeout=2s
+key             space
+wait_until      plugins.first_user_enabled == true timeout=2s
+click           phone.plugin-sheet.back
+assert_visible  phone.plugin-rack.edit
+click           phone.plugin-rack.edit
+assert_visible  phone.plugin.2.move-up
+assert_visible  phone.plugin.2.move-down
+assert_accessible button Move Up: EQ
+assert_accessible button Move Down: EQ
+screenshot      phone-plugin-rack
+key             space
+assert_accessible button Edit
+click           phone.plugin-rack.back
+assert          screen.focused == "StudioHub"
+click           phone.studio.EqCurve
+wait_idle       300ms
+assert          screen.focused == "EqCurve"
+assert_accessible button Back
+sleep           300ms
+screenshot      phone-eq-curve
+click           phone.screen.back
+assert          screen.focused == "StudioHub"
+assert_focused  phone-studio-EqCurve
+key             enter
+assert          screen.focused == "EqCurve"
+click           phone.screen.back
+
+# Representative measurement/listening destinations stay reachable from the
+# same visible, accessible hub.
+click           phone.studio.RoomEq
+assert          screen.focused == "RoomEq"
+assert_visible  phone.wizard.back
+assert_visible  phone.wizard.next
+assert_accessible button Back
+assert_accessible button Next
+click           phone.wizard.next
+assert_focused  phone-wizard-next
+key             space
+click           phone.tab.StudioHub
+click           phone.studio.HeadphoneEq
+assert          screen.focused == "HeadphoneEq"
+click           phone.tab.StudioHub
+click           phone.studio.Recording
+assert          screen.focused == "Recording"
+click           phone.tab.StudioHub
+scroll          phone.studio.screen -500
+wait_idle       300ms
+click           phone.studio.ListeningTest
+assert          screen.focused == "ListeningTest"
+click           phone.tab.StudioHub
+scroll          phone.studio.screen -900
+wait_idle       300ms
+click           phone.studio.Spinorama
+assert          screen.focused == "Spinorama"
+
+# Settings rows expose role/name/focus and Enter activation for the phone-only
+# SettingsDetail route.
+click           phone.tab.Settings
+assert          screen.focused == "Settings"
+assert_visible  phone.settings.Library
+assert_visible  phone.settings.Theme
+assert_accessible button Library
+assert_accessible button Appearance
+click           phone.settings.Theme
+wait_idle       300ms
+assert          screen.focused == "SettingsDetail"
+assert           settings.active_tab == "Theme"
+assert_accessible button Back
+sleep           300ms
+screenshot      phone-settings-theme
+click           phone.screen.back
+assert          screen.focused == "Settings"
+assert_focused  phone-settings-Theme
+key             enter
+assert          screen.focused == "SettingsDetail"
+click           phone.screen.back
+
+# Alpha release-channel selection is a visible Settings workflow. It makes the
+# conditional Streams and Plugin Graph hub destinations available for route
+# coverage without mutating model state through a QA-only action.
+scroll          phone.settings.screen -900
+sleep           200ms
+assert_in_viewport phone.settings.ReleaseChannel
+click           phone.settings.ReleaseChannel
+assert          screen.focused == "SettingsDetail"
+assert          settings.active_tab == "ReleaseChannel"
+assert_in_viewport settings.release-channel.Alpha
+click           settings.release-channel.Alpha
+assert          settings.release_channel == "Alpha" timeout=2s
+click           phone.tab.StudioHub
+assert          screen.focused == "StudioHub"
+scroll          phone.studio.screen -900
+sleep           200ms
+assert_in_viewport phone.studio.Streams
+assert_in_viewport phone.studio.PluginGraph
+assert_accessible button Streams
+assert_accessible button Plugin Graph
+click           phone.studio.PluginGraph
+assert          screen.focused == "PluginGraph"
+assert_visible  phone.tool-toggle.plugin_graph_list
+assert_accessible button List
+click           phone.tool-toggle.plugin_graph_list
+assert_visible  phone.tool-toggle.plugin_graph_actions
+assert_accessible button Actions
+click           phone.tool-toggle.plugin_graph_actions
+assert_focused  phone-tool-toggle-plugin_graph_actions
+assert_visible  phone.plugin-graph.open-rack
+assert_visible  phone.plugin-graph.remove.2
+assert_visible  phone.plugin-graph.node.2
+assert_accessible button Open Rack Editor
+assert_accessible button Remove EQ
+assert_accessible button EQ, EQ, On
+key             space
+click           phone.tool-toggle.plugin_graph_actions
+assert_visible  phone.plugin-graph.open-rack
+sleep           300ms
+screenshot      phone-plugin-graph
+
+click           phone.tab.NowPlaying
+assert          screen.focused == "NowPlaying"
+assert_visible  phone.transport.phone-now-prev
+assert_visible  phone.transport.phone-now-rewind
+assert_visible  phone.transport.phone-now-play
+assert_visible  phone.transport.phone-now-forward
+assert_visible  phone.transport.phone-now-next
+assert_accessible button Previous track
+assert_accessible button Seek back 30 seconds
+assert_accessible button Play
+assert_accessible button Seek forward 30 seconds
+assert_accessible button Next track
+click           phone.transport.phone-now-prev
+assert_focused  phone-now-prev
+key             space
+
+# Now Playing owns a visible, named Queue button; this closes the remaining
+# phone route without relying on direct screen dispatch.
+assert_visible  phone.now.queue
+assert_accessible button Queue
+click           phone.now.queue
+assert          screen.focused == "Queue"
+sleep           300ms
+screenshot      phone-queue
+
+accessibility
+
+# Queue Edit, playable rows, and per-track Remove controls are named and
+# keyboard-operable. Seed content from the checked-in library fixture, then
+# exercise only rendered production Queue controls.
+assert_visible  phone.queue.edit
+assert_accessible button Edit
+click           phone.queue.edit
+assert_accessible button Done
+key             space
+assert_accessible button Edit
+assert           screen.focused == "Queue"
+assert_visible  phone.queue.row.0.0
+assert_accessible button classical, Unknown artist, Library, 0:45
+click           phone.queue.row.0.0
+assert_focused  phone-queue-row-0-0
+key             space
+click           phone.queue.edit
+assert_visible  phone.queue.remove.0.0
+assert_accessible button Remove from Queue: classical
+assert_visible  phone.mini-player.open
+assert_accessible button Now Playing: Now Playing, Unknown artist
+sleep           300ms
+screenshot      phone-queue-populated

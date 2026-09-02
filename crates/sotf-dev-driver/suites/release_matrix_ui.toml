@@ -1,0 +1,66 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+demo_audio_dir = "data_tests/audio"
+readiness_timeout = "20s"
+
+[[scenario]]
+name = "release-matrix-player"
+path = "crates/sotf-dev-driver/scenarios/release_matrix_player.scn"
+timeout = "30s"
+tags = ["release-matrix", "player", "responsive", "accessibility"]
+seed_demo_audio = true
+viewport = "700x600"
+theme = "Light"
+language = "French"
+font_scale = 2.0
+reduced_motion = true
+release_channel = "Prod"
+
+[[scenario]]
+name = "release-matrix-studio"
+path = "crates/sotf-dev-driver/scenarios/release_matrix_studio.scn"
+timeout = "20s"
+tags = ["release-matrix", "studio", "responsive", "accessibility"]
+viewport = "1024x768"
+theme = "Dark"
+language = "German"
+font_scale = 1.5
+reduced_motion = false
+release_channel = "Alpha"
+
+[[scenario]]
+name = "release-matrix-recording"
+path = "crates/sotf-dev-driver/scenarios/release_matrix_recording.scn"
+timeout = "20s"
+tags = ["release-matrix", "recording", "responsive", "accessibility"]
+viewport = "1440x900"
+theme = "BlackAndWhite"
+language = "Spanish"
+font_scale = 1.0
+reduced_motion = true
+release_channel = "Alpha"
+
+[[scenario]]
+name = "release-matrix-roomeq"
+path = "crates/sotf-dev-driver/scenarios/release_matrix_roomeq.scn"
+timeout = "20s"
+tags = ["release-matrix", "room-eq", "responsive", "accessibility"]
+viewport = "1600x1000"
+theme = "Deuteranopia"
+language = "English"
+font_scale = 1.5
+reduced_motion = false
+release_channel = "Beta"
+
+[[scenario]]
+name = "release-matrix-listening"
+path = "crates/sotf-dev-driver/scenarios/release_matrix_listening.scn"
+timeout = "20s"
+tags = ["release-matrix", "listening", "responsive", "accessibility"]
+viewport = "1024x768"
+theme = "Tritanopia"
+language = "Spanish"
+font_scale = 2.0
+reduced_motion = true
+release_channel = "Alpha"

@@ -1,0 +1,64 @@
+# Cross-workflow locale contract. Stable screen/step IDs drive behavior while
+# every visible wizard step and navigation action comes from locale copy.
+
+action      CycleLanguage
+sleep       250ms
+assert      settings.language == "French"
+
+focus       recording
+sleep       250ms
+assert      screen.focused == "Recording"
+assert      recording.step == "Config"
+assert_visible recording.next
+assert_accessible button Fermer
+assert_accessible button Continuer vers Calibrage SPL
+
+focus       room-e-q
+sleep       250ms
+assert      screen.focused == "RoomEq"
+assert      roomeq.step == "LoadData"
+assert_visible roomeq.next
+assert_accessible button Fermer
+assert_accessible button Continuer vers Délais
+screenshot  wizard-roomeq-french
+
+focus       headphone-e-q
+sleep       250ms
+assert      screen.focused == "HeadphoneEq"
+assert      headphone.step == "MeasurementTarget"
+assert_visible headphone.next
+assert_accessible button Fermer
+assert_accessible button Continuer vers Optimisation
+screenshot  wizard-headphone-french
+
+focus       spinorama
+sleep       250ms
+assert      screen.focused == "Spinorama"
+assert      spinorama.step == "SelectSpeaker"
+assert_visible spinorama.next
+assert_accessible button Fermer
+assert_accessible button Continuer vers Optimiser
+
+action      CycleLanguage
+sleep       250ms
+assert      settings.language == "German"
+
+assert_accessible button Schließen
+assert_accessible button Weiter zu Optimieren
+screenshot  wizard-spinorama-german
+
+focus       headphone-e-q
+sleep       250ms
+assert_accessible button Schließen
+assert_accessible button Weiter zu Optimierung
+
+focus       room-e-q
+sleep       250ms
+assert_accessible button Schließen
+assert_accessible button Weiter zu Verzögerung
+
+focus       recording
+sleep       250ms
+assert_accessible button Schließen
+assert_accessible button Weiter zu SPL-Kal.
+screenshot  wizard-recording-german

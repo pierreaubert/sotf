@@ -1,0 +1,65 @@
+# Measure the playback-driven GPUI update/draw path after startup settles.
+# QaPerformanceStart supplies a deterministic 100 ms playback clock because
+# rendered QA must not depend on a physical output device.
+focus library
+wait_until library.album_count > 0 timeout=10s
+assert playback.is_playing == false
+action AddToQueue
+wait_until queue.length > 0 timeout=3s
+action PlaybackResetQueueCursor {"track_index":0,"activate":true}
+click sidebar.nav-playing
+assert screen.focused == "NowPlaying"
+wait_until playback.current_title != null timeout=3s
+wait_idle 2s
+
+# Keep startup, decoding, and first-paint transients outside the budget window.
+sleep 1s
+action QaPerformanceStart
+assert performance.active == true
+wait_until playback.is_playing == true timeout=2s
+sleep 2s
+action QaPerformanceStop
+assert performance.active == false
+
+# Emit every measured value in verbose CI logs before applying the budgets.
+query performance.elapsed_ms
+query performance.frame_count_all_windows
+query performance.frame_count
+query performance.frames_per_second
+query performance.update_count
+query performance.updates_per_second
+query performance.draw_p50_ms
+query performance.draw_p95_ms
+query performance.draw_max_ms
+query performance.dirty_to_draw_p95_ms
+query performance.invalidations_total
+query performance.invalidations_per_frame
+query performance.allocations_total
+query performance.allocations_per_second
+query performance.allocated_bytes
+query performance.allocated_bytes_per_second
+
+# Regression ceilings come from three rendered 1440x900 samples with roughly
+# 15% headroom. Allocation ceilings preserve today's baseline; they are not a
+# claim that full-root playback rebuilds are allocation-efficient.
+assert performance.elapsed_ms > 1900
+assert performance.elapsed_ms < 3000
+assert performance.update_count > 0
+assert performance.frame_count_all_windows > 0
+assert performance.frame_count > 0
+assert performance.frames_per_second > 8
+assert performance.frames_per_second < 12
+assert performance.updates_per_second > 8
+assert performance.updates_per_second < 12
+assert performance.draw_p95_ms < 16.7
+assert performance.draw_max_ms < 25
+assert performance.dirty_to_draw_p95_ms < 16.7
+assert performance.invalidations_per_frame < 1.25
+assert performance.allocations_total > 0
+assert performance.allocations_per_second < 175000
+assert performance.allocated_bytes > 0
+assert performance.allocated_bytes_per_second < 115000000
+
+wait_until playback.is_playing == false timeout=2s
+screenshot playback-performance-budget
+assert_perceptual_snapshot playback-performance-budget crates/sotf-dev-driver/baselines/gpui/playback-dark-english-1440x900.png ssim=0.002 changed=0.0005

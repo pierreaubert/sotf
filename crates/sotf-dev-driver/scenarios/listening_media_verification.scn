@@ -1,0 +1,25 @@
+# Session media identity must be verified before playback; a fixture-only
+# identity mutation arranges the mismatch, then the visible Load Media control
+# must report it explicitly instead of silently substituting content.
+focus       library
+wait_until  library.album_count > 0 timeout=10s
+wait_idle   2s
+action      AddToQueue
+wait_until  queue.length > 0 timeout=3s
+action      PlayPause
+wait_until  playback.is_playing == true timeout=3s
+action      ListeningResetGuide
+click       listening.guide.acknowledge
+click       sidebar.nav-ab-compare
+click       listening.capture.a
+click       listening.capture.b
+click       listening.session.prepare
+wait_until  listening.session_ready == true timeout=20s
+action      ListeningCorruptMediaIdentity
+scroll      listening.session.prepare -900
+wait_idle   300ms
+assert_visible listening.media.load
+click       listening.media.load
+wait_until  listening.status == "Saved media content no longer matches this session" timeout=5s
+accessibility
+screenshot  listening-media-mismatch

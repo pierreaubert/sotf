@@ -1,0 +1,39 @@
+# EQ ear training: start from the visible workbench, audition both paths,
+# answer with pointer controls, advance, and verify Courses/Progress surfaces.
+action      ListeningResetGuide
+wait_until  screen.focused == "ListeningTest" timeout=2s
+click       listening.guide.acknowledge
+assert      listening.surface == "EqBands"
+assert_visible listening.eq.source.add
+scroll      listening.eq.source.add -600
+wait_idle   300ms
+assert_visible listening.eq.start
+assert_in_viewport listening.eq.start
+screenshot  listening-eq-before-start
+click       listening.eq.start
+wait_until  listening.eq.has_session == true timeout=2s
+assert_visible listening.eq.filtered
+click       listening.eq.filtered
+wait_until  listening.eq.filtered == true timeout=2s
+assert_visible listening.eq.answer.1
+key         right
+assert      listening.eq.selected_answer == 1
+assert_visible listening.eq.submit
+click       listening.eq.submit
+wait_until  listening.eq.answered == true timeout=2s
+assert      listening.eq.filtered == false
+assert_accessible button Original
+assert_accessible button Filtered
+screenshot  listening-eq-feedback
+assert_visible listening.eq.next
+click       listening.eq.next
+wait_until  listening.eq.answered == false timeout=2s
+assert_visible listening.eq.nav.courses
+click       listening.eq.nav.courses
+wait_until  listening.surface == "Courses" timeout=2s
+assert_visible listening.eq.course.0
+click       listening.eq.course.0
+wait_until  listening.surface == "EqBands" timeout=2s
+wait_until  listening.eq.has_session == true timeout=2s
+accessibility
+screenshot  listening-eq-course-started

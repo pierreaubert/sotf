@@ -1,0 +1,18 @@
+# Release-critical Room EQ matrix point: wide viewport, 150% English text,
+# a representative color-vision palette, normal motion, and Beta availability.
+wait_idle 1s
+assert window.width == 1600 tolerance=1
+assert window.height == 1000 tolerance=1
+assert settings.theme == "Deuteranopia"
+assert settings.language == "English"
+assert settings.font_scale == 1.5 tolerance=0.01
+assert settings.reduce_motion == false
+assert settings.release_channel == "Beta"
+focus room-e-q
+wait_until screen.focused == "RoomEq" timeout=2s
+assert roomeq.step == "LoadData"
+assert_visible roomeq.next
+assert_in_viewport roomeq.next
+assert_accessible button Close
+accessibility
+screenshot release-matrix-roomeq-1600-english-deuteranopia-150

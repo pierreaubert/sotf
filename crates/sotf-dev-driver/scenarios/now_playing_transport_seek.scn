@@ -1,0 +1,161 @@
+# Now Playing transport — every action under test uses a rendered control.
+# The demo-audio seed and QA duration fixture only arrange deterministic state.
+
+focus       library
+wait_until  library.album_count > 0 timeout=10s
+assert      playback.is_playing == false
+action      AddToQueue
+wait_until  queue.length > 0 timeout=3s
+action      PlaybackResetQueueCursor
+
+click       sidebar.nav-playing
+assert      screen.focused == "NowPlaying"
+wait_idle   2s
+assert_visible transport.title
+assert_visible transport.position
+assert_visible transport.previous
+assert_visible transport.seek_back
+assert_visible transport.play
+assert_visible transport.seek_forward
+assert_visible transport.next
+assert_visible transport.shuffle
+assert_visible transport.repeat
+assert_visible transport.mute
+assert_visible transport.volume
+assert_accessible button Previous track
+assert_accessible button Seek back 30 seconds
+assert_accessible button Play
+assert_accessible button Seek forward 30 seconds
+assert_accessible button Next track
+assert_accessible button Shuffle
+assert_accessible button Repeat
+assert_accessible button Mute
+assert_accessible slider Volume
+
+# Pointer activation starts playback through the named native button.
+click       transport.play
+wait_until  playback.is_playing == true timeout=3s
+wait_until  playback.current_title != null timeout=3s
+click       transport.play
+wait_until  playback.is_playing == false timeout=2s
+click       transport.play
+wait_until  playback.is_playing == true timeout=2s
+wait_until  playback.duration_secs > 0 timeout=3s
+click       transport.play
+wait_until  playback.is_playing == false timeout=2s
+
+# Rendered seek and traversal controls update the displayed playback model.
+click       transport.seek_forward
+wait_until  playback.position_secs > 0 timeout=2s
+click       transport.seek_back
+wait_until  playback.position_secs == 0 tolerance=0.25 timeout=2s
+# Seeking to the exact end can enqueue an engine stop/auto-advance event.
+# Flush that event before testing rendered one-step track traversal.
+action      Stop
+wait_until  playback.is_playing == false timeout=2s
+sleep       250ms
+action      PlaybackResetQueueCursor {"track_index":0,"activate":true,"seek_loaded_player":true}
+click       transport.next
+wait_until  playback.current_track_index == 1 timeout=3s
+wait_until  playback.is_playing == true timeout=2s
+click       transport.play
+wait_until  playback.is_playing == false timeout=2s
+# The checked-in demo track can end between observing index 1 and pausing it.
+# Re-anchor the already-verified paused state before exercising Previous.
+action      PlaybackResetQueueCursor {"track_index":1,"activate":true}
+wait_idle   500ms
+assert      playback.current_track_index == 1
+click       transport.previous
+wait_until  playback.current_track_index == 0 timeout=3s
+wait_until  playback.is_playing == true timeout=2s
+click       transport.play
+wait_until  playback.is_playing == false timeout=2s
+
+click       transport.shuffle
+wait_until  playback.shuffle == true timeout=2s
+click       transport.repeat
+wait_until  playback.repeat == true timeout=2s
+click       transport.shuffle
+wait_until  playback.shuffle == false timeout=2s
+click       transport.repeat
+wait_until  playback.repeat == false timeout=2s
+
+# The semantic slider supports arrow-key adjustment and clamps at its bounds.
+click       transport.volume
+assert_focused volume-button
+key         down
+key         down
+key         down
+key         down
+key         down
+key         down
+key         down
+key         down
+key         down
+key         down
+key         down
+key         down
+key         down
+key         down
+key         down
+key         down
+key         down
+key         down
+key         down
+key         down
+wait_until  playback.volume == 0.0 tolerance=0.01 timeout=2s
+key         up
+wait_until  playback.volume == 0.05 tolerance=0.01 timeout=2s
+
+# Mute is a separate visible named button rather than hidden slider state.
+click       transport.mute
+wait_until  playback.muted == true timeout=2s
+click       transport.mute
+wait_until  playback.muted == false timeout=2s
+screenshot  now-playing-transport-seek
+
+# Arrange a live/unknown-duration state and prove both seek buttons remain
+# visible but inert. The screenshot captures their disabled treatment.
+action      Stop
+wait_until  playback.is_playing == false timeout=2s
+sleep       250ms
+action      PlaybackResetQueueCursor
+wait_until  playback.position_secs == 0 tolerance=0.25 timeout=2s
+action      PlaybackSetDurationFixture {"duration_secs":0}
+wait_until  playback.seekable == false timeout=2s
+assert      playback.duration_secs == 0
+click       transport.seek_back
+assert      playback.position_secs == 0 tolerance=0.25
+click       transport.seek_forward
+assert      playback.position_secs == 0 tolerance=0.25
+assert_accessible button Seek back 30 seconds
+assert_accessible button Seek forward 30 seconds
+screenshot  now-playing-live-unseekable
+
+# Enlarged text at a narrow viewport uses the compact footer. The same stable
+# selectors drive its previous/play/next, mute, and volume controls.
+resize      700 600
+action      IncreaseFontSize
+action      IncreaseFontSize
+action      IncreaseFontSize
+action      IncreaseFontSize
+action      IncreaseFontSize
+action      IncreaseFontSize
+action      IncreaseFontSize
+action      IncreaseFontSize
+assert_visible transport.previous
+assert_visible transport.play
+assert_visible transport.next
+assert_visible transport.mute
+assert_visible transport.volume
+assert_accessible button Previous track
+assert_accessible button Play
+assert_accessible button Next track
+assert_accessible button Mute
+assert_accessible slider Volume
+click       transport.play
+wait_until  playback.is_playing == true timeout=2s
+click       transport.play
+wait_until  playback.is_playing == false timeout=2s
+accessibility
+screenshot  now-playing-compact-enlarged

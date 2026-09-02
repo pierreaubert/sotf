@@ -1,0 +1,10 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+readiness_timeout = "20s"
+size = "1100x760"
+
+[[scenario]]
+name = "meters-signal-and-empty"
+path = "crates/sotf-dev-driver/scenarios/meters_signal_and_empty.scn"
+timeout = "30s"
+tags = ["meters", "multichannel", "ui", "pointer", "keyboard", "accessibility"]

@@ -1,0 +1,54 @@
+# Settings keybindings — production edit/conflict/runtime/reset workflow.
+
+focus settings
+sleep 2s
+click settings.tab.Keybindings
+assert settings.active_tab == "Keybindings"
+assert settings.custom_keybinding_count == 0
+
+# Capture a conflicting key and require an explicit overwrite decision.
+assert_in_viewport settings.keybinding.edit.switchtolibrary
+click settings.keybinding.edit.switchtolibrary
+assert_visible settings.keybinding.capture
+click settings.keybinding.capture
+assert_focused keybinding-capture
+key f8
+query settings.keybinding_pending_key
+query settings.keybinding_conflict_action
+assert_visible settings.keybinding.conflict
+assert_visible settings.keybinding.overwrite
+screenshot settings-keybindings-conflict
+click settings.keybinding.overwrite
+assert settings.custom_keybinding_count == 1 timeout=2s
+
+# The overwritten key now dispatches the customized command through GPUI.
+key f8
+assert screen.focused == "Library" timeout=2s
+focus settings
+click settings.tab.Keybindings
+assert settings.active_tab == "Keybindings"
+
+# A single-action reset restores the selected preset without touching others.
+assert_visible settings.keybinding.reset.switchtolibrary
+click settings.keybinding.reset.switchtolibrary
+assert settings.custom_keybinding_count == 0 timeout=2s
+
+# Add another non-conflicting override to exercise reset-all confirmation.
+assert_in_viewport settings.keybinding.edit.switchtoqueue
+click settings.keybinding.edit.switchtoqueue
+assert_visible settings.keybinding.capture
+click settings.keybinding.capture
+key f6
+assert_visible settings.keybinding.save
+click settings.keybinding.save
+assert settings.custom_keybinding_count == 1 timeout=2s
+
+# Reset-all names its wider scope and requires confirmation.
+click settings.keybinding.reset-all
+assert_visible settings.keybinding.reset-all-confirm
+screenshot settings-keybindings-reset-all-confirmation
+click settings.keybinding.reset-all-cancel
+assert settings.custom_keybinding_count == 1
+click settings.keybinding.reset-all
+click settings.keybinding.reset-all-confirm
+assert settings.custom_keybinding_count == 0 timeout=2s

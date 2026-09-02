@@ -1,0 +1,30 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+size = "1200x832"
+
+[[scenario]]
+name = "settings-visible-controls-responsive-a11y"
+path = "crates/sotf-dev-driver/scenarios/gpui_settings.scn"
+timeout = "60s"
+tags = ["gpui", "settings", "ui", "responsive", "accessibility", "keyboard"]
+
+[[scenario]]
+name = "settings-keybindings-conflict-runtime-reset"
+path = "crates/sotf-dev-driver/scenarios/settings_keybindings.scn"
+timeout = "45s"
+tags = ["gpui", "settings", "keybindings", "persistence", "accessibility", "keyboard"]
+
+[[scenario]]
+name = "settings-library-folders-validation-removal-scan"
+path = "crates/sotf-dev-driver/scenarios/settings_library_folders.scn"
+timeout = "60s"
+seed_demo_audio = true
+tags = ["gpui", "settings", "library", "persistence", "recovery", "accessibility"]
+
+[[scenario]]
+name = "settings-metadata-release-persistence"
+path = "crates/sotf-dev-driver/scenarios/settings_metadata_release.scn"
+timeout = "30s"
+tags = ["gpui", "settings", "metadata", "release", "persistence", "accessibility"]

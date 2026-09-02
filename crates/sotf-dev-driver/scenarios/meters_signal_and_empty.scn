@@ -1,0 +1,58 @@
+# Level meters — deterministic multichannel signal, rendered M/S/D controls,
+# selected-group feedback, and a truthful no-data state after signal stops.
+
+action MetersSetFixture {"active":true}
+wait_until screen.focused == "Queue" timeout=2s
+wait_until meters.has_data == true timeout=2s
+assert meters.channel_count == 6
+assert meters.group_count > 1
+assert meters.selected_group == 0
+assert meters.peak.0 > 0.8
+wait_idle 1s
+
+assert_visible meters.panel
+assert_enabled meters.panel == true
+assert_enabled meters.lufs-panel == true
+assert_visible meters.selected-group
+assert_visible meters.group.0
+assert_selected meters.group.0 == true
+assert_visible meters.group.0.mute
+assert_visible meters.group.0.solo
+assert_visible meters.group.0.dim
+assert_accessible button Mute Group 1
+assert_accessible button Solo Group 1
+assert_accessible button Dim Group 1
+assert_absent meters.no-data
+assert_absent meters.lufs-no-data
+screenshot meters-six-channel-signal
+
+# Exercise the rendered controls, then move visible selection by the documented
+# keyboard route and repeat on another group.
+click meters.group.0.mute
+wait_until meters.group.0.muted == true timeout=2s
+assert_selected meters.group.0.mute == true
+key ctrl-tab
+wait_until meters.selected_group == 1 timeout=2s
+assert_selected meters.group.1 == true
+click meters.group.1.solo
+wait_until meters.group.1.soloed == true timeout=2s
+assert_selected meters.group.1.solo == true
+click meters.group.1.dim
+wait_until meters.group.1.dimmed == true timeout=2s
+assert_selected meters.group.1.dim == true
+screenshot meters-selected-msd
+
+# Stop the deterministic feed. Stale levels and plausible zero meters must
+# disappear, leaving an explicit localized empty state.
+action MetersSetFixture {"active":false}
+wait_until meters.has_data == false timeout=2s
+assert meters.channel_count == 0
+wait_idle 1s
+assert_visible meters.no-data
+assert_visible meters.lufs-no-data
+assert_absent meters.selected-group
+assert_enabled meters.panel == false
+assert_enabled meters.lufs-panel == false
+assert_absent meters.group.0
+assert_absent meters.group.1
+screenshot meters-no-data

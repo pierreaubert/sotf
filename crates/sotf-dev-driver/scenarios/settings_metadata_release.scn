@@ -1,0 +1,43 @@
+# Metadata preferences and the feature release channel must be real persisted
+# controls rather than read-only status or session-only state.
+
+timing_start first_meaningful_paint
+focus       settings
+assert      screen.focused == "Settings"
+
+click       settings.tab.Metadata
+assert      settings.active_tab == "Metadata"
+assert      settings.metadata_search_enabled == true
+assert_visible settings.metadata.search-toggle
+timing_end   first_meaningful_paint max=1s
+assert_accessible button Disable metadata search
+screenshot  settings-metadata-enabled
+
+timing_start input_response
+click       settings.metadata.search-toggle
+assert      settings.metadata_search_enabled == false
+assert      settings.metadata_error == null
+timing_end   input_response max=500ms
+assert_accessible button Enable metadata search
+screenshot  settings-metadata-disabled
+
+# Restore the production default and prove that the same persisted file is read
+# back through the QA boundary.
+click       settings.metadata.search-toggle
+assert      settings.metadata_search_enabled == true
+assert      settings.metadata_error == null
+
+timing_start navigation
+click       settings.tab.ReleaseChannel
+assert      settings.active_tab == "ReleaseChannel"
+timing_end   navigation max=500ms
+assert_accessible button Alpha feature channel
+click       settings.release-channel.Alpha
+assert      settings.release_channel == "Alpha"
+assert      settings.persisted_release_channel == "Alpha"
+screenshot  settings-release-alpha-explained
+
+# Leave the isolated scenario on the stable production channel.
+click       settings.release-channel.Stable
+assert      settings.release_channel == "Prod"
+assert      settings.persisted_release_channel == "Prod"

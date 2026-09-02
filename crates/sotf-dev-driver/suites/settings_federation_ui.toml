@@ -1,0 +1,11 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+size = "1200x832"
+
+[[scenario]]
+name = "settings-federation-account-cancel-failure-persistence"
+path = "crates/sotf-dev-driver/scenarios/settings_federation.scn"
+timeout = "45s"
+tags = ["gpui", "settings", "federation", "account", "persistence", "accessibility", "secrets"]

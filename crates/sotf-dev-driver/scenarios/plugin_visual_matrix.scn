@@ -1,0 +1,1751 @@
+# Plugin visual matrix — 2026-08-26
+#
+# Opens every PluginType exposed by the generated per-plugin lifecycle inventory.
+# The custom/fallback classification mirrors GpuiViewRegistry: 16 custom renderers;
+# every remaining built-in uses the shared declarative PluginLayout fallback.
+#
+# Cross-cutting coverage is pairwise rather than a full Cartesian product:
+#   compact  700x600   light          English 100%
+#   regular  1024x768  midnight       French  150%
+#   wide     1600x1000 high contrast  Spanish 200%
+# plus German long-label and Protanopia/reduced-motion spot checks.
+#
+# Every capture requires a visible in-viewport editor/rack control, separated rack
+# and detail panes, and an accessibility tree with zero unnamed focusables.
+
+action PluginClear
+action ResetFontSize
+assert settings.font_scale == 1.0 tolerance=0.01
+assert settings.theme == "Dark"
+assert settings.language == "English"
+action CycleTheme
+assert settings.theme == "Light"
+resize 700 600
+click sidebar.nav-studio-rack
+assert screen.focused == "Studio"
+
+# ── Compact / light / English / 100% ────────────────────────────────────────
+# custom: ABCompare
+plugin_clear
+plugin_add ABCompare
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-custom-abcompare
+# custom: BinauralDecoder
+plugin_clear
+plugin_add BinauralDecoder
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-custom-binaural-decoder
+# custom: ChannelMuteSolo
+plugin_clear
+plugin_add ChannelMuteSolo
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-custom-channel-mute-solo
+# custom: Convolution
+plugin_clear
+plugin_add Convolution
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-custom-convolution
+# custom: Crossfeed
+plugin_clear
+plugin_add Crossfeed
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-custom-crossfeed
+# custom: Denoiser
+plugin_clear
+plugin_add Denoiser
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-custom-denoiser
+# custom: DynamicEq
+plugin_clear
+plugin_add DynamicEq
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-custom-dynamic-eq
+# custom: EQ
+plugin_clear
+plugin_add EQ
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-custom-eq
+# custom: LinearPhaseEq
+plugin_clear
+plugin_add LinearPhaseEq
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-custom-linear-phase-eq
+# custom: LoudnessMonitor
+plugin_clear
+plugin_add LoudnessMonitor
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-custom-loudness-monitor
+# custom: Matrix
+plugin_clear
+plugin_add Matrix
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-custom-matrix
+# custom: MultibandCompressor
+plugin_clear
+plugin_add MultibandCompressor
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-custom-multiband-compressor
+# custom: MultibandExpander
+plugin_clear
+plugin_add MultibandExpander
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-custom-multiband-expander
+# custom: SpectrumAnalyzer
+plugin_clear
+plugin_add SpectrumAnalyzer
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-custom-spectrum-analyzer
+# custom: Upmixer
+plugin_clear
+plugin_add Upmixer
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-custom-upmixer
+# custom: XTC
+plugin_clear
+plugin_add XTC
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-custom-xtc
+# fallback: AAE
+plugin_clear
+plugin_add AAE
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-aae
+# fallback: Aec
+plugin_clear
+plugin_add Aec
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-aec
+# fallback: AmbisonicsDecoder
+action PluginSetInputChannels {"channels":4}
+plugin_clear
+plugin_add AmbisonicsDecoder
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-ambisonics-decoder
+action PluginSetInputChannels {"channels":2}
+# fallback: BandMerge
+plugin_clear
+plugin_add BandMerge
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-band-merge
+# fallback: BandSplit
+plugin_clear
+plugin_add BandSplit
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-band-split
+# fallback: Beamformer
+plugin_clear
+plugin_add Beamformer
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-beamformer
+# fallback: Compressor
+plugin_clear
+plugin_add Compressor
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-compressor
+# fallback: Crossover
+plugin_clear
+plugin_add Crossover
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-crossover
+# fallback: DeEsser
+plugin_clear
+plugin_add DeEsser
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-de-esser
+# fallback: Declick
+plugin_clear
+plugin_add Declick
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-declick
+# fallback: Delay
+plugin_clear
+plugin_add Delay
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-delay
+# fallback: Downmix
+plugin_clear
+plugin_add Downmix
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-downmix
+# fallback: Expander
+plugin_clear
+plugin_add Expander
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-expander
+# fallback: FletcherMunson
+plugin_clear
+plugin_add FletcherMunson
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-fletcher-munson
+# fallback: Gain
+plugin_clear
+plugin_add Gain
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-gain
+# fallback: Gate
+plugin_clear
+plugin_add Gate
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-gate
+# fallback: HissReducer
+plugin_clear
+plugin_add HissReducer
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-hiss-reducer
+# fallback: Limiter
+plugin_clear
+plugin_add Limiter
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-limiter
+# fallback: LoudnessCompensation
+plugin_clear
+plugin_add LoudnessCompensation
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-loudness-compensation
+# fallback: MonoToStereo
+action PluginSetInputChannels {"channels":1}
+plugin_clear
+plugin_add MonoToStereo
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-mono-to-stereo
+action PluginSetInputChannels {"channels":2}
+# fallback: Pnd
+plugin_clear
+plugin_add Pnd
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-pnd
+# fallback: Saturation
+plugin_clear
+plugin_add Saturation
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-saturation
+# fallback: SpectralCompressor
+plugin_clear
+plugin_add SpectralCompressor
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-spectral-compressor
+# fallback: SpeechDenoiser
+plugin_clear
+plugin_add SpeechDenoiser
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-speech-denoiser
+# fallback: StereoImager
+plugin_clear
+plugin_add StereoImager
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-stereo-imager
+# fallback: TransientShaper
+plugin_clear
+plugin_add TransientShaper
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-compact-light-en-100-fallback-transient-shaper
+# ── Regular / midnight / French / 150% ─────────────────────────────────────
+action CycleTheme
+assert settings.theme == "Midnight"
+action CycleLanguage
+assert settings.language == "French"
+resize 1024 768
+focus settings
+click settings.tab.Theme
+assert_in_viewport settings.appearance.font-scale
+click settings.appearance.font-scale
+key cmd-a
+type "150"
+key enter
+assert settings.font_scale == 1.5 tolerance=0.01
+click sidebar.nav-studio-rack
+assert screen.focused == "Studio"
+
+# custom: ABCompare
+plugin_clear
+plugin_add ABCompare
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-custom-abcompare
+# custom: BinauralDecoder
+plugin_clear
+plugin_add BinauralDecoder
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-custom-binaural-decoder
+# custom: ChannelMuteSolo
+plugin_clear
+plugin_add ChannelMuteSolo
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-custom-channel-mute-solo
+# custom: Convolution
+plugin_clear
+plugin_add Convolution
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-custom-convolution
+# custom: Crossfeed
+plugin_clear
+plugin_add Crossfeed
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-custom-crossfeed
+# custom: Denoiser
+plugin_clear
+plugin_add Denoiser
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-custom-denoiser
+# custom: DynamicEq
+plugin_clear
+plugin_add DynamicEq
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-custom-dynamic-eq
+# custom: EQ
+plugin_clear
+plugin_add EQ
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-custom-eq
+# custom: LinearPhaseEq
+plugin_clear
+plugin_add LinearPhaseEq
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-custom-linear-phase-eq
+# custom: LoudnessMonitor
+plugin_clear
+plugin_add LoudnessMonitor
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-custom-loudness-monitor
+# custom: Matrix
+plugin_clear
+plugin_add Matrix
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-custom-matrix
+# custom: MultibandCompressor
+plugin_clear
+plugin_add MultibandCompressor
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-custom-multiband-compressor
+# custom: MultibandExpander
+plugin_clear
+plugin_add MultibandExpander
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-custom-multiband-expander
+# custom: SpectrumAnalyzer
+plugin_clear
+plugin_add SpectrumAnalyzer
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-custom-spectrum-analyzer
+# custom: Upmixer
+plugin_clear
+plugin_add Upmixer
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-custom-upmixer
+# custom: XTC
+plugin_clear
+plugin_add XTC
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-custom-xtc
+# fallback: AAE
+plugin_clear
+plugin_add AAE
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-aae
+# fallback: Aec
+plugin_clear
+plugin_add Aec
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-aec
+# fallback: AmbisonicsDecoder
+action PluginSetInputChannels {"channels":4}
+plugin_clear
+plugin_add AmbisonicsDecoder
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-ambisonics-decoder
+action PluginSetInputChannels {"channels":2}
+# fallback: BandMerge
+plugin_clear
+plugin_add BandMerge
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-band-merge
+# fallback: BandSplit
+plugin_clear
+plugin_add BandSplit
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-band-split
+# fallback: Beamformer
+plugin_clear
+plugin_add Beamformer
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-beamformer
+# fallback: Compressor
+plugin_clear
+plugin_add Compressor
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-compressor
+# fallback: Crossover
+plugin_clear
+plugin_add Crossover
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-crossover
+# fallback: DeEsser
+plugin_clear
+plugin_add DeEsser
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-de-esser
+# fallback: Declick
+plugin_clear
+plugin_add Declick
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-declick
+# fallback: Delay
+plugin_clear
+plugin_add Delay
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-delay
+# fallback: Downmix
+plugin_clear
+plugin_add Downmix
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-downmix
+# fallback: Expander
+plugin_clear
+plugin_add Expander
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-expander
+# fallback: FletcherMunson
+plugin_clear
+plugin_add FletcherMunson
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-fletcher-munson
+# fallback: Gain
+plugin_clear
+plugin_add Gain
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-gain
+# fallback: Gate
+plugin_clear
+plugin_add Gate
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-gate
+# fallback: HissReducer
+plugin_clear
+plugin_add HissReducer
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-hiss-reducer
+# fallback: Limiter
+plugin_clear
+plugin_add Limiter
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-limiter
+# fallback: LoudnessCompensation
+plugin_clear
+plugin_add LoudnessCompensation
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-loudness-compensation
+# fallback: MonoToStereo
+action PluginSetInputChannels {"channels":1}
+plugin_clear
+plugin_add MonoToStereo
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-mono-to-stereo
+action PluginSetInputChannels {"channels":2}
+# fallback: Pnd
+plugin_clear
+plugin_add Pnd
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-pnd
+# fallback: Saturation
+plugin_clear
+plugin_add Saturation
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-saturation
+# fallback: SpectralCompressor
+plugin_clear
+plugin_add SpectralCompressor
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-spectral-compressor
+# fallback: SpeechDenoiser
+plugin_clear
+plugin_add SpeechDenoiser
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-speech-denoiser
+# fallback: StereoImager
+plugin_clear
+plugin_add StereoImager
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-stereo-imager
+# fallback: TransientShaper
+plugin_clear
+plugin_add TransientShaper
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-regular-midnight-fr-150-fallback-transient-shaper
+# ── Wide / high contrast / Spanish / 200% ──────────────────────────────────
+action CycleTheme
+action CycleTheme
+assert settings.theme == "BlackAndWhite"
+action CycleLanguage
+assert settings.language == "German"
+resize 1600 1000
+action IncreaseFontSize
+action IncreaseFontSize
+action IncreaseFontSize
+assert settings.font_scale == 2.0 tolerance=0.01
+assert screen.focused == "Studio"
+
+# German long-label spot check before the Spanish full lane.
+# fallback: LoudnessCompensation
+plugin_clear
+plugin_add LoudnessCompensation
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-de-200-fallback-loudness-compensation
+
+action CycleLanguage
+assert settings.language == "Spanish"
+
+# custom: ABCompare
+plugin_clear
+plugin_add ABCompare
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-custom-abcompare
+# custom: BinauralDecoder
+plugin_clear
+plugin_add BinauralDecoder
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-custom-binaural-decoder
+# custom: ChannelMuteSolo
+plugin_clear
+plugin_add ChannelMuteSolo
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-custom-channel-mute-solo
+# custom: Convolution
+plugin_clear
+plugin_add Convolution
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-custom-convolution
+# custom: Crossfeed
+plugin_clear
+plugin_add Crossfeed
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-custom-crossfeed
+# custom: Denoiser
+plugin_clear
+plugin_add Denoiser
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-custom-denoiser
+# custom: DynamicEq
+plugin_clear
+plugin_add DynamicEq
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-custom-dynamic-eq
+# custom: EQ
+plugin_clear
+plugin_add EQ
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-custom-eq
+# custom: LinearPhaseEq
+plugin_clear
+plugin_add LinearPhaseEq
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-custom-linear-phase-eq
+# custom: LoudnessMonitor
+plugin_clear
+plugin_add LoudnessMonitor
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-custom-loudness-monitor
+# custom: Matrix
+plugin_clear
+plugin_add Matrix
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-custom-matrix
+# custom: MultibandCompressor
+plugin_clear
+plugin_add MultibandCompressor
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-custom-multiband-compressor
+# custom: MultibandExpander
+plugin_clear
+plugin_add MultibandExpander
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-custom-multiband-expander
+# custom: SpectrumAnalyzer
+plugin_clear
+plugin_add SpectrumAnalyzer
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-custom-spectrum-analyzer
+# custom: Upmixer
+plugin_clear
+plugin_add Upmixer
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-custom-upmixer
+# custom: XTC
+plugin_clear
+plugin_add XTC
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-custom-xtc
+# fallback: AAE
+plugin_clear
+plugin_add AAE
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-aae
+# fallback: Aec
+plugin_clear
+plugin_add Aec
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-aec
+# fallback: AmbisonicsDecoder
+action PluginSetInputChannels {"channels":4}
+plugin_clear
+plugin_add AmbisonicsDecoder
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-ambisonics-decoder
+action PluginSetInputChannels {"channels":2}
+# fallback: BandMerge
+plugin_clear
+plugin_add BandMerge
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-band-merge
+# fallback: BandSplit
+plugin_clear
+plugin_add BandSplit
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-band-split
+# fallback: Beamformer
+plugin_clear
+plugin_add Beamformer
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-beamformer
+# fallback: Compressor
+plugin_clear
+plugin_add Compressor
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-compressor
+# fallback: Crossover
+plugin_clear
+plugin_add Crossover
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-crossover
+# fallback: DeEsser
+plugin_clear
+plugin_add DeEsser
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-de-esser
+# fallback: Declick
+plugin_clear
+plugin_add Declick
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-declick
+# fallback: Delay
+plugin_clear
+plugin_add Delay
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-delay
+# fallback: Downmix
+plugin_clear
+plugin_add Downmix
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-downmix
+# fallback: Expander
+plugin_clear
+plugin_add Expander
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-expander
+# fallback: FletcherMunson
+plugin_clear
+plugin_add FletcherMunson
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-fletcher-munson
+# fallback: Gain
+plugin_clear
+plugin_add Gain
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-gain
+# fallback: Gate
+plugin_clear
+plugin_add Gate
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-gate
+# fallback: HissReducer
+plugin_clear
+plugin_add HissReducer
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-hiss-reducer
+# fallback: Limiter
+plugin_clear
+plugin_add Limiter
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-limiter
+# fallback: LoudnessCompensation
+plugin_clear
+plugin_add LoudnessCompensation
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-loudness-compensation
+# fallback: MonoToStereo
+action PluginSetInputChannels {"channels":1}
+plugin_clear
+plugin_add MonoToStereo
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-mono-to-stereo
+action PluginSetInputChannels {"channels":2}
+# fallback: Pnd
+plugin_clear
+plugin_add Pnd
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-pnd
+# fallback: Saturation
+plugin_clear
+plugin_add Saturation
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-saturation
+# fallback: SpectralCompressor
+plugin_clear
+plugin_add SpectralCompressor
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-spectral-compressor
+# fallback: SpeechDenoiser
+plugin_clear
+plugin_add SpeechDenoiser
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-speech-denoiser
+# fallback: StereoImager
+plugin_clear
+plugin_add StereoImager
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-stereo-imager
+# fallback: TransientShaper
+plugin_clear
+plugin_add TransientShaper
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-high-contrast-es-200-fallback-transient-shaper
+# ── Representative color-vision palette + reduced motion ───────────────────
+action CycleTheme
+action CycleTheme
+assert settings.theme == "Protanopia"
+focus settings
+click settings.tab.Theme
+scroll settings.content -1400
+wait_idle 500ms
+assert_in_viewport settings.appearance.reduce-motion
+click settings.appearance.reduce-motion
+assert settings.reduce_motion == true timeout=2s
+click sidebar.nav-studio-rack
+assert screen.focused == "Studio"
+# custom: SpectrumAnalyzer
+plugin_clear
+plugin_add SpectrumAnalyzer
+action PluginSelectFirstUser
+wait_until plugins.user_count == 1 timeout=3s
+wait_idle 500ms
+assert_visible rack.params
+assert_in_viewport rack.params
+assert_visible rack.add.open
+assert_in_viewport rack.add.open
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+accessibility
+screenshot plugin-wide-protanopia-es-200-reduced-motion-custom-spectrum-analyzer
