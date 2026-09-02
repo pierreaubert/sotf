@@ -26,11 +26,18 @@ assert      roomeq.step == "Configure"
 click       roomeq.next
 assert      roomeq.step == "Optimize"
 assert_visible roomeq.optimize_start
+timing_start optimize
 click       roomeq.optimize_start
 wait_until  roomeq.optimization_status == "Completed" timeout=150s
+timing_end   optimize max=10s
 assert      roomeq.step == "Review"
 assert      roomeq.result_count == 2
 assert      roomeq.has_dsp_output == true
+assert_visible roomeq.review.overview-original.controls
+assert_visible roomeq.review.overview-eq.controls
+assert_visible roomeq.review.overview-corrected.controls
+assert_non_overlapping roomeq.review.overview-original.controls roomeq.review.overview-eq.controls
+assert_non_overlapping roomeq.review.overview-eq.controls roomeq.review.overview-corrected.controls
 screenshot  roomeq-review
 click       roomeq.next
 assert      roomeq.step == "Export"

@@ -709,7 +709,10 @@ impl PlayerView {
                 .current_output_device_name
                 .as_deref();
             let track_sr = state.app.playback.sample_rate.unwrap_or(48000);
-            let sr = sotf_audio::select_output_sample_rate(track_sr, device_name) as f64;
+            let sr = crate::app::state::audio_device::output_sample_rate_for_track(
+                track_sr,
+                device_name,
+            );
 
             let outcome = match sotf_audio_player::autoeq::apply_room_eq_to_chain(
                 &mut state.app.plugin_state.graph,
@@ -830,7 +833,7 @@ impl PlayerView {
                 .current_output_device_name
                 .as_deref();
             let track_sr = state.app.playback.sample_rate.unwrap_or(48000);
-            sotf_audio::select_output_sample_rate(track_sr, device_name) as f64
+            crate::app::state::audio_device::output_sample_rate_for_track(track_sr, device_name)
         };
 
         self.state.update(cx, |state, _| {

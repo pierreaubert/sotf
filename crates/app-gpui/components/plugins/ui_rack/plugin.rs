@@ -94,11 +94,9 @@ fn plugin_theme_from_select_value(value: &str) -> PluginThemeId {
 impl PlayerView {
     pub(crate) fn render_plugins_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
-        let text = PluginRackTranslations::for_language(self.state.read(cx).app.ui_state.language);
-        let dismiss_hint_label =
-            DialogTranslations::for_language(self.state.read(cx).app.ui_state.language)
-                .about
-                .close;
+        let language = self.state.read(cx).app.ui_state.language;
+        let text = PluginRackTranslations::for_language(language);
+        let dismiss_hint_label = DialogTranslations::for_language(language).about.close;
         let theme = self.state.read(cx).app.ui_state.theme.clone();
         let current_hint = self.state.read(cx).app.tutorial.current_hint.clone();
 
@@ -232,6 +230,7 @@ impl PlayerView {
                                 &hint,
                                 &theme,
                                 d,
+                                language,
                                 dismiss_hint_label,
                                 cx.listener(|view, _: &ClickEvent, _window, cx| {
                                     cx.stop_propagation();
@@ -276,6 +275,15 @@ impl PlayerView {
                                 div()
                                     .id("plugin-rack-viewport")
                                     .h(relative(rack_detail_ratio))
+                                    // The default split must still fit one complete rack row
+                                    // when rem-based controls grow with the accessibility font
+                                    // scale. Ratios below the default are explicit compact user
+                                    // choices and retain the scrollable behavior below.
+                                    .when(rack_detail_ratio >= 0.22, |viewport| {
+                                        // The rack's 7rem content minimum is content-box
+                                        // sized; its 0.75rem vertical padding is additional.
+                                        viewport.min_h(rems(8.5))
+                                    })
                                     .flex_shrink_0()
                                     // The rack cards keep a stable touch target, but the
                                     // user can drag the divider low enough that the strip is
@@ -303,35 +311,39 @@ impl PlayerView {
                             };
                             let state_for_toggle = self.state.clone();
                             let state_for_drag = self.state.clone();
-                            PaneDivider::horizontal("rack-detail-divider", CollapseDirection::Up)
-                                .label(text.signal_chain)
-                                .theme(divider_theme)
-                                .thickness(px(4.0))
-                                .collapsed(is_collapsed)
-                                .on_toggle(move |collapsed, _window, cx| {
-                                    state_for_toggle.update(cx, |s, cx| {
-                                        s.app.layout.rack_detail_collapsed = collapsed;
-                                        s.layout.update(cx, |layout, _| {
-                                            layout.rack_detail_ratio =
-                                                if collapsed { 0.0 } else { 0.22 };
-                                            if let Err(e) = s.app.save_config(layout) {
-                                                log::debug!("Config save failed: {e}");
-                                            }
-                                        });
+                            let divider = PaneDivider::horizontal(
+                                "rack-detail-divider",
+                                CollapseDirection::Up,
+                            )
+                            .label(text.signal_chain)
+                            .theme(divider_theme)
+                            .thickness(px(4.0))
+                            .collapsed(is_collapsed)
+                            .on_toggle(move |collapsed, _window, cx| {
+                                state_for_toggle.update(cx, |s, cx| {
+                                    s.app.layout.rack_detail_collapsed = collapsed;
+                                    s.layout.update(cx, |layout, _| {
+                                        layout.rack_detail_ratio =
+                                            if collapsed { 0.0 } else { 0.22 };
+                                        if let Err(e) = s.app.save_config(layout) {
+                                            log::debug!("Config save failed: {e}");
+                                        }
                                     });
-                                })
-                                .on_drag_start(move |pos, _window, cx| {
-                                    state_for_drag.update(cx, |s, cx| {
-                                        let start_width =
-                                            s.layout.read(cx).rack_detail_ratio.clamp(0.12, 0.65);
-                                        s.app.layout.rack_detail_collapsed = false;
-                                        s.app.layout.dragging_divider = Some(DividerDragState {
-                                            divider_type: DividerType::RackDetail,
-                                            start_x: pos,
-                                            start_width,
-                                        });
+                                });
+                            })
+                            .on_drag_start(move |pos, _window, cx| {
+                                state_for_drag.update(cx, |s, cx| {
+                                    let start_width =
+                                        s.layout.read(cx).rack_detail_ratio.clamp(0.12, 0.65);
+                                    s.app.layout.rack_detail_collapsed = false;
+                                    s.app.layout.dragging_divider = Some(DividerDragState {
+                                        divider_type: DividerType::RackDetail,
+                                        start_x: pos,
+                                        start_width,
                                     });
-                                })
+                                });
+                            });
+                            dev_track!(divider, "rack.detail.divider")
                         })
                         // Parameter Panel (bottom, fills remaining space)
                         .child(self.render_plugin_detail_panel(cx))
@@ -1482,12 +1494,15 @@ impl PlayerView {
                             .border_1()
                             .border_color(theme.border)
                             .rounded(d.r_md)
-                            .shadow_lg()
-                            .occlude()
-                            .child(self.render_add_plugin_buttons(cx));
+                    .shadow_lg()
+                    .occlude()
+                    .child(self.render_add_plugin_buttons(cx));
 
-                        rack.child(deferred(menu).with_priority(10))
-                    })
+                #[cfg(feature = "dev-api")]
+                let menu = menu.dev_track("rack.add.menu");
+
+                rack.child(deferred(menu).with_priority(10))
+            })
                     )
                     .child({
                         let state_for_load = self.state.clone();
@@ -2088,16 +2103,22 @@ impl PlayerView {
                                 .min_h_0()
                                 .flex()
                                 .flex_col()
-                                .child(
-                                    div()
-                                        .id("params-scroll")
-                                        .flex_1()
-                                        .min_w_0()
-                                        .min_h_0()
-                                        .overflow_scroll()
-                                        .bg(plugin_bg)
-                                        .p(d.card)
-                                        .child({
+            .child(dev_track!(
+                div()
+                    .id("params-scroll")
+                    .flex_1()
+                    .min_w_0()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .flex()
+                    .flex_col()
+                    .bg(plugin_bg)
+                    .p(d.card)
+                    .child(dev_track!(
+                        div().w_full().h(px(1.0)),
+                        "rack.params.scroll-target"
+                    ))
+                    .child({
                                             // Get plugin-specific real-time data based on plugin type
                                             let plugin_data = self
                                                 .state
@@ -2259,12 +2280,14 @@ impl PlayerView {
                                                         &plugin_graph,
                                                         midi_ref.as_ref(),
                                                         self.eq_chart_focus_handle.clone(),
+                                                        self.plugin_exact_entry_focus_handle.clone(),
                                                         cx,
                                                     )
                                                 }
                                             }
-                                        }),
-                                )
+                    }),
+                "rack.params"
+            ))
                                 .child(
                                     div()
                                         .absolute()

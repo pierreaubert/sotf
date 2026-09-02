@@ -10,6 +10,8 @@
 //!   assert <path> == <literal>            (string|number|bool, with optional `tolerance=<f>`)
 //!   wait_until <path> == <literal>        (with optional `timeout=<duration>`)
 //!   sleep <duration>
+//!   timing_start <metric-name>
+//!   timing_end <metric-name> [max=<duration>]
 //!   focus <screen-name>                   (sugar for SwitchTo<Screen>)
 //!   key <keystroke>                       (e.g. `cmd-shift-p`, `enter`, `a`)
 //!   click <selector>                      (selector must have been registered via dev_track(...))

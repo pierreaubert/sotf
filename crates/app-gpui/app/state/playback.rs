@@ -28,6 +28,12 @@ pub struct PlaybackState {
     pub rack_plugin_data: Option<Arc<dyn std::any::Any + Send + Sync>>,
     /// Latest read-only signal-path snapshot for UI status badges.
     pub signal_path: Option<SignalPath>,
+    /// Deterministic meter data used only by black-box rendered QA.
+    #[cfg(feature = "dev-api")]
+    pub qa_loudness_fixture: Option<Arc<LoudnessData>>,
+    /// Duration override for rendered transport QA (for example live audio).
+    #[cfg(feature = "dev-api")]
+    pub qa_duration_fixture: Option<f64>,
 }
 
 impl Deref for PlaybackState {
@@ -63,6 +69,18 @@ impl PlaybackState {
             compressor_info: None,
             rack_plugin_data: None,
             signal_path: None,
+            #[cfg(feature = "dev-api")]
+            qa_loudness_fixture: None,
+            #[cfg(feature = "dev-api")]
+            qa_duration_fixture: None,
         }
+    }
+
+    pub fn display_duration_secs(&self) -> f64 {
+        #[cfg(feature = "dev-api")]
+        if let Some(duration) = self.qa_duration_fixture {
+            return duration;
+        }
+        self.duration_secs
     }
 }

@@ -20,11 +20,12 @@ pub fn render_hint_banner(
     hint: &ContextualHint,
     theme: &crate::theme::Theme,
     d: Ds,
+    language: crate::app::i18n::Language,
     dismiss_label: &'static str,
     on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
-    let title = hint.hint_id.title();
-    let message = hint.hint_id.message();
+    let title = hint.hint_id.localized_title(language);
+    let message = hint.hint_id.localized_message(language);
 
     div()
         .flex()

@@ -16,7 +16,7 @@ use sotf_audio_player_gpui::{
     RecordingSignalType, RecordingState, RecordingStep, ReplayGainMode, RoomEqAlgorithm,
     RoomEqOptimizerConfig, RoomEqStep, Screen, SpeakerConfiguration, ToastMessage, ToastType,
     engine_stop_without_queue_should_clear, screen_shows_rack_data,
-    should_auto_advance_on_engine_stop, silent_loudness,
+    should_auto_advance_on_engine_stop, visible_loudness,
 };
 use std::path::PathBuf;
 
@@ -291,7 +291,7 @@ fn test_tick_rack_data_is_screen_and_layout_gated() {
 }
 
 #[test]
-fn test_silent_loudness_zeroes_levels_but_keeps_layout() {
+fn test_visible_loudness_rejects_stale_stopped_snapshots() {
     use sotf_audio_player::LoudnessData;
     use std::sync::Arc;
 
@@ -303,25 +303,12 @@ fn test_silent_loudness_zeroes_levels_but_keeps_layout() {
     data.channel_peaks = Arc::new(vec![0.5; 6]);
     data.true_peaks_dbtp = Arc::new(vec![-1.0; 6]);
 
-    let silenced = silent_loudness(&Some(Arc::new(data))).expect("Some stays Some");
+    let live = Arc::new(data);
+    let visible = visible_loudness(true, &Some(live.clone())).expect("live data stays visible");
 
-    // Instantaneous levels fall to silence...
-    assert_eq!(silenced.momentary_lufs, f64::NEG_INFINITY);
-    assert_eq!(silenced.shortterm_lufs, f64::NEG_INFINITY);
-    assert_eq!(silenced.peak, 0.0);
-    assert!(silenced.channel_peaks.iter().all(|&p| p == 0.0));
-    assert!(
-        silenced
-            .true_peaks_dbtp
-            .iter()
-            .all(|&p| p == f64::NEG_INFINITY)
-    );
-    // ...but channel layout and program loudness are preserved.
-    assert_eq!(silenced.channel_peaks.len(), 6);
-    assert_eq!(silenced.true_peaks_dbtp.len(), 6);
-    assert_eq!(silenced.integrated_lufs, -18.5);
-
-    assert!(silent_loudness(&None).is_none());
+    assert!(Arc::ptr_eq(&visible, &live));
+    assert!(visible_loudness(false, &Some(live)).is_none());
+    assert!(visible_loudness(true, &None).is_none());
 }
 
 #[test]

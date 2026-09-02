@@ -15,3 +15,21 @@ name = "plugin-graph-keyboard-invalid-edge"
 path = "crates/sotf-dev-driver/scenarios/plugin_graph.scn"
 timeout = "30s"
 tags = ["plugins", "graph", "ui", "keyboard", "error"]
+
+[[scenario]]
+name = "eq-curve-visible-editing"
+path = "crates/sotf-dev-driver/scenarios/eq_curve_edit.scn"
+timeout = "30s"
+tags = ["plugins", "eq", "ui", "pointer", "keyboard", "accessibility"]
+
+[[scenario]]
+name = "ab-compare-visible-switching"
+path = "crates/sotf-dev-driver/scenarios/plugin_ab_compare.scn"
+timeout = "30s"
+tags = ["plugins", "ab-compare", "ui", "pointer", "keyboard", "accessibility"]
+
+[[scenario]]
+name = "plugin-visual-matrix"
+path = "crates/sotf-dev-driver/scenarios/plugin_visual_matrix.scn"
+timeout = "15m"
+tags = ["plugins", "visual", "responsive", "theme", "locale", "accessibility"]

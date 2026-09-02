@@ -8,11 +8,13 @@ use super::verb::verb_action;
 use super::verb::verb_assert;
 use super::verb::verb_assert_absent;
 use super::verb::verb_assert_accessible;
+use super::verb::verb_assert_accessible_masked;
 use super::verb::verb_assert_element_state;
 use super::verb::verb_assert_focused;
 use super::verb::verb_assert_in_viewport;
 use super::verb::verb_assert_inaccessible;
 use super::verb::verb_assert_non_overlapping;
+use super::verb::verb_assert_perceptual_snapshot;
 use super::verb::verb_assert_snapshot;
 use super::verb::verb_assert_visible;
 use super::verb::verb_click;
@@ -40,13 +42,36 @@ use super::verb::verb_wait_idle;
 use super::verb::verb_wait_until;
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct NamedTiming {
+    pub(crate) name: String,
+    pub(crate) duration_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) budget_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) within_budget: Option<bool>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct ScriptTimingReport {
+    pub(crate) named: Vec<NamedTiming>,
+}
+
+#[derive(Debug, Default)]
+struct TimingCollector {
+    active: BTreeMap<String, Instant>,
+    completed: Vec<NamedTiming>,
+}
 
 pub(crate) fn run_script(script: &PathBuf, url: &str, verbose: bool) -> Result<()> {
-    run_script_with_run_id(script, url, verbose, None)
+    let report = run_script_with_run_id(script, url, verbose, None)?;
+    report.ensure_budgets()
 }
 
 pub(crate) fn run_script_with_run_id(
@@ -54,7 +79,7 @@ pub(crate) fn run_script_with_run_id(
     url: &str,
     verbose: bool,
     run_id: Option<&str>,
-) -> Result<()> {
+) -> Result<ScriptTimingReport> {
     let source = fs::read_to_string(script).with_context(|| format!("reading {:?}", script))?;
     let mut headers = reqwest::header::HeaderMap::new();
     if let Some(run_id) = run_id {
@@ -76,6 +101,7 @@ pub(crate) fn run_script_with_run_id(
         base: url.trim_end_matches('/').to_string(),
         verbose,
     };
+    let mut timing = TimingCollector::default();
 
     for (lineno, raw) in source.lines().enumerate() {
         let lineno = lineno + 1;
@@ -85,12 +111,176 @@ pub(crate) fn run_script_with_run_id(
         if line.is_empty() {
             continue;
         }
+        let diagnostic_line = scenario_line_for_diagnostics(line);
         if ctx.verbose {
-            println!("[{lineno:>3}] {line}");
+            println!("[{lineno:>3}] {diagnostic_line}");
         }
-        execute(line, &ctx).with_context(|| format!("line {lineno}: `{line}`"))?;
+        let (verb, rest) = split2(line);
+        match verb {
+            "timing_start" => {
+                timing
+                    .start(rest)
+                    .with_context(|| format!("line {lineno}: `{diagnostic_line}`"))?;
+                continue;
+            }
+            "timing_end" => {
+                timing
+                    .finish(rest)
+                    .with_context(|| format!("line {lineno}: `{diagnostic_line}`"))?;
+                continue;
+            }
+            _ => {}
+        }
+        execute(line, &ctx).with_context(|| format!("line {lineno}: `{diagnostic_line}`"))?;
     }
-    Ok(())
+    timing.finish_report()
+}
+
+impl TimingCollector {
+    fn start(&mut self, raw_name: &str) -> Result<()> {
+        let name = timing_name(raw_name)?;
+        if self.active.contains_key(name) || self.completed.iter().any(|timing| timing.name == name)
+        {
+            bail!("timing `{name}` is already defined");
+        }
+        self.active.insert(name.to_string(), Instant::now());
+        Ok(())
+    }
+
+    fn finish(&mut self, raw_spec: &str) -> Result<()> {
+        let (name, budget_ms) = timing_end_spec(raw_spec)?;
+        let started = self
+            .active
+            .remove(&name)
+            .with_context(|| format!("timing `{name}` was not started"))?;
+        let duration_ms = elapsed_ms(started);
+        self.completed.push(NamedTiming {
+            name,
+            duration_ms,
+            budget_ms,
+            within_budget: budget_ms.map(|budget_ms| duration_ms <= budget_ms),
+        });
+        Ok(())
+    }
+
+    fn finish_report(self) -> Result<ScriptTimingReport> {
+        if !self.active.is_empty() {
+            bail!(
+                "unclosed timing span(s): {}",
+                self.active.keys().cloned().collect::<Vec<_>>().join(", ")
+            );
+        }
+        Ok(ScriptTimingReport {
+            named: self.completed,
+        })
+    }
+}
+
+impl ScriptTimingReport {
+    pub(crate) fn ensure_budgets(&self) -> Result<()> {
+        let violations = self
+            .named
+            .iter()
+            .filter_map(|timing| {
+                let budget_ms = timing.budget_ms?;
+                (timing.duration_ms > budget_ms).then(|| {
+                    format!(
+                        "timing `{}` exceeded its budget: {} ms > {} ms",
+                        timing.name, timing.duration_ms, budget_ms
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        if !violations.is_empty() {
+            bail!("performance budget violation(s): {}", violations.join("; "));
+        }
+        Ok(())
+    }
+}
+
+fn timing_name(raw_name: &str) -> Result<&str> {
+    let name = raw_name.trim();
+    if name.is_empty()
+        || name.chars().any(char::is_whitespace)
+        || !name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
+    {
+        bail!("timing name must contain only ASCII letters, numbers, '.', '-', or '_': `{name}`");
+    }
+    Ok(name)
+}
+
+fn timing_end_spec(raw_spec: &str) -> Result<(String, Option<u64>)> {
+    let mut fields = raw_spec.split_whitespace();
+    let name = timing_name(fields.next().unwrap_or_default())?.to_string();
+    let budget_ms = fields
+        .next()
+        .map(|field| {
+            let raw_budget = field
+                .strip_prefix("max=")
+                .with_context(|| format!("unknown timing_end option `{field}`"))?;
+            let budget = parse_duration(raw_budget).context("invalid timing_end max duration")?;
+            u64::try_from(budget.as_millis()).context("timing_end max duration is too large")
+        })
+        .transpose()?;
+    if let Some(extra) = fields.next() {
+        bail!("unexpected timing_end option `{extra}`");
+    }
+    Ok((name, budget_ms))
+}
+
+fn elapsed_ms(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+#[cfg(test)]
+mod timing_tests {
+    use super::*;
+
+    #[test]
+    fn timing_collector_records_named_span() {
+        let mut collector = TimingCollector::default();
+        collector.start("first_meaningful_paint").unwrap();
+        collector.finish("first_meaningful_paint max=1s").unwrap();
+        let report = collector.finish_report().unwrap();
+        assert_eq!(report.named.len(), 1);
+        assert_eq!(report.named[0].name, "first_meaningful_paint");
+        assert_eq!(report.named[0].budget_ms, Some(1_000));
+        assert_eq!(report.named[0].within_budget, Some(true));
+        report.ensure_budgets().unwrap();
+    }
+
+    #[test]
+    fn timing_collector_rejects_ambiguous_or_unclosed_spans() {
+        let mut collector = TimingCollector::default();
+        assert!(collector.start("input response").is_err());
+        collector.start("input_response").unwrap();
+        assert!(collector.start("input_response").is_err());
+        assert!(collector.finish("navigation").is_err());
+        assert!(collector.finish_report().is_err());
+    }
+
+    #[test]
+    fn timing_budget_violation_is_actionable() {
+        let report = ScriptTimingReport {
+            named: vec![NamedTiming {
+                name: "search".to_string(),
+                duration_ms: 501,
+                budget_ms: Some(500),
+                within_budget: Some(false),
+            }],
+        };
+        let error = report.ensure_budgets().unwrap_err().to_string();
+        assert!(error.contains("timing `search` exceeded its budget: 501 ms > 500 ms"));
+    }
+
+    #[test]
+    fn timing_end_rejects_unknown_or_duplicate_options() {
+        assert!(timing_end_spec("input budget=1s").is_err());
+        assert!(timing_end_spec("input max=1s max=2s").is_err());
+        assert!(timing_end_spec("input max=eventually").is_err());
+    }
 }
 
 fn execute(line: &str, ctx: &Ctx) -> Result<()> {
@@ -104,9 +294,11 @@ fn execute(line: &str, ctx: &Ctx) -> Result<()> {
         }),
         "assert" => verb_assert(rest, ctx),
         "assert_accessible" => verb_assert_accessible(rest, ctx),
+        "assert_accessible_masked" => verb_assert_accessible_masked(rest, ctx),
         "assert_inaccessible" => verb_assert_inaccessible(rest, ctx),
         "assert_focused" => verb_assert_focused(rest, ctx),
         "assert_snapshot" => verb_assert_snapshot(rest, ctx),
+        "assert_perceptual_snapshot" => verb_assert_perceptual_snapshot(rest, ctx),
         "wait_until" => verb_wait_until(rest, ctx),
         "wait_idle" => verb_wait_idle(rest, ctx),
         "sleep" => {
@@ -116,7 +308,7 @@ fn execute(line: &str, ctx: &Ctx) -> Result<()> {
         }
         "focus" => verb_focus(rest, ctx),
         "key" => verb_key(rest, ctx),
-        "type" => verb_type(rest, ctx),
+        "type" | "type_secret" => verb_type(rest, ctx),
         "click" => verb_click(rest, ctx),
         "hover" => verb_hover(rest, ctx),
         "drag" => verb_drag(rest, ctx),
@@ -143,6 +335,14 @@ fn execute(line: &str, ctx: &Ctx) -> Result<()> {
         "plugin_chain_save" => verb_plugin_chain_save(rest, ctx),
         "plugin_chain_load" => verb_plugin_chain_load(rest, ctx),
         other => bail!("unknown verb `{other}`"),
+    }
+}
+
+pub(super) fn scenario_line_for_diagnostics(line: &str) -> &str {
+    if split2(line).0 == "type_secret" {
+        "type_secret [REDACTED]"
+    } else {
+        line
     }
 }
 

@@ -2,8 +2,9 @@
 
 app_bin = "target/debug/sotf-desktop"
 artifacts_dir = "target/qa-gpui"
+demo_audio_dir = "data_tests/audio"
 readiness_timeout = "20s"
-size = "1024x768"
+size = "1440x900"
 
 [[scenario]]
 
@@ -11,3 +12,37 @@ name = "listening-how-to-listen"
 path = "crates/sotf-dev-driver/scenarios/listening_how_to_listen.scn"
 timeout = "30s"
 tags = ["listening", "ui", "accessibility", "persistence"]
+
+[[scenario]]
+name = "listening-eq-training"
+path = "crates/sotf-dev-driver/scenarios/listening_eq_training.scn"
+timeout = "30s"
+tags = ["listening", "eq-training", "ui", "accessibility"]
+
+[[scenario]]
+name = "listening-blind-ab"
+path = "crates/sotf-dev-driver/scenarios/listening_blind_ab.scn"
+seed_demo_audio = true
+timeout = "45s"
+tags = ["listening", "blind-ab", "level-match", "ui"]
+
+[[scenario]]
+name = "listening-abx-session"
+path = "crates/sotf-dev-driver/scenarios/listening_abx_session.scn"
+seed_demo_audio = true
+timeout = "45s"
+tags = ["listening", "abx", "persistence", "ui"]
+
+[[scenario]]
+name = "listening-media-verification"
+path = "crates/sotf-dev-driver/scenarios/listening_media_verification.scn"
+seed_demo_audio = true
+timeout = "45s"
+tags = ["listening", "media-integrity", "error", "ui"]
+
+[[scenario]]
+name = "listening-fatigue-keyboard"
+path = "crates/sotf-dev-driver/scenarios/listening_fatigue_keyboard.scn"
+seed_demo_audio = true
+timeout = "45s"
+tags = ["listening", "fatigue", "keyboard", "accessibility"]

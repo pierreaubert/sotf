@@ -23,6 +23,7 @@ pub(super) fn run(args: &Args) -> Result<()> {
             manifest,
             executable,
             url,
+            run_id,
             durable_trace,
             allow_hardware_audio,
             allow_network,
@@ -30,13 +31,14 @@ pub(super) fn run(args: &Args) -> Result<()> {
             allow_hal_install,
             allow_physical_device,
         }) => {
+            use sotf_dev_driver::fuzz::model::opt_in;
             let mut opt_ins = BTreeSet::new();
             for (enabled, name) in [
-                (*allow_hardware_audio, "hardware_audio"),
-                (*allow_network, "network"),
-                (*allow_external_plugins, "external_plugins"),
-                (*allow_hal_install, "hal_install"),
-                (*allow_physical_device, "physical_device"),
+                (*allow_hardware_audio, opt_in::HARDWARE_AUDIO),
+                (*allow_network, opt_in::NETWORK),
+                (*allow_external_plugins, opt_in::EXTERNAL_PLUGINS),
+                (*allow_hal_install, opt_in::HAL_INSTALL),
+                (*allow_physical_device, opt_in::PHYSICAL_DEVICE),
             ] {
                 if enabled {
                     opt_ins.insert(name.to_owned());
@@ -54,6 +56,7 @@ pub(super) fn run(args: &Args) -> Result<()> {
                 manifest: manifest.clone(),
                 executable: executable.clone(),
                 url: url.clone(),
+                run_id: run_id.clone(),
                 durable_trace: *durable_trace,
                 opt_ins,
             })?;
@@ -80,11 +83,13 @@ pub(super) fn run(args: &Args) -> Result<()> {
             replay,
             executable,
             url,
+            run_id,
             best_effort_capabilities,
         }) => match run_replay_command(&ReplayCommandOptions {
             replay: replay.clone(),
             executable: executable.clone(),
             url: url.clone(),
+            run_id: run_id.clone(),
             best_effort_capabilities: *best_effort_capabilities,
         })? {
             Some(signature) => bail!(
@@ -101,11 +106,13 @@ pub(super) fn run(args: &Args) -> Result<()> {
             replay,
             executable,
             url,
+            run_id,
         }) => {
             let minimized = run_minimize_command(&MinimizeCommandOptions {
                 replay: replay.clone(),
                 executable: executable.clone(),
                 url: url.clone(),
+                run_id: run_id.clone(),
             })?;
             println!("minimized replay written to {}", minimized.display());
             Ok(())

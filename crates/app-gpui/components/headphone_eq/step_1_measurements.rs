@@ -178,7 +178,7 @@ impl PlayerView {
                                                         theme.text_primary
                                                     })
                                                     .child(if measurement_path.is_empty() {
-                                                        "No file selected".to_string()
+                                        translations.no_file_selected.to_string()
                                                     } else {
                                                         measurement_path.clone()
                                                     }),
@@ -393,7 +393,7 @@ impl PlayerView {
                                     )
                                     .when_some(selected_headphone.clone(), |row, headphone| {
                                         row.child(dev_track!(
-                                            Button::new("retry-headphone-download", "Retry")
+                                    Button::new("retry-headphone-download", workflow_text.retry)
                                                 .variant(ButtonVariant::Secondary)
                                                 .size(ButtonSize::Xs)
                                                 .theme(button_theme.clone())

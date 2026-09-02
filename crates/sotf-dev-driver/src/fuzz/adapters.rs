@@ -17,6 +17,29 @@ use sotf_dev_api::{Capabilities, Snapshot};
 use super::model::{Action, Observation, StructuredSkip, TargetId, TargetSpec};
 use super::supervisor::{FuzzTarget, LaunchContext, TargetError};
 
+/// Map socket read/write timeouts to `TargetError::Timeout` so a slow command
+/// reaches the supervisor's stall/hang state machine instead of being
+/// reported as an unexpected exit. Connect failures stay `Io`: against a dead
+/// child they correctly classify as an exit.
+pub(super) fn map_io_timeout(error: std::io::Error) -> TargetError {
+    if matches!(
+        error.kind(),
+        std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+    ) {
+        TargetError::Timeout(error.to_string())
+    } else {
+        TargetError::Io(error)
+    }
+}
+
+/// Same mapping for helpers that already return `TargetError`.
+pub(super) fn map_target_timeout(error: TargetError) -> TargetError {
+    match error {
+        TargetError::Io(error) => map_io_timeout(error),
+        other => other,
+    }
+}
+
 pub struct UnsupportedTarget {
     target: TargetId,
     reason_code: String,

@@ -157,6 +157,54 @@ pub(super) fn verb_assert_accessible(rest: &str, ctx: &Ctx) -> Result<()> {
     Ok(())
 }
 
+/// Require a named accessibility node to expose no clear-text value.
+/// Syntax: `assert_accessible_masked <role> <label substring>`.
+pub(super) fn verb_assert_accessible_masked(rest: &str, ctx: &Ctx) -> Result<()> {
+    let (role, expected_label) = split2(rest);
+    let expected_label = expected_label.trim();
+    if role.is_empty() || expected_label.is_empty() {
+        bail!("assert_accessible_masked needs `<role> <label substring>`");
+    }
+
+    let response = ctx
+        .client
+        .get(format!("{}/accessibility", ctx.base))
+        .send()?;
+    let json = parse_dev_response(response, "accessibility")?;
+    let nodes = json
+        .get("value")
+        .and_then(|value| value.get("nodes"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("accessibility response contains no nodes"))?;
+    let node = nodes.iter().find(|node| {
+        node.get("role")
+            .and_then(Value::as_str)
+            .is_some_and(|actual_role| actual_role.eq_ignore_ascii_case(role))
+            && node
+                .get("label")
+                .and_then(Value::as_str)
+                .is_some_and(|actual_label| actual_label.contains(expected_label))
+    });
+    let Some(node) = node else {
+        bail!("no accessible node with role `{role}` label containing `{expected_label}`");
+    };
+    let exposed_text = node
+        .get("value")
+        .and_then(|value| value.get("text"))
+        .and_then(Value::as_str);
+    if exposed_text.is_some_and(|text| {
+        !text.is_empty()
+            && !text
+                .chars()
+                .all(|character| matches!(character, '*' | '•' | '●'))
+    }) {
+        bail!(
+            "accessible node with role `{role}` label containing `{expected_label}` exposes clear text"
+        );
+    }
+    Ok(())
+}
+
 /// Match a role and label substring in an accessibility node snapshot.
 pub(super) fn accessibility_node_matches(
     nodes: &[Value],
@@ -243,6 +291,301 @@ fn accessibility_element_matches(actual: &str, expected: &str) -> bool {
             .strip_prefix("Name(\"")
             .and_then(|value| value.strip_suffix("\")"))
             == Some(expected)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+struct PerceptualSnapshotThresholds {
+    ssim_delta: f64,
+    changed_pixel_ratio: f64,
+}
+
+impl Default for PerceptualSnapshotThresholds {
+    fn default() -> Self {
+        Self {
+            ssim_delta: 0.01,
+            changed_pixel_ratio: 0.003,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+struct PerceptualSnapshotDiff {
+    ssim_delta: f64,
+    changed_pixel_ratio: f64,
+}
+
+/// Compare a rendered screenshot with a perceptual baseline.
+///
+/// Syntax: `assert_perceptual_snapshot <name> <baseline.png>
+/// [ssim=<0..1>] [changed=<0..1>]`. Set `SOTF_UPDATE_SNAPSHOTS=1` to
+/// deliberately replace the baseline with the rendered screenshot.
+pub(super) fn verb_assert_perceptual_snapshot(rest: &str, ctx: &Ctx) -> Result<()> {
+    let mut parts = rest.split_whitespace();
+    let name = parts.next().ok_or_else(|| {
+        anyhow!(
+            "assert_perceptual_snapshot needs `<name> <baseline.png> [ssim=<0..1>] [changed=<0..1>]`"
+        )
+    })?;
+    let baseline = parts.next().ok_or_else(|| {
+        anyhow!(
+            "assert_perceptual_snapshot needs `<name> <baseline.png> [ssim=<0..1>] [changed=<0..1>]`"
+        )
+    })?;
+    let thresholds = parse_perceptual_snapshot_thresholds(parts)?;
+    let actual = qa_screenshot_path(ctx, name)?;
+    let baseline = PathBuf::from(baseline);
+
+    if snapshot_update_requested() {
+        if let Some(parent) = baseline
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("creating snapshot baseline directory {}", parent.display())
+            })?;
+        }
+        std::fs::copy(&actual, &baseline).with_context(|| {
+            format!(
+                "updating snapshot baseline {} from {}",
+                baseline.display(),
+                actual.display()
+            )
+        })?;
+        if ctx.verbose {
+            println!(" -> updated {}", baseline.display());
+        }
+        return Ok(());
+    }
+
+    let actual_image = image::open(&actual)
+        .with_context(|| format!("opening actual screenshot {}", actual.display()))?
+        .to_rgba8();
+    let baseline_image = image::open(&baseline)
+        .with_context(|| {
+            format!(
+                "opening perceptual baseline {} (set SOTF_UPDATE_SNAPSHOTS=1 to create it)",
+                baseline.display()
+            )
+        })?
+        .to_rgba8();
+    let artifact_directory = qa_snapshot_artifact_directory(ctx)?;
+    if actual_image.dimensions() != baseline_image.dimensions() {
+        let artifacts = write_dimension_mismatch_artifacts(
+            &actual_image,
+            &baseline_image,
+            &artifact_directory,
+            name,
+        )?;
+        bail!(
+            "perceptual snapshot `{name}` dimensions differ: actual {:?}, baseline {:?}; artifacts: {}",
+            actual_image.dimensions(),
+            baseline_image.dimensions(),
+            artifacts.display()
+        );
+    }
+
+    let difference = perceptual_snapshot_diff(&actual_image, &baseline_image);
+    let metrics_path =
+        write_perceptual_snapshot_metrics(&artifact_directory, name, difference, thresholds)?;
+    if difference.ssim_delta > thresholds.ssim_delta
+        || difference.changed_pixel_ratio > thresholds.changed_pixel_ratio
+    {
+        let artifacts =
+            write_snapshot_artifacts(&actual_image, &baseline_image, &artifact_directory, name)?;
+        bail!(
+            "perceptual snapshot `{name}` exceeded budget: SSIM delta {:.6} > {:.6} or changed-pixel ratio {:.6} > {:.6}; actual: {}; baseline: {}; metrics: {}; artifacts: {}",
+            difference.ssim_delta,
+            thresholds.ssim_delta,
+            difference.changed_pixel_ratio,
+            thresholds.changed_pixel_ratio,
+            actual.display(),
+            baseline.display(),
+            metrics_path.display(),
+            artifacts.display()
+        );
+    }
+    if ctx.verbose {
+        println!(
+            " -> ok (SSIM delta {:.6}, changed-pixel ratio {:.6}; metrics: {})",
+            difference.ssim_delta,
+            difference.changed_pixel_ratio,
+            metrics_path.display()
+        );
+    }
+    Ok(())
+}
+
+fn parse_perceptual_snapshot_thresholds<'a>(
+    parts: impl Iterator<Item = &'a str>,
+) -> Result<PerceptualSnapshotThresholds> {
+    let mut thresholds = PerceptualSnapshotThresholds::default();
+    let mut saw_ssim = false;
+    let mut saw_changed = false;
+    for part in parts {
+        let (name, raw_value) = part.split_once('=').ok_or_else(|| {
+            anyhow!("snapshot thresholds must use `ssim=<0..1>` or `changed=<0..1>`")
+        })?;
+        let value = raw_value
+            .parse::<f64>()
+            .with_context(|| format!("snapshot threshold `{name}` must be a number"))?;
+        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+            bail!("snapshot threshold `{name}` must be between 0 and 1");
+        }
+        match name {
+            "ssim" if !saw_ssim => {
+                thresholds.ssim_delta = value;
+                saw_ssim = true;
+            }
+            "changed" if !saw_changed => {
+                thresholds.changed_pixel_ratio = value;
+                saw_changed = true;
+            }
+            "ssim" | "changed" => bail!("duplicate snapshot threshold `{name}`"),
+            _ => bail!("unknown snapshot threshold `{name}`"),
+        }
+    }
+    Ok(thresholds)
+}
+
+fn snapshot_update_requested() -> bool {
+    std::env::var("SOTF_UPDATE_SNAPSHOTS")
+        .is_ok_and(|value| matches!(value.as_str(), "1" | "true" | "yes"))
+}
+
+fn write_perceptual_snapshot_metrics(
+    directory: &Path,
+    name: &str,
+    difference: PerceptualSnapshotDiff,
+    thresholds: PerceptualSnapshotThresholds,
+) -> Result<PathBuf> {
+    #[derive(serde::Serialize)]
+    struct Artifact {
+        schema_version: u32,
+        source: &'static str,
+        difference: PerceptualSnapshotDiff,
+        thresholds: PerceptualSnapshotThresholds,
+    }
+
+    let path = directory.join(format!("{name}-metrics.json"));
+    let bytes = serde_json::to_vec_pretty(&Artifact {
+        schema_version: 1,
+        source: "8x8-luminance-ssim+oklab-jnd",
+        difference,
+        thresholds,
+    })
+    .with_context(|| format!("serializing perceptual snapshot metrics for {name}"))?;
+    std::fs::write(&path, bytes)
+        .with_context(|| format!("writing perceptual snapshot metrics {}", path.display()))?;
+    Ok(path)
+}
+
+fn perceptual_snapshot_diff(
+    actual: &image::RgbaImage,
+    baseline: &image::RgbaImage,
+) -> PerceptualSnapshotDiff {
+    debug_assert_eq!(actual.dimensions(), baseline.dimensions());
+    let (width, height) = actual.dimensions();
+    if width == 0 || height == 0 {
+        return PerceptualSnapshotDiff {
+            ssim_delta: 0.0,
+            changed_pixel_ratio: 0.0,
+        };
+    }
+
+    let mut changed_pixels = 0_u64;
+    for (actual_pixel, baseline_pixel) in actual.pixels().zip(baseline.pixels()) {
+        if perceptual_pixel_distance(actual_pixel.0, baseline_pixel.0) > 0.02 {
+            changed_pixels += 1;
+        }
+    }
+
+    let mut ssim_sum = 0.0;
+    let mut block_count = 0_u64;
+    for block_y in (0..height).step_by(8) {
+        for block_x in (0..width).step_by(8) {
+            let block_width = (width - block_x).min(8);
+            let block_height = (height - block_y).min(8);
+            let sample_count = f64::from(block_width * block_height);
+            let mut sum_actual = 0.0;
+            let mut sum_baseline = 0.0;
+            let mut sum_actual_sq = 0.0;
+            let mut sum_baseline_sq = 0.0;
+            let mut sum_product = 0.0;
+            for y in block_y..(block_y + block_height) {
+                for x in block_x..(block_x + block_width) {
+                    let actual_luma = pixel_luminance(actual.get_pixel(x, y).0);
+                    let baseline_luma = pixel_luminance(baseline.get_pixel(x, y).0);
+                    sum_actual += actual_luma;
+                    sum_baseline += baseline_luma;
+                    sum_actual_sq += actual_luma * actual_luma;
+                    sum_baseline_sq += baseline_luma * baseline_luma;
+                    sum_product += actual_luma * baseline_luma;
+                }
+            }
+            let mean_actual = sum_actual / sample_count;
+            let mean_baseline = sum_baseline / sample_count;
+            let variance_actual =
+                (sum_actual_sq / sample_count - mean_actual * mean_actual).max(0.0);
+            let variance_baseline =
+                (sum_baseline_sq / sample_count - mean_baseline * mean_baseline).max(0.0);
+            let covariance = sum_product / sample_count - mean_actual * mean_baseline;
+            let c1 = 0.01_f64.powi(2);
+            let c2 = 0.03_f64.powi(2);
+            let numerator = (2.0 * mean_actual * mean_baseline + c1) * (2.0 * covariance + c2);
+            let denominator = (mean_actual * mean_actual + mean_baseline * mean_baseline + c1)
+                * (variance_actual + variance_baseline + c2);
+            ssim_sum += (numerator / denominator).clamp(-1.0, 1.0);
+            block_count += 1;
+        }
+    }
+
+    PerceptualSnapshotDiff {
+        ssim_delta: (1.0 - ssim_sum / block_count as f64).clamp(0.0, 1.0),
+        changed_pixel_ratio: changed_pixels as f64 / f64::from(width * height),
+    }
+}
+
+fn pixel_luminance(pixel: [u8; 4]) -> f64 {
+    let alpha = f64::from(pixel[3]) / 255.0;
+    let red = linear_srgb(pixel[0]) * alpha;
+    let green = linear_srgb(pixel[1]) * alpha;
+    let blue = linear_srgb(pixel[2]) * alpha;
+    0.2126 * red + 0.7152 * green + 0.0722 * blue
+}
+
+fn perceptual_pixel_distance(actual: [u8; 4], baseline: [u8; 4]) -> f64 {
+    let actual_lab = oklab(actual);
+    let baseline_lab = oklab(baseline);
+    let alpha_delta = (f64::from(actual[3]) - f64::from(baseline[3])) / 255.0;
+    ((actual_lab.0 - baseline_lab.0).powi(2)
+        + (actual_lab.1 - baseline_lab.1).powi(2)
+        + (actual_lab.2 - baseline_lab.2).powi(2)
+        + alpha_delta.powi(2))
+    .sqrt()
+}
+
+fn oklab(pixel: [u8; 4]) -> (f64, f64, f64) {
+    let alpha = f64::from(pixel[3]) / 255.0;
+    let red = linear_srgb(pixel[0]) * alpha;
+    let green = linear_srgb(pixel[1]) * alpha;
+    let blue = linear_srgb(pixel[2]) * alpha;
+    let l = (0.412_221_470_8 * red + 0.536_332_536_3 * green + 0.051_445_992_9 * blue).cbrt();
+    let m = (0.211_903_498_2 * red + 0.680_699_545_1 * green + 0.107_396_956_6 * blue).cbrt();
+    let s = (0.088_302_461_9 * red + 0.281_718_837_6 * green + 0.629_978_700_5 * blue).cbrt();
+    (
+        0.210_454_255_3 * l + 0.793_617_785 * m - 0.004_072_046_8 * s,
+        1.977_998_495_1 * l - 2.428_592_205 * m + 0.450_593_709_9 * s,
+        0.025_904_037_1 * l + 0.782_771_766_2 * m - 0.808_675_766 * s,
+    )
+}
+
+fn linear_srgb(channel: u8) -> f64 {
+    let value = f64::from(channel) / 255.0;
+    if value <= 0.04045 {
+        value / 12.92
+    } else {
+        ((value + 0.055) / 1.055).powf(2.4)
+    }
 }
 
 fn qa_screenshot_path(ctx: &Ctx, name: &str) -> Result<std::path::PathBuf> {
@@ -449,15 +792,6 @@ pub(super) fn parse_typed_text(rest: &str) -> Result<String> {
         return serde_json::from_str(rest).context("quoted type text must be a JSON string");
     }
     Ok(rest.to_owned())
-}
-
-pub(super) fn typed_keystroke(character: char) -> String {
-    match character {
-        ' ' => "space".to_owned(),
-        '\t' => "tab".to_owned(),
-        '\n' => "enter".to_owned(),
-        _ => character.to_string(),
-    }
 }
 
 pub(super) fn verb_click(rest: &str, ctx: &Ctx) -> Result<()> {
@@ -1030,4 +1364,59 @@ pub(super) fn verb_plugin_chain_load(rest: &str, ctx: &Ctx) -> Result<()> {
     let body = json!({ "name": "PluginChainLoad", "payload": { "path": path } });
     post_dev_json(ctx, "/action", &body, "plugin_chain_load")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod perceptual_snapshot_tests {
+    use image::{Rgba, RgbaImage};
+
+    use super::{
+        PerceptualSnapshotThresholds, parse_perceptual_snapshot_thresholds,
+        perceptual_snapshot_diff,
+    };
+
+    #[test]
+    fn identical_images_have_zero_perceptual_difference() {
+        let image = RgbaImage::from_pixel(16, 16, Rgba([40, 80, 120, 255]));
+        let difference = perceptual_snapshot_diff(&image, &image);
+        assert_eq!(difference.ssim_delta, 0.0);
+        assert_eq!(difference.changed_pixel_ratio, 0.0);
+    }
+
+    #[test]
+    fn localized_visible_change_is_counted() {
+        let baseline = RgbaImage::from_pixel(16, 16, Rgba([20, 20, 20, 255]));
+        let mut actual = baseline.clone();
+        for y in 0..8 {
+            for x in 0..8 {
+                actual.put_pixel(x, y, Rgba([240, 240, 240, 255]));
+            }
+        }
+        let difference = perceptual_snapshot_diff(&actual, &baseline);
+        assert!(difference.ssim_delta > 0.1);
+        assert_eq!(difference.changed_pixel_ratio, 0.25);
+    }
+
+    #[test]
+    fn threshold_parser_accepts_named_values_in_any_order() {
+        let thresholds =
+            parse_perceptual_snapshot_thresholds(["changed=0.02", "ssim=0.03"].into_iter())
+                .unwrap();
+        assert_eq!(
+            thresholds,
+            PerceptualSnapshotThresholds {
+                ssim_delta: 0.03,
+                changed_pixel_ratio: 0.02,
+            }
+        );
+    }
+
+    #[test]
+    fn threshold_parser_rejects_unknown_duplicate_and_out_of_range_values() {
+        assert!(parse_perceptual_snapshot_thresholds(["pixel=0.1"].into_iter()).is_err());
+        assert!(
+            parse_perceptual_snapshot_thresholds(["ssim=0.1", "ssim=0.2"].into_iter()).is_err()
+        );
+        assert!(parse_perceptual_snapshot_thresholds(["changed=1.1"].into_iter()).is_err());
+    }
 }

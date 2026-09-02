@@ -4,6 +4,7 @@ use super::spawn::spawn_spinorama_curves_thread;
 use crate::app::types::{PluginUpdateType, Screen, SpinoramaStep};
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
+use crate::i18n::{EqDiscoveryTranslations, WizardNavigationTranslations};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -268,6 +269,9 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let title = state.app.ui_state.translations.screen_spinorama;
+        let language = state.app.ui_state.language;
+        let translations = EqDiscoveryTranslations::for_language(language);
+        let wizard_text = WizardNavigationTranslations::for_language(language);
         let theme_id = state.app.ui_state.theme_id;
         let current_step = state.app.measurement_state.spinorama_eq_state.step;
         let can_go_next = state.app.can_advance_workflow_step();
@@ -294,10 +298,22 @@ impl PlayerView {
 
         // Build wizard steps
         let steps = vec![
-            WizardStep::new("select", "Select"),
-            WizardStep::new("configure", "Optimize"),
-            WizardStep::new("review", "Review"),
-            WizardStep::new("export", "Export"),
+            WizardStep::new(
+                "select",
+                translations.spinorama_step_label(SpinoramaStep::SelectSpeaker),
+            ),
+            WizardStep::new(
+                "configure",
+                translations.spinorama_step_label(SpinoramaStep::Configure),
+            ),
+            WizardStep::new(
+                "review",
+                translations.spinorama_step_label(SpinoramaStep::Review),
+            ),
+            WizardStep::new(
+                "export",
+                translations.spinorama_step_label(SpinoramaStep::Export),
+            ),
         ];
 
         let ui_kit_theme = theme.to_ui_kit_theme(theme_id, cx);
@@ -312,11 +328,15 @@ impl PlayerView {
             .theme(wizard_theme.clone());
 
         let back_label = match current_step {
-            SpinoramaStep::SelectSpeaker => "Close",
-            _ => "Back",
+            SpinoramaStep::SelectSpeaker => wizard_text.close,
+            _ => wizard_text.back,
         };
-        let next_label =
-            crate::components::wizard_continue_label(current_step.next().map(|next| next.label()));
+        let next_label = crate::components::wizard_continue_label(
+            language,
+            current_step
+                .next()
+                .map(|next| translations.spinorama_step_label(next)),
+        );
 
         let navigation = HStack::new()
             .spacing(StackSpacing::Sm)
@@ -413,12 +433,16 @@ impl PlayerView {
                     .qa_discovery_fixture
                     .as_mut()
                     .map(|fixture| {
-                        let should_fail = fixture.catalog_failures_remaining > 0;
-                        fixture.catalog_failures_remaining =
-                            fixture.catalog_failures_remaining.saturating_sub(1);
+                        let (delay_ms, should_fail) =
+                            fixture.catalog_request_plan.pop_front().unwrap_or_else(|| {
+                                let should_fail = fixture.catalog_failures_remaining > 0;
+                                fixture.catalog_failures_remaining =
+                                    fixture.catalog_failures_remaining.saturating_sub(1);
+                                (fixture.catalog_delay_ms, should_fail)
+                            });
                         (
                             fixture.catalog.clone(),
-                            fixture.catalog_delay_ms,
+                            delay_ms,
                             should_fail,
                             fixture.catalog_failure_message.clone(),
                         )

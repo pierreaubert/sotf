@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use super::model::{FailureClass, ResourceSample};
+use super::model::{Action, ActionClass, FailureClass, Observation, ResourceSample};
 
 pub const MEMORY_SLOPE_BYTES_PER_MINUTE: f64 = 1024.0 * 1024.0;
 pub const MEMORY_MIN_RETAINED_BYTES: u64 = 32 * 1024 * 1024;
@@ -26,6 +26,7 @@ pub fn classify_hang(evidence: HangEvidence) -> Option<FailureClass> {
         return None;
     }
     match (evidence.live, evidence.snapshot) {
+        // Exit precedence: an exited process classifies as exit/signal, never hang.
         (ProbeResult::ProcessExited, _) | (_, ProbeResult::ProcessExited) => None,
         (ProbeResult::Responsive, ProbeResult::TimedOut) => Some(FailureClass::MainLoopStall),
         (ProbeResult::TimedOut, _) if !evidence.process_progressed => {
@@ -33,6 +34,72 @@ pub fn classify_hang(evidence: HangEvidence) -> Option<FailureClass> {
         }
         _ => None,
     }
+}
+
+/// Shared panic/error log gate used by capture and replay. Matches Rust panic
+/// text and uppercase `ERROR` level tokens; lowercase "error" inside prose
+/// (for example `errors=0`) does not trip the gate.
+pub fn is_panic_or_error_log(line: &str) -> bool {
+    line.contains("panicked at") || line.contains("panic!") || line.contains("ERROR")
+}
+
+/// One failure candidate derived from an observation. `signature` is raw text;
+/// callers normalize it with `normalize_signature`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObservedFailure {
+    pub class: FailureClass,
+    pub signature: String,
+    pub evidence: Vec<String>,
+}
+
+/// Classify an observation into failure candidates in the canonical priority
+/// order shared by capture (supervisor) and replay (commands): exit, signal,
+/// valid-action rejection, then panic/error log. The observation's
+/// `failure_candidate` is intentionally excluded here; both call sites append
+/// it last so the first candidate is comparable across capture and replay.
+pub fn observation_failures(action: &Action, observation: &Observation) -> Vec<ObservedFailure> {
+    let mut found = Vec::new();
+    if !observation.process.alive {
+        found.push(ObservedFailure {
+            class: FailureClass::UnexpectedExit,
+            signature: "process exited unexpectedly".into(),
+            evidence: vec![],
+        });
+    }
+    if let Some(signal) = &observation.process.signal_or_exception {
+        found.push(ObservedFailure {
+            class: FailureClass::SignalOrException,
+            signature: signal.clone(),
+            evidence: vec![signal.clone()],
+        });
+    }
+    if action.class == ActionClass::StateValid
+        && action.precondition_satisfied
+        && observation.reply.as_ref().is_some_and(|reply| !reply.ok)
+    {
+        found.push(ObservedFailure {
+            class: FailureClass::ValidActionRejection,
+            signature: action.id.clone(),
+            evidence: observation
+                .reply
+                .as_ref()
+                .and_then(|reply| reply.error.clone())
+                .into_iter()
+                .collect(),
+        });
+    }
+    if let Some(line) = observation
+        .new_logs
+        .iter()
+        .find(|line| is_panic_or_error_log(line))
+    {
+        found.push(ObservedFailure {
+            class: FailureClass::PanicOrErrorLog,
+            signature: line.clone(),
+            evidence: vec![line.clone()],
+        });
+    }
+    found
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -54,9 +121,18 @@ pub struct RetainedCountGrowth {
     pub suspected: bool,
 }
 
-pub fn classify_memory_growth(samples: &[ResourceSample]) -> Option<MemoryClassification> {
+/// Number of leading samples discarded as startup/warmup before the memory
+/// classifier chooses its steady-state baseline window (design: "Portable
+/// resource and memory sampling").
+pub const MEMORY_WARMUP_SAMPLES: usize = 5;
+
+pub fn classify_memory_growth(
+    samples: &[ResourceSample],
+    warmup_samples: usize,
+) -> Option<MemoryClassification> {
     let points: Vec<_> = samples
         .iter()
+        .skip(warmup_samples)
         .filter_map(|sample| {
             sample
                 .rss_bytes
@@ -93,7 +169,13 @@ pub fn classify_memory_growth(samples: &[ResourceSample]) -> Option<MemoryClassi
     })
 }
 
+/// Maximum number of points fed to the Theil-Sen estimator. The estimator is
+/// O(n²) over all pairs, so longer runs are deterministically downsampled
+/// (raw samples are preserved in metrics.ndjson by the supervisor).
+pub const THEIL_SEN_MAX_POINTS: usize = 2_048;
+
 pub fn theil_sen_slope(points: &[(f64, f64)]) -> Option<f64> {
+    let points = downsample_points(points, THEIL_SEN_MAX_POINTS);
     let mut slopes = Vec::new();
     for (left_index, (left_x, left_y)) in points.iter().enumerate() {
         for (right_x, right_y) in &points[left_index + 1..] {
@@ -107,6 +189,16 @@ pub fn theil_sen_slope(points: &[(f64, f64)]) -> Option<f64> {
         }
     }
     median_f64(&mut slopes)
+}
+
+/// Deterministic even-stride downsample preserving order and endpoints.
+fn downsample_points(points: &[(f64, f64)], max_points: usize) -> Vec<(f64, f64)> {
+    if points.len() <= max_points {
+        return points.to_vec();
+    }
+    (0..max_points)
+        .map(|index| points[index * points.len() / max_points])
+        .collect()
 }
 
 pub fn classify_retained_count_growth(
@@ -151,14 +243,16 @@ fn median_f64(values: &mut [f64]) -> Option<f64> {
 }
 
 pub fn normalize_signature(text: &str, run_dir: Option<&str>) -> String {
-    let mut normalized = text.replace("0x", "addr:");
+    let mut normalized = text.to_owned();
     if let Some(run_dir) = run_dir {
         normalized = normalized.replace(run_dir, "<run-dir>");
     }
     normalized
         .split_whitespace()
         .map(|token| {
-            if token.chars().all(|character| character.is_ascii_digit()) {
+            if is_hex_address(token) {
+                "<addr>"
+            } else if token.chars().all(|character| character.is_ascii_digit()) {
                 "<n>"
             } else {
                 token
@@ -166,6 +260,14 @@ pub fn normalize_signature(text: &str, run_dir: Option<&str>) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn is_hex_address(token: &str) -> bool {
+    token.len() > 2
+        && token.starts_with("0x")
+        && token[2..]
+            .chars()
+            .all(|character| character.is_ascii_hexdigit())
 }
 
 #[cfg(test)]
@@ -193,13 +295,116 @@ mod tests {
         let leaking: Vec<_> = (0..20)
             .map(|minute| sample(minute, 100 + minute * 3))
             .collect();
-        assert!(classify_memory_growth(&leaking).unwrap().suspected);
+        assert!(classify_memory_growth(&leaking, 0).unwrap().suspected);
         let small: Vec<_> = (0..20).map(|minute| sample(minute, 100 + minute)).collect();
-        assert!(!classify_memory_growth(&small).unwrap().suspected);
+        assert!(!classify_memory_growth(&small, 0).unwrap().suspected);
         let spike: Vec<_> = (0..20)
             .map(|minute| sample(minute, if minute == 10 { 500 } else { 100 }))
             .collect();
-        assert!(!classify_memory_growth(&spike).unwrap().suspected);
+        assert!(!classify_memory_growth(&spike, 0).unwrap().suspected);
+    }
+
+    #[test]
+    fn memory_classifier_discards_warmup_before_choosing_windows() {
+        // A large startup spike followed by flat steady-state RSS is not a
+        // leak once warmup is discarded, but looks like one without it.
+        let mut samples: Vec<_> = (0..5).map(|minute| sample(minute, 400)).collect();
+        let steady: Vec<_> = (5..25).map(|minute| sample(minute, 100)).collect();
+        samples.extend(steady);
+        let with_warmup = classify_memory_growth(&samples, 5).unwrap();
+        assert!(!with_warmup.suspected);
+        assert_eq!(with_warmup.baseline_bytes, 100 * 1024 * 1024);
+        let without_warmup = classify_memory_growth(&samples, 0).unwrap();
+        assert!(without_warmup.baseline_bytes > with_warmup.baseline_bytes);
+    }
+
+    #[test]
+    fn theil_sen_downsampling_is_deterministic_and_preserves_slope_sign() {
+        let rising: Vec<_> = (0..10_000)
+            .map(|index| (index as f64, 100.0 + index as f64 * 2.0))
+            .collect();
+        let first = theil_sen_slope(&rising).unwrap();
+        let second = theil_sen_slope(&rising).unwrap();
+        assert_eq!(first, second);
+        assert!(first > 0.0);
+        let falling: Vec<_> = (0..10_000)
+            .map(|index| (index as f64, 100.0 - index as f64))
+            .collect();
+        assert!(theil_sen_slope(&falling).unwrap() < 0.0);
+        // Downsampling caps the estimator's pair count (O(n^2) guard).
+        assert_eq!(
+            super::downsample_points(&rising, THEIL_SEN_MAX_POINTS).len(),
+            THEIL_SEN_MAX_POINTS
+        );
+    }
+
+    #[test]
+    fn exit_precedence_and_confirmation_gates_beat_hang_classes() {
+        // An exited process must classify as exit/signal, never stall/hang.
+        for (live, snapshot) in [
+            (ProbeResult::ProcessExited, ProbeResult::TimedOut),
+            (ProbeResult::TimedOut, ProbeResult::ProcessExited),
+            (ProbeResult::ProcessExited, ProbeResult::ProcessExited),
+        ] {
+            assert_eq!(
+                classify_hang(HangEvidence {
+                    action_timed_out: true,
+                    live,
+                    snapshot,
+                    consecutive_misses: 3,
+                    process_progressed: false,
+                }),
+                None
+            );
+        }
+        // Fewer than three consecutive misses is an ordinary command timeout.
+        assert_eq!(
+            classify_hang(HangEvidence {
+                action_timed_out: true,
+                live: ProbeResult::TimedOut,
+                snapshot: ProbeResult::TimedOut,
+                consecutive_misses: 2,
+                process_progressed: false,
+            }),
+            None
+        );
+        // A progressing process is not a whole-process hang.
+        assert_eq!(
+            classify_hang(HangEvidence {
+                action_timed_out: true,
+                live: ProbeResult::TimedOut,
+                snapshot: ProbeResult::TimedOut,
+                consecutive_misses: 3,
+                process_progressed: true,
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn log_gate_matches_panic_text_and_error_levels_precisely() {
+        assert!(is_panic_or_error_log(
+            "thread 'main' panicked at src/lib.rs:10:5:"
+        ));
+        assert!(is_panic_or_error_log("reached panic!() in dispatch"));
+        assert!(is_panic_or_error_log("ERROR sotf: device open failed"));
+        assert!(!is_panic_or_error_log("INFO errors=0 recovered"));
+        assert!(!is_panic_or_error_log("no errors observed"));
+    }
+
+    #[test]
+    fn normalize_signature_replaces_whole_hex_addresses_and_digits() {
+        assert_eq!(
+            normalize_signature(
+                "panicked at 0x7fff5fbff8a8 after 42 iterations at 0x10",
+                None
+            ),
+            "panicked at <addr> after <n> iterations at <addr>"
+        );
+        assert_eq!(
+            normalize_signature("failure under /runs/abc dir", Some("/runs/abc")),
+            "failure under <run-dir> dir"
+        );
     }
 
     #[test]

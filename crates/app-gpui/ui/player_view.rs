@@ -2,6 +2,7 @@ use super::PendingGeometrySave;
 use super::TickSnapshot;
 use super::consts::estimate_grid_dimensions;
 pub use crate::app::actions::*;
+use crate::app::keybindings::keybinding_conflict;
 use crate::app::{AppState, Screen};
 use crate::components::plugins::actions::{
     OpenAbConfigFile, OpenIrFile, OpenSofaFile, ResetPluginParam, SelectPluginParam, StartKnobDrag,
@@ -44,6 +45,7 @@ pub struct PlayerView {
     pub(crate) command_palette: Option<CommandPaletteState>,
     pub(crate) volume_focus_handle: FocusHandle,
     pub(crate) eq_chart_focus_handle: FocusHandle,
+    pub(crate) plugin_exact_entry_focus_handle: FocusHandle,
     pub(super) last_saved_window_bounds: Option<Bounds<Pixels>>,
     /// Scroll handle for library grid view
     pub(crate) grid_scroll_handle: ScrollHandle,
@@ -80,6 +82,12 @@ pub struct PlayerView {
     /// Snapshot of the last published tick state — used to suppress
     /// `cx.notify()` when nothing observable changed in the tick.
     pub(super) last_tick_snapshot: Option<TickSnapshot>,
+    /// Deterministic QA clock owns root invalidation while performance capture
+    /// is active, preventing the production poller from double-counting draws.
+    #[cfg(feature = "dev-api")]
+    pub(super) qa_performance_clock_active: bool,
+    #[cfg(feature = "dev-api")]
+    pub(super) qa_performance_position_secs: f64,
     /// OS media controls (MPRIS / MediaPlayer) — not available on iOS/tvOS
     #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
     pub(super) media_controls: Option<crate::media_controls::GpuiMediaControls>,
@@ -96,23 +104,170 @@ pub struct PlayerView {
     pub(crate) graph_canvas_drop_position: Option<(f32, f32)>,
 }
 
+#[cfg(feature = "dev-api")]
+impl PlayerView {
+    pub(crate) fn qa_update_frame_count(&self) -> u64 {
+        self.update_frame_count
+    }
+
+    /// Advance the visible playback position on the normal GPUI executor
+    /// while a QA performance capture is active. Rendered QA cannot rely on
+    /// a physical audio device, so this deterministic clock exercises the
+    /// same playback-state and root-view invalidation path at the production
+    /// 100 ms cadence.
+    pub(crate) fn qa_start_performance_playback_clock(
+        &mut self,
+        running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        cx: &mut Context<Self>,
+    ) {
+        self.qa_performance_clock_active = true;
+        self.qa_performance_position_secs = self.state.read(cx).app.playback.position_secs;
+        self.state.update(cx, |state, _cx| {
+            state.app.playback.is_playing = true;
+        });
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(100))
+                    .await;
+                if !running.load(std::sync::atomic::Ordering::Acquire) {
+                    break;
+                }
+                let result = this.update(cx, |view, cx| {
+                    let requested_position = view.qa_performance_position_secs + 0.1;
+                    let applied_position = view.state.update(cx, |state, _cx| {
+                        state.app.playback.is_playing = true;
+                        let duration = state.app.playback.display_duration_secs();
+                        state.app.playback.position_secs = if duration.is_finite() && duration > 0.0
+                        {
+                            requested_position.min(duration)
+                        } else {
+                            requested_position
+                        };
+                        state.app.playback.position_secs
+                    });
+                    view.qa_performance_position_secs = applied_position;
+                    if view.tick_snapshot_changed(cx) {
+                        cx.notify();
+                    }
+                });
+                if result.is_err() {
+                    break;
+                }
+            }
+            let _ = this.update(cx, |view, cx| {
+                view.qa_performance_clock_active = false;
+                view.state.update(cx, |state, _cx| {
+                    state.app.playback.is_playing = false;
+                });
+                #[cfg(feature = "dev-api")]
+                let qa_clock_owns_invalidation = view.qa_performance_clock_active;
+                #[cfg(not(feature = "dev-api"))]
+                let qa_clock_owns_invalidation = false;
+                if !qa_clock_owns_invalidation && view.tick_snapshot_changed(cx) {
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+}
+
 impl PlayerView {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
+        Self::new_with_runtime(state, cx, true)
+    }
+
+    fn new_with_runtime(
+        state: Entity<AppState>,
+        cx: &mut Context<Self>,
+        start_runtime: bool,
+    ) -> Self {
         let focus_handle = cx.focus_handle();
         let volume_focus_handle = cx.focus_handle();
         let eq_chart_focus_handle = cx.focus_handle();
+        let plugin_exact_entry_focus_handle = cx.focus_handle();
+
+        // Keybinding capture must run before GPUI resolves an existing shortcut
+        // into an action; element-level key handlers are too late for conflicts
+        // such as F8 (Play/Pause). Hidden/runtime-free QA views deliberately do
+        // not install interceptors because they share the application context.
+        if start_runtime {
+            let keybinding_state = state.clone();
+            cx.intercept_keystrokes(move |event, _window, cx| {
+                let (capturing, editing_action) = {
+                    let state = keybinding_state.read(cx);
+                    (
+                        state.app.settings.keybindings.capturing,
+                        state.app.settings.keybindings.editing_action.clone(),
+                    )
+                };
+                if !capturing {
+                    return;
+                }
+                let Some(editing_action) = editing_action else {
+                    return;
+                };
+
+                let key = event.keystroke.key.as_str();
+                if key == "tab" {
+                    keybinding_state.update(cx, |state, _cx| {
+                        state.app.settings.keybindings.capturing = false;
+                    });
+                    return;
+                }
+                if key == "escape" {
+                    keybinding_state.update(cx, |state, cx| {
+                        state.app.settings.keybindings.editing_action = None;
+                        state.app.settings.keybindings.capturing = false;
+                        state.app.settings.keybindings.pending_key_spec = None;
+                        state.app.settings.keybindings.conflict = None;
+                        cx.notify();
+                    });
+                    cx.stop_propagation();
+                    return;
+                }
+                if matches!(key, "shift" | "control" | "alt" | "command" | "fn") {
+                    cx.stop_propagation();
+                    return;
+                }
+
+                let key_spec = event.keystroke.to_string();
+                keybinding_state.update(cx, |state, cx| {
+                    state.app.settings.keybindings.conflict = keybinding_conflict(
+                        state.app.ui_state.keymap_preset,
+                        &state.app.settings.keybindings.overrides,
+                        &editing_action,
+                        &key_spec,
+                    )
+                    .unwrap_or_else(|error| {
+                        log::warn!("Could not capture keybinding: {error}");
+                        None
+                    });
+                    state.app.settings.keybindings.pending_key_spec = Some(key_spec.clone());
+                    cx.notify();
+                });
+                cx.stop_propagation();
+            })
+            .detach();
+        }
 
         // Initialize OS media controls (MPRIS on Linux, MediaPlayer on macOS/Windows)
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
-        let media_controls = match crate::media_controls::GpuiMediaControls::new() {
-            Ok(mc) => {
-                log::info!("OS media controls initialized");
-                Some(mc)
+        let media_controls = if start_runtime {
+            match crate::media_controls::GpuiMediaControls::new() {
+                Ok(mc) => {
+                    log::info!("OS media controls initialized");
+                    Some(mc)
+                }
+                Err(e) => {
+                    log::warn!("Failed to initialize OS media controls: {}", e);
+                    None
+                }
             }
-            Err(e) => {
-                log::warn!("Failed to initialize OS media controls: {}", e);
-                None
-            }
+        } else {
+            None
         };
 
         // Subscribe to layout changes for granular re-renders
@@ -128,18 +283,20 @@ impl PlayerView {
         // Event handlers that update state should call cx.notify() directly.
 
         // Set up periodic update timer for playback position and loudness
-        cx.spawn(async move |this: WeakEntity<Self>, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(100))
-                    .await;
-                let result = this.update(cx, |view, cx| {
-                    // Increment frame counter for throttling
-                    view.update_frame_count = view.update_frame_count.wrapping_add(1);
+        if start_runtime {
+            cx.spawn(async move |this: WeakEntity<Self>, cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(100))
+                        .await;
+                    let result = this.update(cx, |view, cx| {
+                        // Increment frame counter for throttling
+                        view.update_frame_count = view.update_frame_count.wrapping_add(1);
 
-                    // Collect data needed for infinite scroll check before state update
-                    let scroll_check_data =
-                        if view.state.read(cx).app.ui_state.current_screen == Screen::Library {
+                        // Collect data needed for infinite scroll check before state update
+                        let scroll_check_data = if view.state.read(cx).app.ui_state.current_screen
+                            == Screen::Library
+                        {
                             let scroll_y: f32 = view.grid_scroll_handle.offset().y.into();
                             let state = view.state.read(cx);
                             let item_count = state.app.library_state.items_per_page;
@@ -161,134 +318,146 @@ impl PlayerView {
                             None
                         };
 
-                    // Collect pending media control events (before state borrow)
-                    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
-                    let media_events: Vec<
-                        sotf_media_controls::MediaControlEvent,
-                    > = view
-                        .media_controls
-                        .as_ref()
-                        .map(|mc| std::iter::from_fn(|| mc.poll_event()).collect())
-                        .unwrap_or_default();
-                    #[cfg(any(target_os = "ios", target_os = "tvos"))]
-                    let media_events: Vec<()> = vec![];
-
-                    // Drain any pending hardware MIDI messages before the
-                    // main state update so resulting param changes ride
-                    // through the same `pending_plugin_update` path as
-                    // user-initiated edits.
-                    if let Some(svc) = view.midi_input.as_ref() {
-                        let messages = svc.drain();
-                        if !messages.is_empty() {
-                            let layout = svc.layout();
-                            let last_focus = view.midi_focused_plugin;
-                            let new_focus = view.state.update(cx, |state, _cx| {
-                                Self::dispatch_midi_messages(state, layout, last_focus, messages)
-                            });
-                            view.midi_focused_plugin = new_focus;
-                        }
-                    }
-
-                    // Consolidate all state updates into a single update call
-                    // to avoid multiple observer triggers.
-                    let frame_count = view.update_frame_count;
-                    let compressor_cache = &mut view.compressor_engine_idx_cache;
-                    view.state.update(cx, |state, _cx| {
-                        let (playback_state, was_playing) =
-                            Self::sync_playback_data(state, frame_count, compressor_cache);
-
-                        let ear_loop = &state.app.plugin_state.listening_test_state;
-                        if state.app.ui_state.current_screen == Screen::ListeningTest
-                            && ear_loop.eq_loop_enabled
-                            && let Some((start, end)) = ear_loop.eq_loop_range
-                            && state.app.playback.position_secs >= end
-                            && let Err(error) = state.player.seek(start)
-                        {
-                            log::warn!("Failed to seek ear-training loop: {error}");
-                        }
-
-                        if let Some(update_type) = state
-                            .app
-                            .plugin_state
-                            .update_state
-                            .pending_plugin_update
-                            .take()
-                        {
-                            log::warn!("[GPUI] Applying pending plugin update: {:?}", update_type);
-                            // Structural plugin graph changes invalidate
-                            // the compressor index cache.
-                            *compressor_cache = None;
-                            Self::apply_plugin_update(state, update_type);
-                        }
-
+                        // Collect pending media control events (before state borrow)
                         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
-                        for event in &media_events {
-                            Self::handle_media_control_event(state, event);
+                        let media_events: Vec<
+                            sotf_media_controls::MediaControlEvent,
+                        > = view
+                            .media_controls
+                            .as_ref()
+                            .map(|mc| std::iter::from_fn(|| mc.poll_event()).collect())
+                            .unwrap_or_default();
+                        #[cfg(any(target_os = "ios", target_os = "tvos"))]
+                        let media_events: Vec<()> = vec![];
+
+                        // Drain any pending hardware MIDI messages before the
+                        // main state update so resulting param changes ride
+                        // through the same `pending_plugin_update` path as
+                        // user-initiated edits.
+                        if let Some(svc) = view.midi_input.as_ref() {
+                            let messages = svc.drain();
+                            if !messages.is_empty() {
+                                let layout = svc.layout();
+                                let last_focus = view.midi_focused_plugin;
+                                let new_focus = view.state.update(cx, |state, _cx| {
+                                    Self::dispatch_midi_messages(
+                                        state, layout, last_focus, messages,
+                                    )
+                                });
+                                view.midi_focused_plugin = new_focus;
+                            }
                         }
 
-                        #[cfg(target_os = "ios")]
-                        Self::drain_ios_remote_commands(state);
+                        // Consolidate all state updates into a single update call
+                        // to avoid multiple observer triggers.
+                        let frame_count = view.update_frame_count;
+                        let compressor_cache = &mut view.compressor_engine_idx_cache;
+                        view.state.update(cx, |state, _cx| {
+                            let (playback_state, was_playing) =
+                                Self::sync_playback_data(state, frame_count, compressor_cache);
 
-                        if state.app.playback.is_playing && playback_state.is_playing {
-                            state.app.check_and_record_play();
+                            let ear_loop = &state.app.plugin_state.listening_test_state;
+                            if state.app.ui_state.current_screen == Screen::ListeningTest
+                                && ear_loop.eq_loop_enabled
+                                && let Some((start, end)) = ear_loop.eq_loop_range
+                                && state.app.playback.position_secs >= end
+                                && let Err(error) = state.player.seek(start)
+                            {
+                                log::warn!("Failed to seek ear-training loop: {error}");
+                            }
+
+                            if let Some(update_type) = state
+                                .app
+                                .plugin_state
+                                .update_state
+                                .pending_plugin_update
+                                .take()
+                            {
+                                log::warn!(
+                                    "[GPUI] Applying pending plugin update: {:?}",
+                                    update_type
+                                );
+                                // Structural plugin graph changes invalidate
+                                // the compressor index cache.
+                                *compressor_cache = None;
+                                Self::apply_plugin_update(state, update_type);
+                            }
+
+                            #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+                            for event in &media_events {
+                                Self::handle_media_control_event(state, event);
+                            }
+
+                            #[cfg(target_os = "ios")]
+                            Self::drain_ios_remote_commands(state);
+
+                            if state.app.playback.is_playing && playback_state.is_playing {
+                                state.app.check_and_record_play();
+                            }
+
+                            Self::handle_engine_state(state, &playback_state, was_playing);
+                            Self::handle_gapless_prequeue(state, &playback_state);
+                            Self::tick_background_tasks(state);
+                            state.app.refresh_scheduled_theme();
+                        });
+
+                        // Background stats computation (outside state update)
+                        let (needs_stats, is_stats_computing) = {
+                            let state = view.state.read(cx);
+                            (
+                                !state.app.library_view.stats.valid,
+                                state.app.library_view.stats_computing,
+                            )
+                        };
+                        if needs_stats && !is_stats_computing {
+                            view.compute_library_stats_async(cx);
                         }
 
-                        Self::handle_engine_state(state, &playback_state, was_playing);
-                        Self::handle_gapless_prequeue(state, &playback_state);
-                        Self::tick_background_tasks(state);
-                        state.app.refresh_scheduled_theme();
+                        // Infinite scroll - load more albums if needed (outside state update)
+                        if scroll_check_data == Some(true) {
+                            view.load_more_albums(cx);
+                        }
+
+                        // Update OS media controls metadata (outside state update)
+                        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+                        if let Some(mc) = view.media_controls.as_mut() {
+                            let state = view.state.read(cx);
+                            crate::media_controls::update_media_controls(
+                                mc,
+                                &state.app,
+                                state.app.playback.position_secs,
+                            );
+                        }
+
+                        // Only notify if observable state actually changed.
+                        // `Render::render` re-runs the entire view tree on every
+                        // notify, so idle screens at 100 ms tick rate would
+                        // otherwise re-render 10×/s for nothing.
+                        #[cfg(feature = "dev-api")]
+                        let qa_clock_owns_invalidation = view.qa_performance_clock_active;
+                        #[cfg(not(feature = "dev-api"))]
+                        let qa_clock_owns_invalidation = false;
+                        if !qa_clock_owns_invalidation && view.tick_snapshot_changed(cx) {
+                            cx.notify();
+                        }
                     });
-
-                    // Background stats computation (outside state update)
-                    let (needs_stats, is_stats_computing) = {
-                        let state = view.state.read(cx);
-                        (
-                            !state.app.library_view.stats.valid,
-                            state.app.library_view.stats_computing,
-                        )
-                    };
-                    if needs_stats && !is_stats_computing {
-                        view.compute_library_stats_async(cx);
+                    // Exit the loop if the view is no longer valid
+                    if result.is_err() {
+                        break;
                     }
-
-                    // Infinite scroll - load more albums if needed (outside state update)
-                    if scroll_check_data == Some(true) {
-                        view.load_more_albums(cx);
-                    }
-
-                    // Update OS media controls metadata (outside state update)
-                    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
-                    if let Some(mc) = view.media_controls.as_mut() {
-                        let state = view.state.read(cx);
-                        crate::media_controls::update_media_controls(
-                            mc,
-                            &state.app,
-                            state.app.playback.position_secs,
-                        );
-                    }
-
-                    // Only notify if observable state actually changed.
-                    // `Render::render` re-runs the entire view tree on every
-                    // notify, so idle screens at 100 ms tick rate would
-                    // otherwise re-render 10×/s for nothing.
-                    let new_snapshot = Self::tick_snapshot(view, cx);
-                    if view.last_tick_snapshot.as_ref() != Some(&new_snapshot) {
-                        view.last_tick_snapshot = Some(new_snapshot);
-                        cx.notify();
-                    }
-                });
-                // Exit the loop if the view is no longer valid
-                if result.is_err() {
-                    break;
                 }
-            }
-        })
-        .detach();
+            })
+            .detach();
+        }
 
         // Best-effort hardware MIDI bridge. iOS/tvOS use the manager_stub
         // which always returns no devices, so this is harmless on those
         // targets.
-        let midi_input = crate::app::midi_input::try_start();
+        let midi_input = if start_runtime {
+            crate::app::midi_input::try_start()
+        } else {
+            None
+        };
 
         Self {
             state,
@@ -296,11 +465,12 @@ impl PlayerView {
             command_palette: None,
             volume_focus_handle,
             eq_chart_focus_handle,
+            plugin_exact_entry_focus_handle,
             last_saved_window_bounds: None,
             grid_scroll_handle: ScrollHandle::new(),
             home_scroll_handle: ScrollHandle::new(),
-            needs_initial_focus: true,
-            suppress_geometry_sync: false,
+            needs_initial_focus: start_runtime,
+            suppress_geometry_sync: !start_runtime,
             update_frame_count: 0,
             geometry_save_task: None,
             geometry_save_pending: false,
@@ -308,6 +478,10 @@ impl PlayerView {
             pending_geometry_save: std::sync::Arc::new(parking_lot::Mutex::new(None)),
             compressor_engine_idx_cache: None,
             last_tick_snapshot: None,
+            #[cfg(feature = "dev-api")]
+            qa_performance_clock_active: false,
+            #[cfg(feature = "dev-api")]
+            qa_performance_position_secs: 0.0,
             #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
             media_controls,
             midi_input,
@@ -319,10 +493,7 @@ impl PlayerView {
     /// Builds the real player view without activating an off-screen QA window.
     #[cfg(feature = "visual-qa")]
     pub fn new_for_visual_qa(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
-        let mut view = Self::new(state, cx);
-        view.needs_initial_focus = false;
-        view.suppress_geometry_sync = true;
-        view
+        Self::new_with_runtime(state, cx, false)
     }
 
     /// Spawn a background task to compute library statistics
@@ -1549,8 +1720,10 @@ impl PlayerView {
             });
 
         // Determine target sample rate based on track's native rate and device capabilities
-        let sample_rate =
-            sotf_audio::select_output_sample_rate(track_sample_rate, device_name.as_deref()) as f64;
+        let sample_rate = crate::app::state::audio_device::output_sample_rate_for_track(
+            track_sample_rate,
+            device_name.as_deref(),
+        );
 
         state
             .app

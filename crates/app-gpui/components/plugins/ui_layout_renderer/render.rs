@@ -926,7 +926,11 @@ fn render_group(
             .gap(d.gap)
             .items_end()
             .when(stack_controls, |row| {
-                row.max_w(px(compact_width)).flex_wrap()
+                // Wrapped mixed controls can overlap when a multi-row selector
+                // is followed by fixed-height sliders. Stack the compact
+                // fallback layout vertically so each control contributes its
+                // full measured height to the scroll extent.
+                row.max_w(px(compact_width)).flex_col().items_stretch()
             });
         for spec in group.controls {
             if spec.hidden {

@@ -51,8 +51,9 @@ dev-driver-fuzz target='desktop-gpui' seed='1' steps='1000':
       desktop-gpui) just dev-driver-build-gpui ;;
       tui) just dev-driver-build-tui ;;
       player-cli) cargo build -p app-cli --bin player-cli ;;
-    recorder-cli) cargo build -p app-cli --bin sotf-recorder-cli ;;
-    headless-server) just dev-driver-build-gpui ;;
-    *) ;;
+      recorder-cli) cargo build -p app-cli --bin sotf-recorder-cli ;;
+      headless-server) just dev-driver-build-gpui ;;
+      systemwide-daemon) cargo build -p sotf-daemon --bin sotf-daemon ;;
+      *) ;;
     esac
     cargo run -p sotf-dev-driver -- fuzz --target "{{target}}" --seed "{{seed}}" --steps "{{steps}}"

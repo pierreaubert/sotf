@@ -1,35 +1,163 @@
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::DevTrackExt;
+use crate::app::i18n::LibraryFolderTranslations;
+#[cfg(feature = "dev-api")]
+use crate::app::state::QaLibraryPickerResult;
 use crate::app::types::ReplayGainMode;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::accessibility::{
+    AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState, apply_native_accessibility,
+};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Divider, HStack, NumberInput, NumberInputSize, StackSpacing,
     Text, TextSize, TextWeight, VStack,
 };
 
+fn register_library_button(
+    cx: &mut App,
+    id: impl Into<SharedString>,
+    label: impl Into<SharedString>,
+) -> ElementId {
+    let id = ElementId::from(id.into());
+    cx.register_accessible(AccessibilityNode {
+        element_id: id.clone(),
+        label: label.into(),
+        props: AriaProps::with_role(AriaRole::Button),
+    });
+    id
+}
+
+fn apply_library_button_accessibility(
+    button: Stateful<Div>,
+    label: impl Into<SharedString>,
+    disabled: bool,
+) -> Stateful<Div> {
+    apply_native_accessibility(
+        button,
+        label,
+        &AriaProps::with_role(AriaRole::Button).maybe_state(disabled, AriaState::Disabled),
+    )
+}
+
 impl PlayerView {
+    fn commit_library_settings_directory(
+        &mut self,
+        path: std::path::PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, cx| {
+            if state.app.add_directory(path) {
+                let layout = state.layout.read(cx);
+                if let Err(error) = state.app.save_config(layout) {
+                    log::warn!("Failed to persist library directory: {error}");
+                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(
+                        format!("Could not save the library folder: {error}"),
+                    ));
+                }
+            }
+        });
+        cx.notify();
+    }
+
+    fn choose_library_settings_directory(&mut self, cx: &mut Context<Self>) {
+        #[cfg(feature = "dev-api")]
+        {
+            let qa_result = self.state.update(cx, |state, _cx| {
+                state.app.settings.library.qa_picker_result.take()
+            });
+            if let Some(result) = qa_result {
+                match result {
+                    QaLibraryPickerResult::Selected(path) => {
+                        self.commit_library_settings_directory(path, cx);
+                    }
+                    QaLibraryPickerResult::PermissionDenied(path) => {
+                        self.state.update(cx, |state, _cx| {
+                            state.app.settings.library.directory_error = Some(
+                                sotf_audio_player::LibraryDirectoryAccessError::PermissionDenied(
+                                    path,
+                                ),
+                            );
+                        });
+                        cx.notify();
+                    }
+                }
+                return;
+            }
+        }
+
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+        cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
+            if let Some(handle) = rfd::AsyncFileDialog::new().pick_folder().await {
+                let path = handle.path().to_path_buf();
+                let _ = view.update(cx, |view, cx| {
+                    view.commit_library_settings_directory(path, cx);
+                });
+            }
+        })
+        .detach();
+    }
+
+    fn confirm_remove_library_settings_directory(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, cx| {
+            state.app.settings.library.pending_remove_index = None;
+            if state.app.remove_library_directory(index) {
+                let layout = state.layout.read(cx);
+                if let Err(error) = state.app.save_config(layout) {
+                    log::warn!("Failed to persist library directory removal: {error}");
+                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(
+                        format!("Could not save the library folder removal: {error}"),
+                    ));
+                }
+            }
+        });
+        cx.notify();
+    }
+
     pub(crate) fn render_library_settings_content(
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
-        let state = self.state.read(cx);
-        let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
-        let scan_in_progress = state.app.library_state.scan_in_progress;
-        let scan_progress_tracks = state.app.library_state.scan_progress_tracks;
-        let scan_progress_albums = state.app.library_state.scan_progress_albums;
-        let directories = state.app.library_state.library.directories.clone();
-        let album_count = state.app.library_state.library.albums.len();
-        let track_count: usize = state
-            .app
-            .library_state
-            .library
-            .albums
-            .iter()
-            .map(|a| a.tracks.len())
-            .sum();
+        let (
+            theme,
+            translations,
+            folder_text,
+            scan_in_progress,
+            directories,
+            directory_error,
+            scan_error,
+            pending_remove_index,
+            replay_gain_enabled,
+            replay_gain_mode,
+            album_count,
+            track_count,
+        ) = {
+            let state = self.state.read(cx);
+            (
+                state.app.ui_state.theme.clone(),
+                state.app.ui_state.translations.clone(),
+                LibraryFolderTranslations::for_language(state.app.ui_state.language),
+                state.app.library_state.scan_in_progress,
+                state.app.library_state.library.directories.clone(),
+                state.app.settings.library.directory_error.clone(),
+                state.app.settings.library.scan_error.clone(),
+                state.app.settings.library.pending_remove_index,
+                state.app.playback.replay_gain_enabled,
+                state.app.playback.replay_gain_mode,
+                state.app.library_state.library.albums.len(),
+                state
+                    .app
+                    .library_state
+                    .library
+                    .albums
+                    .iter()
+                    .map(|album| album.tracks.len())
+                    .sum::<usize>(),
+            )
+        };
 
         div()
             .flex()
@@ -109,32 +237,64 @@ impl PlayerView {
                             .font_weight(FontWeight::BOLD)
                             .child(translations.settings_managed_directories),
                     )
-                    .child(
-                        Button::new("add-directory-btn", translations.directories_add)
+                    .child({
+                        let id = register_library_button(
+                            cx,
+                            "settings-library-add-button",
+                            translations.directories_add,
+                        );
+                        let button = Button::new(id, translations.directories_add)
                             .variant(ButtonVariant::Secondary)
                             .size(ButtonSize::Xs)
                             .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(|_view, _: &ClickEvent, _window, cx| {
-                                #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
-                                {
-                                    cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
-                                        if let Some(handle) =
-                                            rfd::AsyncFileDialog::new().pick_folder().await
-                                        {
-                                            let path = handle.path().to_path_buf();
-                                            let _ = view.update(cx, |view, cx| {
-                                                view.state.update(cx, |state, _cx| {
-                                                    state.app.add_directory(path);
-                                                });
-                                                cx.notify();
-                                            });
-                                        }
-                                    })
-                                    .detach();
-                                }
-                            })),
-                    ),
+                            .build()
+                            .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                                view.choose_library_settings_directory(cx);
+                            }));
+                        let button = apply_library_button_accessibility(
+                            button,
+                            translations.directories_add,
+                            false,
+                        );
+                        #[cfg(feature = "dev-api")]
+                        let button = button.dev_track("settings.library.add");
+                        button
+                    }),
             )
+            .when_some(directory_error, |content, error| {
+                let id = register_library_button(
+                    cx,
+                    "settings-library-folder-retry-button",
+                    folder_text.retry,
+                );
+                let retry = Button::new(id, folder_text.retry)
+                    .variant(ButtonVariant::Secondary)
+                    .size(ButtonSize::Sm)
+                    .theme(theme.to_button_theme())
+                    .build()
+                    .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                        view.choose_library_settings_directory(cx);
+                    }));
+                let retry = apply_library_button_accessibility(retry, folder_text.retry, false);
+                #[cfg(feature = "dev-api")]
+                let retry = retry.dev_track("settings.library.retry-folder");
+
+                let alert = div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.gap_md)
+                    .p(d.pad_x)
+                    .rounded(d.r_md)
+                    .border_1()
+                    .border_color(theme.error)
+                    .bg(theme.background_secondary)
+                    .child(Text::section_header(folder_text.access_problem).color(theme.error))
+                    .child(Text::body(folder_text.access_error_message(&error)))
+                    .child(div().child(retry));
+                #[cfg(feature = "dev-api")]
+                let alert = alert.dev_track("settings.library.folder-error");
+                content.child(alert)
+            })
             // Directories Table
             .child(
                 div()
@@ -151,11 +311,101 @@ impl PlayerView {
                         } else {
                             theme.background_secondary
                         };
+                        let action = if pending_remove_index == Some(idx) {
+                            let cancel_id = register_library_button(
+                                cx,
+                                format!("settings-library-remove-{idx}-cancel"),
+                                folder_text.cancel,
+                            );
+                            let cancel = Button::new(cancel_id, folder_text.cancel)
+                                .variant(ButtonVariant::Secondary)
+                                .size(ButtonSize::Xs)
+                                .theme(theme.to_button_theme())
+                                .build()
+                                .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                                    view.state.update(cx, |state, cx| {
+                                        state.app.settings.library.pending_remove_index = None;
+                                        cx.notify();
+                                    });
+                                }));
+                            let cancel = apply_library_button_accessibility(
+                                cancel,
+                                folder_text.cancel,
+                                false,
+                            );
+                            #[cfg(feature = "dev-api")]
+                            let cancel =
+                                cancel.dev_track(format!("settings.library.remove.{idx}.cancel"));
 
-                        div()
+                            let confirm_id = register_library_button(
+                                cx,
+                                format!("settings-library-remove-{idx}-confirm"),
+                                folder_text.confirm_remove,
+                            );
+                            let confirm = Button::new(confirm_id, folder_text.confirm_remove)
+                                .variant(ButtonVariant::Destructive)
+                                .size(ButtonSize::Xs)
+                                .theme(theme.to_button_theme())
+                                .build()
+                                .on_click(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                                    view.confirm_remove_library_settings_directory(idx, cx);
+                                }));
+                            let confirm = apply_library_button_accessibility(
+                                confirm,
+                                folder_text.confirm_remove,
+                                false,
+                            );
+                            #[cfg(feature = "dev-api")]
+                            let confirm =
+                                confirm.dev_track(format!("settings.library.remove.{idx}.confirm"));
+
+                            div()
+                                .w_full()
+                                .flex()
+                                .flex_col()
+                                .items_start()
+                                .gap(d.grid)
+                                .child(
+                                    Text::label(folder_text.remove_question).color(theme.warning),
+                                )
+                                .child(Text::caption(folder_text.remove_warning))
+                                .child(div().flex().gap(d.gap_md).child(cancel).child(confirm))
+                                .into_any_element()
+                        } else {
+                            let remove_id = register_library_button(
+                                cx,
+                                format!("settings-library-remove-{idx}"),
+                                translations.settings_remove,
+                            );
+                            let remove = Button::new(remove_id, translations.settings_remove)
+                                .variant(ButtonVariant::Ghost)
+                                .size(ButtonSize::Xs)
+                                .theme(theme.to_button_theme())
+                                .build()
+                                .on_click(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                                    view.state.update(cx, |state, cx| {
+                                        state.app.settings.library.pending_remove_index = Some(idx);
+                                        cx.notify();
+                                    });
+                                }));
+                            let remove = apply_library_button_accessibility(
+                                remove,
+                                translations.settings_remove,
+                                false,
+                            );
+                            #[cfg(feature = "dev-api")]
+                            let remove = remove.dev_track(format!("settings.library.remove.{idx}"));
+                            remove.into_any_element()
+                        };
+
+                        let row = div()
                             .flex()
                             .items_center()
                             .justify_between()
+                            .when(pending_remove_index == Some(idx), |row| {
+                                row.flex_col().items_start()
+                            })
+                            .gap(d.gap_md)
                             .p(d.pad_x)
                             .bg(bg)
                             .border_b_1()
@@ -163,11 +413,14 @@ impl PlayerView {
                             .child(
                                 div()
                                     .flex()
+                                    .flex_1()
+                                    .min_w_0()
                                     .flex_col()
                                     .gap(d.grid)
                                     .child(
                                         div()
                                             .text_size(d.text_sm)
+                                            .overflow_hidden()
                                             .child(dir.path.display().to_string()),
                                     )
                                     .child(
@@ -188,23 +441,10 @@ impl PlayerView {
                                             )),
                                     ),
                             )
-                            .child(
-                                Button::new(("remove-btn", idx), translations.settings_remove)
-                                    .variant(ButtonVariant::Ghost)
-                                    .size(ButtonSize::Xs)
-                                    .theme(theme.to_button_theme())
-                                    .on_click_event(cx.listener(
-                                        move |view, _: &ClickEvent, _window, cx| {
-                                            view.state.update(cx, |state, _cx| {
-                                                // Set selection to this index and remove
-                                                state.app.library_view.selected_directory_index =
-                                                    idx;
-                                                state.app.remove_selected_directory();
-                                            });
-                                            cx.notify();
-                                        },
-                                    )),
-                            )
+                            .child(action);
+                        #[cfg(feature = "dev-api")]
+                        let row = row.dev_track(format!("settings.library.directory.{idx}"));
+                        row
                     })),
             )
             // Scan Progress Popup (removed as per user request)
@@ -225,42 +465,98 @@ impl PlayerView {
                     .child(
                         HStack::new()
                             .spacing(StackSpacing::Sm)
-                            .child(
-                                Button::new(
-                                    "scan-btn",
-                                    if scan_in_progress {
-                                        translations.library_scanning
-                                    } else {
-                                        translations.library_scan
-                                    },
-                                )
-                                .variant(ButtonVariant::Secondary)
-                                .size(ButtonSize::Sm)
-                                .disabled(scan_in_progress)
-                                .theme(theme.to_button_theme())
-                                .on_click_event(cx.listener(
-                                    |view, _: &ClickEvent, _window, cx| {
-                                        view.start_library_scan(cx);
-                                    },
-                                )),
-                            )
-                            .child(
-                                Button::new("rescan-btn", translations.settings_rescan_all)
+                            .child({
+                                let label = if scan_in_progress {
+                                    translations.library_scanning
+                                } else {
+                                    translations.library_scan
+                                };
+                                let id = register_library_button(
+                                    cx,
+                                    "settings-library-scan-button",
+                                    label,
+                                );
+                                let button = Button::new(id, label)
                                     .variant(ButtonVariant::Secondary)
                                     .size(ButtonSize::Sm)
                                     .disabled(scan_in_progress)
                                     .theme(theme.to_button_theme())
-                                    .on_click_event(cx.listener(
-                                        |view, _: &ClickEvent, _window, cx| {
-                                            view.state.update(cx, |state, _cx| {
-                                                let _ = state.app.rescan_library();
-                                            });
-                                            cx.notify();
-                                        },
-                                    )),
-                            ),
+                                    .build()
+                                    .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                                        view.start_library_scan(cx);
+                                    }));
+                                let button = apply_library_button_accessibility(
+                                    button,
+                                    label,
+                                    scan_in_progress,
+                                );
+                                #[cfg(feature = "dev-api")]
+                                let button = button.dev_track("settings.library.scan");
+                                button
+                            })
+                            .child({
+                                let id = register_library_button(
+                                    cx,
+                                    "settings-library-rescan-button",
+                                    translations.settings_rescan_all,
+                                );
+                                let button = Button::new(id, translations.settings_rescan_all)
+                                    .variant(ButtonVariant::Secondary)
+                                    .size(ButtonSize::Sm)
+                                    .disabled(scan_in_progress)
+                                    .theme(theme.to_button_theme())
+                                    .build()
+                                    .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                                        view.state.update(cx, |state, _cx| {
+                                            let _ = state.app.rescan_library();
+                                        });
+                                        cx.notify();
+                                    }));
+                                let button = apply_library_button_accessibility(
+                                    button,
+                                    translations.settings_rescan_all,
+                                    scan_in_progress,
+                                );
+                                #[cfg(feature = "dev-api")]
+                                let button = button.dev_track("settings.library.rescan");
+                                button
+                            }),
                     ),
             )
+            .when_some(scan_error, |content, error| {
+                let id = register_library_button(
+                    cx,
+                    "settings-library-scan-retry-button",
+                    folder_text.retry_scan,
+                );
+                let retry = Button::new(id, folder_text.retry_scan)
+                    .variant(ButtonVariant::Secondary)
+                    .size(ButtonSize::Sm)
+                    .theme(theme.to_button_theme())
+                    .build()
+                    .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                        view.start_library_scan(cx);
+                    }));
+                let retry =
+                    apply_library_button_accessibility(retry, folder_text.retry_scan, false);
+                #[cfg(feature = "dev-api")]
+                let retry = retry.dev_track("settings.library.retry-scan");
+                let alert = div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.gap_md)
+                    .p(d.pad_x)
+                    .rounded(d.r_md)
+                    .border_1()
+                    .border_color(theme.error)
+                    .bg(theme.background_secondary)
+                    .child(Text::section_header(folder_text.scan_failed).color(theme.error))
+                    .child(Text::body(error))
+                    .child(div().child(retry));
+                #[cfg(feature = "dev-api")]
+                let alert = alert.dev_track("settings.library.scan-error");
+                content.child(alert)
+            })
             // ReplayGain Section
             .child(
                 div()
@@ -309,13 +605,13 @@ impl PlayerView {
                                         // Toggle switch (simulated with button for now or use Checkbox if available)
                                         Button::new(
                                             "replay-gain-toggle",
-                                            if state.app.playback.replay_gain_enabled {
+                                            if replay_gain_enabled {
                                                 translations.settings_on
                                             } else {
                                                 translations.settings_off
                                             },
                                         )
-                                        .variant(if state.app.playback.replay_gain_enabled {
+                                        .variant(if replay_gain_enabled {
                                             ButtonVariant::Primary
                                         } else {
                                             ButtonVariant::Secondary
@@ -364,9 +660,7 @@ impl PlayerView {
                                                     translations.settings_track,
                                                 )
                                                 .variant(
-                                                    if state.app.playback.replay_gain_mode
-                                                        == ReplayGainMode::Track
-                                                    {
+                                                    if replay_gain_mode == ReplayGainMode::Track {
                                                         ButtonVariant::Primary
                                                     } else {
                                                         ButtonVariant::Ghost
@@ -390,9 +684,7 @@ impl PlayerView {
                                                     translations.settings_album,
                                                 )
                                                 .variant(
-                                                    if state.app.playback.replay_gain_mode
-                                                        == ReplayGainMode::Album
-                                                    {
+                                                    if replay_gain_mode == ReplayGainMode::Album {
                                                         ButtonVariant::Primary
                                                     } else {
                                                         ButtonVariant::Ghost
@@ -636,35 +928,6 @@ impl PlayerView {
                             ),
                     ),
             )
-            // Progress Indicator
-            .when(scan_in_progress, |el| {
-                el.child(
-                    div()
-                        .mt(d.section)
-                        .p(d.pad_x)
-                        .bg(theme.background_secondary)
-                        .rounded(d.r_md)
-                        .flex()
-                        .items_center()
-                        .gap(d.gap_md)
-                        .child(
-                            div()
-                                .text_size(d.text_sm)
-                                .child(translations.settings_scanning_in_progress),
-                        )
-                        .child(
-                            div()
-                                .text_size(d.text_xs)
-                                .text_color(theme.text_secondary)
-                                .child(
-                                    translations
-                                        .settings_scan_progress
-                                        .replace("{}", &scan_progress_tracks.to_string())
-                                        .replacen("{}", &scan_progress_albums.to_string(), 1),
-                                ),
-                        ),
-                )
-            })
     }
 
     /// Render the scanner threads section for library settings

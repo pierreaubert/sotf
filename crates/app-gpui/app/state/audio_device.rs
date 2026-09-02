@@ -12,6 +12,26 @@ pub const SAMPLE_RATES: &[u32] = &[44100, 48000, 88200, 96000, 176400, 192000];
 /// Common buffer sizes (in frames)
 pub const BUFFER_SIZES: &[u32] = &[128, 256, 512, 1024, 2048, 4096];
 
+/// Select the output sample rate used to configure the active processing graph.
+///
+/// Visual QA has no audio-output contract. Probing nominal rates can start a
+/// CoreAudio output unit and block the GPUI main thread indefinitely on CI or
+/// a busy local HAL device, preventing the dev API from answering. Production
+/// keeps the engine's verified device-rate selection unchanged.
+pub(crate) fn output_sample_rate_for_track(
+    track_sample_rate: u32,
+    device_name: Option<&str>,
+) -> f64 {
+    if std::env::var_os("SOTF_QA_DIR").is_some() {
+        return f64::from(track_sample_rate);
+    }
+
+    f64::from(sotf_audio::select_output_sample_rate(
+        track_sample_rate,
+        device_name,
+    ))
+}
+
 /// HAL driver configuration
 #[derive(Debug, Clone)]
 pub struct HalConfig {

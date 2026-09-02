@@ -1,6 +1,6 @@
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::FileTypeExt;
+use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
@@ -14,7 +14,7 @@ use sotf_dev_api::{Capabilities, DevReply, NamedCapability, Snapshot};
 use super::super::{
     model::{
         Action, ActionPayload, AdapterKind, CoverageDelta, EndpointSpec, FUZZ_SCHEMA_VERSION,
-        Observation, ProcessObservation, TargetId, TargetSpec,
+        Observation, ProcessObservation, TargetId, TargetSpec, opt_in,
     },
     supervisor::{FuzzTarget, LaunchContext, TargetError},
 };
@@ -23,6 +23,13 @@ const MAX_IPC_LINE_BYTES: usize = 256 * 1024;
 const MAX_IPC_RESPONSE_BYTES: u64 = 4 * 1024 * 1024;
 const IPC_TIMEOUT: Duration = Duration::from_secs(2);
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
+/// Conservative AF_UNIX `sun_path` capacity (macOS allows 104 bytes including
+/// the terminator); deeper paths must fall back to a short runtime dir.
+const MAX_SOCKET_PATH_BYTES: usize = 100;
+
+fn socket_path_too_long(path: &Path) -> bool {
+    path.as_os_str().len() >= MAX_SOCKET_PATH_BYTES
+}
 
 #[derive(Debug, Clone)]
 pub struct SystemwideTargetConfig {
@@ -39,6 +46,7 @@ pub struct SystemwideTarget {
     config: SystemwideTargetConfig,
     child: Option<Child>,
     socket_path: Option<PathBuf>,
+    owned_socket_dir: Option<PathBuf>,
     stdout_path: Option<PathBuf>,
     stderr_path: Option<PathBuf>,
     stdout_offset: u64,
@@ -53,12 +61,19 @@ impl SystemwideTarget {
             config,
             child: None,
             socket_path: None,
+            owned_socket_dir: None,
             stdout_path: None,
             stderr_path: None,
             stdout_offset: 0,
             stderr_offset: 0,
             semantic_revision: 0,
             state_hash: None,
+        }
+    }
+
+    fn cleanup_owned_socket_dir(&mut self) {
+        if let Some(dir) = self.owned_socket_dir.take() {
+            let _ = fs::remove_dir_all(dir);
         }
     }
 
@@ -77,14 +92,15 @@ impl SystemwideTarget {
         let mut stream = UnixStream::connect(self.socket_path()?)?;
         stream.set_read_timeout(Some(IPC_TIMEOUT))?;
         stream.set_write_timeout(Some(IPC_TIMEOUT))?;
-        stream.write_all(bytes)?;
-        stream.write_all(b"\n")?;
-        stream.flush()?;
+        stream.write_all(bytes).map_err(super::map_io_timeout)?;
+        stream.write_all(b"\n").map_err(super::map_io_timeout)?;
+        stream.flush().map_err(super::map_io_timeout)?;
 
         let mut response = Vec::new();
         BufReader::new(stream)
             .take(MAX_IPC_RESPONSE_BYTES + 1)
-            .read_until(b'\n', &mut response)?;
+            .read_until(b'\n', &mut response)
+            .map_err(super::map_io_timeout)?;
         if response.len() as u64 > MAX_IPC_RESPONSE_BYTES {
             return Err(TargetError::Protocol(
                 "systemwide IPC response exceeded 4 MiB".into(),
@@ -202,8 +218,8 @@ impl FuzzTarget for SystemwideTarget {
             ));
         }
         let executable = self.config.executable.canonicalize()?;
-        if context.opt_ins.contains("allow-hal-install")
-            || context.opt_ins.contains("allow-hardware-audio")
+        if context.opt_ins.contains(opt_in::HAL_INSTALL)
+            || context.opt_ins.contains(opt_in::HARDWARE_AUDIO)
         {
             return Err(TargetError::Protocol(
                 "systemwide fuzz target is lab-only; HAL and hardware opt-ins are not accepted"
@@ -218,6 +234,23 @@ impl FuzzTarget for SystemwideTarget {
             return Err(TargetError::Protocol(
                 "systemwide runtime escaped the fuzzer run directory".into(),
             ));
+        }
+        // Deep checkouts put the in-run-dir socket beyond the AF_UNIX
+        // sun_path limit; fall back to a short private runtime dir, like the
+        // daemon's own IPC tests do with tempdir(). Logs/artifacts stay in
+        // the run dir; the actual socket location is recorded in the target
+        // endpoint below.
+        let mut runtime_dir = runtime_dir;
+        if socket_path_too_long(&runtime_dir.join("daemon.sock")) {
+            let short_id: String = context.run_id.as_str().chars().take(8).collect();
+            let dir = std::env::temp_dir().join(format!("sotf-fuzz-{short_id}"));
+            if dir.exists() {
+                fs::remove_dir_all(&dir)?;
+            }
+            fs::create_dir_all(&dir)?;
+            fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+            self.owned_socket_dir = Some(dir.clone());
+            runtime_dir = dir;
         }
         let socket_path = runtime_dir.join("daemon.sock");
         let stdout_path = context.run_dir.join("logs/systemwide.stdout.log");
@@ -240,7 +273,10 @@ impl FuzzTarget for SystemwideTarget {
         self.socket_path = Some(socket_path.clone());
         self.stdout_path = Some(stdout_path);
         self.stderr_path = Some(stderr_path);
-        self.wait_for_socket()?;
+        if let Err(error) = self.wait_for_socket() {
+            self.cleanup_owned_socket_dir();
+            return Err(error);
+        }
 
         Ok(TargetSpec {
             schema_version: FUZZ_SCHEMA_VERSION,
@@ -346,13 +382,16 @@ impl FuzzTarget for SystemwideTarget {
     }
 
     fn live(&mut self) -> Result<bool, TargetError> {
+        // Exit precedence: a known-dead child is an exit, never a hang probe.
         if !self.process_observation().alive {
-            return Ok(false);
+            return Err(TargetError::ProcessExited(
+                "sotf-daemon process exited".into(),
+            ));
         }
-        Ok(self
-            .send_json(&json!({"command": "status"}))
-            .ok()
-            .and_then(|response| response.get("success").and_then(Value::as_bool))
+        let response = self.send_json(&json!({"command": "status"}))?;
+        Ok(response
+            .get("success")
+            .and_then(Value::as_bool)
             .unwrap_or(false))
     }
 
@@ -379,6 +418,7 @@ impl FuzzTarget for SystemwideTarget {
 
     fn shutdown(&mut self) -> Result<(), TargetError> {
         let Some(mut child) = self.child.take() else {
+            self.cleanup_owned_socket_dir();
             return Ok(());
         };
         let _ = self.send_json(&json!({"command": "shutdown"}));
@@ -395,7 +435,9 @@ impl FuzzTarget for SystemwideTarget {
             child.kill()?;
             child.wait()?;
         }
-        if self.socket_path.as_ref().is_some_and(|path| path.exists()) {
+        let stale_socket = self.socket_path.as_ref().is_some_and(|path| path.exists());
+        self.cleanup_owned_socket_dir();
+        if stale_socket {
             return Err(TargetError::Protocol(
                 "sotf-daemon left its private socket after shutdown".into(),
             ));
@@ -462,7 +504,12 @@ fn status_signal(_status: &ExitStatus) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
+    use sotf_dev_api::RunId;
+
     use super::*;
+    use crate::fuzz::model::opt_in;
 
     #[test]
     fn refuses_multiline_or_oversized_ipc_without_launching_a_process() {
@@ -473,5 +520,39 @@ mod tests {
                 .send_bytes(&vec![b'x'; MAX_IPC_LINE_BYTES + 1])
                 .is_err()
         );
+    }
+
+    #[test]
+    fn detects_socket_paths_beyond_the_sun_path_limit() {
+        assert!(socket_path_too_long(Path::new(&format!(
+            "{}/daemon.sock",
+            "/very-deep".repeat(20)
+        ))));
+        assert!(!socket_path_too_long(Path::new("/tmp/daemon.sock")));
+    }
+
+    #[test]
+    fn rejects_hal_and_hardware_opt_ins_using_the_cli_flag_names() {
+        // The CLI inserts opt_in::HAL_INSTALL for --allow-hal-install; the
+        // lab-only adapter must reject exactly those shared names.
+        let dir = tempfile::tempdir().unwrap();
+        let executable = dir.path().join("sotf-daemon");
+        fs::write(&executable, b"#!/bin/sh\nexit 1\n").unwrap();
+        let run_id = RunId::parse("0123456789abcdef0123456789abcdef").unwrap();
+        for name in [opt_in::HAL_INSTALL, opt_in::HARDWARE_AUDIO] {
+            let opt_ins = BTreeSet::from([name.to_owned()]);
+            let context = LaunchContext {
+                run_id: &run_id,
+                run_dir: dir.path(),
+                fixture_profile: "none",
+                opt_ins: &opt_ins,
+            };
+            let mut target = SystemwideTarget::new(SystemwideTargetConfig::new(executable.clone()));
+            let error = target.launch(&context).unwrap_err();
+            assert!(
+                matches!(error, TargetError::Protocol(_)),
+                "opt-in {name} must be rejected: {error}"
+            );
+        }
     }
 }

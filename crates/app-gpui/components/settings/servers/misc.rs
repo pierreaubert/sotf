@@ -127,7 +127,7 @@ impl PlayerView {
                     .child(
                         Button::new(
                             "toggle-sotf-api-connection-qr",
-                            if show_qr { "Hide QR" } else { "Show QR" },
+                            if show_qr { text.hide_qr } else { text.show_qr },
                         )
                         .variant(if show_qr {
                             ButtonVariant::Primary
@@ -192,9 +192,9 @@ impl PlayerView {
                                 theme.warning
                             })
                             .child(if has_token {
-                                "Configured"
+                                text.configured
                             } else {
-                                "Generated when QR is shown"
+                                text.generated_when_qr_shown
                             }),
                     ),
             )
@@ -401,7 +401,7 @@ impl PlayerView {
                                                 },
                                             )),
                                     )
-                                    .child(
+                                    .child(dev_track!(
                                         Button::new("mpd-auth-pw", text.password)
                                             .variant(if cert_auth {
                                                 ButtonVariant::Ghost
@@ -421,7 +421,8 @@ impl PlayerView {
                                                     cx.notify();
                                                 },
                                             )),
-                                    )
+                                        "settings.servers.mpd-auth-password",
+                                    ))
                                     .build(),
                             ),
                     )
@@ -430,7 +431,7 @@ impl PlayerView {
                         stack.child(server_secret_field(
                             "mpd-password",
                             text.password,
-                            "",
+                            mpd.password.as_deref().unwrap_or_default(),
                             if has_password {
                                 "Password is set (enter new to replace)"
                             } else {

@@ -409,159 +409,173 @@ fn render_review_graph_controls(
     text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> gpui::AnyElement {
-    HStack::new()
-        .spacing(StackSpacing::Xs)
-        .child(
-            Select::new(SharedString::from(format!(
-                "room-eq-review-smoothing-{graph_id:?}"
-            )))
-            .options(room_eq_smoothing_options())
-            .selected(room_eq_smoothing_value(settings.smoothing_octaves))
-            .placeholder(text.smoothing)
-            .size(SelectSize::Sm)
-            .is_open(settings.smoothing_open)
-            .theme(theme.to_select_theme())
-            .on_toggle({
-                let view = view.clone();
-                move |open, _window, cx| {
-                    view.update(cx, |this, cx| {
-                        this.state.update(cx, |state, _| {
-                            state
-                                .app
-                                .measurement_state
-                                .room_eq_state
-                                .review_graph_settings
-                                .get_mut(graph_id)
-                                .smoothing_open = open;
-                        });
-                        cx.notify();
-                    });
-                }
-            })
-            .on_change({
-                let view = view.clone();
-                move |value, _window, cx| {
-                    view.update(cx, |this, cx| {
-                        this.state.update(cx, |state, _| {
-                            if let Ok(octaves) = value.as_ref().parse::<f64>() {
-                                let settings = state
+    dev_track!(
+        HStack::new()
+            .full()
+            .wrap(true)
+            .spacing(StackSpacing::Xs)
+            .child(
+                Select::new(SharedString::from(format!(
+                    "room-eq-review-smoothing-{graph_id:?}"
+                )))
+                .options(room_eq_smoothing_options())
+                .selected(room_eq_smoothing_value(settings.smoothing_octaves))
+                .placeholder(text.smoothing)
+                .size(SelectSize::Sm)
+                .is_open(settings.smoothing_open)
+                .theme(theme.to_select_theme())
+                .on_toggle({
+                    let view = view.clone();
+                    move |open, _window, cx| {
+                        view.update(cx, |this, cx| {
+                            this.state.update(cx, |state, _| {
+                                state
                                     .app
                                     .measurement_state
                                     .room_eq_state
                                     .review_graph_settings
-                                    .get_mut(graph_id);
-                                settings.smoothing_octaves = octaves;
-                                settings.smoothing_open = false;
-                            }
+                                    .get_mut(graph_id)
+                                    .smoothing_open = open;
+                            });
+                            cx.notify();
                         });
-                        cx.notify();
-                    });
-                }
-            }),
-        )
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Xs)
-                .child(
-                    Text::new(text.auto)
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
-                )
-                .child(
-                    Toggle::new(SharedString::from(format!(
-                        "room-eq-review-auto-{graph_id:?}"
-                    )))
-                    .checked(settings.y_axis_auto)
-                    .theme(theme.to_toggle_theme())
-                    .on_change({
-                        let view = view.clone();
-                        move |checked, _window, cx| {
-                            view.update(cx, |this, cx| {
-                                this.state.update(cx, |state, _| {
-                                    state
+                    }
+                })
+                .on_change({
+                    let view = view.clone();
+                    move |value, _window, cx| {
+                        view.update(cx, |this, cx| {
+                            this.state.update(cx, |state, _| {
+                                if let Ok(octaves) = value.as_ref().parse::<f64>() {
+                                    let settings = state
                                         .app
                                         .measurement_state
                                         .room_eq_state
                                         .review_graph_settings
-                                        .get_mut(graph_id)
-                                        .y_axis_auto = checked;
-                                });
-                                cx.notify();
+                                        .get_mut(graph_id);
+                                    settings.smoothing_octaves = octaves;
+                                    settings.smoothing_open = false;
+                                }
                             });
-                        }
-                    }),
-                ),
-        )
-        .when(allow_trend_controls, |controls| {
-            controls
-                .child(
-                    HStack::new()
-                        .spacing(StackSpacing::Xs)
-                        .child(
-                            Text::new(text.trend)
-                                .size(TextSize::Xs)
-                                .color(theme.text_secondary),
-                        )
-                        .child(
-                            Toggle::new(SharedString::from(format!(
-                                "room-eq-review-trend-{graph_id:?}"
-                            )))
-                            .checked(settings.show_trend)
-                            .theme(theme.to_toggle_theme())
-                            .on_change({
-                                let view = view.clone();
-                                move |checked, _window, cx| {
-                                    view.update(cx, |this, cx| {
-                                        this.state.update(cx, |state, _| {
-                                            state
-                                                .app
-                                                .measurement_state
-                                                .room_eq_state
-                                                .review_graph_settings
-                                                .get_mut(graph_id)
-                                                .show_trend = checked;
-                                        });
-                                        cx.notify();
+                            cx.notify();
+                        });
+                    }
+                }),
+            )
+            .child(
+                HStack::new()
+                    .spacing(StackSpacing::Xs)
+                    .child(
+                        Text::new(text.auto)
+                            .size(TextSize::Xs)
+                            .color(theme.text_secondary),
+                    )
+                    .child(
+                        Toggle::new(SharedString::from(format!(
+                            "room-eq-review-auto-{graph_id:?}"
+                        )))
+                        .checked(settings.y_axis_auto)
+                        .theme(theme.to_toggle_theme())
+                        .on_change({
+                            let view = view.clone();
+                            move |checked, _window, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.state.update(cx, |state, _| {
+                                        state
+                                            .app
+                                            .measurement_state
+                                            .room_eq_state
+                                            .review_graph_settings
+                                            .get_mut(graph_id)
+                                            .y_axis_auto = checked;
                                     });
-                                }
-                            }),
-                        ),
-                )
-                .child(
-                    HStack::new()
-                        .spacing(StackSpacing::Xs)
-                        .child(
-                            Text::new(text.normalize)
-                                .size(TextSize::Xs)
-                                .color(theme.text_secondary),
-                        )
-                        .child(
-                            Toggle::new(SharedString::from(format!(
-                                "room-eq-review-normalize-{graph_id:?}"
-                            )))
-                            .checked(settings.normalize_to_trend)
-                            .theme(theme.to_toggle_theme())
-                            .on_change({
-                                let view = view.clone();
-                                move |checked, _window, cx| {
-                                    view.update(cx, |this, cx| {
-                                        this.state.update(cx, |state, _| {
-                                            state
-                                                .app
-                                                .measurement_state
-                                                .room_eq_state
-                                                .review_graph_settings
-                                                .get_mut(graph_id)
-                                                .normalize_to_trend = checked;
+                                    cx.notify();
+                                });
+                            }
+                        }),
+                    ),
+            )
+            .when(allow_trend_controls, |controls| {
+                controls
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Xs)
+                            .child(
+                                Text::new(text.trend)
+                                    .size(TextSize::Xs)
+                                    .color(theme.text_secondary),
+                            )
+                            .child(
+                                Toggle::new(SharedString::from(format!(
+                                    "room-eq-review-trend-{graph_id:?}"
+                                )))
+                                .checked(settings.show_trend)
+                                .theme(theme.to_toggle_theme())
+                                .on_change({
+                                    let view = view.clone();
+                                    move |checked, _window, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.state.update(cx, |state, _| {
+                                                state
+                                                    .app
+                                                    .measurement_state
+                                                    .room_eq_state
+                                                    .review_graph_settings
+                                                    .get_mut(graph_id)
+                                                    .show_trend = checked;
+                                            });
+                                            cx.notify();
                                         });
-                                        cx.notify();
-                                    });
-                                }
-                            }),
-                        ),
-                )
-        })
-        .into_any_element()
+                                    }
+                                }),
+                            ),
+                    )
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Xs)
+                            .child(
+                                Text::new(text.normalize)
+                                    .size(TextSize::Xs)
+                                    .color(theme.text_secondary),
+                            )
+                            .child(
+                                Toggle::new(SharedString::from(format!(
+                                    "room-eq-review-normalize-{graph_id:?}"
+                                )))
+                                .checked(settings.normalize_to_trend)
+                                .theme(theme.to_toggle_theme())
+                                .on_change({
+                                    let view = view.clone();
+                                    move |checked, _window, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.state.update(cx, |state, _| {
+                                                state
+                                                    .app
+                                                    .measurement_state
+                                                    .room_eq_state
+                                                    .review_graph_settings
+                                                    .get_mut(graph_id)
+                                                    .normalize_to_trend = checked;
+                                            });
+                                            cx.notify();
+                                        });
+                                    }
+                                }),
+                            ),
+                    )
+            }),
+        match graph_id {
+            RoomEqReviewGraphId::OverviewOriginal => "roomeq.review.overview-original.controls",
+            RoomEqReviewGraphId::OverviewEq => "roomeq.review.overview-eq.controls",
+            RoomEqReviewGraphId::OverviewCorrected => {
+                "roomeq.review.overview-corrected.controls"
+            }
+            RoomEqReviewGraphId::ChannelFull => "roomeq.review.channel-full.controls",
+            RoomEqReviewGraphId::ChannelZoom => "roomeq.review.channel-zoom.controls",
+            RoomEqReviewGraphId::ChannelEq => "roomeq.review.channel-eq.controls",
+        }
+    )
+    .into_any_element()
 }
 
 /// Render a per-channel "FIR Temporal Masking" summary card.

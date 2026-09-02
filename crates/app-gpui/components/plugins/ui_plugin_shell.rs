@@ -223,6 +223,10 @@ pub fn render_plugin_shell(
         .min_w_0()
         .flex()
         .flex_col()
+        // The rack detail pane owns vertical scrolling. Preserve the shell's
+        // intrinsic content height so long custom editors contribute a real
+        // scroll extent instead of shrinking while descendants overflow.
+        .flex_shrink_0()
         .rounded(d.r_xl)
         .bg(theme.background_secondary)
         .border_1()
@@ -272,9 +276,6 @@ pub fn render_plugin_shell(
                                     div()
                                         .text_size(d.text_xs)
                                         .text_color(theme.text_muted)
-                                        .overflow_hidden()
-                                        .text_ellipsis()
-                                        .whitespace_nowrap()
                                         .child(description),
                                 ),
                         ),

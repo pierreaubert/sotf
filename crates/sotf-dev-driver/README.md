@@ -107,6 +107,39 @@ population = 24
 start = true
 ```
 
+## Fuzzing
+
+`fuzz` runs the seeded, state-aware all-app fuzzer against a target with the
+`dev-api` feature. Every run launches its own target process into an isolated
+artifact directory under `--artifacts` (default `target/sotf-fuzz/<target>-<run-id>/`),
+records a full action trace (`trace.ndjson`), a replay recipe (`replay.toml`),
+snapshots, and CI reports (`summary.json`, `junit.xml`, `summary.html`) — also
+for runs where the target dies during startup.
+
+```bash
+cargo run -p sotf-dev-driver -- fuzz --target desktop-gpui --seed 1 --steps 1000
+```
+
+Targets: `desktop-gpui`, `tui`, `headless-server`, `systemwide-daemon`,
+`player-cli`, `recorder-cli`, plus `configbar` / `ios-sim` / `tvos-sim`
+(reported as structured skips when the required feature or platform is
+missing). `--url http://127.0.0.1:PORT` drives an already-running dev API
+instead of launching; pass the run ID it was launched with via `--run-id`
+(requires `--url`). Destructive capabilities stay opt-in:
+`--allow-hardware-audio`, `--allow-network`, `--allow-external-plugins`,
+`--allow-hal-install`, `--allow-physical-device`.
+
+A failing run can be reproduced and reduced:
+
+```bash
+cargo run -p sotf-dev-driver -- replay  target/sotf-fuzz/<run>/replay.toml
+cargo run -p sotf-dev-driver -- minimize target/sotf-fuzz/<run>/replay.toml
+```
+
+`replay` executes the exact resolved actions; `minimize` delta-minimizes the
+trace while the same failure signature still reproduces, and refuses traces
+that did not fail.
+
 ## CLI integration tests
 
 The CLI binaries (`player-cli` and `sotf-recorder-cli`) are tested via
@@ -165,6 +198,7 @@ involvement, prefer a unit test in the implicated crate over a `.scn`.
 | `assert_focused` | Require that an accessibility element ID owns keyboard focus. |
 | `wait_until` | Poll a property until it matches; with optional `timeout=`.  |
 | `wait_idle`  | Wait for rendered selectors to remain stable; optional timeout duration. |
+| `timing_start` / `timing_end` | Record a named wall-clock span; optional `timing_end name max=500ms` fails the scenario above the budget and publishes the limit in JSON/HTML. |
 | `sleep`      | Real-time wait (escape hatch).                               |
 | `focus`      | Sugar: `focus library` → `action SwitchToLibrary`.           |
 | `key`        | Synthetic keystroke (`gpui::Keystroke::parse` syntax).        |
@@ -273,6 +307,6 @@ All seven phases of the original plan are wired:
 - Query allow-list (`crates/app-gpui/app/dev_api/queries.rs`).
 - Synthetic keystrokes via `Window::dispatch_keystroke`.
 - ElementId registry + click synthesis via `Window::dispatch_event`.
-- Line-based DSL with `action / query / assert / assert_snapshot / assert_accessible / assert_inaccessible / wait_until / wait_idle / sleep /
+- Line-based DSL with `action / query / assert / assert_snapshot / assert_accessible / assert_inaccessible / wait_until / wait_idle / timing_start / timing_end / sleep /
   focus / key / type / click / hover / drag / scroll / resize / screenshot / elements /
   accessibility`.

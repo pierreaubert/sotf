@@ -5,6 +5,52 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
+/// Why an interactively selected library directory cannot be used.
+///
+/// Keeping this structured lets each application localize the diagnosis while
+/// the filesystem policy remains in the shared player crate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LibraryDirectoryAccessError {
+    NotFound(PathBuf),
+    NotDirectory(PathBuf),
+    PermissionDenied(PathBuf),
+    Unreadable { path: PathBuf, reason: String },
+}
+
+impl LibraryDirectoryAccessError {
+    pub fn path(&self) -> &std::path::Path {
+        match self {
+            Self::NotFound(path)
+            | Self::NotDirectory(path)
+            | Self::PermissionDenied(path)
+            | Self::Unreadable { path, .. } => path,
+        }
+    }
+}
+
+impl std::fmt::Display for LibraryDirectoryAccessError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound(path) => write!(formatter, "Folder does not exist: {}", path.display()),
+            Self::NotDirectory(path) => {
+                write!(formatter, "Path is not a folder: {}", path.display())
+            }
+            Self::PermissionDenied(path) => write!(
+                formatter,
+                "Permission denied while reading folder: {}",
+                path.display()
+            ),
+            Self::Unreadable { path, reason } => write!(
+                formatter,
+                "Could not read folder {}: {reason}",
+                path.display()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for LibraryDirectoryAccessError {}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DirectoryInfo {
     pub path: PathBuf,

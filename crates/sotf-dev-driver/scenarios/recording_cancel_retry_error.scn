@@ -26,6 +26,17 @@ assert      recording.error_count == 2
 assert      recording.status_severity == "Error"
 screenshot  recording-capture-error
 
+# Presentation severity must remain typed while translated display text
+# changes. This guards against the former English-substring color heuristic.
+action      CycleLanguage
+assert      settings.language == "French"
+assert      recording.status_severity == "Error"
+screenshot  recording-capture-error-french
+action      CycleLanguage
+assert      settings.language == "German"
+assert      recording.status_severity == "Error"
+screenshot  recording-capture-error-german
+
 # Leave the failed take, then return and retry with the same production action.
 assert_visible recording.back
 click       recording.back

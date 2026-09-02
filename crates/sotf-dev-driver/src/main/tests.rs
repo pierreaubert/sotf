@@ -1,3 +1,4 @@
+use super::ctx::scenario_line_for_diagnostics;
 use super::misc::DEFAULT_DEV_API_URL;
 use super::misc::expand_env_vars_with;
 use super::misc::focus_action_name;
@@ -11,7 +12,6 @@ use super::verb::accessibility_node_matches;
 use super::verb::mean_pixel_delta;
 use super::verb::parse_resize_dimensions;
 use super::verb::parse_typed_text;
-use super::verb::typed_keystroke;
 use super::verb::write_snapshot_artifacts;
 use serde_json::Value;
 use std::time::Duration;
@@ -55,15 +55,6 @@ fn duration_suffixes() {
 }
 
 #[test]
-fn typed_text_uses_the_platform_key_names_for_whitespace() {
-    assert_eq!(typed_keystroke('a'), "a");
-    assert_eq!(typed_keystroke('É'), "É");
-    assert_eq!(typed_keystroke(' '), "space");
-    assert_eq!(typed_keystroke('\t'), "tab");
-    assert_eq!(typed_keystroke('\n'), "enter");
-}
-
-#[test]
 fn typed_text_accepts_json_quoted_values_and_plain_text() {
     assert_eq!(parse_typed_text("plain text").unwrap(), "plain text");
     assert_eq!(
@@ -72,6 +63,18 @@ fn typed_text_accepts_json_quoted_values_and_plain_text() {
     );
     assert!(parse_typed_text("").is_err());
     assert!(parse_typed_text(r#""unterminated"#).is_err());
+}
+
+#[test]
+fn secret_typing_is_redacted_from_verbose_and_error_diagnostics() {
+    assert_eq!(
+        scenario_line_for_diagnostics(r#"type_secret "do-not-log-me""#),
+        "type_secret [REDACTED]"
+    );
+    assert_eq!(
+        scenario_line_for_diagnostics(r#"type "ordinary text""#),
+        r#"type "ordinary text""#
+    );
 }
 
 #[test]

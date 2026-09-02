@@ -2,6 +2,7 @@ use std::collections::{BTreeSet, VecDeque};
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::json;
@@ -11,13 +12,14 @@ use uuid::Uuid;
 
 use super::artifact::{ArtifactError, ArtifactStore, Redactor};
 use super::failure::{
-    HangEvidence, ProbeResult, RetainedCountGrowth, classify_hang, classify_memory_growth,
-    classify_retained_count_growth, normalize_signature,
+    HangEvidence, MEMORY_WARMUP_SAMPLES, ProbeResult, RetainedCountGrowth, classify_hang,
+    classify_memory_growth, classify_retained_count_growth, normalize_signature,
+    observation_failures,
 };
 use super::generator::{GENERATOR_VERSION, Generator, GeneratorError, derive_worker_seed};
 use super::manifest::{ManifestError, SurfaceManifest, intersect_capabilities};
 use super::model::{
-    Action, ActionClass, FUZZ_SCHEMA_VERSION, Failure, FailureClass, FailureSignature, Observation,
+    Action, FUZZ_SCHEMA_VERSION, Failure, FailureClass, FailureSignature, Observation,
     ProcessObservation, ReplayConfig, StructuredSkip, TargetId, TargetSpec, TraceEvent,
 };
 use super::report::{ReportError, RunSummary, write_reports};
@@ -35,6 +37,9 @@ pub struct FuzzConfig {
     pub artifact_root: PathBuf,
     pub durable_trace: bool,
     pub opt_ins: BTreeSet<String>,
+    /// Operator-supplied run ID, valid only with `--url` against an external
+    /// target that was already launched with this ID. `None` mints a fresh ID.
+    pub run_id: Option<String>,
 }
 
 impl FuzzConfig {
@@ -85,7 +90,10 @@ pub fn run_fuzz<T: FuzzTarget + ?Sized>(
         });
     }
     manifest.validate()?;
-    let raw_run_id = Uuid::new_v4().simple().to_string();
+    let raw_run_id = config
+        .run_id
+        .clone()
+        .unwrap_or_else(|| Uuid::new_v4().simple().to_string());
     let run_id = RunId::parse(raw_run_id.clone())?;
     let directory_name = format!("{}-{raw_run_id}", config.target);
     let store = ArtifactStore::create(&config.artifact_root, &directory_name)?;
@@ -132,9 +140,21 @@ pub fn run_fuzz<T: FuzzTarget + ?Sized>(
                 summary,
             });
         }
-        Err(error) => return Err(error.into()),
+        // A target that fails to launch (or dies during startup) is still a
+        // classified run: CI needs the same reports as any other outcome.
+        // Shut down any half-launched process so it does not leak.
+        Err(error) => {
+            let _ = target.shutdown();
+            return startup_failure(config, &store, &run_id, &started, error);
+        }
     };
-    let capabilities = target.capabilities()?;
+    let capabilities = match target.capabilities() {
+        Ok(capabilities) => capabilities,
+        Err(error) => {
+            let _ = target.shutdown();
+            return startup_failure(config, &store, &run_id, &started, error);
+        }
+    };
     target_spec.capability_fingerprint = capabilities.fingerprint()?;
     target_spec.run_id_hash = run_id.redacted_hash();
     fs::write(
@@ -196,7 +216,16 @@ pub fn run_fuzz<T: FuzzTarget + ?Sized>(
         }))?,
     )?;
     let mut generator = Generator::new(config.worker_seed());
-    let mut snapshot = target.snapshot()?;
+    let mut snapshot = match target.snapshot() {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            let _ = target.shutdown();
+            return startup_failure(config, &store, &run_id, &started, error);
+        }
+    };
+    // Pin the first snapshot outside the bounded ring so ring eviction can
+    // never drop it; the failure/final window is the ring itself.
+    let first_snapshot = snapshot.clone();
     let mut snapshots = VecDeque::with_capacity(32);
     snapshots.push_back(snapshot.clone());
     let mut resource_sampler: Box<dyn ResourceSampler> = match target.pid() {
@@ -326,7 +355,7 @@ pub fn run_fuzz<T: FuzzTarget + ?Sized>(
         }
     }
 
-    if let Some(memory) = classify_memory_growth(&samples)
+    if let Some(memory) = classify_memory_growth(&samples, MEMORY_WARMUP_SAMPLES)
         && memory.suspected
     {
         fs::write(
@@ -337,6 +366,8 @@ pub fn run_fuzz<T: FuzzTarget + ?Sized>(
                 "final_bytes": memory.final_bytes,
                 "retained_growth_bytes": memory.retained_growth_bytes,
                 "retained_threshold_bytes": memory.retained_threshold_bytes,
+                "warmup_samples": MEMORY_WARMUP_SAMPLES,
+                "total_samples": samples.len(),
             }))?,
         )?;
         failures.push(make_failure(
@@ -390,12 +421,20 @@ pub fn run_fuzz<T: FuzzTarget + ?Sized>(
             ));
         }
     }
+    fs::write(
+        store.path("snapshots/first.json")?,
+        serde_json::to_vec_pretty(&first_snapshot)?,
+    )?;
     for (index, snapshot) in snapshots.iter().enumerate() {
         fs::write(
             store.path(format!("snapshots/recent-{index:02}.json"))?,
             serde_json::to_vec_pretty(snapshot)?,
         )?;
     }
+    fs::write(
+        store.path("snapshots/final.json")?,
+        serde_json::to_vec_pretty(&snapshot)?,
+    )?;
     fs::write(
         store.path("coverage.json")?,
         serde_json::to_vec_pretty(&json!({
@@ -432,6 +471,22 @@ pub fn run_fuzz<T: FuzzTarget + ?Sized>(
         },
         steps: completed_steps,
     })?;
+    // run.json keeps the unredacted normalized failure signatures (run-local,
+    // run-dir-redacted) so replay/minimize compare like-for-like; summary.json
+    // remains the redacted, portable report.
+    let run_json_path = store.path("run.json")?;
+    let mut run_metadata: serde_json::Value = serde_json::from_slice(&fs::read(&run_json_path)?)?;
+    let run_failures: Vec<Failure> = failures
+        .iter()
+        .map(|failure| {
+            let mut failure = failure.clone();
+            failure.signature.normalized =
+                normalize_signature(&failure.signature.normalized, store.run_dir().to_str());
+            failure
+        })
+        .collect();
+    run_metadata["failures"] = serde_json::to_value(&run_failures)?;
+    fs::write(&run_json_path, serde_json::to_vec_pretty(&run_metadata)?)?;
     let summary = RunSummary {
         schema_version: FUZZ_SCHEMA_VERSION,
         target: config.target,
@@ -524,55 +579,14 @@ fn collect_observation_failures(
     observation: &Observation,
     failures: &mut Vec<Failure>,
 ) {
-    if !observation.process.alive {
+    for observed in observation_failures(action, observation) {
         failures.push(make_failure(
             target,
             build_id,
-            FailureClass::UnexpectedExit,
+            observed.class,
             action.sequence,
-            "process exited unexpectedly",
-            vec![],
-        ));
-    }
-    if let Some(signal) = &observation.process.signal_or_exception {
-        failures.push(make_failure(
-            target,
-            build_id,
-            FailureClass::SignalOrException,
-            action.sequence,
-            signal,
-            vec![signal.clone()],
-        ));
-    }
-    if action.class == ActionClass::StateValid
-        && action.precondition_satisfied
-        && observation.reply.as_ref().is_some_and(|reply| !reply.ok)
-    {
-        failures.push(make_failure(
-            target,
-            build_id,
-            FailureClass::ValidActionRejection,
-            action.sequence,
-            &action.id,
-            observation
-                .reply
-                .as_ref()
-                .and_then(|reply| reply.error.clone())
-                .into_iter()
-                .collect(),
-        ));
-    }
-    if let Some(line) = observation.new_logs.iter().find(|line| {
-        let lower = line.to_ascii_lowercase();
-        lower.contains("panic") || lower.contains("error")
-    }) {
-        failures.push(make_failure(
-            target,
-            build_id,
-            FailureClass::PanicOrErrorLog,
-            action.sequence,
-            line,
-            vec![line.clone()],
+            &observed.signature,
+            observed.evidence,
         ));
     }
     if let Some(candidate) = &observation.failure_candidate {
@@ -628,7 +642,12 @@ fn check_revisions_and_invariants<T: FuzzTarget + ?Sized>(
     Ok(())
 }
 
-fn classify_timeout<T: FuzzTarget + ?Sized>(
+/// Probe cadence between hang confirmation rounds (design: one-second probe
+/// cadence, two-second probe timeout, three consecutive misses).
+const PROBE_CADENCE: Duration = Duration::from_secs(1);
+const PROBE_ROUNDS: u8 = 3;
+
+pub(crate) fn classify_timeout<T: FuzzTarget + ?Sized>(
     target: &mut T,
     store: &ArtifactStore,
     action: &Action,
@@ -637,8 +656,12 @@ fn classify_timeout<T: FuzzTarget + ?Sized>(
 ) -> Result<Failure, SupervisorError> {
     let mut live_result = ProbeResult::TimedOut;
     let mut snapshot_result = ProbeResult::TimedOut;
-    let mut misses = 0;
-    for _ in 0..3 {
+    let mut consecutive_misses = 0_u8;
+    let mut exited = false;
+    for round in 0..PROBE_ROUNDS {
+        if round > 0 {
+            thread::sleep(PROBE_CADENCE);
+        }
         live_result = match target.live() {
             Ok(true) => ProbeResult::Responsive,
             Ok(false) | Err(TargetError::Timeout(_)) => ProbeResult::TimedOut,
@@ -650,20 +673,34 @@ fn classify_timeout<T: FuzzTarget + ?Sized>(
             Err(TargetError::ProcessExited(_)) => ProbeResult::ProcessExited,
             Err(_) => ProbeResult::TimedOut,
         };
+        // Exit precedence: once the process is known dead, classify the exit
+        // instead of a stall/hang and stop probing.
+        if matches!(live_result, ProbeResult::ProcessExited)
+            || matches!(snapshot_result, ProbeResult::ProcessExited)
+        {
+            exited = true;
+            break;
+        }
         if matches!(live_result, ProbeResult::TimedOut)
             || matches!(snapshot_result, ProbeResult::TimedOut)
         {
-            misses += 1;
+            consecutive_misses += 1;
+        } else {
+            consecutive_misses = 0;
         }
     }
-    let class = classify_hang(HangEvidence {
-        action_timed_out: true,
-        live: live_result,
-        snapshot: snapshot_result,
-        consecutive_misses: misses,
-        process_progressed: false,
-    })
-    .unwrap_or(FailureClass::CommandTimeout);
+    let class = if exited {
+        FailureClass::UnexpectedExit
+    } else {
+        classify_hang(HangEvidence {
+            action_timed_out: true,
+            live: live_result,
+            snapshot: snapshot_result,
+            consecutive_misses,
+            process_progressed: process_progressed(target.pid()),
+        })
+        .unwrap_or(FailureClass::CommandTimeout)
+    };
     let paths = target.capture_hang(&store.path("hang")?)?;
     Ok(Failure {
         schema_version: FUZZ_SCHEMA_VERSION,
@@ -678,6 +715,84 @@ fn classify_timeout<T: FuzzTarget + ?Sized>(
         build_id: spec.build_id.clone(),
         confirmations: 1,
         artifacts: paths,
+    })
+}
+
+/// Cheap v1 progress signal: the OS still reports the pid as running. A dead
+/// pid means the probes raced a process exit, so the timeout is an exit, not
+/// a whole-process hang. CPU/state-delta progress tracking is future work.
+fn process_progressed(pid: Option<u32>) -> bool {
+    let Some(pid) = pid else {
+        return false;
+    };
+    let pid = sysinfo::Pid::from_u32(pid);
+    let mut system = sysinfo::System::new();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]));
+    system.process(pid).is_some()
+}
+
+/// A target that failed during launch, capabilities negotiation, or the
+/// initial snapshot still produces the full artifact set (run.json,
+/// summary.json, junit.xml, summary.html) so CI sees a classified failure
+/// instead of a missing report.
+fn startup_failure(
+    config: &FuzzConfig,
+    store: &ArtifactStore,
+    run_id: &RunId,
+    started: &Instant,
+    error: TargetError,
+) -> Result<FuzzRunResult, SupervisorError> {
+    let class = match &error {
+        TargetError::Timeout(_) => FailureClass::CommandTimeout,
+        _ => FailureClass::UnexpectedExit,
+    };
+    let failure = make_failure(
+        config.target,
+        "unknown",
+        class,
+        0,
+        "startup",
+        vec![error.to_string()],
+    );
+    // run.json may not exist yet (it is first written after capabilities
+    // negotiation), so write a fresh minimal one rather than read-modify.
+    // Mirror the run-dir-redacted normalization used by the main path.
+    let mut run_failure = failure.clone();
+    run_failure.signature.normalized =
+        normalize_signature(&run_failure.signature.normalized, store.run_dir().to_str());
+    fs::write(
+        store.path("run.json")?,
+        serde_json::to_vec_pretty(&json!({
+            "schema_version": FUZZ_SCHEMA_VERSION,
+            "target": {
+                "target": config.target,
+                "build_id": "unknown",
+            },
+            "seed": config.seed,
+            "worker": config.worker,
+            "worker_seed": config.worker_seed(),
+            "fixture_profile": config.fixture_profile,
+            "opt_ins": config.opt_ins,
+            "failures": [run_failure],
+        }))?,
+    )?;
+    let summary = RunSummary {
+        schema_version: FUZZ_SCHEMA_VERSION,
+        target: config.target,
+        seed: config.seed,
+        outcome: "failed".into(),
+        steps: 0,
+        duration_ms: started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+        failures: vec![failure],
+        skip: None,
+        coverage_keys: 0,
+        opt_ins: config.opt_ins.iter().cloned().collect(),
+    };
+    let summary = portable_summary(&summary, run_id)?;
+    write_reports(store.run_dir(), &summary)?;
+    Ok(FuzzRunResult {
+        run_dir: store.run_dir().to_owned(),
+        summary,
     })
 }
 
@@ -923,6 +1038,7 @@ mod tests {
             artifact_root: root.path().into(),
             durable_trace: false,
             opt_ins: BTreeSet::new(),
+            run_id: None,
         };
         let result = run_fuzz(
             &config,
@@ -988,6 +1104,7 @@ mod tests {
             artifact_root: root.path().into(),
             durable_trace: false,
             opt_ins: BTreeSet::new(),
+            run_id: None,
         };
 
         let result = run_fuzz(

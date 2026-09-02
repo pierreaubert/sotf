@@ -29,12 +29,28 @@ impl PlayerView {
     pub(crate) fn render_playlists_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let text = PlaylistTranslations::for_language(self.state.read(cx).app.ui_state.language);
-        let (theme, playlists, active_playlist, name, dialog, error, can_undo_delete, needs_load) = {
+        let (
+            theme,
+            playlists,
+            playlist_track_counts,
+            active_playlist,
+            name,
+            dialog,
+            error,
+            can_undo_delete,
+            needs_load,
+        ) = {
             let state = self.state.read(cx);
+            let controller = &state.app.playlist.controller;
+            let playlists = controller.playlists().to_vec();
+            let playlist_track_counts = (0..playlists.len())
+                .map(|index| controller.playlist_track_count(index))
+                .collect::<Vec<_>>();
             (
                 state.app.ui_state.theme.clone(),
-                state.app.playlist.controller.playlists().to_vec(),
-                state.app.playlist.controller.active_playlist().cloned(),
+                playlists,
+                playlist_track_counts,
+                controller.active_playlist().cloned(),
                 state.app.playlist.name_input.clone(),
                 state.app.playlist.dialog,
                 state.app.playlist.error.clone(),
@@ -138,7 +154,7 @@ impl PlayerView {
             let save_view = view.clone();
             let cancel_view = view.clone();
             result = result.child(
-                Card::new().content(
+                Card::new().style(|card| card.flex_none()).content(
                     VStack::new()
                         .spacing(StackSpacing::Sm)
                         .child(
@@ -202,7 +218,7 @@ impl PlayerView {
             let confirm_view = view.clone();
             let cancel_view = view.clone();
             result = result.child(
-                Card::new().content(
+                Card::new().style(|card| card.flex_none()).content(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
                         .child(Text::new(text.delete_confirmation).color(theme.error))
@@ -237,16 +253,18 @@ impl PlayerView {
         }
         if playlists.is_empty() {
             result = result.child(
-                Card::new().content(Text::new(text.empty_state).color(theme.text_secondary)),
+                Card::new()
+                    .style(|card| card.flex_none())
+                    .content(Text::new(text.empty_state).color(theme.text_secondary)),
             );
         }
         for (index, playlist) in playlists.into_iter().enumerate() {
             let open_view = view.clone();
             let rename_view = view.clone();
             let name = playlist.name;
-            let count = playlist.entries.len();
+            let count = playlist_track_counts.get(index).copied().unwrap_or(0);
             result = result.child(
-                Card::new().content(
+                Card::new().style(|card| card.flex_none()).content(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
                         .child(
@@ -302,8 +320,11 @@ impl PlayerView {
             let play_view = view.clone();
             let playlist_is_empty = playlist.entries.is_empty();
             result = result.child(
-                HStack::new()
-                    .spacing(StackSpacing::Sm)
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(d.gap)
                     .child(dev_track!(
                         Button::new(
                             "playlist-add-library-album",
@@ -362,34 +383,42 @@ impl PlayerView {
                         "playlist.play_active"
                     )),
             );
-            result = result.child(dev_track!(
-                Button::new("playlist-export-active", text.export_m3u8)
-                    .variant(ButtonVariant::Secondary)
-                    .size(ButtonSize::Sm)
-                    .theme(theme.to_button_theme())
-                    .on_click({
-                        let export_view = view.clone();
-                        move |_, cx| {
-                            export_view.update(cx, |this, cx| this.export_active_playlist(cx));
-                        }
-                    }),
-                "playlist.export_active"
-            ));
-            result = result.child(dev_track!(
-                Button::new("playlist-delete-active", text.delete_playlist)
-                    .variant(ButtonVariant::Ghost)
-                    .size(ButtonSize::Sm)
-                    .theme(theme.to_button_theme())
-                    .on_click(move |_, cx| {
-                        delete_view.update(cx, |this, cx| {
-                            this.state.update(cx, |state, _| {
-                                state.app.playlist.dialog = PlaylistDialog::ConfirmDelete;
-                            });
-                            cx.notify();
-                        });
-                    }),
-                "playlist.delete_active"
-            ));
+            result = result.child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(d.gap)
+                    .child(dev_track!(
+                        Button::new("playlist-export-active", text.export_m3u8)
+                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Sm)
+                            .theme(theme.to_button_theme())
+                            .on_click({
+                                let export_view = view.clone();
+                                move |_, cx| {
+                                    export_view
+                                        .update(cx, |this, cx| this.export_active_playlist(cx));
+                                }
+                            }),
+                        "playlist.export_active"
+                    ))
+                    .child(dev_track!(
+                        Button::new("playlist-delete-active", text.delete_playlist)
+                            .variant(ButtonVariant::Ghost)
+                            .size(ButtonSize::Sm)
+                            .theme(theme.to_button_theme())
+                            .on_click(move |_, cx| {
+                                delete_view.update(cx, |this, cx| {
+                                    this.state.update(cx, |state, _| {
+                                        state.app.playlist.dialog = PlaylistDialog::ConfirmDelete;
+                                    });
+                                    cx.notify();
+                                });
+                            }),
+                        "playlist.delete_active"
+                    )),
+            );
             result = result.child(Heading::h4(playlist.name));
             if playlist.entries.is_empty() {
                 result = result.child(
@@ -398,67 +427,82 @@ impl PlayerView {
                         .color(theme.text_secondary),
                 );
             }
+            let track_count = playlist.entries.len();
             for (index, entry) in playlist.entries.into_iter().enumerate() {
                 let up_view = view.clone();
                 let down_view = view.clone();
                 let remove_view = view.clone();
-                result = result.child(
-                    Card::new().content(
-                        HStack::new()
-                            .spacing(StackSpacing::Sm)
-                            .child(
-                                Text::new(format!("{}. {}", index + 1, entry.track_path.display()))
+                let track_label = entry
+                    .track_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| entry.track_path.display().to_string());
+                let row = Card::new().style(|card| card.flex_none()).content(
+                    HStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .child(dev_track!(
+                            div().flex_1().min_w_0().child(
+                                Text::new(format!("{}. {track_label}", index + 1))
                                     .size(TextSize::Xs)
                                     .color(theme.text_secondary),
-                            )
-                            .child(
-                                Button::new(
-                                    SharedString::from(format!("playlist-track-up-{index}")),
-                                    text.up,
-                                )
-                                .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::Xs)
-                                .theme(theme.to_button_theme())
-                                .disabled(index == 0)
-                                .on_click(move |_, cx| {
-                                    up_view.update(cx, |this, cx| {
-                                        this.move_playlist_track(index, true, cx)
-                                    });
-                                }),
-                            )
-                            .child(
-                                Button::new(
-                                    SharedString::from(format!("playlist-track-down-{index}")),
-                                    text.down,
-                                )
-                                .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::Xs)
-                                .theme(theme.to_button_theme())
-                                .on_click(move |_, cx| {
-                                    down_view.update(cx, |this, cx| {
-                                        this.move_playlist_track(index, false, cx)
-                                    });
-                                }),
-                            )
-                            .child(
-                                Button::new(
-                                    SharedString::from(format!("playlist-track-remove-{index}")),
-                                    text.remove,
-                                )
-                                .variant(ButtonVariant::Ghost)
-                                .size(ButtonSize::Xs)
-                                .theme(theme.to_button_theme())
-                                .on_click(move |_, cx| {
-                                    remove_view.update(cx, |this, cx| {
-                                        this.remove_playlist_track(index, cx)
-                                    });
-                                }),
                             ),
-                    ),
+                            format!("playlist.track.{index}")
+                        ))
+                        .child(dev_track!(
+                            Button::new(
+                                SharedString::from(format!("playlist-track-up-{index}")),
+                                text.up,
+                            )
+                            .aria_label(format!("{}: {track_label}", text.up))
+                            .variant(ButtonVariant::Ghost)
+                            .size(ButtonSize::Xs)
+                            .theme(theme.to_button_theme())
+                            .disabled(index == 0)
+                            .on_click(move |_, cx| {
+                                up_view.update(cx, |this, cx| {
+                                    this.move_playlist_track(index, true, cx)
+                                });
+                            }),
+                            format!("playlist.track_up.{index}")
+                        ))
+                        .child(dev_track!(
+                            Button::new(
+                                SharedString::from(format!("playlist-track-down-{index}")),
+                                text.down,
+                            )
+                            .aria_label(format!("{}: {track_label}", text.down))
+                            .variant(ButtonVariant::Ghost)
+                            .size(ButtonSize::Xs)
+                            .theme(theme.to_button_theme())
+                            .disabled(index + 1 >= track_count)
+                            .on_click(move |_, cx| {
+                                down_view.update(cx, |this, cx| {
+                                    this.move_playlist_track(index, false, cx)
+                                });
+                            }),
+                            format!("playlist.track_down.{index}")
+                        ))
+                        .child(dev_track!(
+                            Button::new(
+                                SharedString::from(format!("playlist-track-remove-{index}")),
+                                text.remove,
+                            )
+                            .aria_label(format!("{}: {track_label}", text.remove))
+                            .variant(ButtonVariant::Ghost)
+                            .size(ButtonSize::Xs)
+                            .theme(theme.to_button_theme())
+                            .on_click(move |_, cx| {
+                                remove_view
+                                    .update(cx, |this, cx| this.remove_playlist_track(index, cx));
+                            }),
+                            format!("playlist.track_remove.{index}")
+                        )),
                 );
+                result = result.child(row);
             }
         }
-        result
+        dev_track!(result, "playlist.content")
     }
 
     fn playlist_translations(&self, cx: &Context<Self>) -> PlaylistTranslations {
@@ -591,9 +635,12 @@ impl PlayerView {
                         deleted.description.as_deref(),
                     )?;
                     let index = app.playlist.controller.selected_playlist_index;
-                    app.playlist
-                        .controller
-                        .add_tracks_to_playlist(db, index, &deleted.track_paths)
+                    app.playlist.controller.add_tracks_to_playlist(
+                        db,
+                        index,
+                        &deleted.track_paths,
+                    )?;
+                    app.playlist.controller.open_playlist(db, index)
                 });
             match result {
                 Ok(()) => {
@@ -698,6 +745,11 @@ impl PlayerView {
 
     fn import_playlist(&mut self, cx: &mut Context<Self>) {
         let text = self.playlist_translations(cx);
+        #[cfg(feature = "dev-api")]
+        if let Some(path) = Self::qa_playlist_io_path() {
+            self.import_playlist_from_path(&path, text, cx);
+            return;
+        }
         cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
             let Some(file) = rfd::AsyncFileDialog::new()
                 .add_filter("M3U playlists", &["m3u", "m3u8"])
@@ -734,6 +786,11 @@ impl PlayerView {
 
     fn export_active_playlist(&mut self, cx: &mut Context<Self>) {
         let text = self.playlist_translations(cx);
+        #[cfg(feature = "dev-api")]
+        if let Some(path) = Self::qa_playlist_io_path() {
+            self.export_playlist_to_path(&path, text, cx);
+            return;
+        }
         let name = self
             .state
             .read(cx)
@@ -775,6 +832,65 @@ impl PlayerView {
             });
         })
         .detach();
+    }
+
+    #[cfg(feature = "dev-api")]
+    fn qa_playlist_io_path() -> Option<std::path::PathBuf> {
+        std::env::var_os("SOTF_QA_DIR")
+            .map(std::path::PathBuf::from)
+            .map(|dir| dir.join("playlist-export.m3u8"))
+    }
+
+    #[cfg(feature = "dev-api")]
+    fn import_playlist_from_path(
+        &mut self,
+        path: &std::path::Path,
+        text: PlaylistTranslations,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _| {
+            let app = &mut state.app;
+            let result = app
+                .library_state
+                .library
+                .get_database()
+                .ok_or_else(|| text.library_database_unavailable().to_string())
+                .and_then(|db| app.playlist.controller.import_playlist(db, path));
+            match result {
+                Ok(()) => {
+                    app.playlist.error = None;
+                    app.ui_state.toast_message =
+                        Some(crate::app::ToastMessage::success(text.imported()));
+                }
+                Err(error) => app.playlist.error = Some(error),
+            }
+        });
+        cx.notify();
+    }
+
+    #[cfg(feature = "dev-api")]
+    fn export_playlist_to_path(
+        &mut self,
+        path: &std::path::Path,
+        text: PlaylistTranslations,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _| {
+            let app = &mut state.app;
+            let result = app
+                .playlist
+                .controller
+                .export_playlist(&app.library_state.library, path);
+            match result {
+                Ok(()) => {
+                    app.playlist.error = None;
+                    app.ui_state.toast_message =
+                        Some(crate::app::ToastMessage::success(text.exported()));
+                }
+                Err(error) => app.playlist.error = Some(error),
+            }
+        });
+        cx.notify();
     }
 
     fn add_selected_library_album_to_playlist(&mut self, cx: &mut Context<Self>) {

@@ -13,7 +13,7 @@ use crate::app::types::{
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::components::plugins::level_meters::LevelMeterManager;
 use crate::i18n::{Language, Translations};
-use crate::keybindings::KeymapPreset;
+use crate::keybindings::{CustomKeybinding, KeybindingConflict, KeymapPreset};
 use crate::theme::{CommunityThemeId, Theme, ThemeAccentPreference, ThemeId};
 use gpui_themes::{
     AccessibilityPalette, CommunityThemeBundle, ThemeAppearance, ThemeModePreference,
@@ -148,6 +148,43 @@ pub struct SettingsState {
     /// per-field user action. This state is deliberately ephemeral.
     pub show_mpd_password: bool,
     pub show_manual_remote_token: bool,
+    /// Retained metadata-preference persistence failure.
+    pub metadata_error: Option<String>,
+    pub library: LibraryFolderSettingsState,
+    pub keybindings: KeybindingSettingsState,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct LibraryFolderSettingsState {
+    /// Access or path diagnosis from the most recent folder selection.
+    pub directory_error: Option<sotf_audio_player::LibraryDirectoryAccessError>,
+    /// Background scan failure retained until retry or a new successful scan.
+    pub scan_error: Option<String>,
+    /// Index awaiting explicit destructive confirmation.
+    pub pending_remove_index: Option<usize>,
+    /// Test seam for the native picker boundary; never exists in production
+    /// builds and is consumed by the next visible Add/Retry activation.
+    #[cfg(feature = "dev-api")]
+    pub qa_picker_result: Option<QaLibraryPickerResult>,
+}
+
+#[cfg(feature = "dev-api")]
+#[derive(Debug, Clone)]
+pub enum QaLibraryPickerResult {
+    Selected(PathBuf),
+    PermissionDenied(PathBuf),
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct KeybindingSettingsState {
+    /// Persisted custom shortcut overrides.
+    pub overrides: Vec<CustomKeybinding>,
+    /// Ephemeral editor state; discarded when the application restarts.
+    pub editing_action: Option<String>,
+    pub capturing: bool,
+    pub pending_key_spec: Option<String>,
+    pub conflict: Option<KeybindingConflict>,
+    pub confirm_reset_all: bool,
 }
 
 pub struct TutorialState {
@@ -324,6 +361,9 @@ impl App {
                 expanded_sections: vec!["library".to_string()],
                 show_mpd_password: false,
                 show_manual_remote_token: false,
+                metadata_error: None,
+                library: LibraryFolderSettingsState::default(),
+                keybindings: KeybindingSettingsState::default(),
             },
             tutorial: TutorialState {
                 completed: false,
@@ -1134,7 +1174,8 @@ impl App {
         self.ui_state.translations = Translations::for_language(config.language);
 
         // Restore keymap preset
-        self.ui_state.keymap_preset = config.keymap_preset;
+        self.ui_state.keymap_preset = config.keymap.preset;
+        self.settings.keybindings.overrides = config.keymap.custom_keybindings;
 
         // Restore font scale
         self.ui_state.font_scale = config.font_scale;
@@ -1337,7 +1378,10 @@ impl App {
             reduce_motion: self.ui_state.reduce_motion,
             density_mode: self.ui_state.density_mode,
             language: self.ui_state.language,
-            keymap_preset: self.ui_state.keymap_preset,
+            keymap: crate::config::KeymapConfig {
+                preset: self.ui_state.keymap_preset,
+                custom_keybindings: self.settings.keybindings.overrides.clone(),
+            },
             panel_layout: PanelLayout {
                 queue_ratio: layout.queue_panel_ratio,
                 meters_ratio: layout.meters_panel_ratio,

@@ -35,6 +35,42 @@ version = "fixture-v2"
 measurements = ["CEA2034"]
 
 [[scenario]]
+name = "spinorama-stale-request-retry"
+path = "crates/sotf-dev-driver/scenarios/spinorama_stale_retry.scn"
+timeout = "20s"
+tags = ["spinorama", "fixture", "ui", "offline", "race", "retry"]
+
+[scenario.spinorama_discovery]
+catalog = ["Fixture Speaker", "Fixture Speaker Two"]
+catalog_failure_message = "Newest Spinorama request failed"
+
+[[scenario.spinorama_discovery.catalog_requests]]
+delay_ms = 800
+fail = false
+
+[[scenario.spinorama_discovery.catalog_requests]]
+delay_ms = 75
+fail = true
+
+[[scenario.spinorama_discovery.catalog_requests]]
+delay_ms = 75
+fail = false
+
+[[scenario.spinorama_discovery.speakers]]
+speaker = "Fixture Speaker"
+
+[[scenario.spinorama_discovery.speakers.versions]]
+version = "fixture-v1"
+measurements = ["CEA2034"]
+
+[[scenario.spinorama_discovery.speakers]]
+speaker = "Fixture Speaker Two"
+
+[[scenario.spinorama_discovery.speakers.versions]]
+version = "fixture-v2"
+measurements = ["CEA2034"]
+
+[[scenario]]
 name = "spinorama-fixture-retry"
 path = "crates/sotf-dev-driver/scenarios/spinorama_retry_fixture.scn"
 timeout = "20s"

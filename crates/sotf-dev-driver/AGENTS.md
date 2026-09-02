@@ -4,7 +4,13 @@ Scenario driver for the SotF GPUI dev API. Reads line-based `.scn` scripts and t
 
 ## Architecture
 
-- `src/main.rs` — full driver: argument parsing, scenario parser, HTTP client, verb dispatcher.
+- `src/main.rs` + `src/main/` — CLI entry: argument parsing, scenario runner wiring.
+- `src/fuzz/` — seeded state-aware fuzzer: `supervisor.rs` (run loop, failure
+  classification), `generator.rs` (85/15 valid/invalid action mix),
+  `commands.rs` (`fuzz` / `replay` / `minimize` subcommands), `adapters/`
+  (dev_api, process, server, systemwide targets), `trace.rs`, `artifacts.rs`,
+  `report.rs` (summary.json + junit.xml + summary.html). Target surface
+  manifests live in `fuzz/*.toml`.
 
 ## Verbs
 
@@ -15,14 +21,17 @@ Scenario driver for the SotF GPUI dev API. Reads line-based `.scn` scripts and t
 | `assert`     | Compare a property to a literal; fail script on mismatch.    |
 | `assert_snapshot` | Compare a QA screenshot with a baseline PNG; write expected/actual/diff artifacts on mismatch. |
 | `assert_accessible` | Require a rendered accessibility role/name pair.         |
+| `assert_accessible_masked` | Require a named accessibility node to expose no clear-text value. |
 | `assert_inaccessible` | Require that a role/name pair is absent from the current rendered tree. |
 | `assert_focused` | Require that an accessibility element ID owns keyboard focus. |
 | `wait_until` | Poll a property until it matches; with optional `timeout=`.  |
 | `wait_idle`  | Wait for rendered selectors to remain stable; optional timeout duration. |
+| `timing_start` / `timing_end` | Record a named wall-clock span; `timing_end name max=500ms` enforces a CI budget and reports it in JSON/HTML. |
 | `sleep`      | Real-time wait (escape hatch).                               |
 | `focus`      | Sugar: `focus library` → `action SwitchToLibrary`.           |
 | `key`        | Synthetic keystroke (`gpui::Keystroke::parse` syntax).       |
 | `type`       | Type text through the focused control using real key events; quote as JSON for escapes. |
+| `type_secret` | Type through the same path while redacting the payload from verbose/error diagnostics. |
 | `click`      | Click a `dev_track`-registered element by selector.          |
 | `hover`      | Move the pointer over a tracked selector.                     |
 | `drag`       | Drag from one tracked selector to another.                    |
@@ -51,6 +60,7 @@ cargo test -p sotf-dev-driver
 - Scenarios live under `scenarios/`, one per main user-facing screen.
 - See `crates/app-gpui/app/dev_api/queries.rs` for the available query path allow-list.
 - Click selectors must be wrapped with `dev_track(...)` in the GPUI builder chain to be addressable.
+- Fuzzer: `sotf-dev-driver fuzz --target <id> --seed <n>` (see README "Fuzzing"). Every run — including startup failures — writes `summary.json`/`junit.xml`/`trace.ndjson`/`replay.toml` under `target/sotf-fuzz/`; destructive capabilities require explicit `--allow-*` opt-ins.
 
 ## Regression-scenario convention
 

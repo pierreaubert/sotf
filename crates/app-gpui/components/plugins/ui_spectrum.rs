@@ -7,8 +7,7 @@ use std::sync::Arc;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_audio_kit::{
-    SpectrumAxisTheme, SpectrumColors, SpectrumElement, render_spectrum_db_axis,
-    render_spectrum_frequency_axis,
+    SpectrumAxisTheme, SpectrumColors, SpectrumElement, render_spectrum_frequency_axis,
 };
 use gpui_ui_kit::{Select, SelectOption, SelectSize, Toggle, ToggleStyle};
 use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
@@ -57,9 +56,42 @@ fn spectrum_axis_theme(d: &Ds, theme: &Theme) -> SpectrumAxisTheme {
     SpectrumAxisTheme {
         text_color: theme.text_muted,
         text_size: d.text_xs,
+        // The toolkit default is sized for 100% text. This app's combined
+        // responsive and user scaling can reach 250%, so reserve enough room
+        // for a signed two-digit dB label and rem-based padding.
+        db_axis_width: 64.0,
         db_axis_padding_right: d.grid,
         ..Default::default()
     }
+}
+
+/// Render the app's zoom-safe dB scale.
+///
+/// The reusable toolkit scale includes both +3 dB and 0 dB at normalized
+/// positions 0.000 and 0.029. Those labels are only a few pixels apart and
+/// inevitably overlap once accessible text scaling is applied. Keep the true
+/// +3 dB ceiling and the evenly spaced -20 dB ticks; the graph itself still
+/// maps 0 dB at its exact value.
+fn render_spectrum_db_axis(theme: SpectrumAxisTheme) -> impl IntoElement {
+    const LABELS: [(&str, f32); 4] = [("+3", 0.0), ("-20", 0.223), ("-40", 0.417), ("-60", 0.612)];
+
+    div()
+        .w(px(theme.db_axis_width))
+        .h_full()
+        .flex()
+        .flex_col()
+        .relative()
+        .children(LABELS.into_iter().map(move |(label, position)| {
+            div()
+                .absolute()
+                .top(relative(position))
+                .right_0()
+                .pr(theme.db_axis_padding_right)
+                .text_size(theme.text_size)
+                .text_color(theme.text_color)
+                .whitespace_nowrap()
+                .child(div().mt(px(theme.db_label_offset_y)).child(label))
+        }))
 }
 
 fn spectrum_db_axis_spacer(d: &Ds, theme: &Theme) -> impl IntoElement {

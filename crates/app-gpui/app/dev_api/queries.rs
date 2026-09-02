@@ -12,9 +12,21 @@ use serde_json::{Value, json};
 use crate::app::state::AppState;
 use crate::ui::PlayerView;
 
+use super::performance;
+
 pub fn resolve(path: &str, window: AnyWindowHandle, cx: &mut App) -> Result<Value> {
     window
-        .update(cx, |any_view, _window, cx| {
+        .update(cx, |any_view, window, cx| {
+            let viewport = window.viewport_size();
+            if path == "window.width" {
+                return Ok(json!(f32::from(viewport.width)));
+            }
+            if path == "window.height" {
+                return Ok(json!(f32::from(viewport.height)));
+            }
+            if path.starts_with("performance.") {
+                return performance::resolve(path);
+            }
             let entity = any_view
                 .downcast::<PlayerView>()
                 .map_err(|_| anyhow!("root view is not PlayerView"))?;
@@ -31,9 +43,40 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "playback.volume" => json!(app.playback.volume),
         "playback.is_playing" => json!(app.playback.is_playing),
         "playback.muted" => json!(app.playback.muted),
+        "playback.position_secs" => json!(app.playback.position_secs),
+        "playback.duration_secs" => json!(app.playback.display_duration_secs()),
+        "playback.current_title" => json!(
+            app.playback
+                .current_queue_index
+                .and_then(|queue_index| app.queue_state.get(queue_index))
+                .map(|item| {
+                    item.current_track()
+                        .and_then(|track| track.title.clone())
+                        .unwrap_or_else(|| item.album.title.clone())
+                })
+        ),
+        "playback.current_track_index" => json!(
+            app.playback
+                .current_queue_index
+                .and_then(|queue_index| app.queue_state.get(queue_index))
+                .map(|item| item.current_track_index)
+        ),
+        "meters.has_data" => json!(app.playback.loudness_info.is_some()),
+        "meters.channel_count" => json!(
+            app.playback
+                .loudness_info
+                .as_ref()
+                .map(|data| data.channel_peaks.len())
+                .unwrap_or(0)
+        ),
+        "meters.group_count" => json!(app.level_meters.groups.len()),
+        "meters.selected_group" => json!(app.level_meters.selected_group),
         "playback.shuffle" => json!(app.ui_state.phone_shuffle_enabled),
         "playback.repeat" => json!(app.ui_state.phone_repeat_enabled),
-        "playback.seekable" => json!(app.playback.duration_secs > 0.0),
+        "playback.seekable" => json!(
+            app.playback.display_duration_secs().is_finite()
+                && app.playback.display_duration_secs() > 0.0
+        ),
         "spectrum.hold" => json!(app.ui_state.phone_spectrum_hold),
         "spectrum.smoothing" => json!(app.ui_state.phone_spectrum_smoothed),
         "spectrum.has_data" => json!(app.playback.spectrum_info.is_some()),
@@ -55,6 +98,92 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
             "{:?}",
             app.plugin_state.listening_test_state.surface
         )),
+        "listening.break_open" => json!(app.tutorial.listening_break_prompt_open),
+        "listening.break_interval" => json!(app.tutorial.listening_break_interval),
+        "listening.eq.has_session" => {
+            json!(app.plugin_state.listening_test_state.eq_session.is_some())
+        }
+        "listening.eq.answered" => json!(
+            app.plugin_state
+                .listening_test_state
+                .eq_session
+                .as_ref()
+                .is_some_and(sotf_audio_player::EqTrainingSession::current_is_answered)
+        ),
+        "listening.eq.selected_answer" => {
+            json!(app.plugin_state.listening_test_state.eq_selected_band)
+        }
+        "listening.eq.filtered" => json!(app.plugin_state.listening_test_state.eq_filtered),
+        "listening.eq.progress_sessions" => json!(
+            app.plugin_state
+                .listening_test_state
+                .eq_progress
+                .sessions
+                .len()
+        ),
+        "listening.paths_ready" => json!(
+            app.plugin_state.listening_test_state.path_a.is_some()
+                && app.plugin_state.listening_test_state.path_b.is_some()
+        ),
+        "listening.session_exists" => json!(
+            app.plugin_state
+                .listening_test_state
+                .ab_test
+                .session()
+                .is_some()
+        ),
+        "listening.session_ready" => json!(
+            app.plugin_state
+                .listening_test_state
+                .ab_test
+                .session()
+                .is_some_and(|session| session.setup.level_match.within_tolerance())
+        ),
+        "listening.pending_mode" => json!(
+            app.plugin_state
+                .listening_test_state
+                .ab_test
+                .session()
+                .and_then(|session| session.pending_mode())
+                .map(|mode| format!("{mode:?}"))
+        ),
+        "listening.completed_trials" => json!(
+            app.plugin_state
+                .listening_test_state
+                .ab_test
+                .view()
+                .completed_trials
+        ),
+        "listening.abx_correct" => json!(
+            app.plugin_state
+                .listening_test_state
+                .ab_test
+                .view()
+                .abx_score
+                .0
+        ),
+        "listening.abx_total" => json!(
+            app.plugin_state
+                .listening_test_state
+                .ab_test
+                .view()
+                .abx_score
+                .1
+        ),
+        "listening.runtime_active" => json!(
+            app.plugin_state
+                .listening_test_state
+                .ab_test
+                .view()
+                .runtime_active
+        ),
+        "listening.status" => json!(app.plugin_state.listening_test_state.status),
+        "listening.session_file_exists" => json!(
+            std::env::var_os("SOTF_QA_DIR")
+                .map(std::path::PathBuf::from)
+                .map(|path| path.join("listening-session.json").is_file())
+                .unwrap_or(false)
+        ),
         "screen.focused" => json!(format!("{:?}", app.ui_state.current_screen)),
         "input_mode" => json!(format!("{:?}", app.ui_state.input_mode)),
         "onboarding.completed" => json!(app.tutorial.completed),
@@ -81,7 +210,21 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .first()
                 .map(|playlist| playlist.name.as_str())
         ),
+        "playlists.names" => json!(
+            app.playlist
+                .controller
+                .playlists()
+                .iter()
+                .map(|playlist| playlist.name.as_str())
+                .collect::<Vec<_>>()
+        ),
         "playlists.dialog" => json!(format!("{:?}", app.playlist.dialog)),
+        "playlists.active_name" => json!(
+            app.playlist
+                .controller
+                .active_playlist()
+                .map(|playlist| playlist.name.as_str())
+        ),
         "playlists.active_track_count" => json!(
             app.playlist
                 .controller
@@ -89,6 +232,23 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .map(|playlist| playlist.entries.len())
                 .unwrap_or(0)
         ),
+        "playlists.active_first_track" => json!(
+            app.playlist
+                .controller
+                .active_playlist()
+                .and_then(|playlist| playlist.entries.first())
+                .and_then(|entry| entry.track_path.file_name())
+                .and_then(|name| name.to_str())
+        ),
+        "playlists.active_second_track" => json!(
+            app.playlist
+                .controller
+                .active_playlist()
+                .and_then(|playlist| playlist.entries.get(1))
+                .and_then(|entry| entry.track_path.file_name())
+                .and_then(|name| name.to_str())
+        ),
+        "playlists.error" => json!(app.playlist.error),
         "playlists.undo_available" => json!(app.playlist.deleted_playlist.is_some()),
         "library.album_count" => json!(app.library_state.library.albums.len()),
         "home.favorite_expanded" => json!(app.ui_state.expanded_home_sections.contains("favorite")),
@@ -416,10 +576,109 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "settings.language" => json!(format!("{:?}", app.ui_state.language)),
         "settings.active_tab" => json!(format!("{:?}", app.ui_state.active_settings_tab)),
         "settings.font_scale" => json!(app.ui_state.font_scale),
+        "settings.reduce_motion" => json!(app.ui_state.reduce_motion),
+        "settings.accessibility_palette" => {
+            json!(format!("{:?}", app.ui_state.accessibility_palette))
+        }
+        "settings.keymap_preset" => json!(format!("{:?}", app.ui_state.keymap_preset)),
+        "settings.custom_keybinding_count" => {
+            json!(app.settings.keybindings.overrides.len())
+        }
+        "settings.keybinding_pending_key" => {
+            json!(app.settings.keybindings.pending_key_spec.as_deref())
+        }
+        "settings.keybinding_conflict_action" => json!(
+            app.settings
+                .keybindings
+                .conflict
+                .as_ref()
+                .map(|conflict| conflict.existing_action_name.as_str())
+        ),
+        "settings.release_channel" => json!(format!("{:?}", app.ui_state.release_channel)),
+        "settings.persisted_release_channel" => json!(
+            crate::Config::load()
+                .map(|config| format!("{:?}", config.release_channel))
+                .ok()
+        ),
+        "settings.metadata_search_enabled" => json!(
+            sotf_audio_player::config::load_metadata_services_config()
+                .ok()
+                .and_then(|config| config.providers.first().map(|provider| provider.enabled))
+        ),
+        "settings.metadata_error" => json!(app.settings.metadata_error),
+        "settings.library_folder_count" => json!(app.library_state.library.directories.len()),
+        "settings.persisted_library_folder_count" => json!(
+            crate::app::config::Config::load()
+                .ok()
+                .map(|config| config.directories.len())
+        ),
+        "settings.library_folder_error" => json!(
+            app.settings
+                .library
+                .directory_error
+                .as_ref()
+                .map(|error| match error {
+                    sotf_audio_player::LibraryDirectoryAccessError::NotFound(_) => "NotFound",
+                    sotf_audio_player::LibraryDirectoryAccessError::NotDirectory(_) => {
+                        "NotDirectory"
+                    }
+                    sotf_audio_player::LibraryDirectoryAccessError::PermissionDenied(_) => {
+                        "PermissionDenied"
+                    }
+                    sotf_audio_player::LibraryDirectoryAccessError::Unreadable { .. } => {
+                        "Unreadable"
+                    }
+                })
+        ),
+        "settings.library_remove_pending" => {
+            json!(app.settings.library.pending_remove_index)
+        }
+        "settings.library_scan_in_progress" => json!(app.library_state.scan_in_progress),
+        "settings.library_scan_tracks" => json!(app.library_state.scan_progress_tracks),
+        "settings.library_scan_albums" => json!(app.library_state.scan_progress_albums),
+        "settings.library_scan_error" => json!(app.settings.library.scan_error),
+        "settings.federation_source_count" => json!(app.federation.sources.len()),
+        "settings.federation_tidal_login_active" => {
+            #[cfg(feature = "tidal")]
+            {
+                json!(app.federation.tidal_login.is_some())
+            }
+            #[cfg(not(feature = "tidal"))]
+            {
+                json!(false)
+            }
+        }
+        "settings.federation_tidal_logged_in" => {
+            json!(app.federation.sources.iter().any(|source| matches!(
+                &source.connection,
+                sotf_audio_player::federation_config::SourceConnectionConfig::Tidal {
+                    access_token,
+                    ..
+                } if !access_token.trim().is_empty()
+            )))
+        }
+        "settings.federation_tidal_persisted_logged_in" => json!(
+            app.library_state
+                .library
+                .get_database()
+                .and_then(|database| database.load_federation_sources().ok())
+                .is_some_and(|sources| sources.iter().any(|source| matches!(
+                    &source.connection,
+                    sotf_audio_player::federation_config::SourceConnectionConfig::Tidal {
+                        access_token,
+                        ..
+                    } if !access_token.trim().is_empty()
+                )))
+        ),
+        "settings.federation_login_error" => json!(app.federation.service_login_error),
         "settings.design_language" => {
             json!(app.ui_state.design_language.as_deref().unwrap_or("default"))
         }
         "settings.remote_server_count" => json!(app.remote.server_store.servers.len()),
+        "settings.mpd_password_revealed" => json!(app.settings.show_mpd_password),
+        "settings.mpd_password_configured" => {
+            json!(app.federation.server_config.mpd.password.is_some())
+        }
         "settings.remote_token_revealed" => json!(app.settings.show_manual_remote_token),
         "settings.remote_manual_token_configured" => {
             json!(!app.remote.manual_auth_token.trim().is_empty())
@@ -488,6 +747,38 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .map(|toast| format!("{:?}", toast.toast_type))
         ),
 
+        other if other.starts_with("meters.peak.") => {
+            let channel = other
+                .trim_start_matches("meters.peak.")
+                .parse::<usize>()
+                .map_err(|_| anyhow!("invalid meter peak query path: `{other}`"))?;
+            json!(
+                app.playback
+                    .loudness_info
+                    .as_ref()
+                    .and_then(|data| data.channel_peaks.get(channel).copied())
+            )
+        }
+        other if other.starts_with("meters.group.") => {
+            let parts: Vec<_> = other.split('.').collect();
+            if parts.len() != 4 {
+                return Err(anyhow!("invalid meter group query path: `{other}`"));
+            }
+            let group_idx = parts[2]
+                .parse::<usize>()
+                .map_err(|_| anyhow!("invalid meter group query path: `{other}`"))?;
+            let group = app
+                .level_meters
+                .groups
+                .get(group_idx)
+                .ok_or_else(|| anyhow!("meter group {group_idx} does not exist"))?;
+            match parts[3] {
+                "muted" => json!(group.muted),
+                "soloed" => json!(group.soloed),
+                "dimmed" => json!(group.dimmed),
+                state => return Err(anyhow!("unknown meter group state: `{state}`")),
+            }
+        }
         other if other.starts_with("plugins.") => {
             sotf_audio_player::controllers::plugin::dev_api::queries::plugin_query(
                 &app.plugin_state.graph,

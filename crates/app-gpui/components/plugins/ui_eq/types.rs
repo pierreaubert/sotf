@@ -1,4 +1,5 @@
 pub use crate::eq_layout::EqCompactLayout;
+use gpui::FocusHandle;
 use sotf_audio_player::EQFilter;
 use sotf_audio_player_midi::mapping::MidiOverlay;
 
@@ -56,4 +57,6 @@ pub struct EqRenderState<'a> {
     pub available_width: f32,
     /// Effective responsive/font scale used to interpret logical breakpoints.
     pub layout_scale: f32,
+    /// Stable focus target for the selected band's exact numeric editor.
+    pub exact_entry_focus_handle: FocusHandle,
 }

@@ -6,7 +6,7 @@ use super::default::default_room_eq_population;
 use super::default::default_scenario_timeout;
 use super::default::default_true;
 use super::runner_config::RunnerConfig;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
@@ -25,6 +25,24 @@ pub(super) struct ScenarioConfig {
     pub(super) timeout: String,
     #[serde(default)]
     pub(super) tags: Vec<String>,
+    /// Optional scenario-specific viewport, for example `700x600`.
+    #[serde(default)]
+    pub(super) viewport: Option<String>,
+    /// Optional built-in theme name (`Dark`, `Light`, `BlackAndWhite`, etc.).
+    #[serde(default)]
+    pub(super) theme: Option<String>,
+    /// Optional locale (`English`, `French`, `German`, or `Spanish`).
+    #[serde(default)]
+    pub(super) language: Option<String>,
+    /// Optional UI scale in the supported 0.5–2.0 range.
+    #[serde(default)]
+    pub(super) font_scale: Option<f32>,
+    /// Optional motion preference applied before the scenario starts.
+    #[serde(default)]
+    pub(super) reduced_motion: Option<bool>,
+    /// Optional feature channel (`Prod`, `Beta`, or `Alpha`).
+    #[serde(default)]
+    pub(super) release_channel: Option<String>,
     #[serde(default)]
     pub(super) seed_demo_audio: bool,
     #[serde(default)]
@@ -112,6 +130,15 @@ pub(super) struct SpinoramaDiscoveryConfig {
     pub(super) catalog_failures: usize,
     #[serde(default)]
     pub(super) catalog_failure_message: Option<String>,
+    #[serde(default)]
+    pub(super) catalog_requests: Vec<SpinoramaCatalogRequestConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct SpinoramaCatalogRequestConfig {
+    pub(super) delay_ms: u64,
+    #[serde(default)]
+    pub(super) fail: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -132,4 +159,21 @@ pub(super) struct SpinoramaVersionConfig {
 pub(super) enum ScenarioOutcome {
     Passed,
     Skipped(String),
+}
+
+/// Wall-clock timings captured for each UI scenario lifecycle.
+///
+/// Optional phases remain absent when a scenario exits before reaching them,
+/// so a failed readiness check is not misreported as a zero-duration script.
+#[derive(Debug, Default, Serialize)]
+pub(super) struct ScenarioTimings {
+    pub(super) total_ms: u64,
+    pub(super) prepare_ms: Option<u64>,
+    pub(super) spawn_ms: Option<u64>,
+    pub(super) readiness_ms: Option<u64>,
+    pub(super) fixtures_ms: Option<u64>,
+    pub(super) script_ms: Option<u64>,
+    pub(super) shutdown_ms: Option<u64>,
+    pub(super) log_audit_ms: Option<u64>,
+    pub(super) operations: Vec<crate::NamedTiming>,
 }

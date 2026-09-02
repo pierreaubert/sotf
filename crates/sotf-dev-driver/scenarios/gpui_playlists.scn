@@ -1,68 +1,146 @@
-# GPUI Playlists screen — basic focus + playlist actions.
-#
-# Covers: SwitchToPlaylists, CreatePlaylist, RenamePlaylist, DeletePlaylist
+# Playlists visible CRUD, track management, playback, interchange, and reload.
+# Demo audio supplies a deterministic selected Library album; every product
+# mutation below is driven through a rendered control.
 
-focus       playlists
+focus       library
+wait_until  library.album_count > 0 timeout=10s
+sleep       2s
+assert_visible library.album.0
+click       library.album.0
+
+click       sidebar.nav-playlists
 assert      screen.focused == "Playlists"
-
-# Primary navigation must be operable through the rendered sidebar controls,
-# rather than only through the internal SwitchTo action used by `focus`.
-click       sidebar.nav-home
-assert      screen.focused == "Home"
-click       sidebar.nav-streams
-assert      screen.focused == "Streams"
-click       sidebar.nav-search
-assert      screen.focused == "Library"
-
-focus       playlists
-assert      screen.focused == "Playlists"
-
-# Create a new playlist (action opens a modal in GPUI).
+assert      playlists.count == 0
 assert_visible playlist.create
-resize 700 600
-wait_idle 2s
+resize      700 600
+sleep       200ms
 assert_in_viewport playlist.create
 assert_non_overlapping sidebar.nav-home playlist.create
-screenshot playlists-compact
-accessibility
 assert_accessible button New playlist
-click playlist.create
-assert playlists.dialog == "Create"
+screenshot  playlists-empty-compact
+
+# Create and rename through the visible name editor.
+click       playlist.create
+assert      playlists.dialog == "Create"
 assert_visible playlist.name_input
 click playlist.name_input
-wait_idle 1s
-screenshot playlists-create-focus
 assert_focused playlist-name
-type "SOTF QA Playlist #1"
-click playlist.save
-wait_until playlists.count >= 1 timeout=2s
-assert playlists.first_name == "SOTF QA Playlist #1"
-assert playlists.dialog == "None"
+type        "SOTF QA Playlist #1"
+click       playlist.save
+wait_until  playlists.count == 1 timeout=2s
+assert      playlists.first_name == "SOTF QA Playlist #1"
+assert      playlists.dialog == "None"
 assert_absent playlist.name_input
-assert_visible playlist.open.0
-click playlist.open.0
-assert_visible playlist.delete_active
-click playlist.rename.0
-assert playlists.dialog == "Rename"
-click playlist.name_input
-wait_idle 1s
-assert_focused playlist-name
-key cmd-a
-type "SOTF QA Playlist Renamed"
-click playlist.save
-wait_until playlists.first_name == "SOTF QA Playlist Renamed" timeout=2s
-assert playlists.dialog == "None"
-click playlist.delete_active
-assert playlists.dialog == "ConfirmDelete"
-assert_visible playlist.delete_confirm
-click playlist.delete_confirm
-wait_until playlists.count == 0 timeout=2s
-assert playlists.undo_available == true
-assert_visible playlist.undo_delete
-click playlist.undo_delete
-wait_until playlists.count == 1 timeout=2s
-assert playlists.undo_available == false
 
-# Return through the visible sidebar control.
-click       sidebar.nav-library
-assert      screen.focused == "Library"
+assert_visible playlist.open.0
+click       playlist.open.0
+assert      playlists.active_track_count == 0
+click       playlist.rename.0
+assert      playlists.dialog == "Rename"
+click playlist.name_input
+assert_focused playlist-name
+key         cmd-a
+type        "SOTF QA Playlist Renamed"
+click       playlist.save
+wait_until  playlists.first_name == "SOTF QA Playlist Renamed" timeout=2s
+assert      playlists.dialog == "None"
+
+# Add the album selected in Library, then exercise stable track controls.
+resize      1440 900
+click       playlist.add_library_album
+wait_until  playlists.active_track_count == 12 timeout=3s
+assert      playlists.error == null
+assert      playlists.active_first_track == "country.flac"
+assert      playlists.active_second_track == "country.wav"
+assert_visible playlist.track.0
+assert_visible playlist.track_down.0
+assert_visible playlist.track_remove.0
+assert_accessible button Play
+assert_accessible button Queue
+assert_accessible button Export M3U8
+screenshot  playlists-populated
+
+click       playlist.track_down.0
+sleep       100ms
+assert      playlists.error == null
+assert      playlists.active_first_track == "country.wav"
+assert      playlists.active_second_track == "country.flac"
+screenshot  playlists-reordered
+click       playlist.track_up.1
+sleep       100ms
+assert      playlists.error == null
+assert      playlists.active_first_track == "country.flac"
+click       playlist.track_remove.0
+sleep       100ms
+assert      playlists.error == null
+assert      playlists.active_track_count == 11
+assert      playlists.active_first_track == "country.wav"
+screenshot  playlists-track-removed
+
+# Queue and Play are distinct visible actions. Clear through Queue before Play.
+click       playlist.queue_active
+wait_until  queue.length > 0 timeout=3s
+assert      playback.is_playing == false
+click       sidebar.nav-queue
+assert_visible queue.clear
+click       queue.clear
+wait_until  queue.length == 0 timeout=2s
+click       sidebar.nav-playlists
+click       playlist.play_active
+wait_until  playback.is_playing == true timeout=3s
+action      Stop
+wait_until  playback.is_playing == false timeout=2s
+
+# In dev-api QA, rendered Export/Import buttons use a deterministic file inside
+# SOTF_QA_DIR. Production builds retain native file dialogs.
+click       playlist.export_active
+assert      playlists.error == null
+click       playlist.import
+wait_until  playlists.count == 2 timeout=3s
+assert      playlists.active_name == "playlist-export"
+assert      playlists.active_track_count > 0
+assert      playlists.error == null
+screenshot  playlists-imported
+
+# Reconstruct the controller from the database to prove durable persistence.
+action      PlaylistReloadFixture
+wait_until  playlists.count == 2 timeout=3s
+assert      playlists.first_name == "SOTF QA Playlist Renamed"
+assert      playlists.active_name == "SOTF QA Playlist Renamed"
+assert      playlists.active_track_count > 0
+
+# Destructive confirmation and reversible undo remain visible after reload.
+click       playlist.delete_active
+assert      playlists.dialog == "ConfirmDelete"
+assert_visible playlist.delete_confirm
+click       playlist.delete_confirm
+wait_until  playlists.count == 1 timeout=2s
+assert      playlists.undo_available == true
+assert_visible playlist.undo_delete
+click       playlist.undo_delete
+wait_until  playlists.count == 2 timeout=2s
+assert      playlists.undo_available == false
+assert      playlists.active_name == "SOTF QA Playlist Renamed"
+assert      playlists.active_track_count == 11
+
+# Pairwise locale/responsive evidence on the populated surface.
+click       sidebar.nav-preferences-button
+wait_until  screen.focused == "Settings" timeout=2s
+click       settings.tab.Language
+wait_until  settings.active_tab == "Language" timeout=2s
+action      CycleLanguage
+sleep       100ms
+assert      settings.language == "French"
+click       sidebar.nav-playlists
+wait_until  screen.focused == "Playlists" timeout=2s
+resize      700 600
+sleep       6s
+assert_visible playlist.create
+assert_in_viewport playlist.create
+accessibility
+screenshot  playlists-populated-french-compact-top
+scroll      playlist.content -250
+sleep       200ms
+assert_in_viewport playlist.play_active
+assert_in_viewport playlist.track.0
+screenshot  playlists-populated-french-compact-tracks

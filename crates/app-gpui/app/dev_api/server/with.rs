@@ -47,6 +47,9 @@ where
 }
 
 pub(super) fn health_payload(window: AnyWindowHandle, cx: &mut App) -> Result<serde_json::Value> {
+    let viewport = window
+        .update(cx, |_view, window, _cx| window.viewport_size())
+        .map_err(|error| anyhow!("reading health viewport failed: {error:#}"))?;
     with_app_state(window, cx, |state| {
         let process_started_at = PROCESS_STARTED_AT.get_or_init(SystemTime::now);
         let process_started_at_unix_ms = process_started_at
@@ -70,8 +73,8 @@ pub(super) fn health_payload(window: AnyWindowHandle, cx: &mut App) -> Result<se
             "process_started_at_unix_ms": process_started_at_unix_ms,
             "qa_directory": std::env::var("SOTF_QA_DIR").ok(),
             "viewport": {
-                "width": state.app.ui_state.window_width,
-                "height": state.app.ui_state.window_height,
+                "width": f32::from(viewport.width),
+                "height": f32::from(viewport.height),
             },
             "theme": format!("{:?}", state.app.ui_state.theme_id),
             "locale": format!("{:?}", state.app.ui_state.language),

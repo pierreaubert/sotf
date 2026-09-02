@@ -6,6 +6,7 @@ use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, SearchBar, SearchBarSize, Spinner, SpinnerSize, Text,
 };
@@ -1833,6 +1834,22 @@ impl PlayerView {
     /// Render album grid view with thumbnails
     pub(crate) fn render_library_grid(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
+        let accessible_album_labels = {
+            let state = self.state.read(cx);
+            state
+                .app
+                .get_paginated_albums()
+                .into_iter()
+                .map(|album| album.title.clone())
+                .collect::<Vec<_>>()
+        };
+        for (idx, label) in accessible_album_labels.into_iter().enumerate() {
+            cx.register_accessible(AccessibilityNode {
+                element_id: ElementId::from(SharedString::from(format!("album-wrapper-{idx}"))),
+                label: label.into(),
+                props: AriaProps::with_role(AriaRole::Button),
+            });
+        }
         let (
             albums,
             selected_album_index,
@@ -1912,11 +1929,18 @@ impl PlayerView {
 
             let is_selected = selected_album_index == idx;
             let card_theme = theme.clone();
+            let focus_theme = theme.clone();
+            let album_element_id =
+                ElementId::from(SharedString::from(format!("album-wrapper-{idx}")));
 
             let album_card = dev_track!(
                 div()
-                    .id(("album-wrapper", idx))
+                    .id(album_element_id)
                     .debug_selector(move || format!("library-album-wrapper-{}", idx))
+                    .focusable()
+                    .focus_visible(move |style| {
+                        style.border_2().border_color(focus_theme.border_focused)
+                    })
                     .on_click(cx.listener(move |view, event: &ClickEvent, window, cx| {
                         // Control-click on macOS should open the context menu even on a
                         // one-button mouse / Magic Mouse where a native right click may
@@ -1926,7 +1950,6 @@ impl PlayerView {
                             return;
                         }
 
-                        view.focus_handle.focus(window, cx);
                         let click_count = event.click_count();
                         view.state.update(cx, |state, _cx| {
                             state.app.library_state.selected_index = idx;
@@ -1947,6 +1970,30 @@ impl PlayerView {
                                 }
                             }
                         });
+                        cx.notify();
+                    }))
+                    .on_key_down(cx.listener(move |view, event: &KeyDownEvent, _window, cx| {
+                        if !matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                            return;
+                        }
+                        view.state.update(cx, |state, _cx| {
+                            state.app.library_state.selected_index = idx;
+                            let queue_was_empty = state.app.queue_state.is_empty();
+                            match state.app.add_album_to_queue() {
+                                Ok(Some(path)) => Self::play_track(state, path),
+                                Ok(None) if queue_was_empty => {
+                                    if let Some(path) = state.app.start_queue() {
+                                        Self::play_track(state, path);
+                                    }
+                                }
+                                Err(error) => {
+                                    state.app.ui_state.toast_message =
+                                        Some(crate::app::ToastMessage::error(error));
+                                }
+                                _ => {}
+                            }
+                        });
+                        cx.stop_propagation();
                         cx.notify();
                     }))
                     .on_mouse_up(

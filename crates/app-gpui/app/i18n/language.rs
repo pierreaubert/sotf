@@ -8,6 +8,8 @@ pub enum Language {
     French,
     German,
     Spanish,
+    /// QA-only expansion locale. Deliberately excluded from `all()`.
+    Pseudo,
 }
 
 impl Language {
@@ -26,6 +28,7 @@ impl Language {
             Language::French => "Français",
             Language::German => "Deutsch",
             Language::Spanish => "Español",
+            Language::Pseudo => "Pseudo (QA)",
         }
     }
 
@@ -35,6 +38,7 @@ impl Language {
             Language::French => "fr",
             Language::German => "de",
             Language::Spanish => "es",
+            Language::Pseudo => "qps-ploc",
         }
     }
 
@@ -44,6 +48,19 @@ impl Language {
             Language::French => Language::German,
             Language::German => Language::Spanish,
             Language::Spanish => Language::English,
+            Language::Pseudo => Language::English,
+        }
+    }
+
+    pub fn is_pseudo(self) -> bool {
+        self == Language::Pseudo
+    }
+
+    pub fn base(self) -> Language {
+        if self.is_pseudo() {
+            Language::English
+        } else {
+            self
         }
     }
 }

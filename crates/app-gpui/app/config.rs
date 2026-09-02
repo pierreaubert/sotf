@@ -7,7 +7,7 @@ use crate::app::types::{
 };
 use crate::components::plugins::theme::RackThemeState;
 use crate::i18n::Language;
-use crate::keybindings::KeymapPreset;
+use crate::keybindings::{CustomKeybinding, KeymapPreset};
 use crate::theme::{CommunityThemeId, ThemeAccentPreference, ThemeId};
 use gpui_themes::{AccessibilityPalette, ThemeModePreference};
 
@@ -253,6 +253,17 @@ impl Default for PanelLayout {
 
 /// GPUI-specific application configuration persisted between sessions
 /// Uses shared library's config helper functions for paths
+/// Keymap persistence is decomposed from [`Config`] so new shortcut concerns
+/// do not grow the already allowlisted application configuration struct.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct KeymapConfig {
+    /// The serde name preserves the existing top-level JSON field.
+    #[serde(default, rename = "keymap_preset")]
+    pub preset: KeymapPreset,
+    #[serde(default)]
+    pub custom_keybindings: Vec<CustomKeybinding>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Directories to scan for music files
@@ -283,9 +294,9 @@ pub struct Config {
     /// Selected language
     #[serde(default)]
     pub language: Language,
-    /// Selected keymap preset
-    #[serde(default)]
-    pub keymap_preset: KeymapPreset,
+    /// Preset and custom shortcuts, flattened to preserve the existing JSON.
+    #[serde(flatten)]
+    pub keymap: KeymapConfig,
     /// Panel layout configuration
     #[serde(default)]
     pub panel_layout: PanelLayout,
@@ -371,7 +382,7 @@ impl Config {
                 reduce_motion: false,
                 density_mode: DensityMode::default(),
                 language: Language::default(),
-                keymap_preset: KeymapPreset::default(),
+                keymap: KeymapConfig::default(),
                 panel_layout: PanelLayout::default(),
                 window_geometry: WindowGeometry::default(),
                 volume: default_volume(),

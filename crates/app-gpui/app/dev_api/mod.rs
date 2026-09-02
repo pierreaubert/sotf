@@ -10,11 +10,15 @@
 
 mod commands;
 mod dev_element;
+mod performance;
 mod queries;
-mod registry;
+#[doc(hidden)]
+pub mod registry;
 mod server;
 
 pub use dev_element::DevTrackExt;
 pub use registry::DevElementState;
 pub use registry::clear as clear_tracked_elements;
+#[doc(hidden)]
+pub use server::merge_missing_tracked_elements;
 pub use server::start;

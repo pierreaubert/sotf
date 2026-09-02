@@ -7,7 +7,18 @@ size = "1440x900"
 
 [[scenario]]
 name = "now-playing-transport"
-path = "crates/sotf-dev-driver/scenarios/gpui_transport.scn"
+path = "crates/sotf-dev-driver/scenarios/now_playing_transport_seek.scn"
+seed_demo_audio = true
+timeout = "60s"
+tags = ["now-playing", "transport", "ui", "accessibility"]
+
+[[scenario]]
+name = "playback-performance-budget"
+path = "crates/sotf-dev-driver/scenarios/playback_performance_budget.scn"
 seed_demo_audio = true
 timeout = "30s"
-tags = ["now-playing", "transport", "ui", "accessibility"]
+tags = ["now-playing", "playback", "performance"]
+theme = "Dark"
+language = "English"
+font_scale = 1.0
+reduced_motion = true

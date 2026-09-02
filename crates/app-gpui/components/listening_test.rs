@@ -53,6 +53,11 @@ use sotf_audio_player::controllers::ab_test_session::{
 use sotf_audio_player::{EarTrainingCourse, EqChangeMode, EqTrainingExercise, EqTrainingSession};
 use sotf_plugins::param_specs::ParamType;
 
+mod blind_controller;
+mod eq_training_controller;
+
+use blind_controller::{BlindComparisonSnapshot, PreparedMeasurementSnapshot};
+
 #[derive(Clone, Copy)]
 enum ListeningPathTarget {
     A,
@@ -111,9 +116,12 @@ impl PlayerView {
             .bg(theme.background)
             .flex()
             .flex_col()
-            .child(
+            .child(dev_track!(
                 div()
-                    .flex_none()
+                    .id("ear-training-header")
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .when(show_listening_guide, |header| header.flex_1())
                     .p(d.pad_y)
                     .border_b_1()
                     .border_color(theme.border)
@@ -163,7 +171,7 @@ impl PlayerView {
                                             }),
                                         ),
                                     )
-                                    .child(
+                                    .child(dev_track!(
                                         Button::new(
                                             "listening-guide-reopen",
                                             listening_text.how_to_listen_reopen(),
@@ -177,9 +185,10 @@ impl PlayerView {
                                                     state.app.tutorial.listening_guide_open = true;
                                                 });
                                                 cx.notify();
-                                            }),
+                                            })
                                         ),
-                                    )
+                                        "listening.guide.reopen"
+                                    ))
                                     .child(
                                         Button::new("ear-training-ab-app", eq_text.mode_blind)
                                             .size(ButtonSize::Sm)
@@ -196,7 +205,7 @@ impl PlayerView {
                                                 );
                                             })),
                                     ),
-                            ),
+                            )
                     )
                     .when(show_listening_guide, |header| {
                         header.child(self.render_listening_guide(cx))
@@ -211,7 +220,7 @@ impl PlayerView {
                                 .flex()
                                 .flex_wrap()
                                 .gap(d.grid)
-                                .child(
+                                .child(dev_track!(
                                     Button::new("ear-training-eq-mode", eq_text.title)
                                         .size(ButtonSize::Sm)
                                         .variant(if surface == EarTrainingSurface::EqBands {
@@ -226,8 +235,9 @@ impl PlayerView {
                                                 cx,
                                             );
                                         })),
-                                )
-                                .child(
+                                    "listening.eq.nav.practice"
+                                ))
+                                .child(dev_track!(
                                     Button::new("ear-training-courses", eq_text.learning.courses)
                                         .size(ButtonSize::Sm)
                                         .variant(if surface == EarTrainingSurface::Courses {
@@ -242,8 +252,9 @@ impl PlayerView {
                                                 cx,
                                             )
                                         })),
-                                )
-                                .child(
+                                    "listening.eq.nav.courses"
+                                ))
+                                .child(dev_track!(
                                     Button::new("ear-training-progress", eq_text.learning.progress)
                                         .size(ButtonSize::Sm)
                                         .variant(if surface == EarTrainingSurface::Progress {
@@ -258,11 +269,15 @@ impl PlayerView {
                                                 cx,
                                             )
                                         })),
-                                ),
+                                    "listening.eq.nav.progress"
+                                )),
                         )
                     }),
-            )
-            .child(div().flex_1().min_h_0().child(body))
+                "listening.header"
+            ))
+            .when(!show_listening_guide, |screen| {
+                screen.child(div().flex_1().min_h_0().child(body))
+            })
     }
 
     fn render_listening_guide(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -275,57 +290,70 @@ impl PlayerView {
             )
         };
         let items = text.how_to_listen_items().into_iter().enumerate().fold(
-            div().flex().flex_col().gap(d.grid),
+            div()
+                .id("listening-guide-items")
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .flex()
+                .flex_col()
+                .gap(d.grid),
             |list, (index, item)| list.child(Text::caption(format!("{}. {item}", index + 1))),
         );
 
-        div()
-            .id("listening-guide")
-            .w_full()
-            .p(d.card)
-            .rounded(d.r_md)
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.background_secondary)
-            .flex()
-            .flex_col()
-            .gap(d.gap)
-            .child(Text::section_header(text.how_to_listen_title()))
-            .child(items)
-            .child(dev_track!(
-                Button::new(
-                    "listening-guide-acknowledge",
-                    text.how_to_listen_acknowledge(),
-                )
-                .size(ButtonSize::Sm)
-                .variant(ButtonVariant::Primary)
-                .theme(theme.to_button_theme())
-                .on_click_event(cx.listener(|view, _, _, cx| {
-                    let progress = view.state.update(cx, |state, _| {
-                        state
-                            .app
-                            .plugin_state
-                            .listening_test_state
-                            .eq_progress
-                            .mark_how_to_listen_completed();
-                        state.app.tutorial.listening_guide_open = false;
-                        state
-                            .app
-                            .plugin_state
-                            .listening_test_state
-                            .eq_progress
-                            .clone()
-                    });
-                    if let Some(path) = sotf_audio_player::config::get_ear_training_progress_path()
-                        && let Err(error) = progress.save_atomic(&path)
-                    {
-                        log::warn!("Failed to save Listening Lab guide completion: {error}");
-                    }
-                    cx.notify();
-                })),
-                "listening.guide.acknowledge"
-            ))
-            .into_any_element()
+        dev_track!(
+            div()
+                .id("listening-guide")
+                .w_full()
+                .flex_1()
+                .min_h_0()
+                .p(d.card)
+                .rounded(d.r_md)
+                .border_1()
+                .border_color(theme.border)
+                .bg(theme.background_secondary)
+                .flex()
+                .flex_col()
+                .gap(d.gap)
+                .child(Text::section_header(text.how_to_listen_title()))
+                .child(items)
+                .child(dev_track!(
+                    Button::new(
+                        "listening-guide-acknowledge",
+                        text.how_to_listen_acknowledge(),
+                    )
+                    .size(ButtonSize::Sm)
+                    .variant(ButtonVariant::Primary)
+                    .theme(theme.to_button_theme())
+                    .on_click_event(cx.listener(|view, _, _, cx| {
+                        let progress = view.state.update(cx, |state, _| {
+                            state
+                                .app
+                                .plugin_state
+                                .listening_test_state
+                                .eq_progress
+                                .mark_how_to_listen_completed();
+                            state.app.tutorial.listening_guide_open = false;
+                            state
+                                .app
+                                .plugin_state
+                                .listening_test_state
+                                .eq_progress
+                                .clone()
+                        });
+                        if let Some(path) =
+                            sotf_audio_player::config::get_ear_training_progress_path()
+                            && let Err(error) = progress.save_atomic(&path)
+                        {
+                            log::warn!("Failed to save Listening Lab guide completion: {error}");
+                        }
+                        cx.notify();
+                    })),
+                    "listening.guide.acknowledge"
+                )),
+            "listening.guide"
+        )
+        .into_any_element()
     }
 
     fn render_listening_break_prompt(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -384,7 +412,7 @@ impl PlayerView {
                                 });
                             }),
                     )
-                    .child(
+                    .child(dev_track!(
                         Button::new("listening-fatigue-continue", text.fatigue_continue())
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Secondary)
@@ -397,7 +425,8 @@ impl PlayerView {
                                 });
                                 cx.notify();
                             })),
-                    ),
+                        "listening.break.continue"
+                    )),
             )
             .into_any_element()
     }
@@ -434,7 +463,7 @@ impl PlayerView {
                         config.band_count, config.gain_db, config.trial_count
                     )))
                     .child(Text::caption(format!("{completed} sessions completed")))
-                    .child(
+                    .child(dev_track!(
                         Button::new(
                             ("ear-course-start", course as usize),
                             eq_text.learning.start_course,
@@ -445,7 +474,8 @@ impl PlayerView {
                         .on_click_event(
                             cx.listener(move |view, _, _, cx| view.start_eq_course(course, cx)),
                         ),
-                    ),
+                        format!("listening.eq.course.{}", course as usize)
+                    )),
             );
         }
         div()
@@ -570,7 +600,7 @@ impl PlayerView {
         self.ensure_listening_path_canvas(ListeningPathTarget::B, cx);
 
         let d = Ds::from_cx(cx);
-        let (
+        let BlindComparisonSnapshot {
             theme,
             translations,
             has_session,
@@ -579,70 +609,25 @@ impl PlayerView {
             pending_mode,
             trial_count,
             score,
-            path_a_label,
-            path_a,
-            path_b_label,
-            path_b,
             segment_start_ms,
             level_match,
             status,
             prepared_measurement,
-        ) = {
-            let state = self.state.read(cx);
-            let listening = &state.app.plugin_state.listening_test_state;
-            let session = listening.ab_test.session();
-            (
-                state.app.ui_state.theme.clone(),
-                state.app.ui_state.translations.listening_test.clone(),
-                session.is_some(),
-                session.is_some_and(|session| session.setup.level_match.within_tolerance()),
-                listening.path_a.is_some() && listening.path_b.is_some(),
-                session.and_then(|session| session.pending_mode()),
-                session.map_or(0, |session| session.trials.len()),
-                session.map(|session| session.abx_score()),
-                listening.path_a_label.clone(),
-                listening.path_a.clone(),
-                listening.path_b_label.clone(),
-                listening.path_b.clone(),
-                listening.segment_start_ms,
-                listening.level_match_config,
-                listening.status.clone(),
-                session.map(|session| {
-                    let measurement = &session.setup.level_match;
-                    (
-                        session
-                            .setup
-                            .media
-                            .media_path
-                            .clone()
-                            .unwrap_or_else(|| session.setup.media.media_id.clone()),
-                        session.setup.media.media_id.clone(),
-                        session.setup.media.start_ms,
-                        session.setup.media.duration_ms,
-                        measurement.metric,
-                        measurement.correction_b_db,
-                        measurement.residual_error_db(),
-                        measurement.tolerance_db,
-                        measurement.max_correction_db,
-                        measurement.within_tolerance(),
-                    )
-                }),
-            )
-        };
+        } = BlindComparisonSnapshot::capture(self.state.read(cx));
         let level_text = translations.setup.level.clone();
         let prepared_evidence = prepared_measurement.map(
-            |(
-                media_path,
-                media_id,
-                start_ms,
-                duration_ms,
-                metric,
-                correction_b_db,
-                residual_error_db,
-                tolerance_db,
-                max_correction_db,
-                within_tolerance,
-            )| {
+            |PreparedMeasurementSnapshot {
+                 media_path,
+                 media_id,
+                 start_ms,
+                 duration_ms,
+                 metric,
+                 correction_b_db,
+                 residual_error_db,
+                 tolerance_db,
+                 max_correction_db,
+                 within_tolerance,
+             }| {
                 let confidence = if within_tolerance {
                     level_text.within_tolerance
                 } else {
@@ -695,7 +680,7 @@ impl PlayerView {
                         .color(theme.text_secondary),
                     )
                     .child(Text::label(confidence).color(confidence_color))
-                    .child(
+                    .child(dev_track!(
                         Button::new("load-listening-media", level_text.load_saved_media)
                             .size(ButtonSize::Xs)
                             .variant(ButtonVariant::Secondary)
@@ -703,7 +688,8 @@ impl PlayerView {
                             .on_click_event(cx.listener(|view, _, _, cx| {
                                 view.load_listening_session_media(cx);
                             })),
-                    )
+                        "listening.media.load"
+                    ))
                     .into_any_element()
             },
         );
@@ -822,18 +808,8 @@ impl PlayerView {
                     .flex()
                     .flex_wrap()
                     .gap(d.section)
-                    .child(self.render_listening_path_card(
-                        ListeningPathTarget::A,
-                        &path_a_label,
-                        path_a.as_ref(),
-                        cx,
-                    ))
-                    .child(self.render_listening_path_card(
-                        ListeningPathTarget::B,
-                        &path_b_label,
-                        path_b.as_ref(),
-                        cx,
-                    )),
+                    .child(self.render_listening_path_card(ListeningPathTarget::A, cx))
+                    .child(self.render_listening_path_card(ListeningPathTarget::B, cx)),
             )
             .child(
                 div()
@@ -862,7 +838,7 @@ impl PlayerView {
                                     .child(Text::caption(translations.setup.level_description)),
                             )
                             .when(paths_ready, |row| {
-                                row.child(
+                                row.child(dev_track!(
                                     Button::new(
                                         "prepare-listening-session",
                                         translations.setup.measure_prepare,
@@ -875,7 +851,8 @@ impl PlayerView {
                                             view.prepare_current_listening_session(cx);
                                         }),
                                     ),
-                                )
+                                    "listening.session.prepare"
+                                ))
                             }),
                     )
                     .child(
@@ -1256,19 +1233,20 @@ impl PlayerView {
             } else {
                 answer_label.clone()
             };
-            answers = answers.child(
-                Button::new(("eq-training-band", index), label)
-                    .size(ButtonSize::Sm)
-                    .variant(if is_selected || *is_answer {
-                        ButtonVariant::Primary
-                    } else {
-                        ButtonVariant::Secondary
-                    })
-                    .theme(theme.to_button_theme())
-                    .on_click_event(cx.listener(move |view, _, _, cx| {
-                        view.select_eq_training_band(index, cx);
-                    })),
-            );
+            let button = Button::new(("eq-training-band", index), label)
+                .size(ButtonSize::Sm)
+                .variant(if is_selected || *is_answer {
+                    ButtonVariant::Primary
+                } else {
+                    ButtonVariant::Secondary
+                })
+                .theme(theme.to_button_theme())
+                .on_click_event(cx.listener(move |view, _, _, cx| {
+                    view.select_eq_training_band(index, cx);
+                }));
+            #[cfg(feature = "dev-api")]
+            let button = button.dev_track(format!("listening.eq.answer.{index}"));
+            answers = answers.child(button);
         }
 
         let feedback = feedback_result.map(|(correct, center_frequency_hz, signed_gain_db, q)| {
@@ -1406,7 +1384,7 @@ impl PlayerView {
                                     view.cycle_eq_training_change_mode(cx);
                                 })),
                             )
-                            .child(
+                            .child(dev_track!(
                                 Button::new(
                                     "eq-training-start",
                                     if has_session {
@@ -1421,7 +1399,8 @@ impl PlayerView {
                                 .on_click_event(cx.listener(|view, _, _, cx| {
                                     view.start_eq_training_session(cx);
                                 })),
-                            )
+                                "listening.eq.start"
+                            ))
                             .child(Text::caption(eq_text.learning.audition_path_hint)),
                     )
                     .child(
@@ -1459,7 +1438,7 @@ impl PlayerView {
                                     .flex()
                                     .flex_wrap()
                                     .gap(d.gap)
-                                    .child(
+                                    .child(dev_track!(
                                         Button::new(
                                             "eq-training-original",
                                             format!("1  {}", eq_text.original),
@@ -1476,8 +1455,9 @@ impl PlayerView {
                                                 view.activate_eq_training_path(false, cx);
                                             }),
                                         ),
-                                    )
-                                    .child(
+                                        "listening.eq.original"
+                                    ))
+                                    .child(dev_track!(
                                         Button::new(
                                             "eq-training-filtered",
                                             format!("2  {}", eq_text.filtered),
@@ -1494,9 +1474,10 @@ impl PlayerView {
                                                 view.activate_eq_training_path(true, cx);
                                             }),
                                         ),
-                                    )
+                                        "listening.eq.filtered"
+                                    ))
                                     .when(has_question && !answered, |row| {
-                                        row.child(
+                                        row.child(dev_track!(
                                             Button::new(
                                                 "eq-training-submit",
                                                 format!("Enter  {}", eq_text.submit),
@@ -1507,10 +1488,11 @@ impl PlayerView {
                                             .on_click_event(cx.listener(|view, _, _, cx| {
                                                 view.submit_eq_training_answer(cx);
                                             })),
-                                        )
+                                            "listening.eq.submit"
+                                        ))
                                     })
                                     .when(answered, |row| {
-                                        row.child(
+                                        row.child(dev_track!(
                                             Button::new(
                                                 "eq-training-next",
                                                 format!("N  {}", eq_text.next),
@@ -1521,7 +1503,8 @@ impl PlayerView {
                                             .on_click_event(cx.listener(|view, _, _, cx| {
                                                 view.advance_eq_training_question(cx);
                                             })),
-                                        )
+                                            "listening.eq.next"
+                                        ))
                                     }),
                             )
                             .child(Text::caption(eq_text.shortcuts)),
@@ -1562,7 +1545,7 @@ impl PlayerView {
                     .flex()
                     .flex_wrap()
                     .gap(d.grid)
-                    .child(
+                    .child(dev_track!(
                         Button::new("eq-source-add", eq_text.learning.add_current)
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Secondary)
@@ -1570,7 +1553,8 @@ impl PlayerView {
                             .on_click_event(
                                 cx.listener(|view, _, _, cx| view.add_current_eq_source(cx)),
                             ),
-                    )
+                        "listening.eq.source.add"
+                    ))
                     .child(
                         Button::new("eq-source-prev", eq_text.learning.previous)
                             .size(ButtonSize::Sm)
@@ -1660,21 +1644,22 @@ impl PlayerView {
     }
 
     fn ensure_listening_path_canvas(&self, target: ListeningPathTarget, cx: &mut Context<Self>) {
-        let (config, has_canvas) = {
+        let config = {
             let state = self.state.read(cx);
             let listening = &state.app.plugin_state.listening_test_state;
-            match target {
+            let (config, has_canvas) = match target {
                 ListeningPathTarget::A => {
-                    (listening.path_a.clone(), listening.path_a_canvas.is_some())
+                    (listening.path_a.as_ref(), listening.path_a_canvas.is_some())
                 }
                 ListeningPathTarget::B => {
-                    (listening.path_b.clone(), listening.path_b_canvas.is_some())
+                    (listening.path_b.as_ref(), listening.path_b_canvas.is_some())
                 }
+            };
+            if has_canvas || !matches!(config, Some(PathConfig::Graph { .. })) {
+                return;
             }
+            config.cloned()
         };
-        if has_canvas {
-            return;
-        }
         let Some(PathConfig::Graph { nodes, edges }) = config else {
             return;
         };
@@ -1734,45 +1719,76 @@ impl PlayerView {
     fn render_listening_path_card(
         &self,
         target: ListeningPathTarget,
-        label: &str,
-        config: Option<&PathConfig>,
         cx: &mut Context<Self>,
     ) -> Div {
         let d = Ds::from_cx(cx);
-        let state = self.state.read(cx);
-        let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.listening_test.clone();
         let suffix = match target {
             ListeningPathTarget::A => "a",
             ListeningPathTarget::B => "b",
         };
-        let (canvas, add_menu_open, editing_node_id, editing_parameters) = {
+        let (
+            theme,
+            translations,
+            label,
+            summary,
+            is_graph,
+            linear_plugins,
+            canvas,
+            add_menu_open,
+            editing_node_id,
+            editing_node_plugin_type,
+            editing_parameters,
+        ) = {
             let state = self.state.read(cx);
             let listening = &state.app.plugin_state.listening_test_state;
+            let (label, config, canvas) = match target {
+                ListeningPathTarget::A => (
+                    &listening.path_a_label,
+                    listening.path_a.as_ref(),
+                    listening.path_a_canvas.clone(),
+                ),
+                ListeningPathTarget::B => (
+                    &listening.path_b_label,
+                    listening.path_b.as_ref(),
+                    listening.path_b_canvas.clone(),
+                ),
+            };
+            let editing_node_id = if listening.editing_path_target == Some(target.into()) {
+                listening.editing_path_node_id.clone()
+            } else {
+                None
+            };
+            let editing_node_plugin_type = match (config, editing_node_id.as_ref()) {
+                (Some(PathConfig::Graph { nodes, .. }), Some(node_id)) => nodes
+                    .iter()
+                    .find(|node| node.id == *node_id)
+                    .map(|node| node.plugin_type.clone()),
+                _ => None,
+            };
+            let linear_plugins = match config {
+                Some(PathConfig::Plugin {
+                    plugin_type,
+                    parameters,
+                }) => vec![PluginInRack {
+                    plugin_type: plugin_type.clone(),
+                    parameters: parameters.clone(),
+                }],
+                Some(PathConfig::Rack { plugins }) => plugins.clone(),
+                _ => Vec::new(),
+            };
             (
-                match target {
-                    ListeningPathTarget::A => listening.path_a_canvas.clone(),
-                    ListeningPathTarget::B => listening.path_b_canvas.clone(),
-                },
+                state.app.ui_state.theme.clone(),
+                state.app.ui_state.translations.listening_test.clone(),
+                label.to_owned(),
+                path_summary(config, &state.app.ui_state.translations.listening_test),
+                matches!(config, Some(PathConfig::Graph { .. })),
+                linear_plugins,
+                canvas,
                 listening.graph_add_menu_target == Some(target.into()),
-                if listening.editing_path_target == Some(target.into()) {
-                    listening.editing_path_node_id.clone()
-                } else {
-                    None
-                },
+                editing_node_id,
+                editing_node_plugin_type,
                 listening.editing_path_parameters.clone(),
             )
-        };
-        let linear_plugins: Vec<PluginInRack> = match config {
-            Some(PathConfig::Plugin {
-                plugin_type,
-                parameters,
-            }) => vec![PluginInRack {
-                plugin_type: plugin_type.clone(),
-                parameters: parameters.clone(),
-            }],
-            Some(PathConfig::Rack { plugins }) => plugins.clone(),
-            _ => Vec::new(),
         };
         div()
             .flex_1()
@@ -1791,7 +1807,7 @@ impl PlayerView {
                     .items_center()
                     .justify_between()
                     .child(Text::new(label.to_owned()).weight(TextWeight::Semibold))
-                    .child(Text::caption(path_summary(config, &translations))),
+                    .child(Text::caption(summary)),
             )
             .child(
                 div()
@@ -1832,7 +1848,7 @@ impl PlayerView {
                         button
                     }),
             )
-            .when(!matches!(config, Some(PathConfig::Graph { .. })), |card| {
+            .when(!is_graph, |card| {
                 card.child(
                     div()
                         .flex()
@@ -1884,7 +1900,7 @@ impl PlayerView {
                     self.render_listening_rack_row(target, index, linear_plugins.len(), plugin, cx)
                 }))
             })
-            .when(matches!(config, Some(PathConfig::Graph { .. })), |card| {
+            .when(is_graph, |card| {
                 card.child(
                     div()
                         .flex()
@@ -1932,13 +1948,7 @@ impl PlayerView {
                     let state_for_cancel = self.state.clone();
                     let node_id_for_close = node_id.clone();
                     let node_id_for_input = node_id.clone();
-                    let node_plugin_type = match config {
-                        Some(PathConfig::Graph { nodes, .. }) => nodes
-                            .iter()
-                            .find(|node| node.id == node_id)
-                            .map(|node| node.plugin_type.clone()),
-                        _ => None,
-                    };
+                    let node_plugin_type = editing_node_plugin_type.clone();
                     let node_editor_id = format!("{suffix}-graph-{node_id}");
                     let reset_label = translations.parameter_reset();
                     let use_expert_editor = node_plugin_type
@@ -2108,15 +2118,16 @@ impl PlayerView {
         };
         for &(cue, label) in cues {
             let theme = self.state.read(cx).app.ui_state.theme.clone();
-            row = row.child(
-                Button::new(SharedString::from(format!("listening-cue-{label}")), label)
-                    .size(ButtonSize::Sm)
-                    .variant(ButtonVariant::Primary)
-                    .theme(theme.to_button_theme())
-                    .on_click_event(cx.listener(move |view, _, _, cx| {
-                        view.activate_listening_cue(cue, cx);
-                    })),
-            );
+            let button = Button::new(SharedString::from(format!("listening-cue-{label}")), label)
+                .size(ButtonSize::Sm)
+                .variant(ButtonVariant::Primary)
+                .theme(theme.to_button_theme())
+                .on_click_event(cx.listener(move |view, _, _, cx| {
+                    view.activate_listening_cue(cue, cx);
+                }));
+            #[cfg(feature = "dev-api")]
+            let button = button.dev_track(format!("listening.cue.{cue:?}"));
+            row = row.child(button);
         }
         row
     }
@@ -2797,18 +2808,19 @@ impl PlayerView {
         let mut row = div().flex().flex_wrap().gap(d.gap);
         for &(answer, label) in answers {
             let theme = self.state.read(cx).app.ui_state.theme.clone();
-            row = row.child(
-                Button::new(
-                    SharedString::from(format!("listening-answer-{label}")),
-                    label,
-                )
-                .size(ButtonSize::Sm)
-                .variant(ButtonVariant::Secondary)
-                .theme(theme.to_button_theme())
-                .on_click_event(cx.listener(move |view, _, _, cx| {
-                    view.commit_listening_answer(answer, cx);
-                })),
-            );
+            let button = Button::new(
+                SharedString::from(format!("listening-answer-{label}")),
+                label,
+            )
+            .size(ButtonSize::Sm)
+            .variant(ButtonVariant::Secondary)
+            .theme(theme.to_button_theme())
+            .on_click_event(cx.listener(move |view, _, _, cx| {
+                view.commit_listening_answer(answer, cx);
+            }));
+            #[cfg(feature = "dev-api")]
+            let button = button.dev_track(format!("listening.answer.{answer:?}"));
+            row = row.child(button);
         }
         row
     }
@@ -2921,1193 +2933,6 @@ impl PlayerView {
                 });
                 cx.notify();
             }))
-    }
-
-    fn use_current_listening_position(&mut self, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let start_ms = (state.app.playback.position_secs.max(0.0) * 1_000.0).round() as u64;
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            listening.segment_start_ms = start_ms;
-            let _ = listening.ab_test.clear_session();
-        });
-        cx.notify();
-    }
-
-    fn load_listening_session_media(&mut self, cx: &mut Context<Self>) {
-        let request = {
-            let state = self.state.read(cx);
-            state
-                .app
-                .plugin_state
-                .listening_test_state
-                .ab_test
-                .session()
-                .map(|session| {
-                    (
-                        session.setup.media.clone(),
-                        session.setup.media.start_ms as f64 / 1_000.0,
-                        session.setup.channels,
-                        session.setup.sample_rate,
-                    )
-                })
-        };
-        let Some((media, position, channels, sample_rate)) = request else {
-            return;
-        };
-        let weak_state = self.state.downgrade();
-        cx.spawn(async move |_, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { verify_media_segment(&media) })
-                .await;
-            let Some(entity) = weak_state.upgrade() else {
-                return;
-            };
-            entity.update(&mut cx.clone(), |state, cx| {
-                let text = state
-                    .app
-                    .ui_state
-                    .translations
-                    .listening_test
-                    .setup
-                    .level
-                    .clone();
-                match result {
-                    Ok(path) => {
-                        if Self::play_listening_source_at(
-                            state,
-                            sotf_audio::decoder::AudioSource::from(path),
-                            position,
-                            channels,
-                            sample_rate,
-                        ) {
-                            state.app.plugin_state.listening_test_state.status =
-                                text.media_loaded.into();
-                        }
-                    }
-                    Err(AbTestError::MediaIdentityMismatch) => {
-                        state.app.plugin_state.listening_test_state.status =
-                            text.media_identity_mismatch.into();
-                    }
-                    Err(error) => {
-                        state.app.plugin_state.listening_test_state.status =
-                            format!("{}: {error}", text.media_unavailable);
-                    }
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    fn listening_test_file_button(
-        &self,
-        id: &'static str,
-        label: &'static str,
-        load: bool,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let theme = self.state.read(cx).app.ui_state.theme.clone();
-        let button = Button::new(id, label)
-            .size(ButtonSize::Sm)
-            .variant(ButtonVariant::Secondary)
-            .theme(theme.to_button_theme())
-            .on_click_event(cx.listener(move |view, _, _, cx| {
-                view.pick_listening_session_file(load, cx);
-            }));
-        #[cfg(feature = "dev-api")]
-        let button = button.dev_track(format!("listening.session.{id}"));
-        button
-    }
-
-    fn capture_listening_path(&mut self, target: ListeningPathTarget, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let sample_rate = f64::from(state.app.audio_device_state.hal_config.sample_rate);
-            let result = path_config_from_plugin_graph(&state.app.plugin_state.graph, sample_rate);
-            let captured = state
-                .app
-                .ui_state
-                .translations
-                .listening_test
-                .status
-                .captured;
-            let current_chain = state
-                .app
-                .ui_state
-                .translations
-                .listening_test
-                .setup
-                .current_chain;
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            match result {
-                Ok(config) => {
-                    match target {
-                        ListeningPathTarget::A => {
-                            listening.path_a = Some(config);
-                            listening.path_a_label = format!("{current_chain} A");
-                        }
-                        ListeningPathTarget::B => {
-                            listening.path_b = Some(config);
-                            listening.path_b_label = format!("{current_chain} B");
-                        }
-                    }
-                    clear_listening_canvas(listening, target);
-                    let _ = listening.ab_test.clear_session();
-                    listening.status = captured.into();
-                }
-                Err(error) => listening.status = error,
-            }
-        });
-        cx.notify();
-    }
-
-    fn start_listening_trial(&mut self, mode: TrialMode, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let load_or_prepare = state
-                .app
-                .ui_state
-                .translations
-                .listening_test
-                .status
-                .load_or_prepare;
-            let trial_started = state
-                .app
-                .ui_state
-                .translations
-                .listening_test
-                .status
-                .trial_started;
-            let result = state.app.plugin_state.start_ab_test_trial(mode);
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            match result {
-                Ok(index) => listening.status = format!("{trial_started} · #{}", index + 1),
-                Err(AbTestError::InvalidSetup) => listening.status = load_or_prepare.into(),
-                Err(error) => listening.status = error.to_string(),
-            }
-        });
-        cx.notify();
-    }
-
-    fn prepare_current_listening_session(&mut self, cx: &mut Context<Self>) {
-        let request_data = {
-            let state = self.state.read(cx);
-            let listening = &state.app.plugin_state.listening_test_state;
-            match (
-                listening.path_a.clone(),
-                listening.path_b.clone(),
-                state.app.get_current_track_path(),
-            ) {
-                (Some(path_a), Some(path_b), Some(media_path)) => Some((
-                    path_a,
-                    path_b,
-                    listening.path_a_label.clone(),
-                    listening.path_b_label.clone(),
-                    media_path,
-                    listening.segment_start_ms,
-                    listening.level_match_config,
-                )),
-                _ => None,
-            }
-        };
-        let Some((path_a, path_b, label_a, label_b, media_path, start_ms, level_match)) =
-            request_data
-        else {
-            self.state.update(cx, |state, _| {
-                state.app.plugin_state.listening_test_state.status = state
-                    .app
-                    .ui_state
-                    .translations
-                    .listening_test
-                    .status
-                    .select_paths_and_track
-                    .into();
-            });
-            cx.notify();
-            return;
-        };
-        self.state.update(cx, |state, _| {
-            state.app.plugin_state.listening_test_state.status = state
-                .app
-                .ui_state
-                .translations
-                .listening_test
-                .status
-                .measuring
-                .into();
-        });
-
-        let weak_state = self.state.downgrade();
-        cx.spawn(async move |_, cx| {
-            let timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis();
-            let session_id = format!("sotf-listening-{timestamp}");
-            let assignment_seed = timestamp as u64;
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    prepare_ab_test_session(AbTestSessionPreparationRequest {
-                        session_id: &session_id,
-                        assignment_seed,
-                        path_a_label: &label_a,
-                        path_b_label: &label_b,
-                        path_a: &path_a,
-                        path_b: &path_b,
-                        media_path: &media_path,
-                        start_ms,
-                        level_match,
-                        block_frames: 1_024,
-                        switch_transition_ms: 20.0,
-                        participant_id: None,
-                        app_version: env!("CARGO_PKG_VERSION"),
-                    })
-                })
-                .await;
-            let Some(entity) = weak_state.upgrade() else {
-                return;
-            };
-            entity.update(&mut cx.clone(), |state, cx| {
-                let prepared_label = state
-                    .app
-                    .ui_state
-                    .translations
-                    .listening_test
-                    .status
-                    .prepared;
-                let listening = &mut state.app.plugin_state.listening_test_state;
-                match result {
-                    Ok((session, preparation)) => {
-                        let correction = preparation.measurement.correction_b_db;
-                        match listening.ab_test.replace_session(session) {
-                            Ok(()) => {
-                                listening.status =
-                                    format!("{prepared_label}: {correction:+.2} dB.");
-                            }
-                            Err(error) => listening.status = error.to_string(),
-                        }
-                    }
-                    Err(error) => listening.status = error.to_string(),
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    fn activate_listening_cue(&mut self, cue: TrialCue, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let localized = state
-                .app
-                .ui_state
-                .translations
-                .listening_test
-                .status
-                .clone();
-            let result = state
-                .app
-                .plugin_state
-                .activate_ab_test_cue(cue)
-                .map_err(|error| error.to_string());
-            state.app.plugin_state.listening_test_state.status = match result {
-                Ok(()) => localized.cue_active.into(),
-                Err(error) => error,
-            };
-        });
-        cx.notify();
-    }
-
-    fn commit_listening_answer(&mut self, answer: TrialAnswer, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let answer_committed = state
-                .app
-                .ui_state
-                .translations
-                .listening_test
-                .status
-                .answer_committed;
-            let (confidence, notes) = {
-                let listening = &state.app.plugin_state.listening_test_state;
-                (listening.confidence, listening.notes.clone())
-            };
-            let result =
-                state
-                    .app
-                    .plugin_state
-                    .commit_ab_test_answer(answer, Some(confidence), Some(notes));
-            match result {
-                Ok(_) => {
-                    let completed_trials = state
-                        .app
-                        .plugin_state
-                        .listening_test_state
-                        .ab_test
-                        .view()
-                        .completed_trials;
-                    {
-                        let listening = &mut state.app.plugin_state.listening_test_state;
-                        listening.notes.clear();
-                        listening.status = answer_committed.into();
-                    }
-                    let tutorial = &mut state.app.tutorial;
-                    if completed_trials >= tutorial.listening_break_interval
-                        && completed_trials % tutorial.listening_break_interval == 0
-                        && completed_trials != tutorial.listening_break_dismissed_at
-                    {
-                        tutorial.listening_break_prompt_open = true;
-                    }
-                }
-                Err(error) => {
-                    state.app.plugin_state.listening_test_state.status = error.to_string();
-                }
-            }
-        });
-        cx.notify();
-    }
-
-    fn load_listening_path(&mut self, target: ListeningPathTarget, cx: &mut Context<Self>) {
-        let weak_state = self.state.downgrade();
-        let path_filter = self
-            .state
-            .read(cx)
-            .app
-            .ui_state
-            .translations
-            .listening_test
-            .setup
-            .path_json_filter;
-        cx.spawn(async move |_, cx| {
-            let file = rfd::AsyncFileDialog::new()
-                .add_filter(path_filter, &["json"])
-                .pick_file()
-                .await;
-            let Some(file) = file else { return };
-            let path = file.path().to_path_buf();
-            let result = std::fs::read_to_string(&path)
-                .map_err(|error| error.to_string())
-                .and_then(|json| {
-                    serde_json::from_str::<PathConfig>(&json).map_err(|error| error.to_string())
-                });
-            let Some(entity) = weak_state.upgrade() else {
-                return;
-            };
-            entity.update(&mut cx.clone(), |state, cx| {
-                let path_loaded = state
-                    .app
-                    .ui_state
-                    .translations
-                    .listening_test
-                    .status
-                    .path_loaded;
-                let listening = &mut state.app.plugin_state.listening_test_state;
-                match result {
-                    Ok(config) => {
-                        let config = simplify_linear_path_config(config);
-                        let label = path
-                            .file_name()
-                            .and_then(|name| name.to_str())
-                            .unwrap_or(path_filter)
-                            .to_owned();
-                        match target {
-                            ListeningPathTarget::A => {
-                                listening.path_a = Some(config);
-                                listening.path_a_label = label;
-                            }
-                            ListeningPathTarget::B => {
-                                listening.path_b = Some(config);
-                                listening.path_b_label = label;
-                            }
-                        }
-                        clear_listening_canvas(listening, target);
-                        let _ = listening.ab_test.clear_session();
-                        listening.status = path_loaded.into();
-                    }
-                    Err(error) => listening.status = error,
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    fn pick_listening_session_file(&mut self, load: bool, cx: &mut Context<Self>) {
-        let weak_state = self.state.downgrade();
-        let session_filter = self
-            .state
-            .read(cx)
-            .app
-            .ui_state
-            .translations
-            .listening_test
-            .setup
-            .session_filter;
-        let session = self
-            .state
-            .read(cx)
-            .app
-            .plugin_state
-            .listening_test_state
-            .ab_test
-            .session()
-            .cloned();
-        cx.spawn(async move |_, cx| {
-            let file = if load {
-                rfd::AsyncFileDialog::new()
-                    .add_filter(session_filter, &["json"])
-                    .pick_file()
-                    .await
-            } else {
-                rfd::AsyncFileDialog::new()
-                    .set_file_name("sotf-listening-session.json")
-                    .save_file()
-                    .await
-            };
-            let Some(file) = file else { return };
-            let result = if load {
-                load_ab_test_session(file.path()).map(Some)
-            } else if let Some(session) = session.as_ref() {
-                save_ab_test_session(session, file.path()).map(|_| None)
-            } else {
-                return;
-            };
-            let Some(entity) = weak_state.upgrade() else {
-                return;
-            };
-            entity.update(&mut cx.clone(), |state, cx| {
-                let localized = state
-                    .app
-                    .ui_state
-                    .translations
-                    .listening_test
-                    .status
-                    .clone();
-                let listening = &mut state.app.plugin_state.listening_test_state;
-                match result {
-                    Ok(Some(session)) => {
-                        listening.path_a = Some(session.setup.path_a.config.clone());
-                        listening.path_b = Some(session.setup.path_b.config.clone());
-                        listening.path_a_label = session.setup.path_a.label.clone();
-                        listening.path_b_label = session.setup.path_b.label.clone();
-                        listening.path_a_canvas = None;
-                        listening.path_b_canvas = None;
-                        listening.level_match_config = session.setup.level_match.config();
-                        listening.segment_start_ms = session.setup.media.start_ms;
-                        match listening.ab_test.replace_session(session) {
-                            Ok(()) => listening.status = localized.session_loaded.into(),
-                            Err(error) => listening.status = error.to_string(),
-                        }
-                    }
-                    Ok(None) => listening.status = localized.session_saved.into(),
-                    Err(error) => listening.status = error.to_string(),
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    fn set_ear_training_surface(&mut self, surface: EarTrainingSurface, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            activate_listening_surface(&mut state.app, surface);
-        });
-        cx.notify();
-    }
-
-    fn adjust_eq_training_config(
-        &mut self,
-        field: EqConfigField,
-        direction: i32,
-        cx: &mut Context<Self>,
-    ) {
-        self.state.update(cx, |state, _| {
-            let settings_changed = state
-                .app
-                .ui_state
-                .translations
-                .listening_test
-                .eq
-                .configure_start;
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            match field {
-                EqConfigField::Bands => {
-                    listening.eq_config.band_count =
-                        (listening.eq_config.band_count as i32 + direction).clamp(2, 25) as usize;
-                }
-                EqConfigField::Gain => {
-                    listening.eq_config.gain_db =
-                        (listening.eq_config.gain_db + f64::from(direction)).clamp(1.0, 15.0);
-                }
-                EqConfigField::Q => {
-                    listening.eq_config.q =
-                        (listening.eq_config.q + f64::from(direction) * 0.1).clamp(0.2, 10.0);
-                }
-                EqConfigField::Trials => {
-                    listening.eq_config.trial_count =
-                        (listening.eq_config.trial_count as i32 + direction * 5).clamp(5, 100)
-                            as usize;
-                }
-            }
-            listening.eq_session = None;
-            listening.eq_selected_band = 0;
-            listening.eq_filtered = false;
-            listening.status = settings_changed.into();
-        });
-        cx.notify();
-    }
-
-    fn cycle_eq_training_change_mode(&mut self, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let settings_changed = state
-                .app
-                .ui_state
-                .translations
-                .listening_test
-                .eq
-                .configure_start;
-            let change_label = state.app.ui_state.translations.listening_test.eq.change;
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            listening.eq_config.change_mode = match listening.eq_config.change_mode {
-                EqChangeMode::Boost => EqChangeMode::Cut,
-                EqChangeMode::Cut => EqChangeMode::Mixed,
-                EqChangeMode::Mixed => EqChangeMode::Boost,
-            };
-            listening.eq_session = None;
-            listening.status = format!(
-                "{}: {}. {settings_changed}",
-                change_label,
-                eq_change_mode_symbol(listening.eq_config.change_mode)
-            );
-        });
-        cx.notify();
-    }
-
-    fn start_eq_training_session(&mut self, cx: &mut Context<Self>) {
-        self.ensure_eq_audition_plugin(cx);
-        let started = self.state.update(cx, |state, _| {
-            let session_started = state
-                .app
-                .ui_state
-                .translations
-                .listening_test
-                .eq
-                .session_started;
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            listening.eq_config.seed = listening.eq_config.seed.wrapping_add(1);
-            match EqTrainingSession::new(listening.eq_config.clone()).and_then(|mut session| {
-                session.start()?;
-                Ok(session)
-            }) {
-                Ok(session) => {
-                    listening.eq_session = Some(session);
-                    listening.eq_selected_band = 0;
-                    listening.eq_filtered = false;
-                    listening.status = session_started.into();
-                    true
-                }
-                Err(error) => {
-                    listening.status = error.to_string();
-                    false
-                }
-            }
-        });
-        if started {
-            self.activate_eq_training_path(false, cx);
-        }
-        cx.notify();
-    }
-
-    fn start_eq_course(&mut self, course: EarTrainingCourse, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            listening.eq_config = course.config();
-            listening.eq_active_course = Some(course);
-            listening.surface = EarTrainingSurface::EqBands;
-        });
-        self.start_eq_training_session(cx);
-    }
-
-    fn cycle_eq_training_exercise(&mut self, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            listening.eq_config.exercise = match listening.eq_config.exercise {
-                EqTrainingExercise::BandIdentification => {
-                    EqTrainingExercise::BoostCutIdentification
-                }
-                EqTrainingExercise::BoostCutIdentification => {
-                    EqTrainingExercise::GainIdentification
-                }
-                EqTrainingExercise::GainIdentification => EqTrainingExercise::BandIdentification,
-            };
-            listening.eq_session = None;
-            listening.eq_active_course = None;
-        });
-        cx.notify();
-    }
-
-    fn toggle_eq_training_adaptive(&mut self, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            listening.eq_adaptive = !listening.eq_adaptive;
-            if listening.eq_adaptive {
-                let exercise = listening.eq_config.exercise;
-                listening.eq_config = listening.eq_progress.adaptive_config();
-                listening.eq_config.exercise = exercise;
-                listening.eq_active_course = None;
-            }
-        });
-        cx.notify();
-    }
-
-    fn add_current_eq_source(&mut self, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let Some(path) = state.app.get_current_track_path() else {
-                return;
-            };
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            if !listening.eq_sources.contains(&path) {
-                listening.eq_sources.push(path);
-                listening.eq_source_index = listening.eq_sources.len() - 1;
-            }
-            listening.status = format!("{} training sources", listening.eq_sources.len());
-        });
-        cx.notify();
-    }
-
-    fn navigate_eq_source(&mut self, direction: i32, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            if listening.eq_sources.is_empty() {
-                return;
-            }
-            listening.eq_source_index = (listening.eq_source_index as i32 + direction)
-                .rem_euclid(listening.eq_sources.len() as i32)
-                as usize;
-            let path = listening.eq_sources[listening.eq_source_index].clone();
-            listening.status = format!(
-                "Source {}/{}",
-                listening.eq_source_index + 1,
-                listening.eq_sources.len()
-            );
-            Self::play_track(state, sotf_audio::decoder::AudioSource::File(path));
-        });
-        cx.notify();
-    }
-
-    fn set_eq_loop_boundary(&mut self, start: bool, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let eq_text = state.app.ui_state.translations.listening_test.eq.clone();
-            let position = state.app.playback.position_secs.max(0.0);
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            let (mut loop_start, mut loop_end) =
-                listening.eq_loop_range.unwrap_or((0.0, position + 5.0));
-            if start {
-                loop_start = position.min(loop_end - 0.1);
-            } else {
-                loop_end = position.max(loop_start + 0.1);
-            }
-            listening.eq_loop_range = Some((loop_start, loop_end));
-            listening.status = eq_text.clip_loop_range(loop_start, loop_end);
-        });
-        cx.notify();
-    }
-
-    fn toggle_eq_loop(&mut self, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let eq_text = state.app.ui_state.translations.listening_test.eq.clone();
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            listening.eq_loop_enabled =
-                !listening.eq_loop_enabled && listening.eq_loop_range.is_some();
-            listening.status = eq_text.clip_loop_status(listening.eq_loop_enabled).into();
-        });
-        cx.notify();
-    }
-
-    fn ensure_eq_audition_plugin(&mut self, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let existing = state
-                .app
-                .plugin_state
-                .graph
-                .plugins_linear()
-                .and_then(|plugins| {
-                    plugins
-                        .iter()
-                        .find(|node| node.plugin.plugin_type() == PluginType::ABCompare)
-                        .map(|node| node.id)
-                });
-            if existing.is_some() {
-                return;
-            }
-            state.app.add_plugin(&PluginType::ABCompare);
-            let injected = state
-                .app
-                .plugin_state
-                .graph
-                .plugins_linear()
-                .and_then(|plugins| {
-                    plugins
-                        .iter()
-                        .find(|node| node.plugin.plugin_type() == PluginType::ABCompare)
-                        .map(|node| node.id)
-                });
-            state
-                .app
-                .plugin_state
-                .listening_test_state
-                .eq_audition_node_id = injected;
-        });
-    }
-
-    fn select_eq_training_band(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            let answer_count = listening
-                .eq_session
-                .as_ref()
-                .and_then(|session| {
-                    session.current_question.as_ref().map(|question| {
-                        question
-                            .answer_labels(session.config.exercise, &session.band_frequencies)
-                            .len()
-                    })
-                })
-                .unwrap_or(0);
-            if index < answer_count
-                && !listening
-                    .eq_session
-                    .as_ref()
-                    .is_some_and(EqTrainingSession::current_is_answered)
-            {
-                listening.eq_selected_band = index;
-            }
-        });
-        cx.notify();
-    }
-
-    fn move_eq_training_selection(&mut self, direction: i32, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            let answer_count = listening
-                .eq_session
-                .as_ref()
-                .and_then(|session| {
-                    session.current_question.as_ref().map(|question| {
-                        question
-                            .answer_labels(session.config.exercise, &session.band_frequencies)
-                            .len()
-                    })
-                })
-                .unwrap_or(0);
-            if answer_count == 0
-                || listening
-                    .eq_session
-                    .as_ref()
-                    .is_some_and(EqTrainingSession::current_is_answered)
-            {
-                return;
-            }
-            listening.eq_selected_band = (listening.eq_selected_band as i32 + direction)
-                .rem_euclid(answer_count as i32) as usize;
-        });
-        cx.notify();
-    }
-
-    fn activate_eq_training_path(&mut self, filtered: bool, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let eq_text = state.app.ui_state.translations.listening_test.eq.clone();
-            let question = state
-                .app
-                .plugin_state
-                .listening_test_state
-                .eq_session
-                .as_ref()
-                .and_then(|session| session.current_question.clone());
-            let result = question
-                .ok_or_else(|| eq_text.configure_start.to_owned())
-                .and_then(|question| {
-                    let plugin_idx = state
-                        .app
-                        .plugin_state
-                        .graph
-                        .plugins_linear()
-                        .and_then(|plugins| {
-                            plugins
-                                .iter()
-                                .position(|node| node.plugin.plugin_type() == PluginType::ABCompare)
-                        })
-                        .ok_or_else(|| eq_text.add_ab_plugin.to_owned())?;
-                    let path_a = serde_json::to_string(&PathConfig::None)
-                        .map_err(|error| error.to_string())?;
-                    let path_b = serde_json::to_string(&PathConfig::Plugin {
-                        plugin_type: "eq".into(),
-                        parameters: question.plugin_parameters(),
-                    })
-                    .map_err(|error| error.to_string())?;
-                    state.app.set_plugin_param_string(plugin_idx, 9, path_a)?;
-                    state.app.set_plugin_param_string(plugin_idx, 10, path_b)?;
-                    state.app.set_plugin_param(plugin_idx, 0, 0.0);
-                    state.app.set_plugin_param(plugin_idx, 1, 1.0);
-                    state
-                        .app
-                        .set_plugin_param(plugin_idx, 2, if filtered { 1.0 } else { 0.0 });
-                    state.app.set_plugin_param(plugin_idx, 4, 0.0);
-                    state.app.set_plugin_param(plugin_idx, 7, 0.0);
-                    state.app.set_plugin_param(plugin_idx, 8, 20.0);
-                    Ok(())
-                });
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            match result {
-                Ok(()) => {
-                    listening.eq_filtered = filtered;
-                    listening.status = if filtered {
-                        eq_text.filtered_active
-                    } else {
-                        eq_text.original_active
-                    }
-                    .into();
-                }
-                Err(error) => listening.status = error,
-            }
-        });
-        cx.notify();
-    }
-
-    fn submit_eq_training_answer(&mut self, cx: &mut Context<Self>) {
-        self.activate_eq_training_path(false, cx);
-        self.state.update(cx, |state, _| {
-            let eq_text = state.app.ui_state.translations.listening_test.eq.clone();
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            let selected = listening.eq_selected_band;
-            let status = match listening.eq_session.as_mut() {
-                Some(session) => match session.submit_answer(selected) {
-                    Ok(result) if result.correct => format!("{}.", eq_text.correct),
-                    Ok(result) => format!(
-                        "{}: {}.",
-                        eq_text.learning.answer,
-                        format_frequency(result.question.center_frequency_hz)
-                    ),
-                    Err(error) => error.to_string(),
-                },
-                None => eq_text.configure_start.into(),
-            };
-            listening.status = status;
-        });
-        cx.notify();
-    }
-
-    fn advance_eq_training_question(&mut self, cx: &mut Context<Self>) {
-        let (advanced, progress_to_save) = self.state.update(cx, |state, _| {
-            let next_trial = state.app.ui_state.translations.listening_test.eq.next;
-            let configure_start = state
-                .app
-                .ui_state
-                .translations
-                .listening_test
-                .eq
-                .configure_start;
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            let mut completed_session = None;
-            let status = match listening.eq_session.as_mut() {
-                Some(session) => match session.advance() {
-                    Ok(Some(_)) => {
-                        listening.eq_selected_band = 0;
-                        listening.eq_filtered = false;
-                        next_trial.into()
-                    }
-                    Ok(None) => {
-                        completed_session = Some(session.clone());
-                        format!(
-                            "Session complete: {}/{} correct ({:.0}%).",
-                            session.correct_count(),
-                            session.trials.len(),
-                            session.accuracy() * 100.0
-                        )
-                    }
-                    Err(error) => error.to_string(),
-                },
-                None => configure_start.into(),
-            };
-            let has_question = listening
-                .eq_session
-                .as_ref()
-                .is_some_and(|session| session.current_question.is_some());
-            listening.status = status;
-            if let Some(session) = completed_session {
-                listening
-                    .eq_progress
-                    .record(&session, listening.eq_active_course);
-                if listening.eq_adaptive {
-                    let exercise = listening.eq_config.exercise;
-                    listening.eq_config = listening.eq_progress.adaptive_config();
-                    listening.eq_config.exercise = exercise;
-                }
-                (has_question, Some(listening.eq_progress.clone()))
-            } else {
-                (has_question, None)
-            }
-        });
-        if let (Some(path), Some(progress)) = (
-            sotf_audio_player::config::get_ear_training_progress_path(),
-            progress_to_save,
-        ) && let Err(error) = progress.save_atomic(&path)
-        {
-            log::warn!("Failed to save ear-training progress: {error}");
-        }
-        if advanced {
-            self.activate_eq_training_path(false, cx);
-        }
-        cx.notify();
-    }
-
-    fn is_eq_training_active(&self, cx: &Context<Self>) -> bool {
-        self.is_listening_test_active(cx)
-            && self
-                .state
-                .read(cx)
-                .app
-                .plugin_state
-                .listening_test_state
-                .surface
-                == EarTrainingSurface::EqBands
-    }
-
-    pub(crate) fn ear_training_show_eq_bands(
-        &mut self,
-        _: &EarTrainingShowEqBands,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.is_listening_test_active(cx) {
-            self.set_ear_training_surface(EarTrainingSurface::EqBands, cx);
-        }
-    }
-
-    pub(crate) fn ear_training_show_blind_comparison(
-        &mut self,
-        _: &EarTrainingShowBlindComparison,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.is_listening_test_active(cx) {
-            self.set_ear_training_surface(EarTrainingSurface::BlindComparison, cx);
-        }
-    }
-
-    pub(crate) fn ear_training_start(
-        &mut self,
-        _: &EarTrainingStart,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.is_eq_training_active(cx) {
-            self.start_eq_training_session(cx);
-        }
-    }
-
-    pub(crate) fn ear_training_play_original(
-        &mut self,
-        _: &EarTrainingPlayOriginal,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.is_eq_training_active(cx) {
-            self.activate_eq_training_path(false, cx);
-        }
-    }
-
-    pub(crate) fn ear_training_play_filtered(
-        &mut self,
-        _: &EarTrainingPlayFiltered,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.is_eq_training_active(cx) {
-            self.activate_eq_training_path(true, cx);
-        }
-    }
-
-    pub(crate) fn ear_training_select_previous_band(
-        &mut self,
-        _: &EarTrainingSelectPreviousBand,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.is_eq_training_active(cx) {
-            self.move_eq_training_selection(-1, cx);
-        }
-    }
-
-    pub(crate) fn ear_training_select_next_band(
-        &mut self,
-        _: &EarTrainingSelectNextBand,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.is_eq_training_active(cx) {
-            self.move_eq_training_selection(1, cx);
-        }
-    }
-
-    pub(crate) fn ear_training_submit(
-        &mut self,
-        _: &EarTrainingSubmit,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.is_eq_training_active(cx) {
-            self.submit_eq_training_answer(cx);
-        }
-    }
-
-    pub(crate) fn ear_training_next_question(
-        &mut self,
-        _: &EarTrainingNextQuestion,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.is_eq_training_active(cx) {
-            self.advance_eq_training_question(cx);
-        }
-    }
-
-    fn is_listening_test_active(&self, cx: &Context<Self>) -> bool {
-        self.state.read(cx).app.ui_state.current_screen == crate::app::Screen::ListeningTest
-    }
-
-    pub(crate) fn listening_capture_path_a(
-        &mut self,
-        _: &ListeningCapturePathA,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.is_listening_test_active(cx) {
-            self.capture_listening_path(ListeningPathTarget::A, cx);
-        }
-    }
-
-    pub(crate) fn listening_capture_path_b(
-        &mut self,
-        _: &ListeningCapturePathB,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.is_listening_test_active(cx) {
-            self.capture_listening_path(ListeningPathTarget::B, cx);
-        }
-    }
-
-    pub(crate) fn listening_prepare(
-        &mut self,
-        _: &ListeningPrepare,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.is_listening_test_active(cx) {
-            self.prepare_current_listening_session(cx);
-        }
-    }
-
-    pub(crate) fn listening_start_blind_ab(
-        &mut self,
-        _: &ListeningStartBlindAb,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.is_listening_test_active(cx) {
-            self.start_listening_trial(TrialMode::BlindAb, cx);
-        }
-    }
-
-    pub(crate) fn listening_start_abx(
-        &mut self,
-        _: &ListeningStartAbx,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.is_listening_test_active(cx) {
-            self.start_listening_trial(TrialMode::Abx, cx);
-        }
-    }
-
-    fn play_listening_cue_position(&mut self, position: usize, cx: &mut Context<Self>) {
-        if !self.is_listening_test_active(cx) {
-            return;
-        }
-        let mode = self
-            .state
-            .read(cx)
-            .app
-            .plugin_state
-            .listening_test_state
-            .ab_test
-            .session()
-            .and_then(|session| session.pending_mode());
-        if let Some(cue) = listening_cue_for_position(mode, position) {
-            self.activate_listening_cue(cue, cx);
-        }
-    }
-
-    pub(crate) fn listening_play_cue_1(
-        &mut self,
-        _: &ListeningPlayCue1,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.play_listening_cue_position(0, cx);
-    }
-
-    pub(crate) fn listening_play_cue_2(
-        &mut self,
-        _: &ListeningPlayCue2,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.play_listening_cue_position(1, cx);
-    }
-
-    pub(crate) fn listening_play_cue_3(
-        &mut self,
-        _: &ListeningPlayCue3,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.play_listening_cue_position(2, cx);
-    }
-
-    fn commit_listening_answer_position(&mut self, position: usize, cx: &mut Context<Self>) {
-        if !self.is_listening_test_active(cx) {
-            return;
-        }
-        let mode = self
-            .state
-            .read(cx)
-            .app
-            .plugin_state
-            .listening_test_state
-            .ab_test
-            .session()
-            .and_then(|session| session.pending_mode());
-        if let Some(answer) = listening_answer_for_position(mode, position) {
-            self.commit_listening_answer(answer, cx);
-        }
-    }
-
-    pub(crate) fn listening_commit_answer_1(
-        &mut self,
-        _: &ListeningCommitAnswer1,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.commit_listening_answer_position(0, cx);
-    }
-
-    pub(crate) fn listening_commit_answer_2(
-        &mut self,
-        _: &ListeningCommitAnswer2,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.commit_listening_answer_position(1, cx);
     }
 }
 

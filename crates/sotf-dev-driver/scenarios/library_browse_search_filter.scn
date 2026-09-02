@@ -12,12 +12,14 @@ assert_visible library.tab.search
 assert_visible library.tab.album
 
 # Search a known fixture title, then recover from a deliberately empty result.
+timing_start search
 click library.tab.search
 assert_visible library.search_input
 click library.search_input
 type "classical"
 wait_until library.search_query == "classical" timeout=2s
 wait_until library.filtered_album_count > 0 timeout=2s
+timing_end search max=1s
 
 # The Search tab doubles as a clear/close action. Re-open it instead of
 # mutating the input by fixture state, then enter a query with no matches.

@@ -241,6 +241,22 @@ pub(super) fn post_quit(tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> {
     Ok(reply)
 }
 
+pub(super) fn post_qa_ui_environment(
+    body: &[u8],
+    tx: &mpsc::SyncSender<DevCommand>,
+) -> Result<DevReply> {
+    let payload = parse_json_payload(body)?;
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    tx.send(DevCommand::QaUiEnvironment {
+        payload,
+        reply: reply_tx,
+    })
+    .map_err(|_| anyhow!("dev-api queue closed"))?;
+    reply_rx
+        .recv_timeout(REPLY_TIMEOUT)
+        .map_err(|_| anyhow!("dev-api reply timeout"))
+}
+
 pub(super) fn post_qa_seed(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> {
     let payload = parse_json_payload(body)?;
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);

@@ -48,6 +48,7 @@ impl PlayerView {
         let meter_display_mode = state.app.level_meters.display_mode;
         let window_height = state.app.ui_state.window_height;
         let window_width = state.app.ui_state.window_width;
+        let font_scale = state.app.ui_state.font_scale;
         let hide_meters_for_rack = state.app.layout.hide_queue_meters_for_rack;
         // Use the solved queue slot, rather than reconstructing its bounds from
         // persisted ratios. The solver accounts for panel minimums, collapsed
@@ -64,7 +65,9 @@ impl PlayerView {
         let meters_panel_tall = window_height > 700.0;
 
         // Hide meters when: explicitly collapsed, OR rack is visible in 3-panel layout
-        let meters_collapsed = meters_ratio < 0.05 || hide_meters_for_rack;
+        let meters_collapsed = meters_ratio < 0.05
+            || hide_meters_for_rack
+            || available_queue_width / font_scale.max(1.0) < 300.0;
         let lufs_ratio = layout.lufs_panel_ratio;
         let level_meters_collapsed = lufs_ratio >= 0.90;
 
@@ -417,7 +420,9 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .items_center()
+                    .gap(d.gap)
                     .px(d.card)
                     .py(d.pad_y)
                     .border_b_1()

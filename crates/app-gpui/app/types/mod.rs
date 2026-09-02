@@ -262,6 +262,13 @@ pub enum PlatformStyle {
 
 impl PlatformStyle {
     pub fn for_window(width: f32, height: f32, is_ios_family: bool) -> Self {
+        #[cfg(feature = "dev-api")]
+        if std::env::var_os("SOTF_QA_DIR").is_some()
+            && std::env::var("SOTF_QA_PLATFORM_STYLE").as_deref() == Ok("phone")
+        {
+            return Self::Phone;
+        }
+
         if is_ios_family && crate::ui::is_phone_sized_window(width, height) {
             Self::Phone
         } else {

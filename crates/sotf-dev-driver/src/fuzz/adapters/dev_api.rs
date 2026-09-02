@@ -101,14 +101,33 @@ impl DevApiTarget {
             .ok_or_else(|| TargetError::Protocol("dev API endpoint is unavailable".into()))
     }
 
-    fn get_reply(&self, path: &str, timeout: Duration) -> Result<DevReply, TargetError> {
+    fn map_send_error(&mut self, error: reqwest::Error) -> TargetError {
+        if error.is_timeout() {
+            return TargetError::Timeout(error.to_string());
+        }
+        // A connect failure against a known-dead child is an exit, not a hang.
+        if error.is_connect() && self.child_exited() {
+            return TargetError::ProcessExited(error.to_string());
+        }
+        TargetError::Http(error)
+    }
+
+    fn child_exited(&mut self) -> bool {
+        self.child
+            .as_mut()
+            .and_then(|child| child.try_wait().ok().flatten())
+            .is_some()
+    }
+
+    fn get_reply(&mut self, path: &str, timeout: Duration) -> Result<DevReply, TargetError> {
         let request = self.client.get(format!("{}{path}", self.base()?));
-        let response = self.authenticated(request)?.timeout(timeout).send()?;
+        let request = self.authenticated(request)?.timeout(timeout);
+        let response = request.send().map_err(|error| self.map_send_error(error))?;
         parse_reply(response)
     }
 
     fn post_reply(
-        &self,
+        &mut self,
         path: &str,
         body: &Value,
         timeout: Duration,
@@ -117,11 +136,12 @@ impl DevApiTarget {
             .client
             .post(format!("{}{path}", self.base()?))
             .json(body);
-        let response = self.authenticated(request)?.timeout(timeout).send()?;
+        let request = self.authenticated(request)?.timeout(timeout);
+        let response = request.send().map_err(|error| self.map_send_error(error))?;
         parse_reply(response)
     }
 
-    fn wait_until_live(&self) -> Result<(), TargetError> {
+    fn wait_until_live(&mut self) -> Result<(), TargetError> {
         let deadline = Instant::now() + self.config.startup_timeout;
         let mut last_error = None;
         while Instant::now() < deadline {
@@ -138,7 +158,7 @@ impl DevApiTarget {
         )))
     }
 
-    fn execute_payload(&self, action: &Action) -> Result<DevReply, TargetError> {
+    fn execute_payload(&mut self, action: &Action) -> Result<DevReply, TargetError> {
         let timeout = Duration::from_millis(action.timeout_ms.max(1));
         match &action.payload {
             ActionPayload::DevAction { name, payload } => self.post_reply(
@@ -150,25 +170,18 @@ impl DevApiTarget {
                 let mut url = reqwest::Url::parse(&format!("{}/query", self.base()?))
                     .map_err(|error| TargetError::Protocol(error.to_string()))?;
                 url.query_pairs_mut().append_pair("path", path);
-                let request = self.client.get(url);
-                parse_reply(self.authenticated(request)?.timeout(timeout).send()?)
+                let request = self.authenticated(self.client.get(url))?.timeout(timeout);
+                let response = request.send().map_err(|error| self.map_send_error(error))?;
+                parse_reply(response)
             }
             ActionPayload::Key { keystroke } => {
                 self.post_reply("/key", &json!({"keystroke": keystroke}), timeout)
             }
             ActionPayload::Text { text } => {
-                let mut last = DevReply::success(Value::Null);
-                for character in text.chars() {
-                    last = self.post_reply(
-                        "/key",
-                        &json!({"keystroke": character.to_string()}),
-                        timeout,
-                    )?;
-                    if !last.ok {
-                        break;
-                    }
-                }
-                Ok(last)
+                // The server expands the bounded text payload into real key
+                // events; raw single-char keystrokes cannot express
+                // whitespace or shifted characters.
+                self.post_reply("/text", &json!({"text": text}), timeout)
             }
             ActionPayload::Selector {
                 operation,
@@ -400,9 +413,13 @@ impl FuzzTarget for DevApiTarget {
     }
 
     fn live(&mut self) -> Result<bool, TargetError> {
-        Ok(self
-            .get_reply("/live", Duration::from_secs(2))
-            .is_ok_and(|reply| reply.ok))
+        // Exit precedence: a known-dead child is an exit, never a hang probe.
+        if self.child_exited() {
+            return Err(TargetError::ProcessExited(
+                "dev API child process exited".into(),
+            ));
+        }
+        Ok(self.get_reply("/live", Duration::from_secs(2))?.ok)
     }
 
     fn pid(&self) -> Option<u32> {
@@ -470,7 +487,13 @@ impl FuzzTarget for DevApiTarget {
 
 fn parse_reply(response: reqwest::blocking::Response) -> Result<DevReply, TargetError> {
     let status = response.status();
-    let bytes = response.bytes()?;
+    let bytes = response.bytes().map_err(|error| {
+        if error.is_timeout() {
+            TargetError::Timeout(error.to_string())
+        } else {
+            TargetError::Http(error)
+        }
+    })?;
     let reply: DevReply = serde_json::from_slice(&bytes).map_err(|error| {
         TargetError::Protocol(format!(
             "invalid dev API response ({status}): {error}; body={}",

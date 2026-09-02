@@ -23,6 +23,9 @@ pub(super) struct RunnerConfig {
     pub(super) readiness_timeout: String,
     #[serde(default)]
     pub(super) size: Option<String>,
+    /// Render the app's phone shell on desktop for visual/accessibility QA.
+    #[serde(default)]
+    pub(super) phone_layout: bool,
 }
 
 impl Default for RunnerConfig {
@@ -34,6 +37,7 @@ impl Default for RunnerConfig {
             demo_audio_dir: default_demo_audio_dir(),
             readiness_timeout: default_readiness_timeout(),
             size: None,
+            phone_layout: false,
         }
     }
 }
@@ -54,8 +58,11 @@ pub(super) fn spawn_app(
 
     let mut cmd = Command::new(&runner.app_bin);
     cmd.arg("--qa").arg(qa_dir);
-    if let Some(size) = &runner.size {
+    if let Some(size) = scenario.viewport.as_ref().or(runner.size.as_ref()) {
         cmd.arg("--size").arg(size);
+    }
+    if runner.phone_layout {
+        cmd.env("SOTF_QA_PLATFORM_STYLE", "phone");
     }
     cmd.args(&runner.app_args)
         .env("SOTF_DEV_API_PORT", port.to_string())

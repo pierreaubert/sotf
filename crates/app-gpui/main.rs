@@ -14,7 +14,7 @@ use sotf_audio_player_gpui::app::{
     i18n::{Language, Translations},
 };
 use sotf_audio_player_gpui::config::Config;
-use sotf_audio_player_gpui::keybindings::{KeymapPreset, get_keybindings};
+use sotf_audio_player_gpui::keybindings::{KeymapPreset, get_keybindings_with_overrides};
 use sotf_audio_player_gpui::ui;
 use std::fs::OpenOptions;
 use std::sync::Arc;
@@ -258,13 +258,21 @@ fn main() {
             {
                 config.release_channel = ReleaseChannel::Alpha;
             }
-            let (language, keymap_preset, release_channel) = config
+            let (language, keymap_preset, custom_keybindings, release_channel) = config
                 .as_ref()
-                .map(|c| (c.language, c.keymap_preset, c.release_channel))
+                .map(|c| {
+                    (
+                        c.language,
+                        c.keymap.preset,
+                        c.keymap.custom_keybindings.clone(),
+                        c.release_channel,
+                    )
+                })
                 .unwrap_or_else(|| {
                     (
                         Language::default(),
                         KeymapPreset::default(),
+                        Vec::new(),
                         ReleaseChannel::default(),
                     )
                 });
@@ -280,7 +288,10 @@ fn main() {
             let translations = Translations::for_language(language);
 
             // Register keyboard shortcuts
-            cx.bind_keys(get_keybindings(keymap_preset));
+            cx.bind_keys(get_keybindings_with_overrides(
+                keymap_preset,
+                &custom_keybindings,
+            ));
 
             // Build View menu items, filtering by release channel
             let mut view_menu_items = vec![

@@ -1,7 +1,42 @@
 use std::io::{Read, Seek, SeekFrom};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 use symphonia::core::formats::probe::Probe;
+
+use super::LibraryDirectoryAccessError;
+
+/// Validate an interactively selected library folder before changing the
+/// configured directory set. A successful metadata lookup alone is not
+/// enough: sandbox and ACL failures commonly appear only when enumeration is
+/// attempted.
+pub fn validate_library_directory(path: &Path) -> Result<(), LibraryDirectoryAccessError> {
+    let metadata =
+        std::fs::metadata(path).map_err(|error| classify_library_directory_error(path, error))?;
+    if !metadata.is_dir() {
+        return Err(LibraryDirectoryAccessError::NotDirectory(
+            path.to_path_buf(),
+        ));
+    }
+    std::fs::read_dir(path)
+        .map(|_| ())
+        .map_err(|error| classify_library_directory_error(path, error))
+}
+
+fn classify_library_directory_error(
+    path: &Path,
+    error: std::io::Error,
+) -> LibraryDirectoryAccessError {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => LibraryDirectoryAccessError::NotFound(path.to_path_buf()),
+        std::io::ErrorKind::PermissionDenied => {
+            LibraryDirectoryAccessError::PermissionDenied(path.to_path_buf())
+        }
+        _ => LibraryDirectoryAccessError::Unreadable {
+            path: PathBuf::from(path),
+            reason: error.to_string(),
+        },
+    }
+}
 
 /// Capitalize the first letter of each word for display
 /// Examples: "2cellos" -> "2cellos", "the beatles" -> "The Beatles"

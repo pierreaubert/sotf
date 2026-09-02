@@ -226,6 +226,9 @@ impl LevelMeterManager for AppState {
         }
 
         // Update Matrix plugin channel states
+        if self.level_meters.selected_group >= self.level_meters.groups.len() {
+            self.level_meters.selected_group = self.level_meters.groups.len().saturating_sub(1);
+        }
         self.update_matrix_plugin();
     }
 

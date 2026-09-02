@@ -172,8 +172,9 @@ fn test_config_serialization() {
     use gpui_themes::{AccessibilityPalette, ThemeModePreference, ThemeSchedule, TimeOfDay};
     use sotf_audio_player::ReleaseChannel;
     use sotf_audio_player_gpui::app::types::DensityMode;
+    use sotf_audio_player_gpui::config::KeymapConfig;
     use sotf_audio_player_gpui::i18n::Language;
-    use sotf_audio_player_gpui::keybindings::KeymapPreset;
+    use sotf_audio_player_gpui::keybindings::{CustomKeybinding, KeymapPreset};
     use sotf_audio_player_gpui::theme::{CommunityThemeId, ThemeAccentPreference, ThemeId};
 
     let schedule = ThemeSchedule::new(TimeOfDay::new(6, 30), TimeOfDay::new(21, 15));
@@ -188,7 +189,13 @@ fn test_config_serialization() {
         reduce_motion: false,
         density_mode: DensityMode::Standard,
         language: Language::default(),
-        keymap_preset: KeymapPreset::default(),
+        keymap: KeymapConfig {
+            preset: KeymapPreset::default(),
+            custom_keybindings: vec![CustomKeybinding::new(
+                "sotf_audio_player_gpui::app::actions::SwitchToSettings",
+                "alt-s",
+            )],
+        },
         panel_layout: PanelLayout::default(),
         window_geometry: WindowGeometry::default(),
         volume: 0.75,
@@ -207,6 +214,9 @@ fn test_config_serialization() {
         remote_library_identity: None,
     };
     let json = serde_json::to_string(&config).unwrap();
+    assert!(json.contains("\"keymap_preset\""));
+    assert!(json.contains("\"custom_keybindings\""));
+    assert!(!json.contains("\"keymap\":"));
     let deserialized: Config = serde_json::from_str(&json).unwrap();
     assert_eq!(
         deserialized.last_loaded_plugin_preset,
@@ -215,6 +225,10 @@ fn test_config_serialization() {
     assert!((deserialized.volume - 0.75).abs() < 0.001);
     assert!(deserialized.muted);
     assert_eq!(deserialized.scanner_threads, Some(2));
+    assert_eq!(
+        deserialized.keymap.custom_keybindings,
+        config.keymap.custom_keybindings
+    );
     assert_eq!(
         deserialized.theme_mode_preference,
         ThemeModePreference::Scheduled { schedule }

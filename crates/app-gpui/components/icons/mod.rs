@@ -239,7 +239,9 @@ impl RenderOnce for Icon {
         // Use rem-based sizing so icons scale with the responsive rem size
         let size = self.size.to_rems();
 
-        let mut el = svg().path(self.name.path()).size(size);
+        // Icons are fixed-format controls. Prevent flex reflow from shrinking
+        // their SVG bounds to zero during screen/theme transitions.
+        let mut el = svg().path(self.name.path()).size(size).flex_none();
 
         if let Some(color) = self.color {
             el = el.text_color(color);

@@ -1,3 +1,5 @@
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::DevTrackExt;
 use crate::app::federation::test_federation_connection;
 use crate::app::i18n::FederationTranslations;
 use crate::components::design::Ds;
@@ -11,6 +13,19 @@ use gpui_ui_kit::{
 };
 use sotf_audio_player::federation_config::ConnectionStatus;
 
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
 impl PlayerView {
     /// Render federation sources settings content
     pub(crate) fn render_federation_settings_content(
@@ -23,6 +38,7 @@ impl PlayerView {
         let translations = state.app.ui_state.translations.clone();
         let text = FederationTranslations::for_language(state.app.ui_state.language);
         let sources = state.app.federation.sources.clone();
+        let service_login_error = state.app.federation.service_login_error.clone();
 
         let mut content = div()
             .flex()
@@ -41,12 +57,25 @@ impl PlayerView {
                     .text_color(theme.text_secondary)
                     .child(text.description),
             )
+            .when_some(service_login_error, |content, error| {
+                content.child(dev_track!(
+                    div()
+                        .p(d.pad_x)
+                        .rounded(d.r_md)
+                        .border_1()
+                        .border_color(theme.error)
+                        .text_size(d.text_xs)
+                        .text_color(theme.error)
+                        .child(error),
+                    "settings.federation.login-error"
+                ))
+            })
             // Add Source buttons
             .child(
                 div()
                     .flex()
-                    .justify_between()
-                    .items_center()
+                    .flex_col()
+                    .gap(d.gap)
                     .child(
                         div()
                             .text_size(d.text_sm)
@@ -54,19 +83,25 @@ impl PlayerView {
                             .text_color(theme.text_primary)
                             .child(format!("Sources ({})", sources.len())),
                     )
-                    .child(
-                        HStack::new()
-                            .spacing(StackSpacing::Xs)
+                    .child({
+                        let buttons = div()
+                            .flex()
+                            .flex_wrap()
+                            .w_full()
+                            .gap(d.gap)
                             .child(self.add_source_button("subsonic", "Subsonic", &theme, cx))
                             .child(self.add_source_button("mpd", "MPD", &theme, cx))
                             .child(self.add_source_button("dlna", "DLNA", &theme, cx))
-                            .child(self.add_source_button("tidal", "Tidal", &theme, cx))
-                            .child(self.add_source_button("spotify", "Spotify", &theme, cx))
-                            .child(self.add_source_button("icy_radio", "Radio", &theme, cx)),
-                    ),
-            )
-            .child(settings_section_label("Remote Devices", &theme, &d))
-            .child(self.render_remote_sotf_section(&theme, &d, cx));
+                            .child(self.add_source_button("icy_radio", "Radio", &theme, cx));
+                        #[cfg(feature = "tidal")]
+                        let buttons =
+                            buttons.child(self.add_source_button("tidal", "Tidal", &theme, cx));
+                        #[cfg(feature = "spotify")]
+                        let buttons =
+                            buttons.child(self.add_source_button("spotify", "Spotify", &theme, cx));
+                        buttons
+                    }),
+            );
 
         if sources.is_empty() {
             content = content.child(
@@ -95,6 +130,8 @@ impl PlayerView {
         }
 
         content
+            .child(settings_section_label("Remote Devices", &theme, &d))
+            .child(self.render_remote_sotf_section(&theme, &d, cx))
     }
 
     pub(super) fn add_source_button(
@@ -104,19 +141,22 @@ impl PlayerView {
         theme: &crate::app::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        Button::new(
-            SharedString::from(format!("add-{type_name}-btn")),
-            format!("+ {label}"),
+        dev_track!(
+            Button::new(
+                SharedString::from(format!("add-{type_name}-btn")),
+                format!("+ {label}"),
+            )
+            .variant(ButtonVariant::Secondary)
+            .size(ButtonSize::Xs)
+            .theme(theme.to_button_theme())
+            .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                view.state.update(cx, |state, _cx| {
+                    state.app.add_federation_source(type_name);
+                });
+                cx.notify();
+            })),
+            format!("settings.federation.add.{type_name}")
         )
-        .variant(ButtonVariant::Secondary)
-        .size(ButtonSize::Xs)
-        .theme(theme.to_button_theme())
-        .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
-            view.state.update(cx, |state, _cx| {
-                state.app.add_federation_source(type_name);
-            });
-            cx.notify();
-        }))
     }
 
     pub(super) fn render_source_card(
@@ -165,7 +205,8 @@ impl PlayerView {
             _ => None,
         };
 
-        div()
+        dev_track!(
+            div()
             .flex()
             .flex_col()
             .gap(d.gap)
@@ -322,6 +363,12 @@ impl PlayerView {
                             .child(status_label),
                     ),
             )
+            // Account actions are primary source controls; keep them above
+            // provider credentials so Login/Cancel/Logout stay reachable.
+            .when_some(
+                self.render_service_login_section(source_idx, source, theme, cx),
+                |card, section| card.child(section),
+            )
             // Diagnostic steps (shown after a test with diagnostic results)
             .when_some(diagnostic, {
                 let theme = theme.clone();
@@ -391,6 +438,10 @@ impl PlayerView {
                             .map(|(field_idx, &field_name)| {
                                 let value = field_values[field_idx].clone();
                                 let state_entity = self.state.clone();
+                                let normalized_name = field_name.to_ascii_lowercase();
+                                let is_secret = ["password", "token", "secret"]
+                                    .iter()
+                                    .any(|term| normalized_name.contains(term));
 
                                 if field_name == "Auth Mode" {
                                     // Render radio buttons for auth mode
@@ -457,6 +508,8 @@ impl PlayerView {
                                                     "source-{source_idx}-field-{field_idx}"
                                                 )))
                                                     .value(SharedString::from(value))
+                                                    .password(is_secret)
+                                                    .aria_label(field_name)
                                                     .placeholder(SharedString::from(format!(
                                                         "Enter {field_name}"
                                                     )))
@@ -477,12 +530,9 @@ impl PlayerView {
                             .collect::<Vec<_>>(),
                     )
                     .build(),
-            )
-            // Streaming-service login (Tidal device code / Spotify OAuth)
-            .when_some(
-                self.render_service_login_section(source_idx, source, theme, cx),
-                |card, section| card.child(section),
-            )
+            ),
+            format!("settings.federation.source.{source_idx}")
+        )
     }
 
     /// Login/logout controls and in-flight login progress for streaming
@@ -552,52 +602,73 @@ impl PlayerView {
             .map(|login| login.prompt.clone());
         let flow_active = active_login.is_some();
 
-        let action_button: gpui::AnyElement = if flow_active {
-            Button::new(
-                SharedString::from(format!("tidal-login-cancel-{source_idx}")),
-                text.cancel_login,
+        let action_button: Option<gpui::AnyElement> = if flow_active {
+            Some(
+                dev_track!(
+                    Button::new(
+                        SharedString::from(format!("tidal-login-cancel-{source_idx}")),
+                        text.cancel_login,
+                    )
+                    .variant(ButtonVariant::Ghost)
+                    .size(ButtonSize::Xs)
+                    .theme(theme.to_button_theme())
+                    .on_click_event(cx.listener(
+                        |view, _: &ClickEvent, _window, cx| {
+                            view.state.update(cx, |state, _cx| {
+                                state.app.cancel_tidal_login();
+                            });
+                            cx.notify();
+                        }
+                    )),
+                    "settings.federation.tidal.cancel"
+                )
+                .into_any_element(),
             )
-            .variant(ButtonVariant::Ghost)
-            .size(ButtonSize::Xs)
-            .theme(theme.to_button_theme())
-            .on_click_event(cx.listener(|view, _: &ClickEvent, _window, cx| {
-                view.state.update(cx, |state, _cx| {
-                    state.app.cancel_tidal_login();
-                });
-                cx.notify();
-            }))
-            .into_any_element()
+        } else if logged_in {
+            None
         } else {
-            Button::new(
-                SharedString::from(format!("tidal-login-{source_idx}")),
-                text.login,
+            Some(
+                dev_track!(
+                    Button::new(
+                        SharedString::from(format!("tidal-login-{source_idx}")),
+                        text.login,
+                    )
+                    .variant(ButtonVariant::Secondary)
+                    .size(ButtonSize::Xs)
+                    .theme(theme.to_button_theme())
+                    .on_click_event(cx.listener(
+                        move |view, _: &ClickEvent, _window, cx| {
+                            view.state.update(cx, |state, _cx| {
+                                state.app.start_tidal_login(source_idx);
+                            });
+                            cx.notify();
+                        }
+                    )),
+                    "settings.federation.tidal.login"
+                )
+                .into_any_element(),
             )
-            .variant(ButtonVariant::Secondary)
-            .size(ButtonSize::Xs)
-            .theme(theme.to_button_theme())
-            .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
-                view.state.update(cx, |state, _cx| {
-                    state.app.start_tidal_login(source_idx);
-                });
-                cx.notify();
-            }))
-            .into_any_element()
         };
 
         let logout_button: Option<gpui::AnyElement> = (logged_in && !flow_active).then(|| {
-            Button::new(
-                SharedString::from(format!("tidal-logout-{source_idx}")),
-                text.logout,
+            dev_track!(
+                Button::new(
+                    SharedString::from(format!("tidal-logout-{source_idx}")),
+                    text.logout,
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ButtonSize::Xs)
+                .theme(theme.to_button_theme())
+                .on_click_event(cx.listener(
+                    move |view, _: &ClickEvent, _window, cx| {
+                        view.state.update(cx, |state, _cx| {
+                            state.app.tidal_logout(source_idx);
+                        });
+                        cx.notify();
+                    }
+                )),
+                "settings.federation.tidal.logout"
             )
-            .variant(ButtonVariant::Ghost)
-            .size(ButtonSize::Xs)
-            .theme(theme.to_button_theme())
-            .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
-                view.state.update(cx, |state, _cx| {
-                    state.app.tidal_logout(source_idx);
-                });
-                cx.notify();
-            }))
             .into_any_element()
         });
 
@@ -606,7 +677,7 @@ impl PlayerView {
                 .flex()
                 .items_center()
                 .gap(d.gap)
-                .child(action_button)
+                .when_some(action_button, |row, button| row.child(button))
                 .when_some(logout_button, |row, button| row.child(button))
                 .child(
                     Text::new(if logged_in {

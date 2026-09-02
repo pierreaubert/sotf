@@ -17,7 +17,7 @@ use crate::app::dev_api::DevTrackExt;
 use crate::app::types::{HeadphoneEqStep, Screen};
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
-use crate::i18n::HeadphoneEqTranslations;
+use crate::i18n::{HeadphoneEqTranslations, WizardNavigationTranslations};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -86,7 +86,9 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = HeadphoneEqTranslations::for_language(state.app.ui_state.language);
+        let language = state.app.ui_state.language;
+        let translations = HeadphoneEqTranslations::for_language(language);
+        let wizard_text = WizardNavigationTranslations::for_language(language);
         let theme_id = state.app.ui_state.theme_id;
         let current_step = state.app.measurement_state.headphone_eq_state.step;
         let can_go_next = state.app.can_advance_workflow_step();
@@ -137,11 +139,16 @@ impl PlayerView {
             .theme(wizard_theme.clone());
 
         let back_label = match current_step {
-            HeadphoneEqStep::MeasurementTarget => translations.close,
-            _ => translations.back,
+            HeadphoneEqStep::MeasurementTarget => wizard_text.close,
+            _ => wizard_text.back,
         };
-        let next_label =
-            crate::components::wizard_continue_label(current_step.next().map(|next| next.label()));
+        let next_step_label = current_step.next().map(|next| match next {
+            HeadphoneEqStep::MeasurementTarget => translations.measurement_step,
+            HeadphoneEqStep::Optimization => translations.optimization_step,
+            HeadphoneEqStep::Listen => translations.listen_step,
+            HeadphoneEqStep::Export => translations.export,
+        });
+        let next_label = crate::components::wizard_continue_label(language, next_step_label);
 
         let navigation = HStack::new()
             .spacing(StackSpacing::Sm)

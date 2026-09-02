@@ -4,6 +4,8 @@ use super::level_meter_manager::LevelMeterManager;
 use super::misc::peak_spread_db;
 use super::misc::should_use_peak_spread;
 use crate::app::ChannelGroup;
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::{DevElementState, DevTrackExt};
 use crate::app::i18n::LevelMeterTranslations;
 use crate::components::design::Ds;
 use crate::components::themed_tooltip;
@@ -19,8 +21,39 @@ use gpui_audio_kit::{
     TickConfig, db_to_position, render_horizontal_meter_bar, render_horizontal_meter_bar_with,
     render_tick_row,
 };
+use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
 
 const FALLBACK_TRUE_PEAKS: [f64; 2] = [-60.0, -60.0];
+
+fn render_no_meter_data(d: &Ds, text: LevelMeterTranslations, theme: &Theme) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .size_full()
+        .min_w_0()
+        .items_center()
+        .justify_center()
+        .gap(d.grid)
+        .px(d.pad_y)
+        .overflow_hidden()
+        .child(
+            div()
+                .w_full()
+                .text_align(TextAlign::Center)
+                .text_size(d.text_sm)
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.text_primary)
+                .child(text.no_data),
+        )
+        .child(
+            div()
+                .w_full()
+                .text_align(TextAlign::Center)
+                .text_size(d.text_xs)
+                .text_color(theme.text_muted)
+                .child(text.no_data_hint),
+        )
+}
 
 /// Keep unavailable analyzer values on the silent end of the meter scale.
 ///
@@ -573,6 +606,7 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
+            .flex_shrink_0()
             .h_full()
             .min_h(rems(17.5))
             .p_0p5() // Match meter group padding
@@ -702,6 +736,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let channel_data = build_channel_meter_data(&group.channels, loudness, peak_hold);
+        let text = LevelMeterTranslations::for_language(self.state.read(cx).app.ui_state.language);
         self.render_meter_group_data(
             group_idx,
             group.muted,
@@ -709,6 +744,8 @@ impl PlayerView {
             group.dimmed,
             is_selected,
             channel_data,
+            false,
+            text,
             theme,
             cx,
         )
@@ -725,14 +762,41 @@ impl PlayerView {
         dimmed: bool,
         is_selected: bool,
         channel_data: Vec<ChannelMeterData>,
+        show_group_status: bool,
+        text: LevelMeterTranslations,
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let background_secondary = theme.background_secondary;
-        div()
+        let group_status = div()
+            .w_full()
+            .px(d.half_grid)
+            .py(d.half_grid)
+            .rounded(d.r_sm)
+            .text_size(d.text_xs)
+            .font_weight(if is_selected {
+                FontWeight::BOLD
+            } else {
+                FontWeight::NORMAL
+            })
+            .text_color(if is_selected {
+                theme.accent
+            } else {
+                theme.text_muted
+            })
+            .child(if is_selected {
+                format!("{} {} · {}", text.group, group_idx + 1, text.selected)
+            } else {
+                format!("{} {}", text.group, group_idx + 1)
+            });
+        #[cfg(feature = "dev-api")]
+        let group_status = group_status.dev_track(format!("meters.group.{group_idx}.status"));
+
+        let group_element = div()
             .flex()
             .flex_col()
+            .flex_shrink_0()
             .h_full()
             .min_h(rems(17.5))
             .p_0p5()
@@ -744,6 +808,7 @@ impl PlayerView {
                 background_secondary
             })
             .bg(background_secondary)
+            .when(show_group_status, |group| group.child(group_status))
             // Channel meters
             .child(div().flex().gap_px().flex_1().min_h(rems(12.5)).children(
                 channel_data.into_iter().map(|data| {
@@ -770,6 +835,8 @@ impl PlayerView {
                     .justify_center()
                     .child(self.render_msd_button(
                         "M",
+                        text.mute,
+                        text.group,
                         muted,
                         theme.button_mute_active,
                         group_idx,
@@ -779,6 +846,8 @@ impl PlayerView {
                     ))
                     .child(self.render_msd_button(
                         "S",
+                        text.solo,
+                        text.group,
                         soloed,
                         theme.button_solo_active,
                         group_idx,
@@ -788,6 +857,8 @@ impl PlayerView {
                     ))
                     .child(self.render_msd_button(
                         "D",
+                        text.dim,
+                        text.group,
                         dimmed,
                         theme.button_dim_active,
                         group_idx,
@@ -795,28 +866,28 @@ impl PlayerView {
                         theme,
                         cx,
                     )),
-            )
+            );
+        #[cfg(feature = "dev-api")]
+        let group_element = group_element.dev_track_with_state(
+            format!("meters.group.{group_idx}"),
+            DevElementState::default().selected(is_selected),
+        );
+        group_element
     }
 
     /// Render M/S/D button (interactive)
     pub fn render_msd_button(
         &self,
         label: &'static str,
+        action_name: &'static str,
+        group_name: &'static str,
         active: bool,
         active_color: gpui::Rgba,
         group_idx: usize,
         button_type: &'static str,
         theme: &Theme,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let d = Ds::from_cx(cx);
-        let theme_c = theme.clone();
-        let action_name = match button_type {
-            "mute" => "Mute",
-            "solo" => "Solo",
-            "dim" => "Dim",
-            _ => "Meter",
-        };
         let shortcut = match button_type {
             "mute" => "Alt+M",
             "solo" => "Alt+Shift+M",
@@ -824,58 +895,54 @@ impl PlayerView {
             _ => "",
         };
         let tooltip = if shortcut.is_empty() {
-            format!("{action_name} group {}", group_idx + 1)
+            format!("{action_name} {group_name} {}", group_idx + 1)
         } else {
-            format!("{action_name} group {} ({shortcut})", group_idx + 1)
+            format!("{action_name} {group_name} {} ({shortcut})", group_idx + 1)
         };
         let tooltip_theme = theme.clone();
-        div()
-            .id((button_type, group_idx))
-            .min_w(rems(2.0))
-            .min_h(rems(2.0))
-            .px(d.half_grid)
-            .py(d.half_grid)
-            .rounded(d.r_sm)
-            .text_size(d.text_sm)
-            .cursor_pointer()
-            .aria_label(format!("{action_name} group {}", group_idx + 1))
-            .tooltip(move |_window, cx| themed_tooltip(tooltip.clone(), &tooltip_theme, cx))
-            .when(active, |d| {
-                d.bg(active_color).text_color(theme_c.text_primary)
-            })
-            .when(!active, |d| {
-                d.bg(theme_c.surface)
-                    .text_color(theme_c.text_muted)
-                    .hover(|style| style.bg(theme_c.surface_hover))
-            })
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                    view.state.update(cx, |state, _cx| {
-                        if group_idx < state.app.level_meters.groups.len() {
-                            match button_type {
-                                "mute" => {
-                                    let new_state = !state.app.level_meters.groups[group_idx].muted;
-                                    state.app.set_level_meter_mute(group_idx, new_state);
-                                }
-                                "solo" => {
-                                    let new_state =
-                                        !state.app.level_meters.groups[group_idx].soloed;
-                                    state.app.set_level_meter_solo(group_idx, new_state);
-                                }
-                                "dim" => {
-                                    let new_state =
-                                        !state.app.level_meters.groups[group_idx].dimmed;
-                                    state.app.set_level_meter_dim(group_idx, new_state);
-                                }
-                                _ => {}
+        let mut button_theme = theme.to_button_theme();
+        button_theme.accent = active_color;
+        button_theme.accent_hover = active_color;
+        let state_handle = self.state.clone();
+        let button = Button::new(format!("meter-{button_type}-{group_idx}"), label)
+            .size(ButtonSize::Xs)
+            .variant(ButtonVariant::Ghost)
+            .selected(active)
+            .theme(button_theme)
+            .aria_label(format!("{action_name} {group_name} {}", group_idx + 1))
+            .on_click(move |_window, cx| {
+                state_handle.update(cx, |state, cx| {
+                    if group_idx < state.app.level_meters.groups.len() {
+                        match button_type {
+                            "mute" => {
+                                let new_state = !state.app.level_meters.groups[group_idx].muted;
+                                state.app.set_level_meter_mute(group_idx, new_state);
                             }
+                            "solo" => {
+                                let new_state = !state.app.level_meters.groups[group_idx].soloed;
+                                state.app.set_level_meter_solo(group_idx, new_state);
+                            }
+                            "dim" => {
+                                let new_state = !state.app.level_meters.groups[group_idx].dimmed;
+                                state.app.set_level_meter_dim(group_idx, new_state);
+                            }
+                            _ => {}
                         }
-                    });
+                    }
                     cx.notify();
-                }),
-            )
-            .child(label)
+                });
+            });
+        #[cfg(feature = "dev-api")]
+        let button = button.dev_track_with_state(
+            format!("meters.group.{group_idx}.{button_type}"),
+            DevElementState::default().enabled(true).selected(active),
+        );
+        div()
+            .id(SharedString::from(format!(
+                "meter-tooltip-{button_type}-{group_idx}"
+            )))
+            .tooltip(move |_window, cx| themed_tooltip(tooltip.clone(), &tooltip_theme, cx))
+            .child(button)
     }
 
     /// Render separate Meters panel (for queue screen)
@@ -885,7 +952,7 @@ impl PlayerView {
         // Pre-compute only the render data while the state read lock is held.
         // Previously this cloned the full `groups`, `peak_hold`, `loudness`
         // and `theme` values on every frame.
-        let (theme, groups_data) = {
+        let (theme, groups_data, selected_group, has_data) = {
             let state = self.state.read(cx);
             let theme = state.app.ui_state.theme.clone();
             let loudness = state.app.playback.loudness_info.as_deref();
@@ -905,9 +972,27 @@ impl PlayerView {
                 })
                 .collect();
 
-            (theme, groups_data)
+            (
+                theme,
+                groups_data,
+                state.app.level_meters.selected_group,
+                loudness.is_some(),
+            )
         };
-        div()
+        let center_meter_groups = groups_data.len() <= 2;
+        let selected_status = div()
+            .text_size(d.text_xs)
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(theme.accent)
+            .child(format!(
+                "{}: {} {}",
+                text.selected,
+                text.group,
+                selected_group + 1
+            ));
+        #[cfg(feature = "dev-api")]
+        let selected_status = selected_status.dev_track("meters.selected-group");
+        let panel = div()
             .flex()
             .flex_col()
             .items_center()
@@ -917,54 +1002,74 @@ impl PlayerView {
             .child(
                 div().w_full().mb(d.gap).child(
                     div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap(d.half_grid)
                         .text_size(d.text_sm)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_align(TextAlign::Center)
-                        .child(text.level_meters),
+                        .child(text.level_meters)
+                        .when(has_data, |header| header.child(selected_status)),
                 ),
             )
-            .child({
-                // Use a for loop to avoid FnMut closure escape issues with cx
-                let mut meter_elements = Vec::new();
+            .when(has_data, |panel| {
+                panel.child({
+                    // Use a for loop to avoid FnMut closure escape issues with cx
+                    let mut meter_elements = Vec::new();
 
-                // Left Legend
-                meter_elements.push(
-                    self.render_vertical_legend(&d, &theme, false)
-                        .into_any_element(),
-                );
-
-                for group_data in groups_data {
+                    // Left Legend
                     meter_elements.push(
-                        self.render_meter_group_data(
-                            group_data.group_idx,
-                            group_data.muted,
-                            group_data.soloed,
-                            group_data.dimmed,
-                            group_data.is_selected,
-                            group_data.channels,
-                            &theme,
-                            cx,
-                        )
-                        .into_any_element(),
+                        self.render_vertical_legend(&d, &theme, false)
+                            .into_any_element(),
                     );
-                }
 
-                // Right Legend
-                meter_elements.push(
-                    self.render_vertical_legend(&d, &theme, true)
-                        .into_any_element(),
-                );
+                    for group_data in groups_data {
+                        meter_elements.push(
+                            self.render_meter_group_data(
+                                group_data.group_idx,
+                                group_data.muted,
+                                group_data.soloed,
+                                group_data.dimmed,
+                                group_data.is_selected,
+                                group_data.channels,
+                                true,
+                                text,
+                                &theme,
+                                cx,
+                            )
+                            .into_any_element(),
+                        );
+                    }
 
-                div()
-                    .id("meter-groups-scroll")
-                    .flex()
-                    .flex_1()
-                    .justify_center()
-                    .gap_0()
-                    .overflow_x_scroll()
-                    .min_h(rems(18.75))
-                    .children(meter_elements)
+                    // Right Legend
+                    meter_elements.push(
+                        self.render_vertical_legend(&d, &theme, true)
+                            .into_any_element(),
+                    );
+
+                    div()
+                        .id("meter-groups-scroll")
+                        .flex()
+                        .flex_1()
+                        .when(center_meter_groups, |groups| groups.justify_center())
+                        .when(!center_meter_groups, |groups| groups.justify_start())
+                        .gap_0()
+                        .overflow_x_scroll()
+                        .min_h(rems(18.75))
+                        .children(meter_elements)
+                })
             })
+            .when(!has_data, |panel| {
+                let empty_state = render_no_meter_data(&d, text, &theme);
+                #[cfg(feature = "dev-api")]
+                let empty_state = empty_state.dev_track("meters.no-data");
+                panel.child(div().flex().flex_1().size_full().child(empty_state))
+            });
+        #[cfg(feature = "dev-api")]
+        let panel = panel
+            .dev_track_with_state("meters.panel", DevElementState::default().enabled(has_data));
+        panel
     }
 
     /// Render unified meter bar with consistent styling
@@ -1057,18 +1162,33 @@ impl PlayerView {
         // to their intrinsic content width and `w_full()` on the inner
         // wrapper would not propagate — bars would collapse to ~150px
         // even on a 700px panel.
-        div()
+        let has_data = loudness.is_some();
+        let panel = div()
             .flex()
             .flex_col()
             .w_full()
             .p(d.card)
             .bg(theme.background)
-            .child(self.render_lufs_with_true_peak(
-                &d,
-                loudness.as_deref(),
-                layout_scale,
-                text,
-                &theme,
-            ))
+            .when_some(loudness.as_deref(), |panel, loudness| {
+                panel.child(self.render_lufs_with_true_peak(
+                    &d,
+                    Some(loudness),
+                    layout_scale,
+                    text,
+                    &theme,
+                ))
+            })
+            .when(!has_data, |panel| {
+                let empty_state = render_no_meter_data(&d, text, &theme);
+                #[cfg(feature = "dev-api")]
+                let empty_state = empty_state.dev_track("meters.lufs-no-data");
+                panel.child(empty_state)
+            });
+        #[cfg(feature = "dev-api")]
+        let panel = panel.dev_track_with_state(
+            "meters.lufs-panel",
+            DevElementState::default().enabled(has_data),
+        );
+        panel
     }
 }

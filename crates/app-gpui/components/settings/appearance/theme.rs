@@ -7,6 +7,8 @@ use super::render::render_accent_swatch;
 use super::render::render_schedule_time_row;
 use super::render::render_settings_heading;
 use super::types::ScheduleBoundary;
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::{DevElementState, DevTrackExt};
 use crate::app::types::DensityMode;
 use crate::components::design::Ds;
 use crate::i18n::{AppearanceTranslations, Language};
@@ -19,10 +21,63 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_design::{DesignLanguage, DesignSystem, DesignSystemState};
 use gpui_themes::{AccessibilityPalette, ThemeAppearance, ThemeModePreference, ThemeSchedule};
+use gpui_ui_kit::accessibility::{
+    AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState,
+};
 use gpui_ui_kit::{
     Button, ButtonSet, ButtonSetOption, ButtonSetSize, ButtonSize, ButtonVariant, Input, InputSize,
     NumberInput, NumberInputSize, Toggle, ToggleSize, ToggleStyle,
 };
+use std::collections::HashMap;
+
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
+
+thread_local! {
+    static LANGUAGE_FOCUS_HANDLES: std::cell::RefCell<HashMap<ElementId, FocusHandle>> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
+fn language_focus_handle(id: &ElementId, cx: &mut App) -> FocusHandle {
+    LANGUAGE_FOCUS_HANDLES.with(|handles| {
+        handles
+            .borrow_mut()
+            .entry(id.clone())
+            .or_insert_with(|| cx.focus_handle())
+            .clone()
+    })
+}
+
+fn focus_language_relative(
+    handles: &[FocusHandle],
+    window: &mut Window,
+    cx: &mut App,
+    backwards: bool,
+) -> bool {
+    let Some(current) = handles.iter().position(|handle| handle.is_focused(window)) else {
+        return false;
+    };
+    let next = if backwards {
+        current.checked_sub(1)
+    } else {
+        (current + 1 < handles.len()).then_some(current + 1)
+    };
+    let Some(next) = next else {
+        return false;
+    };
+    window.focus(&handles[next], cx);
+    true
+}
 
 fn theme_mode_value(preference: &ThemeModePreference) -> &'static str {
     match preference {
@@ -210,27 +265,30 @@ impl PlayerView {
                             )
                             .child({
                                 let state_entity = self.state.clone();
-                                NumberInput::new("appearance-text-size")
-                                    .value((font_scale * 100.0) as f64)
-                                    .range(50.0, 200.0)
-                                    .step(5.0)
-                                    .decimals(0)
-                                    .unit("%")
-                                    .size(NumberInputSize::Sm)
-                                    .width(120.0)
-                                    .on_change(move |val, _window, cx| {
-                                        let scale = ((val as f32) / 100.0).clamp(0.5, 2.0);
-                                        state_entity.update(cx, |state, cx| {
-                                            state.app.ui_state.font_scale = scale;
-                                            crate::ui::recalculate_pagination_for_state(
-                                                state, true,
-                                            );
-                                            let layout = state.layout.read(cx);
-                                            if let Err(error) = state.app.save_config(layout) {
-                                                log::error!("Failed to save config: {error}");
-                                            }
-                                        });
-                                    })
+                                dev_track!(
+                                    NumberInput::new("appearance-text-size")
+                                        .value((font_scale * 100.0) as f64)
+                                        .range(50.0, 200.0)
+                                        .step(5.0)
+                                        .decimals(0)
+                                        .unit("%")
+                                        .size(NumberInputSize::Sm)
+                                        .width(120.0)
+                                        .on_change(move |val, _window, cx| {
+                                            let scale = ((val as f32) / 100.0).clamp(0.5, 2.0);
+                                            state_entity.update(cx, |state, cx| {
+                                                state.app.ui_state.font_scale = scale;
+                                                crate::ui::recalculate_pagination_for_state(
+                                                    state, true,
+                                                );
+                                                let layout = state.layout.read(cx);
+                                                if let Err(error) = state.app.save_config(layout) {
+                                                    log::error!("Failed to save config: {error}");
+                                                }
+                                            });
+                                        }),
+                                    "settings.appearance.font-scale"
+                                )
                             }),
                     )
                     .child(
@@ -452,22 +510,28 @@ impl PlayerView {
                             })
                     })
                     .child(
-                        div().flex().items_center().flex_wrap().gap(d.gap).child(
-                            Toggle::new("theme-reduce-motion")
-                                .size(ToggleSize::Sm)
-                                .checked(reduce_motion)
-                                .label(text.reduce_motion)
-                                .style(ToggleStyle::Segmented)
-                                .theme(theme.to_toggle_theme())
-                                .on_change({
-                                    let state_entity = self.state.clone();
-                                    move |enabled, _window, cx| {
-                                        state_entity.update(cx, |state, _cx| {
-                                            state.app.set_reduce_motion(enabled);
-                                        });
-                                    }
-                                }),
-                        ),
+                        div()
+                            .flex()
+                            .items_center()
+                            .flex_wrap()
+                            .gap(d.gap)
+                            .child(dev_track!(
+                                Toggle::new("theme-reduce-motion")
+                                    .size(ToggleSize::Sm)
+                                    .checked(reduce_motion)
+                                    .label(text.reduce_motion)
+                                    .style(ToggleStyle::Segmented)
+                                    .theme(theme.to_toggle_theme())
+                                    .on_change({
+                                        let state_entity = self.state.clone();
+                                        move |enabled, _window, cx| {
+                                            state_entity.update(cx, |state, _cx| {
+                                                state.app.set_reduce_motion(enabled);
+                                            });
+                                        }
+                                    }),
+                                "settings.appearance.reduce-motion"
+                            )),
                     ),
             )
             .child(
@@ -494,6 +558,7 @@ impl PlayerView {
                                 is_selected,
                                 theme.clone(),
                                 translations.settings_active,
+                                text.apply,
                                 cx,
                             ));
                         }
@@ -626,6 +691,80 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
 
+        let language_controls = Language::all()
+            .iter()
+            .map(|candidate| {
+                let candidate = *candidate;
+                let selected = candidate == language;
+                let label = candidate.name();
+                let element_id = ElementId::from(SharedString::from(format!(
+                    "settings-language-{}",
+                    candidate.code()
+                )));
+                let focus_handle = language_focus_handle(&element_id, cx);
+                cx.register_accessible(AccessibilityNode {
+                    element_id: element_id.clone(),
+                    label: label.into(),
+                    props: AriaProps::with_role(AriaRole::Button)
+                        .maybe_state(selected, AriaState::Pressed(true)),
+                });
+
+                let state_for_click = self.state.clone();
+                let state_for_key = self.state.clone();
+                let button = Button::new(element_id, label)
+                    .variant(if selected {
+                        ButtonVariant::Primary
+                    } else {
+                        ButtonVariant::Secondary
+                    })
+                    .size(ButtonSize::Sm)
+                    .selected(selected)
+                    .theme(theme.to_button_theme())
+                    .build()
+                    .track_focus(&focus_handle)
+                    .track_focus_element(&focus_handle)
+                    .on_click(move |_: &ClickEvent, _window, cx| {
+                        state_for_click.update(cx, |state, cx| {
+                            state.app.set_language(candidate);
+                            let layout = state.layout.read(cx);
+                            if let Err(error) = state.app.save_config(layout) {
+                                log::error!("Failed to save config: {error}");
+                            }
+                            cx.notify();
+                        });
+                    })
+                    .on_key_down(move |event: &KeyDownEvent, _window, cx| {
+                        if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                            state_for_key.update(cx, |state, cx| {
+                                state.app.set_language(candidate);
+                                let layout = state.layout.read(cx);
+                                if let Err(error) = state.app.save_config(layout) {
+                                    log::error!("Failed to save config: {error}");
+                                }
+                                cx.notify();
+                            });
+                            cx.stop_propagation();
+                        }
+                    });
+
+                #[cfg(feature = "dev-api")]
+                let button = button.dev_track_with_state(
+                    format!("settings.language.{}", candidate.code()),
+                    DevElementState::default().selected(selected),
+                );
+
+                (button.into_any_element(), focus_handle)
+            })
+            .collect::<Vec<_>>();
+        let language_focus_handles = language_controls
+            .iter()
+            .map(|(_, handle)| handle.clone())
+            .collect::<Vec<_>>();
+        let language_buttons = language_controls
+            .into_iter()
+            .map(|(button, _)| button)
+            .collect::<Vec<_>>();
+
         div().flex().flex_col().gap(d.section_lg).child(
             div()
                 .flex()
@@ -637,33 +776,25 @@ impl PlayerView {
                         .font_weight(FontWeight::SEMIBOLD)
                         .child(translations.settings_language),
                 )
-                .child({
-                    let state_entity = self.state.clone();
-                    ButtonSet::new("language-select")
-                        .options(
-                            Language::all()
-                                .iter()
-                                .map(|lang| ButtonSetOption::new(lang.name(), lang.name()))
-                                .collect(),
-                        )
-                        .selected(language.name())
-                        .theme(theme.to_button_set_theme())
-                        .on_change(move |value, _window, cx| {
-                            let lang = Language::all()
-                                .iter()
-                                .find(|l| l.name() == value.as_ref())
-                                .copied();
-                            if let Some(lang) = lang {
-                                state_entity.update(cx, |state, cx| {
-                                    state.app.set_language(lang);
-                                    let layout = state.layout.read(cx);
-                                    if let Err(error) = state.app.save_config(layout) {
-                                        log::error!("Failed to save config: {error}");
-                                    }
-                                });
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap(d.gap_md)
+                        .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                            if event.keystroke.key.as_str() == "tab"
+                                && focus_language_relative(
+                                    &language_focus_handles,
+                                    window,
+                                    cx,
+                                    event.keystroke.modifiers.shift,
+                                )
+                            {
+                                cx.stop_propagation();
                             }
                         })
-                }),
+                        .children(language_buttons),
+                ),
         )
     }
 
@@ -679,7 +810,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let text = AppearanceTranslations::for_language(self.state.read(cx).app.ui_state.language);
-        div()
+        let card = div()
             .flex()
             .flex_col()
             .w(rems(12.5))
@@ -929,7 +1060,8 @@ impl PlayerView {
                                 .child(format!("✓ {}", active_label)),
                         ),
                 )
-            })
+            });
+        dev_track!(card, format!("settings.appearance.theme.{theme_id:?}"))
     }
 
     pub(super) fn render_community_theme_preview_card(
@@ -939,6 +1071,7 @@ impl PlayerView {
         is_selected: bool,
         current_theme: crate::theme::Theme,
         active_label: &'static str,
+        apply_label: &'static str,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
@@ -1048,7 +1181,11 @@ impl PlayerView {
                                         "community-theme-apply-{}",
                                         theme_id.value()
                                     )),
-                                    if is_selected { active_label } else { "Apply" },
+                                    if is_selected {
+                                        active_label
+                                    } else {
+                                        apply_label
+                                    },
                                 )
                                 .variant(if is_selected {
                                     ButtonVariant::Primary

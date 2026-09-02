@@ -198,10 +198,9 @@ impl PlayerView {
                                     .when(
                                         !is_loading && !spinorama.available_speakers.is_empty(),
                                         |hstack| {
-                                            hstack.child(Text::caption(format!(
-                                                "{} speakers",
-                                                spinorama.available_speakers.len()
-                                            )))
+                            hstack.child(Text::caption(
+                                discovery_text.speaker_count(spinorama.available_speakers.len()),
+                            ))
                                         },
                                     ),
                             ),
@@ -221,10 +220,9 @@ impl PlayerView {
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
-                            .child(Text::caption(format!(
-                                "({} matches)",
-                                suggestions.len()
-                            ))),
+                            .child(Text::caption(
+                                discovery_text.matching_speaker_count(suggestions.len()),
+                            )),
                     )
                     .content(
                         div()
@@ -249,9 +247,9 @@ impl PlayerView {
                             })
                             .when(suggestions.is_empty() && !is_loading, |el| {
                                 el.child(Text::caption(if search_query.is_empty() {
-                                    "No speakers loaded. Click Refresh to load."
+                                    discovery_text.no_speakers_loaded()
                                 } else {
-                                    "No matching speakers found."
+                                    discovery_text.no_matching_speakers()
                                 }))
                             })
                             .children(suggestions.iter().map(|speaker| {
@@ -422,11 +420,11 @@ impl PlayerView {
                                         .spacing(StackSpacing::Xs)
                                         .child(Text::caption(workflow_text.phase_data))
                                         .child(
-                                            Text::new(if has_phase_data {
-                                                "Available"
-                                            } else {
-                                                "Not Available"
-                                            })
+                            Text::new(if has_phase_data {
+                                discovery_text.available()
+                            } else {
+                                discovery_text.not_available()
+                            })
                                             .size(TextSize::Xs)
                                             .color(if has_phase_data {
                                                 theme.success

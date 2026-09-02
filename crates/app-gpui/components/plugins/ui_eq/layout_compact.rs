@@ -5,6 +5,8 @@
 //! - `render_eq_inspector`: narrow drawer with graph, selected-band editor, and bottom band chips.
 
 use crate::app::AppState;
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::DevTrackExt;
 use crate::app::i18n::EqViewTranslations;
 use crate::components::PluginEditingManager;
 use crate::components::design::Ds;
@@ -22,6 +24,7 @@ use super::render::{
 use super::types::{EqRenderState, EqViewMode};
 
 const COMPACT_GRAPH_HEIGHT: f32 = 200.0;
+const MEDIUM_GRAPH_HEIGHT: f32 = 160.0;
 
 /// Medium layout: graph workbench with a vertical band rail and one property strip.
 #[allow(clippy::too_many_arguments)]
@@ -45,7 +48,10 @@ pub(crate) fn render_eq_bottom_strip(
         .plugin_ui_state
         .eq_compact_config_open;
 
-    let mut root = div().flex().flex_col().gap(d.section).size_full();
+    // Keep intrinsic height so the rack-owned parameter scroller can expose
+    // controls below the graph instead of laying them out after a 100%-high
+    // child surface.
+    let mut root = div().flex().flex_col().gap(d.section).w_full();
 
     root = root.child(render_compact_global_bar(
         &d,
@@ -84,8 +90,24 @@ pub(crate) fn render_eq_bottom_strip(
         ));
     }
 
+    // Keep selected-band controls ahead of the graph in medium layouts. The
+    // rack detail viewport is height-constrained; putting exact entry and band
+    // actions after the chart made them unreachable behind the transport bar.
+    root = root.child(render_eq_property_strip(
+        &d,
+        entity.clone(),
+        plugin_idx,
+        display_filters.get(selected_band_idx),
+        selected_band_idx,
+        indexing,
+        state,
+        is_lp_mode,
+        text,
+        theme,
+    ));
+
     let graph_width = (state.available_width - 104.0 * state.layout_scale).max(360.0);
-    let graph_height = (COMPACT_GRAPH_HEIGHT + 24.0) * state.layout_scale;
+    let graph_height = MEDIUM_GRAPH_HEIGHT * state.layout_scale;
     root = root.child(
         div()
             .id("eq-medium-workbench")
@@ -117,19 +139,6 @@ pub(crate) fn render_eq_bottom_strip(
             )),
     );
 
-    root = root.child(render_eq_property_strip(
-        &d,
-        entity,
-        plugin_idx,
-        display_filters.get(selected_band_idx),
-        selected_band_idx,
-        indexing,
-        state,
-        is_lp_mode,
-        text,
-        theme,
-    ));
-
     root
 }
 
@@ -157,7 +166,7 @@ pub(crate) fn render_eq_inspector(
     let selected_channel = entity.read(cx).app.plugin_state.selected_eq_channel;
     let is_lp_mode = matches!(state.mode, EqViewMode::LinearPhase { .. });
 
-    let mut root = div().flex().flex_col().gap(d.section).size_full();
+    let mut root = div().flex().flex_col().gap(d.section).w_full();
 
     root = root.child(render_compact_global_bar(
         &d,
@@ -452,6 +461,7 @@ fn render_compact_global_bar(
     theme: &Theme,
     cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
+    let text = EqViewTranslations::for_language(entity.read(cx).app.ui_state.language);
     let config_open = entity
         .read(cx)
         .app
@@ -503,9 +513,9 @@ fn render_compact_global_bar(
     if show_graph_toggle {
         let graph_entity = entity.clone();
         let label = if graph_visible {
-            "Graph ■"
+            format!("{} ■", text.graph)
         } else {
-            "Graph □"
+            format!("{} □", text.graph)
         };
         bar = bar.child(
             div()
@@ -734,7 +744,7 @@ fn render_add_band_button(
 ) -> impl IntoElement {
     let key_entity = entity.clone();
     let focus_color = theme.border_focused;
-    div()
+    let button = div()
         .id("eq-add-band")
         .px(d.pad_x)
         .py_1p5()
@@ -772,7 +782,10 @@ fn render_add_band_button(
             Icon::new(IconName::Plus)
                 .small()
                 .color(theme.text_on_accent),
-        )
+        );
+    #[cfg(feature = "dev-api")]
+    let button = button.dev_track("eq.band.add-rail");
+    button
 }
 
 /// Small toggle pill used for channel mode and config toggles.

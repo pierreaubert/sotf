@@ -49,47 +49,71 @@ pub struct TrackedElement {
     pub state: DevElementState,
 }
 
-static REGISTRY: OnceLock<Mutex<HashMap<String, TrackedElement>>> = OnceLock::new();
+type SelectorMap = HashMap<String, TrackedElement>;
 
-fn store() -> &'static Mutex<HashMap<String, TrackedElement>> {
+static REGISTRY: OnceLock<Mutex<HashMap<u64, SelectorMap>>> = OnceLock::new();
+static PRIMARY_WINDOW: OnceLock<u64> = OnceLock::new();
+
+fn store() -> &'static Mutex<HashMap<u64, SelectorMap>> {
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-pub fn record(selector: &str, bounds: Bounds<Pixels>) {
-    record_with_state(selector, bounds, DevElementState::default());
+pub fn record(window_id: u64, selector: &str, bounds: Bounds<Pixels>) {
+    record_with_state(window_id, selector, bounds, DevElementState::default());
 }
 
-pub fn record_with_state(selector: &str, bounds: Bounds<Pixels>, state: DevElementState) {
+pub fn record_with_state(
+    window_id: u64,
+    selector: &str,
+    bounds: Bounds<Pixels>,
+    state: DevElementState,
+) {
     // Painting runs on GPUI's main thread. A QA request may concurrently take
     // a snapshot from the listener thread, so registry publication must never
     // stall rendering while it waits for that short-lived read lock. The next
     // frame refreshes any selector skipped here.
+    let _ = PRIMARY_WINDOW.set(window_id);
     if let Ok(mut map) = store().try_lock() {
-        map.insert(selector.to_string(), TrackedElement { bounds, state });
+        map.entry(window_id)
+            .or_default()
+            .insert(selector.to_string(), TrackedElement { bounds, state });
     }
 }
 
 /// Start a fresh rendered-selector frame.
-pub fn clear() {
+pub fn clear(window_id: u64) {
+    let _ = PRIMARY_WINDOW.set(window_id);
     if let Ok(mut map) = store().try_lock() {
-        map.clear();
+        map.entry(window_id).or_default().clear();
     }
 }
 
-pub fn lookup(selector: &str) -> Option<Bounds<Pixels>> {
-    store()
-        .lock()
-        .ok()
-        .and_then(|m| m.get(selector).map(|element| element.bounds))
+pub fn lookup(window_id: u64, selector: &str) -> Option<Bounds<Pixels>> {
+    store().lock().ok().and_then(|m| {
+        m.get(&window_id)
+            .and_then(|selectors| selectors.get(selector))
+            .map(|element| element.bounds)
+    })
 }
 
 /// Snapshot of all known selectors and their current bounds. Useful
 /// for debugging missing selectors via the dev API.
 pub fn snapshot() -> Vec<(String, TrackedElement)> {
+    PRIMARY_WINDOW
+        .get()
+        .map_or_else(Vec::new, |window_id| snapshot_for(*window_id))
+}
+
+pub fn snapshot_for(window_id: u64) -> Vec<(String, TrackedElement)> {
     store()
         .lock()
         .map(|m| {
-            let mut entries: Vec<_> = m.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            let mut entries: Vec<_> = m
+                .get(&window_id)
+                .into_iter()
+                .flatten()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
             entries.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
             entries
         })

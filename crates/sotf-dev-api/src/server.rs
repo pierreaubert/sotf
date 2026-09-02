@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use serde_json::json;
 
 use crate::auth::{RUN_ID_HEADER, RunId};
-use crate::http::{HttpError, HttpRequest, HttpResponse, Method, read_request};
+use crate::http::{HttpError, HttpRequest, HttpResponse, Method, read_request_stream};
 use crate::protocol::{
     Capabilities, DevReply, ProtocolLimits, QueueMetadata, ReplyMetadata, TimingMetadata,
 };
@@ -170,7 +170,7 @@ pub fn start_server(
                         };
                         let accepted = Instant::now();
                         configure_stream(&stream, &worker_limits);
-                        let request = match read_request(&mut stream, &worker_limits) {
+                        let request = match read_request_stream(&mut stream, &worker_limits) {
                             Ok(request) => request,
                             Err(error) => {
                                 let response = parser_error_response(&error);
@@ -258,6 +258,11 @@ pub fn start_server(
                                     .write_to(&mut stream, limits.response_bytes);
                                 continue;
                             }
+                            // macOS/BSD accepted sockets inherit O_NONBLOCK from a
+                            // nonblocking listener; a read that lands before the
+                            // peer's bytes arrive then fails instantly with EAGAIN
+                            // instead of honoring the configured read timeout.
+                            let _ = stream.set_nonblocking(false);
                             let sender = &worker_senders[next_worker % worker_senders.len()];
                             next_worker = next_worker.wrapping_add(1);
                             match sender.try_send(stream) {
@@ -414,6 +419,10 @@ mod tests {
         serde_json::from_str(body).unwrap()
     }
 
+    fn test_capabilities(target: &str) -> Capabilities {
+        Capabilities::new(target, "contract-target")
+    }
+
     #[test]
     fn refuses_non_loopback_bind() {
         let run_id = RunId::parse("0123456789abcdef0123456789abcdef").unwrap();
@@ -430,10 +439,7 @@ mod tests {
         let entered_dispatch = entered.clone();
         let release_dispatch = release.clone();
         let server = start_server(
-            ServerConfig::loopback(
-                RunId::parse(run_id).unwrap(),
-                Capabilities::new("contract", "contract-target"),
-            ),
+            ServerConfig::loopback(RunId::parse(run_id).unwrap(), test_capabilities("contract")),
             move |_, _| {
                 entered_dispatch.store(true, Ordering::Release);
                 while !release_dispatch.load(Ordering::Acquire) {
@@ -465,10 +471,7 @@ mod tests {
         let revision = Arc::new(AtomicU64::new(10));
         let dispatch_revision = revision.clone();
         let server = start_server(
-            ServerConfig::loopback(
-                RunId::parse(run_id).unwrap(),
-                Capabilities::new("contract", "contract-target"),
-            ),
+            ServerConfig::loopback(RunId::parse(run_id).unwrap(), test_capabilities("contract")),
             move |request: HttpRequest, _context: DispatchContext| {
                 let before = dispatch_revision.fetch_add(1, Ordering::AcqRel);
                 let mut reply = DevReply::success(serde_json::json!({
@@ -510,6 +513,83 @@ mod tests {
 
         let quit = get(server.endpoint(), "/quit", run_id);
         assert!(quit.starts_with("HTTP/1.1 200"), "{quit}");
+        server.shutdown();
+    }
+
+    #[test]
+    fn rapid_fresh_connections_never_hit_spurious_read_errors() {
+        // Regression: on macOS/BSD, sockets accepted from the nonblocking
+        // listener inherited O_NONBLOCK, so a read issued before the peer's
+        // bytes arrived failed instantly with EAGAIN — surfacing as spurious
+        // 408s and connection resets under rapid request cadence.
+        let run_id = "0123456789abcdef0123456789abcdef";
+        let server = start_server(
+            ServerConfig::loopback(RunId::parse(run_id).unwrap(), test_capabilities("contract")),
+            |_, _| HttpResponse::text(200, "ok"),
+        )
+        .unwrap();
+        for iteration in 0..200 {
+            let mut stream = TcpStream::connect(server.endpoint()).unwrap();
+            write!(
+                stream,
+                "POST /snapshot HTTP/1.1\r\nHost: localhost\r\nX-SOTF-Dev-Run-ID: {run_id}\r\nContent-Length: 2\r\n\r\n{{}}"
+            )
+            .unwrap();
+            // Half-close so the trailing-byte probe sees an immediate EOF
+            // instead of paying the read timeout for a hold-open client.
+            stream.shutdown(std::net::Shutdown::Write).unwrap();
+            let mut response = String::new();
+            stream.read_to_string(&mut response).unwrap();
+            assert!(
+                response.starts_with("HTTP/1.1 200"),
+                "iteration {iteration}: {response}"
+            );
+        }
+        server.shutdown();
+    }
+
+    #[test]
+    fn queue_saturation_returns_429_instead_of_blocking() {
+        let run_id = "0123456789abcdef0123456789abcdef";
+        let entered = Arc::new(AtomicBool::new(false));
+        let release = Arc::new(AtomicBool::new(false));
+        let entered_dispatch = entered.clone();
+        let release_dispatch = release.clone();
+        let mut capabilities = test_capabilities("contract");
+        capabilities.limits.command_queue = 1;
+        let server = start_server(
+            ServerConfig::loopback(RunId::parse(run_id).unwrap(), capabilities),
+            move |_, _| {
+                entered_dispatch.store(true, Ordering::Release);
+                while !release_dispatch.load(Ordering::Acquire) {
+                    thread::sleep(Duration::from_millis(1));
+                }
+                HttpResponse::text(200, "done")
+            },
+        )
+        .unwrap();
+
+        let endpoint = server.endpoint();
+        // The first request occupies the single dispatch slot; once the
+        // dispatcher has provably entered, the route queue is empty.
+        let first = thread::spawn(move || get(endpoint, "/snapshot", run_id));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !entered.load(Ordering::Acquire) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(1));
+        }
+        assert!(entered.load(Ordering::Acquire));
+        // The second request now deterministically fills the one-deep queue
+        // (the dispatcher cannot drain it while it is blocked); allow ample
+        // time for the read-timeout-gated parse to finish enqueueing it.
+        let second = thread::spawn(move || get(endpoint, "/snapshot", run_id));
+        thread::sleep(Duration::from_secs(1));
+        // The third request must be rejected with 429.
+        let third = get(server.endpoint(), "/snapshot", run_id);
+        assert!(third.starts_with("HTTP/1.1 429"), "{third}");
+        assert!(third.contains("queue_full"), "{third}");
+        release.store(true, Ordering::Release);
+        assert!(first.join().unwrap().starts_with("HTTP/1.1 200"));
+        assert!(second.join().unwrap().starts_with("HTTP/1.1 200"));
         server.shutdown();
     }
 }

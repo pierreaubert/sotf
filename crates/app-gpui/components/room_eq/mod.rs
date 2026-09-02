@@ -10,12 +10,13 @@
 use crate::app::types::{RoomEqStep, Screen};
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
+use crate::i18n::{RoomEqWorkflowTranslations, WizardNavigationTranslations};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonTheme, ButtonVariant, HStack, StackSpacing, StepStatus, WizardHeader,
-    WizardStep, WizardTheme,
+    Button, ButtonSize, ButtonTheme, ButtonVariant, HStack, Heading, StackSpacing, StepStatus,
+    WizardHeader, WizardStep, WizardTheme,
 };
 
 macro_rules! dev_track {
@@ -48,16 +49,83 @@ pub use step_4_optimise::{
     room_eq_initial_response_points, room_eq_progress_chart_series,
 };
 
+const COMPACT_STEP_LABEL_EFFECTIVE_WIDTH: f32 = 800.0;
+
+#[doc(hidden)]
+pub fn room_eq_header_uses_icon_only_steps(window_width: f32, font_scale: f32) -> bool {
+    window_width / font_scale.max(f32::EPSILON) < COMPACT_STEP_LABEL_EFFECTIVE_WIDTH
+}
+
+fn render_compact_step_indicators(step_statuses: &[StepStatus], theme: &WizardTheme) -> Div {
+    let mut indicators = div().w_full().flex().items_center();
+
+    for (index, status) in step_statuses.iter().copied().enumerate() {
+        let (background, text, border) = match status {
+            StepStatus::NotVisited | StepStatus::Skipped => {
+                (theme.step_bg, theme.label_text, theme.step_border)
+            }
+            StepStatus::Active => (theme.step_active_bg, theme.step_text, theme.step_active_bg),
+            StepStatus::Completed => (
+                theme.step_completed_bg,
+                theme.step_text,
+                theme.step_completed_bg,
+            ),
+            StepStatus::Error => (theme.step_error_bg, theme.step_text, theme.step_error_bg),
+        };
+        let marker = match status {
+            StepStatus::Completed => "✓".to_string(),
+            StepStatus::Error => "✗".to_string(),
+            _ => (index + 1).to_string(),
+        };
+
+        indicators = indicators.child(
+            div()
+                .flex_none()
+                .w(rems(1.5))
+                .h(rems(1.5))
+                .rounded_full()
+                .border_2()
+                .border_color(border)
+                .bg(background)
+                .text_color(text)
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(marker),
+        );
+
+        if index + 1 < step_statuses.len() {
+            let connector = if status == StepStatus::Completed {
+                theme.connector_completed_color
+            } else {
+                theme.connector_color
+            };
+            indicators = indicators.child(
+                div()
+                    .flex_1()
+                    .min_w(rems(0.25))
+                    // intentional: sub-token inset keeps all seven compact wizard markers visible.
+                    .mx(rems(0.2))
+                    .h(rems(0.1))
+                    .bg(connector),
+            );
+        }
+    }
+
+    indicators
+}
+
 impl PlayerView {
     /// Main Room EQ screen entry point
     pub(crate) fn render_room_eq_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
-        let (theme, current_step, current_hint, dismiss_hint_label) = {
+        let (theme, current_step, current_hint, language, dismiss_hint_label) = {
             let state = self.state.read(cx);
             (
                 state.app.ui_state.theme.clone(),
                 state.app.measurement_state.room_eq_state.step,
                 state.app.tutorial.current_hint.clone(),
+                state.app.ui_state.language,
                 crate::app::i18n::DialogTranslations::for_language(state.app.ui_state.language)
                     .about
                     .close,
@@ -112,6 +180,7 @@ impl PlayerView {
                                 &hint,
                                 &theme,
                                 d,
+                                language,
                                 dismiss_hint_label,
                                 cx.listener(|view, _: &ClickEvent, _window, cx| {
                                     cx.stop_propagation();
@@ -147,10 +216,17 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let title = state.app.ui_state.translations.screen_room_eq;
+        let language = state.app.ui_state.language;
+        let translations = RoomEqWorkflowTranslations::for_language(language);
+        let wizard_text = WizardNavigationTranslations::for_language(language);
         let theme_id = state.app.ui_state.theme_id;
         let current_step = state.app.measurement_state.room_eq_state.step;
         let can_go_next = state.app.can_advance_workflow_step();
         let is_busy = state.app.measurement_state.room_eq_state.is_optimizing();
+        let icon_only_steps = room_eq_header_uses_icon_only_steps(
+            state.app.ui_state.window_width,
+            state.app.ui_state.font_scale,
+        );
 
         let step_index = current_step.index();
 
@@ -171,7 +247,7 @@ impl PlayerView {
                     RoomEqStep::Review => "review",
                     RoomEqStep::Export => "export",
                 };
-                WizardStep::new(id, s.label())
+                WizardStep::new(id, translations.step_label(*s))
             })
             .collect();
 
@@ -193,19 +269,28 @@ impl PlayerView {
         let wizard_theme = WizardTheme::from(&ui_kit_theme);
         let button_theme = ButtonTheme::from(&ui_kit_theme);
 
-        let wizard_header = WizardHeader::new()
-            .title(title)
-            .steps(steps)
-            .step_statuses(step_statuses)
-            .current_step(step_index)
-            .theme(wizard_theme.clone());
+        let wizard_header = if icon_only_steps {
+            render_compact_step_indicators(&step_statuses, &wizard_theme)
+        } else {
+            div().child(
+                WizardHeader::new()
+                    .steps(steps)
+                    .step_statuses(step_statuses)
+                    .current_step(step_index)
+                    .theme(wizard_theme.clone()),
+            )
+        };
 
         let back_label = match current_step {
-            RoomEqStep::LoadData => "Close",
-            _ => "Back",
+            RoomEqStep::LoadData => wizard_text.close,
+            _ => wizard_text.back,
         };
-        let next_label =
-            crate::components::wizard_continue_label(current_step.next().map(|next| next.label()));
+        let next_label = crate::components::wizard_continue_label(
+            language,
+            current_step
+                .next()
+                .map(|next| translations.step_label(next)),
+        );
 
         let navigation = HStack::new()
             .spacing(StackSpacing::Sm)
@@ -237,7 +322,7 @@ impl PlayerView {
                     })),
                 "roomeq.next"
             ));
-        let navigation = navigation.build().flex_none();
+        let navigation = navigation.build().flex_none().ml_auto();
 
         // Home button for navigation back to Library
         let state_for_home = self.state.clone();
@@ -246,8 +331,8 @@ impl PlayerView {
 
         div()
             .flex()
-            .items_center()
-            .justify_between()
+            .flex_col()
+            .gap(d.gap)
             .min_w_0()
             .px(d.card)
             .py(d.card)
@@ -261,12 +346,14 @@ impl PlayerView {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .w(rems(2.5))
+                    .gap(d.gap)
+                    .min_w_0()
                     .h(rems(2.0))
                     .cursor_pointer()
                     .rounded(d.r_md)
                     .hover(move |s| s.bg(surface_hover))
                     .child(Icon::new(IconName::Home).color(text_muted))
+                    .child(Heading::h4(title))
                     .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                         state_for_home.update(cx, |state, _cx| {
                             state.app.ui_state.current_screen = Screen::Library;
@@ -276,7 +363,7 @@ impl PlayerView {
             // Centered header with flex-1
             .child(
                 div()
-                    .flex_1()
+                    .w_full()
                     .min_w_0()
                     .flex()
                     .justify_center()

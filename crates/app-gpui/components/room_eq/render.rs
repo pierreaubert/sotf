@@ -8,8 +8,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_px::LegendPosition;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize, TextWeight,
-    VStack,
+    Button, ButtonSize, ButtonVariant, Card, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 use sotf_audio::signal_analysis as dsp;
 
@@ -1516,16 +1515,12 @@ fn render_room_eq_curve_chart(
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(
-            HStack::new()
-                .spacing(StackSpacing::Sm)
-                .child(
-                    Text::new(title.to_string())
-                        .weight(TextWeight::Semibold)
-                        .size(TextSize::Xs)
-                        .color(theme.text_primary),
-                )
-                .when_some(controls, |el, controls| el.child(controls)),
+            Text::new(title.to_string())
+                .weight(TextWeight::Semibold)
+                .size(TextSize::Xs)
+                .color(theme.text_primary),
         )
+        .when_some(controls, |el, controls| el.child(controls))
         .child(chart_element)
         .into_any_element()
 }

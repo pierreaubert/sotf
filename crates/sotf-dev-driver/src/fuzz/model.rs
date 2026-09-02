@@ -7,6 +7,17 @@ use sotf_dev_api::{Capabilities, DevReply, Snapshot};
 
 pub const FUZZ_SCHEMA_VERSION: u16 = 1;
 
+/// Shared safety opt-in identifiers. The CLI (`--allow-*` flags) inserts these
+/// names and adapters reject/accept them by the same constants, so the two
+/// sides cannot drift.
+pub mod opt_in {
+    pub const HARDWARE_AUDIO: &str = "hardware_audio";
+    pub const NETWORK: &str = "network";
+    pub const EXTERNAL_PLUGINS: &str = "external_plugins";
+    pub const HAL_INSTALL: &str = "hal_install";
+    pub const PHYSICAL_DEVICE: &str = "physical_device";
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[serde(rename_all = "kebab-case")]
 pub enum TargetId {

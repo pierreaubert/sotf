@@ -26,15 +26,15 @@
     // ================================================================
     {
         let level_label = match detail_level {
-            DetailLevel::Simple => "Simple",
-            DetailLevel::Intermediate => "Customize",
-            DetailLevel::Expert => "All Parameters",
+            DetailLevel::Simple => translations.autoeq_form.sections.simple,
+            DetailLevel::Intermediate => translations.autoeq_form.sections.customize,
+            DetailLevel::Expert => translations.autoeq_form.sections.all_parameters,
         };
 
         let next_label = match detail_level {
-            DetailLevel::Simple => "Customize",
-            DetailLevel::Intermediate => "All Parameters",
-            DetailLevel::Expert => "Simple",
+            DetailLevel::Simple => translations.autoeq_form.sections.customize,
+            DetailLevel::Intermediate => translations.autoeq_form.sections.all_parameters,
+            DetailLevel::Expert => translations.autoeq_form.sections.simple,
         };
 
         let mut detail_row = HStack::new()

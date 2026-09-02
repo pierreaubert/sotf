@@ -25,9 +25,14 @@ pub struct FederationState {
     pub trusted_clients: Vec<TrustedClientInfo>,
     /// Last pairing operation error message.
     pub pairing_error: Option<String>,
+    /// Retained streaming-service login/logout failure shown inline.
+    pub service_login_error: Option<String>,
     /// Active Tidal device-code login flow, if any.
     #[cfg(feature = "tidal")]
     pub tidal_login: Option<TidalLoginState>,
+    /// Keeps the deterministic QA login channel alive until visible Cancel.
+    #[cfg(all(feature = "tidal", feature = "dev-api"))]
+    pub qa_tidal_login_sender: Option<std::sync::mpsc::Sender<TidalLoginMessage>>,
     /// Active Spotify OAuth login flow, if any.
     #[cfg(feature = "spotify")]
     pub spotify_login: Option<SpotifyLoginState>,
@@ -48,8 +53,11 @@ impl Default for FederationState {
             server_fingerprint: None,
             trusted_clients: Vec::new(),
             pairing_error: None,
+            service_login_error: None,
             #[cfg(feature = "tidal")]
             tidal_login: None,
+            #[cfg(all(feature = "tidal", feature = "dev-api"))]
+            qa_tidal_login_sender: None,
             #[cfg(feature = "spotify")]
             spotify_login: None,
         }

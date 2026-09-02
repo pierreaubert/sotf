@@ -11,7 +11,7 @@ use gpui::*;
 use gpui_audio_kit::{
     Potentiometer, PotentiometerScale, PotentiometerSize, VerticalSlider, VerticalSliderSize,
 };
-use gpui_ui_kit::{NumberInput, NumberInputSize, Toggle, ToggleStyle};
+use gpui_ui_kit::{Input, InputSize, NumberInput, NumberInputSize, Toggle, ToggleStyle};
 use sotf_audio_player_midi::PhysicalControlKind;
 use sotf_audio_player_midi::mapping::{MidiOverlay, ParamAssignment};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -62,6 +62,17 @@ fn sanitize_audio_control_range(
         value: normalized_value,
         min: normalized_min,
         max: normalized_max,
+    }
+}
+
+/// VerticalSlider formats its value after each range endpoint setter. Its
+/// initial range is 0..100, so setting a minimum above 100 before the matching
+/// maximum temporarily creates an invalid range and panics inside f64::clamp.
+fn configure_vertical_slider_range(slider: VerticalSlider, min: f64, max: f64) -> VerticalSlider {
+    if min > 100.0 {
+        slider.max(max).min(min)
+    } else {
+        slider.min(min).max(max)
     }
 }
 
@@ -546,8 +557,8 @@ pub fn render_vertical_slider_sized(
         .step(((max - min) / 1000.0).max(0.0001))
         .decimals(3)
         .unit(unit)
-        .label(label)
         .size(NumberInputSize::Xs)
+        .width(104.0)
         .aria_label(format!("{label} value"))
         .on_change({
             let entity = entity.clone();
@@ -560,10 +571,9 @@ pub fn render_vertical_slider_sized(
         .into_any_element();
     }
 
-    let mut slider = VerticalSlider::new(("slider", plugin_idx * 1000 + idx))
+    let slider = VerticalSlider::new(("slider", plugin_idx * 1000 + idx));
+    let mut slider = configure_vertical_slider_range(slider, min, max)
         .value(value)
-        .min(min)
-        .max(max)
         .unit(unit.to_string())
         .label(label.to_string())
         .selected(is_selected)
@@ -595,9 +605,10 @@ pub fn render_vertical_slider_sized(
         .on_select({
             let entity = entity.clone();
             move |_, cx| {
-                entity.update(cx, |state, _| {
+                entity.update(cx, |state, cx| {
                     state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                     state.app.plugin_state.plugin_param_selection = idx;
+                    cx.notify();
                 });
             }
         })
@@ -707,10 +718,9 @@ pub fn render_vertical_slider_with_ticks_enabled(
         .into_any_element();
     }
 
-    let mut slider = VerticalSlider::new(("slider-ticks", plugin_idx * 1000 + idx))
+    let slider = VerticalSlider::new(("slider-ticks", plugin_idx * 1000 + idx));
+    let mut slider = configure_vertical_slider_range(slider, min, max)
         .value(value)
-        .min(min)
-        .max(max)
         .unit(unit.to_string())
         .label(label.to_string())
         .height(height)
@@ -1172,6 +1182,44 @@ pub fn render_knob_sized(
     )
 }
 
+/// Render a custom-size knob whose selected exact editor owns a stable focus
+/// handle supplied by the parent view.
+#[allow(clippy::too_many_arguments)]
+pub fn render_knob_sized_with_focus(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    label: &str,
+    value: f64,
+    min: f64,
+    max: f64,
+    unit: &str,
+    idx: usize,
+    selected_param: usize,
+    is_editing: bool,
+    shortcut_key: Option<char>,
+    size: PotentiometerSize,
+    exact_entry_focus_handle: FocusHandle,
+    theme: &Theme,
+) -> impl IntoElement {
+    render_knob_sized_enabled_with_focus(
+        entity,
+        plugin_idx,
+        label,
+        value,
+        min,
+        max,
+        unit,
+        idx,
+        selected_param,
+        is_editing,
+        shortcut_key,
+        size,
+        true,
+        Some(exact_entry_focus_handle),
+        theme,
+    )
+}
+
 /// Render a potentiometer whose interaction can be disabled by layout metadata.
 #[allow(clippy::too_many_arguments)]
 pub fn render_knob_sized_enabled(
@@ -1190,6 +1238,43 @@ pub fn render_knob_sized_enabled(
     interactive: bool,
     theme: &Theme,
 ) -> AnyElement {
+    render_knob_sized_enabled_with_focus(
+        entity,
+        plugin_idx,
+        label,
+        value,
+        min,
+        max,
+        unit,
+        idx,
+        selected_param,
+        is_editing,
+        shortcut_key,
+        size,
+        interactive,
+        None,
+        theme,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_knob_sized_enabled_with_focus(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    label: &str,
+    value: f64,
+    min: f64,
+    max: f64,
+    unit: &str,
+    idx: usize,
+    selected_param: usize,
+    is_editing: bool,
+    shortcut_key: Option<char>,
+    size: PotentiometerSize,
+    interactive: bool,
+    exact_entry_focus_handle: Option<FocusHandle>,
+    theme: &Theme,
+) -> AnyElement {
     let is_selected = selected_param == idx && is_editing;
     let control_range = sanitize_audio_control_range(label, value, min, max);
     let value = control_range.value;
@@ -1200,27 +1285,64 @@ pub fn render_knob_sized_enabled(
     // editor in the shared renderer so custom views and the declarative
     // fallback expose the same interaction contract.
     if interactive && is_selected {
-        return NumberInput::new(SharedString::from(format!(
+        let input = Input::new(SharedString::from(format!(
             "plugin-number-input-{plugin_idx}-{idx}"
         )))
-        .value(value)
-        .min(min)
-        .max(max)
-        .step(((max - min) / 1000.0).max(0.0001))
-        .decimals(3)
-        .unit(unit)
-        .label(label)
-        .size(NumberInputSize::Xs)
+        .value(format!("{value:.3}"))
+        .size(InputSize::Xs)
         .aria_label(format!("{label} value"))
-        .on_change({
+        .on_text_change({
             let entity = entity.clone();
             move |new_value, _window, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.set_plugin_param(plugin_idx, idx, new_value);
-                });
+                if let Ok(new_value) = new_value.trim().parse::<f64>() {
+                    entity.update(cx, |state, _| {
+                        state
+                            .app
+                            .set_plugin_param(plugin_idx, idx, new_value.clamp(min, max));
+                    });
+                }
             }
-        })
-        .into_any_element();
+        });
+
+        let input = if let Some(focus_handle) = exact_entry_focus_handle.clone() {
+            input.focus_handle(focus_handle)
+        } else {
+            input
+        };
+
+        #[cfg(feature = "dev-api")]
+        let input = {
+            use crate::app::dev_api::DevTrackExt;
+            input.dev_track(format!("plugin.param.{plugin_idx}.{idx}.exact"))
+        };
+
+        return div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(theme.text_secondary)
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(label.to_owned()),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(div().w(rems(6.5)).child(input))
+                    .when(!unit.is_empty(), |row| {
+                        row.child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_secondary)
+                                .child(unit.to_owned()),
+                        )
+                    }),
+            )
+            .into_any_element();
     }
 
     // Determine scale type based on unit (Hz parameters use logarithmic scale)
@@ -1272,11 +1394,16 @@ pub fn render_knob_sized_enabled(
         })
         .on_select({
             let entity = entity.clone();
-            move |_, cx| {
-                entity.update(cx, |state, _| {
+            let exact_entry_focus_handle = exact_entry_focus_handle.clone();
+            move |window, cx| {
+                entity.update(cx, |state, cx| {
                     state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                     state.app.plugin_state.plugin_param_selection = idx;
+                    cx.notify();
                 });
+                if let Some(focus_handle) = exact_entry_focus_handle.as_ref() {
+                    focus_handle.focus(window, cx);
+                }
             }
         })
         .on_reset({

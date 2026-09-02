@@ -1,4 +1,4 @@
-use crate::app::i18n::CastTranslations;
+use crate::app::i18n::{CastTranslations, SidebarTranslations};
 use crate::app::state::plugin::EarTrainingSurface;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
@@ -11,21 +11,21 @@ thread_local! {
     /// Sidebar rows are reconstructed every render, so retain each row's focus
     /// handle by stable element ID. This keeps Tab focus and keyboard activation
     /// working across navigation updates.
-    static SIDEBAR_FOCUS_HANDLES: std::cell::RefCell<
+    static INTERACTIVE_FOCUS_HANDLES: std::cell::RefCell<
         std::collections::HashMap<ElementId, FocusHandle>
     > = std::cell::RefCell::new(std::collections::HashMap::new());
-    static SIDEBAR_FOCUS_ORDER: std::cell::RefCell<Vec<ElementId>> =
+    static INTERACTIVE_FOCUS_ORDER: std::cell::RefCell<Vec<ElementId>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-fn sidebar_focus_handle(id: &ElementId, cx: &mut App) -> FocusHandle {
-    SIDEBAR_FOCUS_ORDER.with(|order| {
+fn interactive_focus_handle(id: &ElementId, cx: &mut App) -> FocusHandle {
+    INTERACTIVE_FOCUS_ORDER.with(|order| {
         let mut order = order.borrow_mut();
         if !order.contains(id) {
             order.push(id.clone());
         }
     });
-    SIDEBAR_FOCUS_HANDLES.with(|handles| {
+    INTERACTIVE_FOCUS_HANDLES.with(|handles| {
         handles
             .borrow_mut()
             .entry(id.clone())
@@ -34,13 +34,13 @@ fn sidebar_focus_handle(id: &ElementId, cx: &mut App) -> FocusHandle {
     })
 }
 
-fn reset_sidebar_focus_order() {
-    SIDEBAR_FOCUS_ORDER.with(|order| order.borrow_mut().clear());
+fn reset_interactive_focus_order() {
+    INTERACTIVE_FOCUS_ORDER.with(|order| order.borrow_mut().clear());
 }
 
-fn focus_sidebar_relative(window: &mut Window, cx: &mut App, backwards: bool) -> bool {
-    let order = SIDEBAR_FOCUS_ORDER.with(|order| order.borrow().clone());
-    let focused_index = SIDEBAR_FOCUS_HANDLES.with(|handles| {
+fn focus_interactive_relative(window: &mut Window, cx: &mut App, backwards: bool) -> bool {
+    let order = INTERACTIVE_FOCUS_ORDER.with(|order| order.borrow().clone());
+    let focused_index = INTERACTIVE_FOCUS_HANDLES.with(|handles| {
         let handles = handles.borrow();
         order.iter().position(|id| {
             handles
@@ -61,7 +61,7 @@ fn focus_sidebar_relative(window: &mut Window, cx: &mut App, backwards: bool) ->
         return false;
     };
     let target =
-        SIDEBAR_FOCUS_HANDLES.with(|handles| handles.borrow().get(&order[target_index]).cloned());
+        INTERACTIVE_FOCUS_HANDLES.with(|handles| handles.borrow().get(&order[target_index]).cloned());
     let Some(target) = target else {
         return false;
     };
@@ -84,7 +84,7 @@ pub(crate) struct PendingGeometrySave {
 impl Render for PlayerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         #[cfg(feature = "dev-api")]
-        crate::app::dev_api::clear_tracked_elements();
+        crate::app::dev_api::clear_tracked_elements(window.window_handle().window_id().as_u64());
         if cx.has_global::<AccessibilityTree>() {
             cx.global_mut::<AccessibilityTree>().clear();
         }
@@ -738,37 +738,44 @@ impl Render for PlayerView {
                 !cfg!(target_os = "macos") && !cfg!(target_os = "ios") && !cfg!(target_os = "tvos"),
                 |div| div.child(self.render_menu_bar(cx)),
             )
-            .child(div().flex().flex_1().min_h_0().overflow_hidden().child(
-                if platform_style.is_phone() {
-                    self.render_phone_shell(current_screen, layout_mode, cx)
-                } else {
-                    div()
-                        .flex()
-                        .flex_1()
-                        .min_h_0()
-                        .overflow_hidden()
-                        .child(self.render_app_sidebar(cx))
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .flex_1()
-                                .min_w_0()
-                                .min_h_0()
-                                .overflow_hidden()
-                                .child(div().flex().flex_1().min_h_0().overflow_hidden().child(
-                                    self.render_current_screen(current_screen, layout_mode, cx),
-                                ))
-                                .when(
-                                    self.state.read(cx).app.federation.scan_progress.is_some(),
-                                    |div| div.child(self.render_federation_scan_progress(cx)),
-                                )
-                                .child(self.render_scan_status_row(cx))
-                                .child(self.render_footer(cx)),
-                        )
-                        .into_any_element()
-                },
-            ))
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_h_0()
+                    .min_w_0()
+                    .size_full()
+                    .overflow_hidden()
+                    .child(if platform_style.is_phone() {
+                        self.render_phone_shell(current_screen, layout_mode, cx)
+                    } else {
+                        div()
+                            .flex()
+                            .flex_1()
+                            .min_h_0()
+                            .overflow_hidden()
+                            .child(self.render_app_sidebar(cx))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .min_h_0()
+                                    .overflow_hidden()
+                                    .child(div().flex().flex_1().min_h_0().overflow_hidden().child(
+                                        self.render_current_screen(current_screen, layout_mode, cx),
+                                    ))
+                                    .when(
+                                        self.state.read(cx).app.federation.scan_progress.is_some(),
+                                        |div| div.child(self.render_federation_scan_progress(cx)),
+                                    )
+                                    .child(self.render_scan_status_row(cx))
+                                    .child(self.render_footer(cx)),
+                            )
+                            .into_any_element()
+                    }),
+            )
             .when(input_mode == crate::app::InputMode::Help, |div| {
                 div.child(self.render_help_modal(cx))
             })
@@ -889,9 +896,11 @@ impl PlayerView {
     }
 
     fn render_app_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
-        reset_sidebar_focus_order();
+        reset_interactive_focus_order();
         let d = Ds::from_cx(cx);
-        let cast_text = CastTranslations::for_language(self.state.read(cx).app.ui_state.language);
+        let language = self.state.read(cx).app.ui_state.language;
+        let cast_text = CastTranslations::for_language(language);
+        let sidebar_text = SidebarTranslations::for_language(language);
         let (
             theme,
             current_screen,
@@ -937,13 +946,13 @@ impl PlayerView {
             });
         });
         let toggle_mouse_action = toggle_action.clone();
-        let toggle_focus_handle = sidebar_focus_handle(&ElementId::from("app-sidebar-toggle"), cx);
+        let toggle_focus_handle = interactive_focus_handle(&ElementId::from("app-sidebar-toggle"), cx);
         cx.register_accessible(AccessibilityNode {
             element_id: "app-sidebar-toggle".into(),
             label: if collapsed {
-                "Expand sidebar".into()
+                sidebar_text.expand.into()
             } else {
-                "Collapse sidebar".into()
+                sidebar_text.collapse.into()
             },
             props: AriaProps::with_role(AriaRole::Button),
         });
@@ -952,7 +961,7 @@ impl PlayerView {
             .id("app-sidebar")
             .on_key_down(|event: &KeyDownEvent, window, cx| {
                 if event.keystroke.key.as_str() == "tab"
-                    && focus_sidebar_relative(window, cx, event.keystroke.modifiers.shift)
+                    && focus_interactive_relative(window, cx, event.keystroke.modifiers.shift)
                 {
                     cx.stop_propagation();
                 }
@@ -1230,7 +1239,7 @@ impl PlayerView {
             .child({
                 let state_entity = self.state.clone();
                 let preferences_id: ElementId = "nav-preferences-button".into();
-                let preferences_focus_handle = sidebar_focus_handle(&preferences_id, cx);
+                let preferences_focus_handle = interactive_focus_handle(&preferences_id, cx);
                 let preferences_props = AriaProps::with_role(AriaRole::Button);
                 cx.register_accessible(AccessibilityNode {
                     element_id: preferences_id.clone(),
@@ -1351,7 +1360,12 @@ impl PlayerView {
                             )
                         }),
                 )
-                .child(self.render_sidebar_cast_group_label(cast_discovery_running, &theme, &d))
+                .child(self.render_sidebar_cast_group_label(
+                    cast_discovery_running,
+                    cast_text,
+                    &theme,
+                    &d,
+                ))
                 .when(cast_devices.is_empty() && !cast_discovery_running, |el| {
                     el.child(
                         div()
@@ -1644,7 +1658,7 @@ impl PlayerView {
         on_activate: impl Fn(&mut App) + 'static,
     ) -> AnyElement {
         let element_id: ElementId = id.into();
-        let focus_handle = sidebar_focus_handle(&element_id, cx);
+        let focus_handle = interactive_focus_handle(&element_id, cx);
         let accessibility_props = AriaProps::with_role(AriaRole::Button);
         cx.register_accessible(AccessibilityNode {
             element_id: element_id.clone(),
@@ -1711,6 +1725,7 @@ impl PlayerView {
     fn render_sidebar_cast_group_label(
         &self,
         cast_discovery_running: bool,
+        cast_text: CastTranslations,
         theme: &crate::theme::Theme,
         d: &Ds,
     ) -> AnyElement {
@@ -1729,9 +1744,9 @@ impl PlayerView {
                         theme.text_muted
                     })
                     .child(if cast_discovery_running {
-                        "Cast Devices (scanning...)"
+                        format!("{} ({})", cast_text.devices, cast_text.scanning)
                     } else {
-                        "Cast Devices"
+                        cast_text.devices.to_string()
                     }),
             )
             .into_any_element()
@@ -1753,7 +1768,7 @@ impl PlayerView {
             device_name.clone()
         };
         let element_id = ElementId::from(SharedString::from(format!("nav-device-{index}")));
-        let focus_handle = sidebar_focus_handle(&element_id, cx);
+        let focus_handle = interactive_focus_handle(&element_id, cx);
         let accessibility_props =
             AriaProps::with_role(AriaRole::Button).maybe_state(selected, AriaState::Pressed(true));
         cx.register_accessible(AccessibilityNode {
@@ -1883,7 +1898,7 @@ impl PlayerView {
         };
         let display_type = device_type.to_string();
         let element_id = ElementId::from(SharedString::from(format!("nav-cast-device-{index}")));
-        let focus_handle = sidebar_focus_handle(&element_id, cx);
+        let focus_handle = interactive_focus_handle(&element_id, cx);
         let accessibility_props =
             AriaProps::with_role(AriaRole::Button).maybe_state(selected, AriaState::Pressed(true));
         cx.register_accessible(AccessibilityNode {
@@ -2008,7 +2023,7 @@ impl PlayerView {
         use crate::components::themed_tooltip;
 
         let element_id: ElementId = id.into();
-        let focus_handle = sidebar_focus_handle(&element_id, cx);
+        let focus_handle = interactive_focus_handle(&element_id, cx);
         let accessibility_props =
             AriaProps::with_role(AriaRole::Button).maybe_state(selected, AriaState::Pressed(true));
         cx.register_accessible(AccessibilityNode {

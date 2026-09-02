@@ -42,9 +42,7 @@ impl PlayerView {
     fn apply_plugin_update(state: &mut AppState, update_type: PluginUpdateType) {
         let plugin_state_snapshot = match update_type {
             PluginUpdateType::Structural => Some(state.app.plugin_state.clone()),
-            PluginUpdateType::Parameter { .. } | PluginUpdateType::ParameterByNodeId { .. } => {
-                None
-            }
+            PluginUpdateType::Parameter { .. } | PluginUpdateType::ParameterByNodeId { .. } => None,
         };
 
         let result = match update_type {
@@ -56,8 +54,11 @@ impl PlayerView {
                 if let Some(plugin) = state.app.plugin_state.graph.get_plugin(plugin_index) {
                     // We must map the UI index to the Engine index because the Engine reorders plugins
                     // (analyzers moved to the end) and filters out disabled ones.
-                    if let Some(engine_index) =
-                        state.app.plugin_state.graph.get_engine_index_by_linear_position(plugin_index)
+                    if let Some(engine_index) = state
+                        .app
+                        .plugin_state
+                        .graph
+                        .get_engine_index_by_linear_position(plugin_index)
                     {
                         if let Some((param_id, value)) =
                             param_index_to_engine_param(&plugin.settings, param_index)
@@ -67,10 +68,19 @@ impl PlayerView {
                                 .set_plugin_parameter(engine_index, param_id, value)
                         } else {
                             // Parameter not supported for individual update, fall back to structural
-                            let device_name = state.app.audio_device_state.current_output_device_name.as_deref();
+                            let device_name = state
+                                .app
+                                .audio_device_state
+                                .current_output_device_name
+                                .as_deref();
                             let track_sample_rate = state.app.playback.sample_rate.unwrap_or(48000);
-                            let sample_rate = sotf_audio::select_output_sample_rate(track_sample_rate, device_name) as f64;
-                            let plugins = state.app.plugin_state.graph.to_plugin_configs(sample_rate);
+                            let sample_rate =
+                                crate::app::state::audio_device::output_sample_rate_for_track(
+                                    track_sample_rate,
+                                    device_name,
+                                );
+                            let plugins =
+                                state.app.plugin_state.graph.to_plugin_configs(sample_rate);
                             state.player.update_plugins(plugins)
                         }
                     } else {
@@ -93,15 +103,24 @@ impl PlayerView {
                         if let Some((param_id, value)) =
                             param_index_to_engine_param(&node.plugin.settings, param_index)
                         {
-                                state
-                                    .player
-                                    .set_plugin_parameter(engine_index, param_id, value)
+                            state
+                                .player
+                                .set_plugin_parameter(engine_index, param_id, value)
                         } else {
                             // Fall back to structural rebuild
-                            let device_name = state.app.audio_device_state.current_output_device_name.as_deref();
+                            let device_name = state
+                                .app
+                                .audio_device_state
+                                .current_output_device_name
+                                .as_deref();
                             let track_sample_rate = state.app.playback.sample_rate.unwrap_or(48000);
-                            let sample_rate = sotf_audio::select_output_sample_rate(track_sample_rate, device_name) as f64;
-                            let plugins = state.app.plugin_state.graph.to_plugin_configs(sample_rate);
+                            let sample_rate =
+                                crate::app::state::audio_device::output_sample_rate_for_track(
+                                    track_sample_rate,
+                                    device_name,
+                                );
+                            let plugins =
+                                state.app.plugin_state.graph.to_plugin_configs(sample_rate);
                             state.player.update_plugins(plugins)
                         }
                     } else {
@@ -121,9 +140,16 @@ impl PlayerView {
                 // chain, silently dropping parallel branches and routed
                 // bass-management — which is exactly what
                 // `apply_room_eq_as_graph` set up.
-                let device_name = state.app.audio_device_state.current_output_device_name.as_deref();
+                let device_name = state
+                    .app
+                    .audio_device_state
+                    .current_output_device_name
+                    .as_deref();
                 let track_sample_rate = state.app.playback.sample_rate.unwrap_or(48000);
-                let sample_rate = sotf_audio::select_output_sample_rate(track_sample_rate, device_name) as f64;
+                let sample_rate = crate::app::state::audio_device::output_sample_rate_for_track(
+                    track_sample_rate,
+                    device_name,
+                );
                 // Invalidate the workflow canvas so the graph view rebuilds
                 state.app.plugin_state.graph_state.workflow_canvas = None;
                 if state.app.plugin_state.is_rack_available() {
@@ -136,8 +162,11 @@ impl PlayerView {
                     );
                     state.player.update_plugins(plugins)
                 } else {
-                    let graph_config =
-                        state.app.plugin_state.graph.to_plugin_graph_config(sample_rate);
+                    let graph_config = state
+                        .app
+                        .plugin_state
+                        .graph
+                        .to_plugin_graph_config(sample_rate);
                     log::warn!(
                         "[GPUI] Structural update (graph): sending {} nodes, {} edges to engine at {}Hz",
                         graph_config.nodes.len(),
@@ -152,7 +181,9 @@ impl PlayerView {
         if let Err(e) = result {
             log::warn!("Failed to apply plugin update: {}", e);
             if let Some(snapshot) = plugin_state_snapshot {
-                state.app.rollback_failed_plugin_update(snapshot, e.to_string());
+                state
+                    .app
+                    .rollback_failed_plugin_update(snapshot, e.to_string());
             } else {
                 state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(format!(
                     "Plugin update failed: {}",
@@ -164,97 +195,265 @@ impl PlayerView {
 
     fn move_plugin_up(&mut self, _: &MovePluginUp, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.move_plugin_up(state.app.plugin_state.selected_plugin_index);
+            state
+                .app
+                .move_plugin_up(state.app.plugin_state.selected_plugin_index);
         });
         cx.notify();
     }
 
     fn move_plugin_down(&mut self, _: &MovePluginDown, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.move_plugin_down(state.app.plugin_state.selected_plugin_index);
+            state
+                .app
+                .move_plugin_down(state.app.plugin_state.selected_plugin_index);
         });
         cx.notify();
     }
 
     fn toggle_plugin(&mut self, _: &TogglePlugin, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.toggle_plugin(state.app.plugin_state.selected_plugin_index);
+            state
+                .app
+                .toggle_plugin(state.app.plugin_state.selected_plugin_index);
         });
         cx.notify();
     }
 
     // Quick plugin add shortcuts generated by macro
     quick_add_plugin_handler!(quick_add_eq, QuickAddEQ, sotf_audio_player::PluginType::EQ);
-    quick_add_plugin_handler!(quick_add_gain, QuickAddGain, sotf_audio_player::PluginType::Gain);
-    quick_add_plugin_handler!(quick_add_upmixer, QuickAddUpmixer, sotf_audio_player::PluginType::Upmixer);
-    quick_add_plugin_handler!(quick_add_aae, QuickAddAAE, sotf_audio_player::PluginType::AAE);
-    quick_add_plugin_handler!(quick_add_compressor, QuickAddCompressor, sotf_audio_player::PluginType::Compressor);
-    quick_add_plugin_handler!(quick_add_gate, QuickAddGate, sotf_audio_player::PluginType::Gate);
-    quick_add_plugin_handler!(quick_add_limiter, QuickAddLimiter, sotf_audio_player::PluginType::Limiter);
-    quick_add_plugin_handler!(quick_add_expander, QuickAddExpander, sotf_audio_player::PluginType::Expander);
-    quick_add_plugin_handler!(quick_add_mbcomp, QuickAddMultibandCompressor, sotf_audio_player::PluginType::MultibandCompressor);
-    quick_add_plugin_handler!(quick_add_mbexp, QuickAddMultibandExpander, sotf_audio_player::PluginType::MultibandExpander);
-    quick_add_plugin_handler!(quick_add_loudness, QuickAddLoudness, sotf_audio_player::PluginType::LoudnessCompensation);
-    quick_add_plugin_handler!(quick_add_fletcher, QuickAddFletcherMunson, sotf_audio_player::PluginType::FletcherMunson);
-    quick_add_plugin_handler!(quick_add_binaural, QuickAddBinaural, sotf_audio_player::PluginType::BinauralDecoder);
-    quick_add_plugin_handler!(quick_add_convolution, QuickAddConvolution, sotf_audio_player::PluginType::Convolution);
-    quick_add_plugin_handler!(quick_add_loudness_monitor, QuickAddLoudnessMonitor, sotf_audio_player::PluginType::LoudnessMonitor);
-    quick_add_plugin_handler!(quick_add_spectrum, QuickAddSpectrum, sotf_audio_player::PluginType::SpectrumAnalyzer);
-    quick_add_plugin_handler!(quick_add_mutesolo, QuickAddMuteSolo, sotf_audio_player::PluginType::ChannelMuteSolo);
-    quick_add_plugin_handler!(quick_add_xtc, QuickAddXTC, sotf_audio_player::PluginType::XTC);
-    quick_add_plugin_handler!(quick_add_denoiser, QuickAddDenoiser, sotf_audio_player::PluginType::Denoiser);
-    quick_add_plugin_handler!(quick_add_pnd, QuickAddPnd, sotf_audio_player::PluginType::Pnd);
-    quick_add_plugin_handler!(quick_add_ab_compare, QuickAddABCompare, sotf_audio_player::PluginType::ABCompare);
-    quick_add_plugin_handler!(quick_add_downmix, QuickAddDownmix, sotf_audio_player::PluginType::Downmix);
-    quick_add_plugin_handler!(quick_add_mono_to_stereo, QuickAddMonoToStereo, sotf_audio_player::PluginType::MonoToStereo);
-    quick_add_plugin_handler!(quick_add_band_split, QuickAddBandSplit, sotf_audio_player::PluginType::BandSplit);
-    quick_add_plugin_handler!(quick_add_band_merge, QuickAddBandMerge, sotf_audio_player::PluginType::BandMerge);
-    quick_add_plugin_handler!(quick_add_crossfeed, QuickAddCrossfeed, sotf_audio_player::PluginType::Crossfeed);
-    quick_add_plugin_handler!(quick_add_delay, QuickAddDelay, sotf_audio_player::PluginType::Delay);
-    quick_add_plugin_handler!(quick_add_aec, QuickAddAec, sotf_audio_player::PluginType::Aec);
-    quick_add_plugin_handler!(quick_add_beamformer, QuickAddBeamformer, sotf_audio_player::PluginType::Beamformer);
-    quick_add_plugin_handler!(quick_add_transient_shaper, QuickAddTransientShaper, sotf_audio_player::PluginType::TransientShaper);
-    quick_add_plugin_handler!(quick_add_saturation, QuickAddSaturation, sotf_audio_player::PluginType::Saturation);
-    quick_add_plugin_handler!(quick_add_dynamic_eq, QuickAddDynamicEq, sotf_audio_player::PluginType::DynamicEq);
-    quick_add_plugin_handler!(quick_add_linear_phase_eq, QuickAddLinearPhaseEq, sotf_audio_player::PluginType::LinearPhaseEq);
-    quick_add_plugin_handler!(quick_add_spectral_compressor, QuickAddSpectralCompressor, sotf_audio_player::PluginType::SpectralCompressor);
+    quick_add_plugin_handler!(
+        quick_add_gain,
+        QuickAddGain,
+        sotf_audio_player::PluginType::Gain
+    );
+    quick_add_plugin_handler!(
+        quick_add_upmixer,
+        QuickAddUpmixer,
+        sotf_audio_player::PluginType::Upmixer
+    );
+    quick_add_plugin_handler!(
+        quick_add_aae,
+        QuickAddAAE,
+        sotf_audio_player::PluginType::AAE
+    );
+    quick_add_plugin_handler!(
+        quick_add_compressor,
+        QuickAddCompressor,
+        sotf_audio_player::PluginType::Compressor
+    );
+    quick_add_plugin_handler!(
+        quick_add_gate,
+        QuickAddGate,
+        sotf_audio_player::PluginType::Gate
+    );
+    quick_add_plugin_handler!(
+        quick_add_limiter,
+        QuickAddLimiter,
+        sotf_audio_player::PluginType::Limiter
+    );
+    quick_add_plugin_handler!(
+        quick_add_expander,
+        QuickAddExpander,
+        sotf_audio_player::PluginType::Expander
+    );
+    quick_add_plugin_handler!(
+        quick_add_mbcomp,
+        QuickAddMultibandCompressor,
+        sotf_audio_player::PluginType::MultibandCompressor
+    );
+    quick_add_plugin_handler!(
+        quick_add_mbexp,
+        QuickAddMultibandExpander,
+        sotf_audio_player::PluginType::MultibandExpander
+    );
+    quick_add_plugin_handler!(
+        quick_add_loudness,
+        QuickAddLoudness,
+        sotf_audio_player::PluginType::LoudnessCompensation
+    );
+    quick_add_plugin_handler!(
+        quick_add_fletcher,
+        QuickAddFletcherMunson,
+        sotf_audio_player::PluginType::FletcherMunson
+    );
+    quick_add_plugin_handler!(
+        quick_add_binaural,
+        QuickAddBinaural,
+        sotf_audio_player::PluginType::BinauralDecoder
+    );
+    quick_add_plugin_handler!(
+        quick_add_convolution,
+        QuickAddConvolution,
+        sotf_audio_player::PluginType::Convolution
+    );
+    quick_add_plugin_handler!(
+        quick_add_loudness_monitor,
+        QuickAddLoudnessMonitor,
+        sotf_audio_player::PluginType::LoudnessMonitor
+    );
+    quick_add_plugin_handler!(
+        quick_add_spectrum,
+        QuickAddSpectrum,
+        sotf_audio_player::PluginType::SpectrumAnalyzer
+    );
+    quick_add_plugin_handler!(
+        quick_add_mutesolo,
+        QuickAddMuteSolo,
+        sotf_audio_player::PluginType::ChannelMuteSolo
+    );
+    quick_add_plugin_handler!(
+        quick_add_xtc,
+        QuickAddXTC,
+        sotf_audio_player::PluginType::XTC
+    );
+    quick_add_plugin_handler!(
+        quick_add_denoiser,
+        QuickAddDenoiser,
+        sotf_audio_player::PluginType::Denoiser
+    );
+    quick_add_plugin_handler!(
+        quick_add_pnd,
+        QuickAddPnd,
+        sotf_audio_player::PluginType::Pnd
+    );
+    quick_add_plugin_handler!(
+        quick_add_ab_compare,
+        QuickAddABCompare,
+        sotf_audio_player::PluginType::ABCompare
+    );
+    quick_add_plugin_handler!(
+        quick_add_downmix,
+        QuickAddDownmix,
+        sotf_audio_player::PluginType::Downmix
+    );
+    quick_add_plugin_handler!(
+        quick_add_mono_to_stereo,
+        QuickAddMonoToStereo,
+        sotf_audio_player::PluginType::MonoToStereo
+    );
+    quick_add_plugin_handler!(
+        quick_add_band_split,
+        QuickAddBandSplit,
+        sotf_audio_player::PluginType::BandSplit
+    );
+    quick_add_plugin_handler!(
+        quick_add_band_merge,
+        QuickAddBandMerge,
+        sotf_audio_player::PluginType::BandMerge
+    );
+    quick_add_plugin_handler!(
+        quick_add_crossfeed,
+        QuickAddCrossfeed,
+        sotf_audio_player::PluginType::Crossfeed
+    );
+    quick_add_plugin_handler!(
+        quick_add_delay,
+        QuickAddDelay,
+        sotf_audio_player::PluginType::Delay
+    );
+    quick_add_plugin_handler!(
+        quick_add_aec,
+        QuickAddAec,
+        sotf_audio_player::PluginType::Aec
+    );
+    quick_add_plugin_handler!(
+        quick_add_beamformer,
+        QuickAddBeamformer,
+        sotf_audio_player::PluginType::Beamformer
+    );
+    quick_add_plugin_handler!(
+        quick_add_transient_shaper,
+        QuickAddTransientShaper,
+        sotf_audio_player::PluginType::TransientShaper
+    );
+    quick_add_plugin_handler!(
+        quick_add_saturation,
+        QuickAddSaturation,
+        sotf_audio_player::PluginType::Saturation
+    );
+    quick_add_plugin_handler!(
+        quick_add_dynamic_eq,
+        QuickAddDynamicEq,
+        sotf_audio_player::PluginType::DynamicEq
+    );
+    quick_add_plugin_handler!(
+        quick_add_linear_phase_eq,
+        QuickAddLinearPhaseEq,
+        sotf_audio_player::PluginType::LinearPhaseEq
+    );
+    quick_add_plugin_handler!(
+        quick_add_spectral_compressor,
+        QuickAddSpectralCompressor,
+        sotf_audio_player::PluginType::SpectralCompressor
+    );
 
-    fn increment_plugin_param(&mut self, _: &IncrementPluginParam, _: &mut Window, cx: &mut Context<Self>) {
+    fn increment_plugin_param(
+        &mut self,
+        _: &IncrementPluginParam,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.state.update(cx, |state, _cx| {
             Self::adjust_selected_plugin_param(state, 1.0);
         });
         cx.notify();
     }
 
-    fn decrement_plugin_param(&mut self, _: &DecrementPluginParam, _: &mut Window, cx: &mut Context<Self>) {
+    fn decrement_plugin_param(
+        &mut self,
+        _: &DecrementPluginParam,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.state.update(cx, |state, _cx| {
             Self::adjust_selected_plugin_param(state, -1.0);
         });
         cx.notify();
     }
 
-    fn increment_plugin_param_large(&mut self, _: &IncrementPluginParamLarge, _: &mut Window, cx: &mut Context<Self>) {
+    fn increment_plugin_param_large(
+        &mut self,
+        _: &IncrementPluginParamLarge,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.state.update(cx, |state, _cx| {
             Self::adjust_selected_plugin_param(state, 10.0);
         });
         cx.notify();
     }
 
-    fn decrement_plugin_param_large(&mut self, _: &DecrementPluginParamLarge, _: &mut Window, cx: &mut Context<Self>) {
+    fn decrement_plugin_param_large(
+        &mut self,
+        _: &DecrementPluginParamLarge,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.state.update(cx, |state, _cx| {
             Self::adjust_selected_plugin_param(state, -10.0);
         });
         cx.notify();
     }
 
-    fn increment_plugin_param_small(&mut self, _: &IncrementPluginParamSmall, _: &mut Window, cx: &mut Context<Self>) {
+    fn increment_plugin_param_small(
+        &mut self,
+        _: &IncrementPluginParamSmall,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.state.update(cx, |state, _cx| {
             Self::adjust_selected_plugin_param(state, 0.1);
         });
         cx.notify();
     }
 
-    fn decrement_plugin_param_small(&mut self, _: &DecrementPluginParamSmall, _: &mut Window, cx: &mut Context<Self>) {
+    fn decrement_plugin_param_small(
+        &mut self,
+        _: &DecrementPluginParamSmall,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.state.update(cx, |state, _cx| {
             Self::adjust_selected_plugin_param(state, -0.1);
         });
@@ -262,27 +461,39 @@ impl PlayerView {
     }
 
     fn select_band_global(&mut self, _: &SelectBandGlobal, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| { state.app.plugin_state.selected_eq_band = 0; });
+        self.state.update(cx, |state, _cx| {
+            state.app.plugin_state.selected_eq_band = 0;
+        });
         cx.notify();
     }
     fn select_band_1(&mut self, _: &SelectBand1, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| { state.app.plugin_state.selected_eq_band = 1; });
+        self.state.update(cx, |state, _cx| {
+            state.app.plugin_state.selected_eq_band = 1;
+        });
         cx.notify();
     }
     fn select_band_2(&mut self, _: &SelectBand2, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| { state.app.plugin_state.selected_eq_band = 2; });
+        self.state.update(cx, |state, _cx| {
+            state.app.plugin_state.selected_eq_band = 2;
+        });
         cx.notify();
     }
     fn select_band_3(&mut self, _: &SelectBand3, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| { state.app.plugin_state.selected_eq_band = 3; });
+        self.state.update(cx, |state, _cx| {
+            state.app.plugin_state.selected_eq_band = 3;
+        });
         cx.notify();
     }
     fn select_band_4(&mut self, _: &SelectBand4, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| { state.app.plugin_state.selected_eq_band = 4; });
+        self.state.update(cx, |state, _cx| {
+            state.app.plugin_state.selected_eq_band = 4;
+        });
         cx.notify();
     }
     fn select_band_5(&mut self, _: &SelectBand5, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| { state.app.plugin_state.selected_eq_band = 5; });
+        self.state.update(cx, |state, _cx| {
+            state.app.plugin_state.selected_eq_band = 5;
+        });
         cx.notify();
     }
 
@@ -314,12 +525,17 @@ impl PlayerView {
     fn toggle_simple_view(&mut self, _: &ToggleSimpleView, _: &mut Window, cx: &mut Context<Self>) {
         use crate::app::state::plugin::PluginUiView;
         self.state.update(cx, |state, _cx| {
-            state.app.plugin_state.plugin_ui_state.plugin_ui_view =
-                if state.app.plugin_state.plugin_ui_state.plugin_ui_view.is_simple() {
-                    PluginUiView::UI
-                } else {
-                    PluginUiView::Simple
-                };
+            state.app.plugin_state.plugin_ui_state.plugin_ui_view = if state
+                .app
+                .plugin_state
+                .plugin_ui_state
+                .plugin_ui_view
+                .is_simple()
+            {
+                PluginUiView::UI
+            } else {
+                PluginUiView::Simple
+            };
         });
         cx.notify();
     }
@@ -327,6 +543,12 @@ impl PlayerView {
     fn toggle_ab_path(&mut self, _: &ToggleABPath, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             let plugin_idx = state.app.plugin_state.selected_plugin_index;
+            let mix_param_idx = sotf_plugins::param_specs::index_of(
+                sotf_plugins::param_specs::ab_compare::PARAMS,
+                "mix",
+            );
+            let mix_display_scale =
+                sotf_plugins::param_specs::ab_compare::PARAMS[mix_param_idx].display_scale;
             let next_update = state
                 .app
                 .plugin_state
@@ -341,7 +563,14 @@ impl PlayerView {
                     } => Some(if *mix_mode == 1 {
                         (2, if *selected_path == 0 { 1.0 } else { 0.0 })
                     } else {
-                        (0, if *mix >= 0.0 { -1.0 } else { 1.0 })
+                        (
+                            mix_param_idx,
+                            if *mix >= 0.0 {
+                                -mix_display_scale
+                            } else {
+                                mix_display_scale
+                            },
+                        )
                     }),
                     _ => None,
                 });
@@ -353,10 +582,22 @@ impl PlayerView {
     }
 
     // Level meter actions generated by macro
-    state_method_handler!(select_next_meter_group, SelectNextMeterGroup, select_next_level_meter_group);
-    state_method_handler!(select_prev_meter_group, SelectPrevMeterGroup, select_previous_level_meter_group);
+    state_method_handler!(
+        select_next_meter_group,
+        SelectNextMeterGroup,
+        select_next_level_meter_group
+    );
+    state_method_handler!(
+        select_prev_meter_group,
+        SelectPrevMeterGroup,
+        select_previous_level_meter_group
+    );
     state_method_handler!(toggle_meter_mute, ToggleMeterMute, toggle_level_meter_mute);
     state_method_handler!(toggle_meter_solo, ToggleMeterSolo, toggle_level_meter_solo);
     state_method_handler!(toggle_meter_dim, ToggleMeterDim, toggle_level_meter_dim);
-    state_method_handler!(clear_meter_mutes_solos, ClearMeterMutesSolos, clear_level_meter_mutes_and_solos);
+    state_method_handler!(
+        clear_meter_mutes_solos,
+        ClearMeterMutesSolos,
+        clear_level_meter_mutes_and_solos
+    );
 }

@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
+use std::net::TcpStream;
+use std::time::Duration;
 
 use thiserror::Error;
 
@@ -115,6 +117,40 @@ pub fn read_request(
     reader: &mut impl Read,
     limits: &ProtocolLimits,
 ) -> Result<HttpRequest, HttpError> {
+    let request = read_head_and_body(reader, limits)?;
+    reject_trailing_bytes(reader)?;
+    Ok(request)
+}
+
+/// Socket variant of [`read_request`]. A well-behaved QA client holds the
+/// connection open while awaiting the response, so the trailing-byte probe
+/// must not pay the full (two-second default) read timeout per request; the
+/// probe runs under a short timeout and the socket's configured timeout is
+/// restored afterwards. Trailing garbage sent with the request — the request
+/// desynchronization case this check exists for — is already in the socket
+/// buffer well within that window.
+pub fn read_request_stream(
+    stream: &mut TcpStream,
+    limits: &ProtocolLimits,
+) -> Result<HttpRequest, HttpError> {
+    let request = read_head_and_body(stream, limits)?;
+    let configured = Duration::from_millis(limits.read_timeout_ms);
+    let probe = configured.min(Duration::from_millis(10));
+    let _ = stream.set_read_timeout(Some(probe));
+    let result = reject_trailing_bytes(stream);
+    let _ = stream.set_read_timeout(Some(configured));
+    result?;
+    Ok(request)
+}
+
+fn read_head_and_body(
+    reader: &mut impl Read,
+    limits: &ProtocolLimits,
+) -> Result<HttpRequest, HttpError> {
+    // The byte-at-a-time header read is deliberate: this is a loopback QA
+    // listener with two-second socket deadlines and a handful of connections,
+    // not a hot path, and stopping exactly at the header terminator keeps the
+    // body accounting (and the trailing-byte check below) exact.
     let mut bytes = Vec::with_capacity(1024);
     let mut byte = [0_u8; 1];
     loop {
@@ -149,6 +185,26 @@ pub fn read_request(
         };
     }
     finish_request(request, &body, limits, false)
+}
+
+/// Reject bytes after the declared body (request desynchronization), with the
+/// same policy as parse_request_bytes. A read timeout here only means the
+/// client is holding the connection open while awaiting the response.
+fn reject_trailing_bytes(reader: &mut impl Read) -> Result<(), HttpError> {
+    let mut extra = [0_u8; 1];
+    match reader.read(&mut extra) {
+        Ok(0) => Ok(()),
+        Ok(_) => Err(HttpError::TrailingBytes),
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+            ) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(HttpError::Io(error)),
+    }
 }
 
 fn parse_head(head: &[u8], limits: &ProtocolLimits) -> Result<HttpRequest, HttpError> {
@@ -411,6 +467,20 @@ mod tests {
             read_request(&mut Cursor::new(truncated), &ProtocolLimits::default()),
             Err(HttpError::TruncatedBody)
         ));
+
+        // The socket-read path rejects bytes after the declared body, just
+        // like parse_request_bytes; an exact body followed by EOF is clean.
+        let trailing = request(
+            "POST /action HTTP/1.1\r\nContent-Length: 2\r\n\r\n",
+            b"{}extra",
+        );
+        assert!(matches!(
+            read_request(&mut Cursor::new(trailing), &ProtocolLimits::default()),
+            Err(HttpError::TrailingBytes)
+        ));
+        let exact = request("POST /action HTTP/1.1\r\nContent-Length: 2\r\n\r\n", b"{}");
+        let parsed = read_request(&mut Cursor::new(exact), &ProtocolLimits::default()).unwrap();
+        assert_eq!(parsed.body, b"{}");
 
         let mut output = Vec::new();
         assert!(matches!(

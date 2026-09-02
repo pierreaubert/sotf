@@ -18,6 +18,8 @@ mod vscode;
 
 use crate::app::actions;
 use gpui::*;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 use common::{common_bindings, plugin_rack_bindings};
 use emacs::emacs_bindings;
@@ -98,6 +100,33 @@ pub struct CommandPaletteCommand {
     pub category: String,
 }
 
+/// A persisted user override for one executable application action.
+///
+/// Action names come from GPUI's stable [`Action::name`] identifier. The raw
+/// key specification uses the same syntax as [`KeyBinding::new`], for example
+/// `"space"`, `"secondary-k"`, or `"ctrl-x p"`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CustomKeybinding {
+    pub action_name: String,
+    pub key_spec: String,
+}
+
+impl CustomKeybinding {
+    pub fn new(action_name: impl Into<String>, key_spec: impl Into<String>) -> Self {
+        Self {
+            action_name: action_name.into(),
+            key_spec: key_spec.into(),
+        }
+    }
+}
+
+/// A conflict between a pending custom shortcut and an executable action.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeybindingConflict {
+    pub existing_action_name: String,
+    pub key_spec: String,
+}
+
 /// Get all keybindings for a given preset
 pub fn get_keybindings(preset: KeymapPreset) -> Vec<KeyBinding> {
     let mut bindings = Vec::new();
@@ -129,6 +158,132 @@ pub fn get_keybindings(preset: KeymapPreset) -> Vec<KeyBinding> {
     bindings.extend(listening_test_bindings());
 
     bindings
+}
+
+fn binding_key_spec(binding: &KeyBinding) -> String {
+    binding
+        .keystrokes()
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn binding_with_key_spec(template: &KeyBinding, key_spec: &str) -> Result<KeyBinding, String> {
+    KeyBinding::load(
+        key_spec,
+        template.action().boxed_clone(),
+        template.predicate(),
+        false,
+        template.action_input(),
+        &DummyKeyboardMapper,
+    )
+    .map_err(|error| error.to_string())
+}
+
+/// Build the exact runtime keymap after applying persisted custom shortcuts.
+///
+/// A custom shortcut replaces every preset binding for its action. When the
+/// user explicitly chose Overwrite in Settings, the custom shortcut also
+/// suppresses any other action using the same key sequence. Removing the
+/// override therefore restores the preset and any shortcut it displaced.
+pub fn get_keybindings_with_overrides(
+    preset: KeymapPreset,
+    overrides: &[CustomKeybinding],
+) -> Vec<KeyBinding> {
+    let base_bindings = get_keybindings(preset);
+    let mut replacements = Vec::new();
+
+    for custom in overrides {
+        let Some(template) = base_bindings
+            .iter()
+            .find(|binding| binding.action().name() == custom.action_name)
+        else {
+            log::warn!(
+                "Ignoring custom keybinding for unknown action: {}",
+                custom.action_name
+            );
+            continue;
+        };
+        match binding_with_key_spec(template, &custom.key_spec) {
+            Ok(binding) => replacements.push(binding),
+            Err(error) => log::warn!(
+                "Ignoring invalid custom keybinding '{}' for {}: {error}",
+                custom.key_spec,
+                custom.action_name
+            ),
+        }
+    }
+
+    let overridden_actions = replacements
+        .iter()
+        .map(|binding| binding.action().name())
+        .collect::<HashSet<_>>();
+    let replacement_keys = replacements
+        .iter()
+        .map(binding_key_spec)
+        .collect::<HashSet<_>>();
+
+    let mut bindings = base_bindings
+        .into_iter()
+        .filter(|binding| !overridden_actions.contains(binding.action().name()))
+        .filter(|binding| !replacement_keys.contains(&binding_key_spec(binding)))
+        .collect::<Vec<_>>();
+    bindings.extend(replacements);
+    bindings
+}
+
+/// Detect the executable action that would be displaced by a pending edit.
+pub fn keybinding_conflict(
+    preset: KeymapPreset,
+    overrides: &[CustomKeybinding],
+    action_name: &str,
+    key_spec: &str,
+) -> Result<Option<KeybindingConflict>, String> {
+    let base_bindings = get_keybindings(preset);
+    let template = base_bindings
+        .iter()
+        .find(|binding| binding.action().name() == action_name)
+        .ok_or_else(|| format!("Unknown keybinding action: {action_name}"))?;
+    let candidate = binding_with_key_spec(template, key_spec)?;
+    let candidate_key = binding_key_spec(&candidate);
+
+    let other_overrides = overrides
+        .iter()
+        .filter(|custom| custom.action_name != action_name)
+        .cloned()
+        .collect::<Vec<_>>();
+    Ok(get_keybindings_with_overrides(preset, &other_overrides)
+        .into_iter()
+        .find(|binding| {
+            binding.action().name() != action_name && binding_key_spec(binding) == candidate_key
+        })
+        .map(|binding| KeybindingConflict {
+            existing_action_name: binding.action().name().to_string(),
+            key_spec: candidate_key,
+        }))
+}
+
+/// Upsert one custom shortcut. Overwriting a custom shortcut removes any
+/// conflicting custom override; preset conflicts are suppressed at runtime.
+pub fn set_custom_keybinding(
+    overrides: &mut Vec<CustomKeybinding>,
+    action_name: impl Into<String>,
+    key_spec: impl Into<String>,
+) {
+    let action_name = action_name.into();
+    let key_spec = key_spec.into();
+    overrides.retain(|custom| custom.action_name != action_name && custom.key_spec != key_spec);
+    overrides.push(CustomKeybinding::new(action_name, key_spec));
+}
+
+/// Get documented help/editor rows from the exact effective runtime keymap.
+pub fn get_documented_keybindings_with_overrides(
+    preset: KeymapPreset,
+    overrides: &[CustomKeybinding],
+) -> Vec<DocumentedKeybinding> {
+    let runtime_bindings = get_keybindings_with_overrides(preset, overrides);
+    catalog::documented_keybindings_from_runtime(&runtime_bindings)
 }
 
 fn command_palette_binding(preset: KeymapPreset) -> KeyBinding {

@@ -62,8 +62,8 @@ impl PlayerView {
             )
             .child(
                 Text::new(workflow_text.load_measurement_description)
-                .size(TextSize::Xs)
-                .color(theme.text_secondary),
+                    .size(TextSize::Xs)
+                    .color(theme.text_secondary),
             )
             // Error message display
             .when(error_message.is_some(), |div| {
@@ -91,29 +91,33 @@ impl PlayerView {
                                                 .color(theme.text_primary),
                                         ),
                                 )
-                        .child(dev_track!(
-                            Button::new("dismiss_error", workflow_text.dismiss)
-                                .variant(ButtonVariant::Secondary)
-                                .size(ButtonSize::Xs)
-                                .theme(theme.to_button_theme())
+                                .child(dev_track!(
+                                    Button::new("dismiss_error", workflow_text.dismiss)
+                                        .variant(ButtonVariant::Secondary)
+                                        .size(ButtonSize::Xs)
+                                        .theme(theme.to_button_theme())
                                         .on_click_event(cx.listener(|view, _, _, cx| {
-                                                view.state.update(cx, |state, _| {
-                                                    state.app.measurement_state.room_eq_state.error_message = None;
-                                    });
-                                    cx.notify();
-                                })),
-                            "roomeq.dismiss_error"
-                        ))
-                        .child(dev_track!(
-                            Button::new("repair_recording", workflow_text.go_to_recording)
-                                .variant(ButtonVariant::Primary)
-                                .size(ButtonSize::Xs)
-                                .theme(theme.to_button_theme())
-                                .on_click_event(cx.listener(|view, _, _, cx| {
-                                    view.switch_screen(crate::app::Screen::Recording, cx);
-                                })),
-                            "roomeq.repair_recording"
-                        )),
+                                            view.state.update(cx, |state, _| {
+                                                state
+                                                    .app
+                                                    .measurement_state
+                                                    .room_eq_state
+                                                    .error_message = None;
+                                            });
+                                            cx.notify();
+                                        })),
+                                    "roomeq.dismiss_error"
+                                ))
+                                .child(dev_track!(
+                                    Button::new("repair_recording", workflow_text.go_to_recording)
+                                        .variant(ButtonVariant::Primary)
+                                        .size(ButtonSize::Xs)
+                                        .theme(theme.to_button_theme())
+                                        .on_click_event(cx.listener(|view, _, _, cx| {
+                                            view.switch_screen(crate::app::Screen::Recording, cx);
+                                        })),
+                                    "roomeq.repair_recording"
+                                )),
                         )
                         .into_any_element()
                         .into_any(),
@@ -139,35 +143,44 @@ impl PlayerView {
                                         .spacing(StackSpacing::Sm)
                                         .child(
                                             Text::new(if has_recording_session_data {
-                                                "Use measurements from the Recording screen."
+                                                workflow_text.use_recording_measurements
                                             } else {
-                                                "No recordings found. Go to the Recording screen to measure your speakers."
+                                                workflow_text.no_recordings_found
                                             })
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                         )
                                         .child(if has_recording_session_data {
-                                            dev_track!(Button::new(
-                                                "load_from_recording",
-                                                workflow_text.load_from_recording,
-                                            )
+                                            dev_track!(
+                                                Button::new(
+                                                    "load_from_recording",
+                                                    workflow_text.load_from_recording,
+                                                )
                                                 .variant(ButtonVariant::Primary)
                                                 .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
                                                 .on_click_event(cx.listener(|view, _, _, cx| {
-                                                        view.load_room_eq_from_recording(cx);
-                                                    })), "roomeq.load_from_recording")
+                                                    view.load_room_eq_from_recording(cx);
+                                                })),
+                                                "roomeq.load_from_recording"
+                                            )
                                         } else {
-                                            dev_track!(Button::new(
-                                                "go_to_recording",
-                                                workflow_text.go_to_recording,
-                                            )
+                                            dev_track!(
+                                                Button::new(
+                                                    "go_to_recording",
+                                                    workflow_text.go_to_recording,
+                                                )
                                                 .variant(ButtonVariant::Primary)
                                                 .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
                                                 .on_click_event(cx.listener(|view, _, _, cx| {
-                                                        view.switch_screen(crate::app::Screen::Recording, cx);
-                                                    })), "roomeq.go_to_recording")
+                                                    view.switch_screen(
+                                                        crate::app::Screen::Recording,
+                                                        cx,
+                                                    );
+                                                })),
+                                                "roomeq.go_to_recording"
+                                            )
                                         }),
                                 ),
                         ),
@@ -196,12 +209,12 @@ impl PlayerView {
                                                 "load_from_file",
                                                 workflow_text.import_from_file,
                                             )
-                                                .variant(ButtonVariant::Primary)
-                                                .size(ButtonSize::Sm)
-                                                .theme(theme.to_button_theme())
-                                                .on_click_event(cx.listener(|view, _, _, cx| {
-                                                        view.load_room_eq_from_file(cx);
-                                                    })),
+                                            .variant(ButtonVariant::Primary)
+                                            .size(ButtonSize::Sm)
+                                            .theme(theme.to_button_theme())
+                                            .on_click_event(cx.listener(|view, _, _, cx| {
+                                                view.load_room_eq_from_file(cx);
+                                            })),
                                         ),
                                 ),
                         ),
@@ -211,26 +224,26 @@ impl PlayerView {
             // navigation so every step has one predictable primary action.
             .when(has_measurements && !status_message.is_empty(), |vstack| {
                 vstack.child(
-                        Card::new()
-                            .background(theme.surface)
-                            .header_background(theme.background_secondary)
-                            .border(theme.border)
-                            .content(
-                                HStack::new()
-                                    .spacing(StackSpacing::Xs)
-                                    .align(StackAlign::Center)
-                                    .child(
-                                        Icon::new(IconName::Check)
-                                            .size(IconSize::Xs)
-                                            .color(theme.success),
-                                    )
-                                    .child(
-                                        Text::new(status_message.clone())
-                                            .size(TextSize::Xs)
-                                            .color(theme.text_primary),
-                                    ),
-                            ),
-                    )
+                    Card::new()
+                        .background(theme.surface)
+                        .header_background(theme.background_secondary)
+                        .border(theme.border)
+                        .content(
+                            HStack::new()
+                                .spacing(StackSpacing::Xs)
+                                .align(StackAlign::Center)
+                                .child(
+                                    Icon::new(IconName::Check)
+                                        .size(IconSize::Xs)
+                                        .color(theme.success),
+                                )
+                                .child(
+                                    Text::new(status_message.clone())
+                                        .size(TextSize::Xs)
+                                        .color(theme.text_primary),
+                                ),
+                        ),
+                )
             })
     }
 }

@@ -1812,8 +1812,8 @@ impl PlayerView {
                     let short_name = match mode_val {
                         RoomEqOptimizationMode::Iir => "IIR",
                         RoomEqOptimizationMode::Fir => "FIR",
-                        RoomEqOptimizationMode::Mixed => "Mixed",
-                        RoomEqOptimizationMode::MixedPhase => "MixedΦ",
+                        RoomEqOptimizationMode::Mixed => translations.autoeq_form.mixed,
+                        RoomEqOptimizationMode::MixedPhase => translations.autoeq_form.mixed_phase,
                     };
 
                     Button::new(

@@ -44,6 +44,7 @@ pub(super) fn render_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerVi
                 tdf2: *tdf2,
                 available_width: ctx.available_width,
                 layout_scale: ctx.layout_scale,
+                exact_entry_focus_handle: ctx.plugin_exact_entry_focus_handle.clone(),
             },
             ctx.theme,
             ctx.eq_chart_focus_handle.clone(),
@@ -580,7 +581,7 @@ pub(super) fn render_crossfeed(
         return Empty.into_any_element();
     };
 
-    let status = if *enabled { "Enabled" } else { "Bypassed" };
+    let status = text.label(if *enabled { "Enabled" } else { "Bypassed" });
     div()
         .flex()
         .flex_col()
@@ -706,11 +707,11 @@ pub(super) fn render_binaural(
                                 } else {
                                     ctx.theme.warning
                                 })
-                                .child(if has_sofa {
+                                .child(text.label(if has_sofa {
                                     "SOFA loaded"
                                 } else {
                                     "Select a SOFA file"
-                                }),
+                                })),
                         ),
                 )
                 .child(
@@ -805,6 +806,7 @@ pub(super) fn render_linear_phase_eq(
                 tdf2: false,
                 available_width: ctx.available_width,
                 layout_scale: ctx.layout_scale,
+                exact_entry_focus_handle: ctx.plugin_exact_entry_focus_handle.clone(),
             },
             ctx.theme,
             ctx.eq_chart_focus_handle.clone(),

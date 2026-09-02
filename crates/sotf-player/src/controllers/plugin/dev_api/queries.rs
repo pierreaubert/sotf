@@ -68,20 +68,69 @@ fn resolve_param_path(settings: &crate::PluginSettings, rest: &str) -> Result<Va
         .split_once('.')
         .ok_or_else(|| anyhow!("expected param.<i>.<prop>"))?;
     let idx: usize = idx_str.parse()?;
-    let specs = settings.param_specs();
-    let spec = specs
-        .get(idx)
-        .ok_or_else(|| anyhow!("param index out of range"))?;
+    if idx >= crate::get_param_count(settings) {
+        return Err(anyhow!("param index out of range"));
+    }
+    let spec =
+        query_param_spec(settings, idx).ok_or_else(|| anyhow!("param index out of range"))?;
 
     Ok(match tail {
         "name" => json!(spec.name),
-        "value" => json!(settings.param_value(idx).unwrap_or(0.0)),
+        "value" => json!(query_param_value(settings, idx).unwrap_or(0.0)),
         "type" => json!(param_type_name(&spec.param_type)),
         "min" => json!(spec.min_f64()),
         "max" => json!(spec.max_f64()),
         "choice_count" => json!(spec.choice_labels().len()),
         other => return Err(anyhow!("unknown param property: `{other}`")),
     })
+}
+
+fn query_param_spec(
+    settings: &crate::PluginSettings,
+    idx: usize,
+) -> Option<&'static sotf_plugins::param_specs::ParamSpec> {
+    match settings {
+        crate::PluginSettings::EQ { .. } => {
+            sotf_plugins::param_specs::eq::BAND_TEMPLATE.get(idx % 4)
+        }
+        crate::PluginSettings::LinearPhaseEq { .. } => {
+            sotf_plugins::param_specs::linear_phase_eq::BAND_TEMPLATE.get(idx % 5)
+        }
+        _ => settings.param_specs().get(idx),
+    }
+}
+
+fn query_param_value(settings: &crate::PluginSettings, idx: usize) -> Option<f64> {
+    match settings {
+        crate::PluginSettings::EQ { filters, .. } => {
+            let filter = filters.get(idx / 4)?;
+            match idx % 4 {
+                0 => Some(filter.frequency),
+                1 => Some(filter.q),
+                2 => Some(filter.gain_db),
+                3 => super::super::eq_band_types(true)
+                    .iter()
+                    .position(|filter_type| *filter_type == filter.filter_type)
+                    .map(|index| index as f64),
+                _ => None,
+            }
+        }
+        crate::PluginSettings::LinearPhaseEq { filters, .. } => {
+            let filter = filters.get(idx / 5)?;
+            match idx % 5 {
+                0 => super::super::eq_band_types(false)
+                    .iter()
+                    .position(|filter_type| *filter_type == filter.filter_type)
+                    .map(|index| index as f64),
+                1 => Some(filter.frequency),
+                2 => Some(filter.q),
+                3 => Some(filter.gain_db),
+                4 => Some(if filter.muted { 0.0 } else { 1.0 }),
+                _ => None,
+            }
+        }
+        _ => settings.param_value(idx),
+    }
 }
 
 fn param_type_name(pt: &sotf_plugins::param_specs::ParamType) -> &'static str {

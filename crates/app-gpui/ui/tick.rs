@@ -50,6 +50,19 @@ pub(crate) struct TickSnapshot {
     spotify_login_stage: u8,
 }
 
+/// Listening Test does not render playback position in its workbench, while
+/// rebuilding that screen at the engine's 100 ms polling cadence is costly.
+/// Keep the shared footer clock current to whole seconds on that screen and
+/// retain centisecond buckets everywhere else.
+fn playback_position_bucket(screen: Screen, position_secs: f64) -> u64 {
+    let centiseconds = (position_secs.max(0.0) * 100.0) as u64;
+    if screen == Screen::ListeningTest {
+        centiseconds / 100 * 100
+    } else {
+        centiseconds
+    }
+}
+
 /// Screens where rack analyzer data is visible. Library/Queue only show rack
 /// data in expanded three-panel mode; compact mode renders a single content
 /// screen and should not pay for compressor/level-meter refreshes.
@@ -84,22 +97,14 @@ pub fn should_auto_advance_on_engine_stop(
 /// Analyzer caches are only refreshed while audio flows. When the engine is
 /// paused or sits idle at end-of-stream it stays alive and keeps serving the
 /// last computed `LoudnessData`, which would freeze the meters mid-value.
-/// Return a copy with the instantaneous level fields zeroed for any state
-/// that isn't playing. The channel layout is preserved so meter groups don't
-/// rebuild, and `integrated_lufs` is kept — program loudness doesn't change
-/// just because playback paused.
-pub fn silent_loudness(
+/// Return live data only while playback is active. A stopped meter has no
+/// current observation; rendering a zeroed copy would present stale layout as
+/// plausible silence.
+pub fn visible_loudness(
+    meters_live: bool,
     info: &Option<Arc<sotf_audio_player::LoudnessData>>,
 ) -> Option<Arc<sotf_audio_player::LoudnessData>> {
-    info.as_ref().map(|data| {
-        let mut silent = (**data).clone();
-        silent.momentary_lufs = f64::NEG_INFINITY;
-        silent.shortterm_lufs = f64::NEG_INFINITY;
-        silent.peak = 0.0;
-        silent.channel_peaks = Arc::new(vec![0.0; data.channel_peaks.len()]);
-        silent.true_peaks_dbtp = Arc::new(vec![f64::NEG_INFINITY; data.true_peaks_dbtp.len()]);
-        Arc::new(silent)
-    })
+    meters_live.then(|| info.clone()).flatten()
 }
 
 /// True when a clean engine stop has no queue context to auto-advance from,
@@ -126,13 +131,15 @@ impl PlayerView {
     /// observable state changed in the tick.
     fn tick_snapshot(view: &PlayerView, cx: &mut Context<Self>) -> TickSnapshot {
         let state = view.state.read(cx);
-        let position_centiseconds = (state.app.playback.position_secs.max(0.0) * 100.0) as u64;
+        let current_screen = state.app.ui_state.current_screen;
+        let position_centiseconds =
+            playback_position_bucket(current_screen, state.app.playback.position_secs);
         let duration_centiseconds = (state.app.playback.duration_secs.max(0.0) * 100.0) as u64;
         TickSnapshot {
             is_playing: state.app.playback.is_playing,
             position_centiseconds,
             duration_centiseconds,
-            current_screen: state.app.ui_state.current_screen,
+            current_screen,
             theme_id: state.app.ui_state.theme_id,
             queue_index: state.app.playback.current_queue_index,
             has_compressor: state.app.playback.compressor_info.is_some(),
@@ -205,6 +212,20 @@ impl PlayerView {
                 Some(login) if login.authorize_url.is_some() => 2,
                 Some(_) => 1,
             },
+        }
+    }
+
+    /// Record the current observable tick state and report whether the root
+    /// view needs repainting. Both production and deterministic QA clocks use
+    /// this gate so performance assertions exercise the real invalidation
+    /// policy.
+    fn tick_snapshot_changed(&mut self, cx: &mut Context<Self>) -> bool {
+        let new_snapshot = Self::tick_snapshot(self, cx);
+        if self.last_tick_snapshot.as_ref() == Some(&new_snapshot) {
+            false
+        } else {
+            self.last_tick_snapshot = Some(new_snapshot);
+            true
         }
     }
 
@@ -362,19 +383,29 @@ impl PlayerView {
 
         // Analyzer caches freeze when audio stops flowing (pause / end-of-
         // stream leave the engine alive); only full stop() drops the data.
-        // Feed the meters zeroed levels whenever nothing is playing so they
-        // fall to 0 instead of staying where they were.
+        // Publish no meter data whenever nothing is playing rather than
+        // presenting stale analyzer layout as plausible zero levels.
         let meters_live = playback_state.is_playing;
-        state.app.playback.input_loudness_info = if meters_live {
-            snapshot.input_loudness_info.clone()
-        } else {
-            silent_loudness(&snapshot.input_loudness_info)
-        };
-        state.app.playback.loudness_info = if meters_live {
-            snapshot.loudness_info.clone()
-        } else {
-            silent_loudness(&snapshot.loudness_info)
-        };
+        let input_loudness_info = visible_loudness(meters_live, &snapshot.input_loudness_info);
+        let loudness_info = visible_loudness(meters_live, &snapshot.loudness_info);
+        #[cfg(feature = "dev-api")]
+        let input_loudness_info = state
+            .app
+            .playback
+            .qa_loudness_fixture
+            .as_ref()
+            .map(|fixture| Some(fixture.clone()))
+            .unwrap_or(input_loudness_info);
+        #[cfg(feature = "dev-api")]
+        let loudness_info = state
+            .app
+            .playback
+            .qa_loudness_fixture
+            .as_ref()
+            .map(|fixture| Some(fixture.clone()))
+            .unwrap_or(loudness_info);
+        state.app.playback.input_loudness_info = input_loudness_info;
+        state.app.playback.loudness_info = loudness_info;
         if include_spectrum {
             state.app.playback.spectrum_info = snapshot.spectrum_info.clone();
         }

@@ -1278,6 +1278,7 @@ impl PlayerView {
             &plugin_graph,
             None,
             self.eq_chart_focus_handle.clone(),
+            self.plugin_exact_entry_focus_handle.clone(),
             cx,
         )
     }

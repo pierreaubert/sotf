@@ -5,6 +5,12 @@ use std::process::Child;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
+/// The first successful health response can race startup audio-engine
+/// reconfiguration on macOS. Require the UI thread to remain responsive long
+/// enough for that work to begin and finish before sending fixture or input
+/// commands.
+const HEALTH_STABILITY_WINDOW: Duration = Duration::from_secs(2);
+
 pub(super) fn wait_for_health(
     client: &reqwest::blocking::Client,
     base_url: &str,
@@ -15,6 +21,7 @@ pub(super) fn wait_for_health(
 ) -> Result<()> {
     let deadline = Instant::now() + timeout;
     let mut last = String::new();
+    let mut matching_since = None;
     while Instant::now() < deadline {
         if let Some(status) = child.try_wait()? {
             bail!("app exited before dev-api readiness: {status}");
@@ -22,12 +29,29 @@ pub(super) fn wait_for_health(
         match client.get(format!("{base_url}/health")).send() {
             Ok(resp) => match resp.json::<Value>() {
                 Ok(json) if health_matches(&json, expected_run_id, expected_qa_dir) => {
-                    return Ok(());
+                    let now = Instant::now();
+                    let since = matching_since.get_or_insert(now);
+                    if now.duration_since(*since) >= HEALTH_STABILITY_WINDOW {
+                        return Ok(());
+                    }
+                    last = format!(
+                        "matching dev-api health; waiting for {:?} responsiveness window",
+                        HEALTH_STABILITY_WINDOW
+                    );
                 }
-                Ok(json) => last = json.to_string(),
-                Err(e) => last = e.to_string(),
+                Ok(json) => {
+                    matching_since = None;
+                    last = json.to_string();
+                }
+                Err(e) => {
+                    matching_since = None;
+                    last = e.to_string();
+                }
             },
-            Err(e) => last = e.to_string(),
+            Err(e) => {
+                matching_since = None;
+                last = e.to_string();
+            }
         }
         sleep(Duration::from_millis(100));
     }

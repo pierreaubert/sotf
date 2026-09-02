@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
-use super::model::{Action, TraceEvent};
+use super::model::{Action, FUZZ_SCHEMA_VERSION, TraceEvent};
 
 pub struct TraceWriter {
     path: PathBuf,
@@ -60,6 +60,16 @@ pub fn read_trace(path: &Path) -> Result<Vec<TraceEvent>, TraceError> {
             Err(error) => return Err(TraceError::Json(error)),
         }
     }
+    // Reject an incompatible trace schema explicitly; old traces are never
+    // silently reinterpreted (a torn trace may legitimately lack run_start).
+    if let Some(TraceEvent::RunStart { schema_version, .. }) = events.first()
+        && *schema_version != FUZZ_SCHEMA_VERSION
+    {
+        return Err(TraceError::SchemaVersion {
+            expected: FUZZ_SCHEMA_VERSION,
+            found: *schema_version,
+        });
+    }
     Ok(events)
 }
 
@@ -79,6 +89,8 @@ pub enum TraceError {
     Io(#[from] std::io::Error),
     #[error("trace JSON failed: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("trace schema version {found} is unsupported (expected {expected})")]
+    SchemaVersion { expected: u16, found: u16 },
 }
 
 #[cfg(test)]
@@ -88,7 +100,10 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
-    use crate::fuzz::model::{ActionClass, ActionPayload, FUZZ_SCHEMA_VERSION};
+    use crate::fuzz::model::{
+        ActionClass, ActionPayload, AdapterKind, EndpointSpec, FUZZ_SCHEMA_VERSION, TargetId,
+        TargetSpec,
+    };
 
     fn action(sequence: u64) -> Action {
         Action {
@@ -129,5 +144,69 @@ mod tests {
 
         fs::write(&path, b"not-json\n{}\n").unwrap();
         assert!(read_trace(&path).is_err());
+    }
+
+    #[test]
+    fn rejects_a_mismatched_trace_schema_version() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("trace.ndjson");
+        let target = TargetSpec {
+            schema_version: FUZZ_SCHEMA_VERSION,
+            target_id: TargetId::Tui,
+            adapter: AdapterKind::Synthetic,
+            executable: None,
+            app_identity: None,
+            platform: "test".into(),
+            fixture_profile: "none".into(),
+            environment_names: vec![],
+            endpoints: vec![EndpointSpec {
+                name: "synthetic".into(),
+                address: "in-memory".into(),
+                protocol: "synthetic".into(),
+            }],
+            run_id_hash: String::new(),
+            capability_fingerprint: String::new(),
+            build_id: "test".into(),
+        };
+        let mut writer = TraceWriter::create(&path, false).unwrap();
+        writer
+            .append(&TraceEvent::RunStart {
+                schema_version: FUZZ_SCHEMA_VERSION + 1,
+                target: Box::new(target.clone()),
+                seed: 1,
+                worker: 0,
+                worker_seed: 1,
+                generator_version: 1,
+                capabilities: Box::new(sotf_dev_api::Capabilities::new("tui", "test")),
+                manifest_digest: "m".into(),
+                fixture_digest: "f".into(),
+            })
+            .unwrap();
+        drop(writer);
+        assert!(matches!(
+            read_trace(&path),
+            Err(TraceError::SchemaVersion {
+                expected: FUZZ_SCHEMA_VERSION,
+                ..
+            })
+        ));
+
+        // The current schema version loads fine.
+        let mut writer = TraceWriter::create(&path, false).unwrap();
+        writer
+            .append(&TraceEvent::RunStart {
+                schema_version: FUZZ_SCHEMA_VERSION,
+                target: Box::new(target),
+                seed: 1,
+                worker: 0,
+                worker_seed: 1,
+                generator_version: 1,
+                capabilities: Box::new(sotf_dev_api::Capabilities::new("tui", "test")),
+                manifest_digest: "m".into(),
+                fixture_digest: "f".into(),
+            })
+            .unwrap();
+        drop(writer);
+        assert_eq!(read_trace(&path).unwrap().len(), 1);
     }
 }

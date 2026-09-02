@@ -212,12 +212,13 @@ impl ServerTarget {
                 body.len()
             )));
         }
-        let mut stream = connect_loopback(self.endpoints()?.mpd, timeout)?;
-        let greeting = read_line_bounded(&mut stream, 1024)?;
-        stream.write_all(body)?;
+        let mut stream =
+            connect_loopback(self.endpoints()?.mpd, timeout).map_err(super::map_target_timeout)?;
+        let greeting = read_line_bounded(&mut stream, 1024).map_err(super::map_target_timeout)?;
+        stream.write_all(body).map_err(super::map_io_timeout)?;
         let _ = stream.shutdown(Shutdown::Write);
         let mut bytes = greeting;
-        read_to_end_bounded(&mut stream, &mut bytes)?;
+        read_to_end_bounded(&mut stream, &mut bytes).map_err(super::map_target_timeout)?;
         Ok(RawResponse {
             status: None,
             bytes,
@@ -260,11 +261,11 @@ impl ServerTarget {
         write!(&mut request, "Content-Length: {}\r\n\r\n", body.len())?;
         request.extend_from_slice(body);
 
-        let mut stream = connect_loopback(port, timeout)?;
-        stream.write_all(&request)?;
+        let mut stream = connect_loopback(port, timeout).map_err(super::map_target_timeout)?;
+        stream.write_all(&request).map_err(super::map_io_timeout)?;
         let _ = stream.shutdown(Shutdown::Write);
         let mut bytes = Vec::new();
-        read_to_end_bounded(&mut stream, &mut bytes)?;
+        read_to_end_bounded(&mut stream, &mut bytes).map_err(super::map_target_timeout)?;
         let status = parse_http_status(&bytes);
         Ok(RawResponse { status, bytes })
     }
@@ -544,19 +545,21 @@ impl FuzzTarget for ServerTarget {
     }
 
     fn live(&mut self) -> Result<bool, TargetError> {
+        // Exit precedence: a known-dead child is an exit, never a hang probe.
         if !self.process_observation().alive {
-            return Ok(false);
+            return Err(TargetError::ProcessExited(
+                "headless server process exited".into(),
+            ));
         }
-        Ok(self
-            .request_http(
-                "sotf-api",
-                "GET",
-                "/api/v1/health",
-                &BTreeMap::new(),
-                &[],
-                Duration::from_secs(2),
-            )
-            .is_ok_and(|response| response.status == Some(200)))
+        let response = self.request_http(
+            "sotf-api",
+            "GET",
+            "/api/v1/health",
+            &BTreeMap::new(),
+            &[],
+            Duration::from_secs(2),
+        )?;
+        Ok(response.status == Some(200))
     }
 
     fn pid(&self) -> Option<u32> {

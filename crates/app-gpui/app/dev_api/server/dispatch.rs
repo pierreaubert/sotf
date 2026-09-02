@@ -1,5 +1,5 @@
 use super::super::commands::{DevCommand, DevQueryReply, DevReply};
-use super::super::{queries, registry};
+use super::super::{performance, queries, registry};
 use super::get::get_accessibility;
 use super::get::get_health;
 use super::get::get_query;
@@ -22,6 +22,7 @@ use super::post::post_qa_room_eq_export_json;
 use super::post::post_qa_room_eq_ui_fixture;
 use super::post::post_qa_seed;
 use super::post::post_qa_spinorama_discovery_fixture;
+use super::post::post_qa_ui_environment;
 use super::post::post_quit;
 use super::post::post_resize;
 use super::post::post_screenshot;
@@ -34,14 +35,18 @@ use super::qa::qa_room_eq_export_json;
 use super::qa::qa_room_eq_ui_fixture;
 use super::qa::qa_seed;
 use super::qa::qa_spinorama_discovery_fixture;
+use super::qa::qa_ui_environment;
 use super::types::HttpRequest;
 use super::with::health_payload;
 use super::with::{with_app_state, with_player_view};
 use crate::app::{InputMode, MetadataEditorState, Screen, SettingsTab};
+use crate::components::plugins::level_meters::LevelMeterManager;
+use crate::ui::PlayerView;
 use anyhow::{Context as _, Result, anyhow};
 use gpui::{
-    AnyWindowHandle, App, AsyncApp, Keystroke, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PlatformInput, Point, ScrollDelta, ScrollWheelEvent, TouchPhase, point, px, size,
+    AnyWindowHandle, App, AppContext, AsyncApp, Bounds, Keystroke, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, PlatformInput, Point, ScrollDelta, ScrollWheelEvent, TouchPhase,
+    WindowBounds, WindowOptions, point, px, size,
 };
 use gpui_ui_kit::accessibility::AccessibilityExt as _;
 use serde_json::Value;
@@ -171,12 +176,11 @@ pub(super) fn process_command(cmd: DevCommand, window: AnyWindowHandle, cx: &mut
             let _ = reply.send(dev_reply);
         }
         DevCommand::Screenshot { name, reply } => {
-            let result = cx.update(|cx| dispatch_screenshot(&name, window, cx));
-            let dev_reply = match result {
-                Ok(()) => DevReply::ok(),
-                Err(e) => DevReply::err(format!("{e:#}")),
-            };
-            let _ = reply.send(dev_reply);
+            let reply_on_error = reply.clone();
+            let result = cx.update(|cx| dispatch_screenshot(&name, window, reply, cx));
+            if let Err(e) = result {
+                let _ = reply_on_error.send(DevReply::err(format!("{e:#}")));
+            }
         }
         DevCommand::Accessibility { reply } => {
             let result = cx.update(|cx| accessibility_payload(window, cx));
@@ -215,6 +219,14 @@ pub(super) fn process_command(cmd: DevCommand, window: AnyWindowHandle, cx: &mut
         }
         DevCommand::QaSeed { payload, reply } => {
             let result = cx.update(|cx| qa_seed(payload, window, cx));
+            let dev_reply = match result {
+                Ok(()) => DevReply::ok(),
+                Err(e) => DevReply::err(format!("{e:#}")),
+            };
+            let _ = reply.send(dev_reply);
+        }
+        DevCommand::QaUiEnvironment { payload, reply } => {
+            let result = cx.update(|cx| qa_ui_environment(payload, window, cx));
             let dev_reply = match result {
                 Ok(()) => DevReply::ok(),
                 Err(e) => DevReply::err(format!("{e:#}")),
@@ -303,12 +315,20 @@ pub(super) fn dispatch_text(text: &str, window: AnyWindowHandle, cx: &mut App) -
 }
 
 pub(super) fn dispatch_click(selector: &str, window: AnyWindowHandle, cx: &mut App) -> Result<()> {
-    let bounds = registry::lookup(selector)
+    let bounds = registry::lookup(window.window_id().as_u64(), selector)
         .ok_or_else(|| anyhow!("no tracked element for selector `{selector}` (was it painted?)"))?;
     let position: Point<gpui::Pixels> = bounds.center();
     window
         .update(cx, |_view, window, cx| {
             let modifiers = Default::default();
+            window.dispatch_event(
+                PlatformInput::MouseMove(MouseMoveEvent {
+                    position,
+                    pressed_button: None,
+                    modifiers,
+                }),
+                cx,
+            );
             let down = MouseDownEvent {
                 button: MouseButton::Left,
                 position,
@@ -452,7 +472,7 @@ pub(super) fn dispatch_coordinate_input(
 }
 
 pub(super) fn dispatch_hover(selector: &str, window: AnyWindowHandle, cx: &mut App) -> Result<()> {
-    let bounds = registry::lookup(selector)
+    let bounds = registry::lookup(window.window_id().as_u64(), selector)
         .ok_or_else(|| anyhow!("no tracked element for selector `{selector}` (was it painted?)"))?;
     let position: Point<gpui::Pixels> = bounds.center();
     window
@@ -476,15 +496,29 @@ pub(super) fn dispatch_drag(
     window: AnyWindowHandle,
     cx: &mut App,
 ) -> Result<()> {
-    let source_position: Point<gpui::Pixels> = registry::lookup(source)
-        .ok_or_else(|| anyhow!("no tracked element for selector `{source}` (was it painted?)"))?
-        .center();
-    let target_position: Point<gpui::Pixels> = registry::lookup(target)
-        .ok_or_else(|| anyhow!("no tracked element for selector `{target}` (was it painted?)"))?
-        .center();
+    let source_position: Point<gpui::Pixels> =
+        registry::lookup(window.window_id().as_u64(), source)
+            .ok_or_else(|| anyhow!("no tracked element for selector `{source}` (was it painted?)"))?
+            .center();
+    let target_position: Point<gpui::Pixels> =
+        registry::lookup(window.window_id().as_u64(), target)
+            .ok_or_else(|| anyhow!("no tracked element for selector `{target}` (was it painted?)"))?
+            .center();
+    let midpoint = point(
+        source_position.x + (target_position.x - source_position.x) * 0.5,
+        source_position.y + (target_position.y - source_position.y) * 0.5,
+    );
     window
         .update(cx, |_view, window, cx| {
             let modifiers = Default::default();
+            window.dispatch_event(
+                PlatformInput::MouseMove(MouseMoveEvent {
+                    position: source_position,
+                    pressed_button: None,
+                    modifiers,
+                }),
+                cx,
+            );
             window.dispatch_event(
                 PlatformInput::MouseDown(MouseDownEvent {
                     button: MouseButton::Left,
@@ -492,6 +526,14 @@ pub(super) fn dispatch_drag(
                     modifiers,
                     click_count: 1,
                     first_mouse: false,
+                }),
+                cx,
+            );
+            window.dispatch_event(
+                PlatformInput::MouseMove(MouseMoveEvent {
+                    position: midpoint,
+                    pressed_button: Some(MouseButton::Left),
+                    modifiers,
                 }),
                 cx,
             );
@@ -523,7 +565,7 @@ pub(super) fn dispatch_scroll(
     window: AnyWindowHandle,
     cx: &mut App,
 ) -> Result<()> {
-    let position: Point<gpui::Pixels> = registry::lookup(selector)
+    let position: Point<gpui::Pixels> = registry::lookup(window.window_id().as_u64(), selector)
         .ok_or_else(|| anyhow!("no tracked element for selector `{selector}` (was it painted?)"))?
         .center();
     window
@@ -556,7 +598,12 @@ pub(super) fn dispatch_resize(
     Ok(())
 }
 
-pub(super) fn dispatch_screenshot(name: &str, window: AnyWindowHandle, cx: &mut App) -> Result<()> {
+pub(super) fn dispatch_screenshot(
+    name: &str,
+    window: AnyWindowHandle,
+    reply: mpsc::SyncSender<DevReply>,
+    cx: &mut App,
+) -> Result<()> {
     let qa_dir = std::env::var_os("SOTF_QA_DIR")
         .map(PathBuf::from)
         .ok_or_else(|| anyhow!("screenshots require an isolated SOTF_QA_DIR"))?;
@@ -565,15 +612,117 @@ pub(super) fn dispatch_screenshot(name: &str, window: AnyWindowHandle, cx: &mut 
         .with_context(|| format!("creating screenshot directory {}", output_dir.display()))?;
     let output = output_dir.join(format!("{name}.png"));
 
-    window
-        .update(cx, |_view, window, _cx| {
-            let image = window.render_to_image()?;
-            image.save_with_format(&output, image::ImageFormat::Png)?;
-            Ok::<(), anyhow::Error>(())
-        })
-        .map_err(|e| anyhow!("window.update failed: {e:#}"))?
-        .with_context(|| format!("capturing screenshot {}", output.display()))?;
+    let state = with_player_view(window, cx, |view, _cx| Ok(view.state.clone()))?;
+    let viewport_size = window
+        .update(cx, |_view, window, _cx| window.viewport_size())
+        .map_err(|e| anyhow!("reading screenshot viewport failed: {e:#}"))?;
+
+    // GPUI's on-screen drawable retains unchanged paint ranges, while
+    // `render_to_image` starts from a cleared texture. Capture a fresh first
+    // scene in an off-screen window so every unchanged region is materialized.
+    let capture_window: AnyWindowHandle = cx
+        .open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(-10_000.0), px(-10_000.0)),
+                    size: viewport_size,
+                })),
+                focus: false,
+                show: false,
+                ..Default::default()
+            },
+            move |_window, cx| cx.new(|cx| PlayerView::new_for_visual_qa(state, cx)),
+        )
+        .context("opening off-screen screenshot window")?
+        .into();
+    let initial_image = capture_window
+        .update(cx, |_view, window, _cx| window.render_to_image())
+        .map_err(|e| anyhow!("reading initial off-screen scene failed: {e:#}"))
+        .and_then(|result| result)
+        .with_context(|| format!("reading initial scene for {}", output.display()))?;
+    let initial_elements = registry::snapshot_for(capture_window.window_id().as_u64());
+
+    // Keep the hidden capture window registered until normal app shutdown.
+    // Removing a freshly rendered macOS window leaves queued platform paint
+    // callbacks that GPUI reports as `window not found`. These views have no
+    // runtime services, remain hidden, and the QA suite creates only a small,
+    // bounded number of them.
+
+    cx.defer(move |cx| {
+        let result = capture_window
+            .update(cx, |_view, window, cx| {
+                window.refresh();
+                window.draw(cx).clear();
+                let mut image = window.render_to_image()?;
+                let refreshed_elements =
+                    registry::snapshot_for(window.window_handle().window_id().as_u64());
+                merge_missing_tracked_elements(
+                    &mut image,
+                    &initial_image,
+                    viewport_size,
+                    &initial_elements,
+                    &refreshed_elements,
+                );
+                image.save_with_format(&output, image::ImageFormat::Png)?;
+                Ok::<(), anyhow::Error>(())
+            })
+            .map_err(|e| anyhow!("off-screen screenshot update failed: {e:#}"))
+            .and_then(|result| result)
+            .with_context(|| format!("capturing screenshot {}", output.display()));
+        let dev_reply = match result {
+            Ok(()) => DevReply::ok(),
+            Err(error) => DevReply::err(format!("{error:#}")),
+        };
+        let _ = reply.send(dev_reply);
+    });
     Ok(())
+}
+
+pub fn merge_missing_tracked_elements(
+    refreshed: &mut image::RgbaImage,
+    initial: &image::RgbaImage,
+    viewport_size: gpui::Size<gpui::Pixels>,
+    initial_elements: &[(String, registry::TrackedElement)],
+    refreshed_elements: &[(String, registry::TrackedElement)],
+) {
+    if refreshed.dimensions() != initial.dimensions() {
+        return;
+    }
+    let viewport_width = f32::from(viewport_size.width);
+    let viewport_height = f32::from(viewport_size.height);
+    if viewport_width <= 0.0 || viewport_height <= 0.0 {
+        return;
+    }
+    let scale_x = refreshed.width() as f32 / viewport_width;
+    let scale_y = refreshed.height() as f32 / viewport_height;
+
+    for (selector, element) in initial_elements {
+        if refreshed_elements
+            .iter()
+            .any(|(refreshed_selector, _)| refreshed_selector == selector)
+        {
+            continue;
+        }
+        let bounds = element.bounds;
+        let x_start = (f32::from(bounds.origin.x) * scale_x)
+            .floor()
+            .clamp(0.0, refreshed.width() as f32) as u32;
+        let y_start = (f32::from(bounds.origin.y) * scale_y)
+            .floor()
+            .clamp(0.0, refreshed.height() as f32) as u32;
+        let x_end = ((f32::from(bounds.origin.x) + f32::from(bounds.size.width)) * scale_x)
+            .ceil()
+            .clamp(0.0, refreshed.width() as f32) as u32;
+        let y_end = ((f32::from(bounds.origin.y) + f32::from(bounds.size.height)) * scale_y)
+            .ceil()
+            .clamp(0.0, refreshed.height() as f32) as u32;
+
+        for y in y_start..y_end {
+            for x in x_start..x_end {
+                refreshed.put_pixel(x, y, *initial.get_pixel(x, y));
+            }
+        }
+    }
 }
 
 fn accessibility_payload(window: AnyWindowHandle, cx: &mut App) -> Result<Value> {
@@ -641,7 +790,7 @@ fn snapshot_payload(window: AnyWindowHandle, cx: &mut App) -> Result<Value> {
     let metadata_dialog_open = metadata_editor_open.as_bool() == Some(true);
     let accessibility_value = accessibility_payload(window, cx)
         .unwrap_or_else(|error| serde_json::json!({"unavailable": error.to_string()}));
-    let tracked_elements = registry::snapshot()
+    let tracked_elements = registry::snapshot_for(window.window_id().as_u64())
         .into_iter()
         .map(|(selector, element)| {
             let bounds = element.bounds;
@@ -748,6 +897,33 @@ pub(super) fn dispatch_action(
     window: AnyWindowHandle,
     cx: &mut App,
 ) -> Result<()> {
+    if matches!(name, "QaPerformanceStart" | "QaPerformanceStop") {
+        let (window_id, update_frame_count, player_view) = window
+            .update(cx, |any_view, window, cx| {
+                let entity = any_view
+                    .downcast::<PlayerView>()
+                    .map_err(|_| anyhow!("root view is not PlayerView"))?;
+                Ok::<_, anyhow::Error>((
+                    window.window_handle().window_id(),
+                    entity.read(cx).qa_update_frame_count(),
+                    entity.clone(),
+                ))
+            })
+            .map_err(|e| anyhow!("window.update failed: {e:#}"))??;
+
+        match name {
+            "QaPerformanceStart" => {
+                let playback_clock_running = performance::start(window_id, update_frame_count)?;
+                player_view.update(cx, |view, cx| {
+                    view.qa_start_performance_playback_clock(playback_clock_running, cx);
+                });
+            }
+            "QaPerformanceStop" => performance::stop(update_frame_count)?,
+            _ => unreachable!(),
+        }
+        return Ok(());
+    }
+
     if dispatch_plugin_action(name, payload.clone(), window, cx)? {
         return Ok(());
     }
@@ -808,12 +984,211 @@ fn dispatch_metadata_action(
     cx: &mut App,
 ) -> Result<bool> {
     match name {
+        "PluginSelectFirstUser" => {
+            with_player_view(window, cx, |view, cx| {
+                view.state.update(cx, |state, cx| -> Result<()> {
+                    let graph = &state.app.plugin_state.graph;
+                    let plugin_idx = (0..graph.len())
+                        .find(|&idx| {
+                            graph
+                                .get_plugin(idx)
+                                .is_some_and(|plugin| !plugin.permanent)
+                        })
+                        .ok_or_else(|| anyhow!("no user plugin available for visual selection"))?;
+                    state.app.plugin_state.selected_plugin_index = plugin_idx;
+                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                    state.app.plugin_state.plugin_param_selection = 0;
+                    cx.notify();
+                    Ok(())
+                })?;
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "PluginSetInputChannels" => {
+            let channels = payload_u32(payload.as_ref(), "channels", 2).clamp(1, 16) as usize;
+            with_player_view(window, cx, |view, cx| {
+                view.state.update(cx, |state, cx| {
+                    state.app.plugin_state.graph.adapt_matrix_to_input(channels);
+                    cx.notify();
+                });
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "PlaybackSetDurationFixture" => {
+            let duration_secs = payload
+                .as_ref()
+                .and_then(|value| value.get("duration_secs"))
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0)
+                .max(0.0);
+            with_player_view(window, cx, |view, cx| {
+                view.state.update(cx, |state, _cx| {
+                    state.app.playback.qa_duration_fixture = Some(duration_secs);
+                });
+                cx.notify();
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "PlaybackResetQueueCursor" => {
+            let requested_track = payload_u32(payload.as_ref(), "track_index", 0) as usize;
+            let activate = payload
+                .as_ref()
+                .and_then(|value| value.get("activate"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let seek_loaded_player = payload
+                .as_ref()
+                .and_then(|value| value.get("seek_loaded_player"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            with_app_state(window, cx, |state| {
+                let had_active_queue = state.app.playback.current_queue_index.is_some();
+                let item = state
+                    .app
+                    .queue_state
+                    .get_mut(0)
+                    .ok_or_else(|| anyhow!("queue is empty"))?;
+                if item.album.tracks.is_empty() {
+                    return Err(anyhow!("first queue item has no tracks"));
+                }
+                item.current_track_index = requested_track.min(item.album.tracks.len() - 1);
+                state.app.playback.current_queue_index = activate.then_some(0);
+                state.app.playback.position_secs = 0.0;
+                if seek_loaded_player && (activate || had_active_queue) {
+                    state
+                        .player
+                        .seek(0.0)
+                        .context("resetting loaded player cursor")?;
+                }
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "PlaylistReloadFixture" => {
+            with_app_state(window, cx, |state| {
+                let app = &mut state.app;
+                let db = app
+                    .library_state
+                    .library
+                    .get_database()
+                    .ok_or_else(|| anyhow!("library database unavailable"))?;
+                let mut controller = sotf_audio_player::PlaylistController::new();
+                controller
+                    .load_playlists(db)
+                    .map_err(|error| anyhow!(error))?;
+                if !controller.playlists().is_empty() {
+                    controller
+                        .open_playlist(db, 0)
+                        .map_err(|error| anyhow!(error))?;
+                }
+                app.playlist.controller = controller;
+                app.playlist.loaded = true;
+                app.playlist.error = None;
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "MetersSetFixture" => {
+            let active = payload
+                .as_ref()
+                .and_then(|value| value.get("active"))
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
+            with_player_view(window, cx, |view, cx| {
+                view.state.update(cx, |state, cx| {
+                    if active {
+                        let mut fixture = sotf_audio_player::LoudnessData::new(6);
+                        fixture.measurement_valid = true;
+                        fixture.momentary_valid = true;
+                        fixture.shortterm_valid = true;
+                        fixture.integrated_valid = true;
+                        fixture.sample_peak_valid = true;
+                        fixture.true_peak_valid = true;
+                        fixture.momentary_lufs = -18.4;
+                        fixture.shortterm_lufs = -19.1;
+                        fixture.integrated_lufs = -20.0;
+                        fixture.peak = 0.82;
+                        fixture.update_peaks(&[0.82, 0.64, 0.48, 0.31, 0.56, 0.42]);
+                        fixture.update_true_peaks(&[-1.2, -2.4, -4.0, -6.8, -3.1, -4.8]);
+                        let fixture = std::sync::Arc::new(fixture);
+                        state.app.playback.qa_loudness_fixture = Some(fixture.clone());
+                        state.app.playback.input_loudness_info = Some(fixture.clone());
+                        state.app.playback.loudness_info = Some(fixture);
+                    } else {
+                        state.app.playback.qa_loudness_fixture = None;
+                        state.app.playback.input_loudness_info = None;
+                        state.app.playback.loudness_info = None;
+                        state.app.level_meters.peak_hold.fill(0.0);
+                    }
+                    state.app.level_meters.last_channel_count = 0;
+                    state.app.update_level_meter_groups();
+                    state.app.update_level_meter_peak_hold();
+                    state.app.ui_state.current_screen = Screen::Queue;
+                    state.app.ui_state.input_mode = InputMode::Normal;
+                    cx.notify();
+                });
+                Ok(())
+            })?;
+            Ok(true)
+        }
         "SettingsSetTab" => {
             let tab = parse_settings_tab(payload_str(&payload, "tab")?)?;
             with_app_state(window, cx, |state| {
                 state.app.ui_state.current_screen = Screen::Settings;
                 state.app.ui_state.active_settings_tab = tab;
                 state.app.ui_state.input_mode = InputMode::Normal;
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "SettingsSetLibraryPickerFixture" => {
+            let result = payload_str(&payload, "result")?;
+            let qa_dir = std::env::var_os("SOTF_QA_DIR")
+                .map(PathBuf::from)
+                .ok_or_else(|| anyhow!("SOTF_QA_DIR is unavailable"))?;
+            let seeded_library = qa_dir
+                .parent()
+                .ok_or_else(|| anyhow!("QA directory has no scenario parent"))?
+                .join("library");
+            let picker_result = match result {
+                "selected" => {
+                    if !seeded_library.is_dir() {
+                        return Err(anyhow!(
+                            "seeded QA library is unavailable: {}",
+                            seeded_library.display()
+                        ));
+                    }
+                    crate::app::state::QaLibraryPickerResult::Selected(seeded_library)
+                }
+                "permission_denied" => {
+                    crate::app::state::QaLibraryPickerResult::PermissionDenied(seeded_library)
+                }
+                _ => {
+                    return Err(anyhow!(
+                        "library picker fixture result must be `selected` or `permission_denied`"
+                    ));
+                }
+            };
+            with_app_state(window, cx, |state| {
+                state.app.settings.library.qa_picker_result = Some(picker_result);
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        #[cfg(feature = "tidal")]
+        "SettingsSetTidalLoginFixture" => {
+            let result = payload_str(&payload, "result")?;
+            with_player_view(window, cx, |view, cx| {
+                view.state.update(cx, |state, _cx| {
+                    state
+                        .app
+                        .qa_set_tidal_login_fixture(result)
+                        .map_err(anyhow::Error::msg)
+                })?;
+                cx.notify();
                 Ok(())
             })?;
             Ok(true)
@@ -881,6 +1256,58 @@ fn dispatch_metadata_action(
                         .eq_progress
                         .how_to_listen_completed = false;
                 });
+                cx.notify();
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "ListeningClearSession" => {
+            with_player_view(window, cx, |view, cx| {
+                view.state.update(cx, |state, _| {
+                    let _ = state.app.plugin_state.leave_ab_test_runtime();
+                    let listening = &mut state.app.plugin_state.listening_test_state;
+                    listening.ab_test = Default::default();
+                    listening.path_a = None;
+                    listening.path_b = None;
+                    listening.path_a_canvas = None;
+                    listening.path_b_canvas = None;
+                    listening.status.clear();
+                    listening.surface =
+                        crate::app::state::plugin::EarTrainingSurface::BlindComparison;
+                    state.app.ui_state.current_screen = Screen::ListeningTest;
+                    state.app.ui_state.input_mode = InputMode::Normal;
+                    state.app.tutorial.listening_break_prompt_open = false;
+                });
+                cx.notify();
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "ListeningSetBreakInterval" => {
+            let trials = payload_u32(payload.as_ref(), "trials", 5).clamp(1, 100) as usize;
+            with_player_view(window, cx, |view, cx| {
+                view.state.update(cx, |state, _| {
+                    state.app.tutorial.listening_break_interval = trials;
+                    state.app.tutorial.listening_break_prompt_open = false;
+                    state.app.tutorial.listening_break_dismissed_at = 0;
+                });
+                cx.notify();
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "ListeningCorruptMediaIdentity" => {
+            with_player_view(window, cx, |view, cx| {
+                view.state.update(cx, |state, _| {
+                    let listening = &mut state.app.plugin_state.listening_test_state;
+                    let session = listening
+                        .ab_test
+                        .session_mut()
+                        .ok_or_else(|| anyhow!("no listening session to corrupt"))?;
+                    session.setup.media.media_id = format!("sha256:{}", "0".repeat(64));
+                    listening.status.clear();
+                    Ok::<(), anyhow::Error>(())
+                })?;
                 cx.notify();
                 Ok(())
             })?;
@@ -1140,6 +1567,10 @@ pub(super) fn dispatch_request(req: &HttpRequest, tx: &mpsc::SyncSender<DevComma
             (status, r.to_json())
         }),
         ("POST", "/quit") => post_quit(tx).map(|r| {
+            let status = if r.ok { 200 } else { 500 };
+            (status, r.to_json())
+        }),
+        ("POST", "/qa/ui-environment") => post_qa_ui_environment(&req.body, tx).map(|r| {
             let status = if r.ok { 200 } else { 500 };
             (status, r.to_json())
         }),

@@ -59,6 +59,9 @@ pub(super) enum Command {
         /// Drive an already-running authenticated dev API instead of launching.
         #[arg(long)]
         url: Option<String>,
+        /// Run ID the external --url target was launched with.
+        #[arg(long, requires = "url")]
+        run_id: Option<String>,
         /// Sync every trace event to storage after flushing.
         #[arg(long)]
         durable_trace: bool,
@@ -85,6 +88,9 @@ pub(super) enum Command {
         executable: Option<PathBuf>,
         #[arg(long)]
         url: Option<String>,
+        /// Run ID the external --url target was launched with.
+        #[arg(long, requires = "url")]
+        run_id: Option<String>,
         /// Continue diagnostically when capabilities differ from the recording.
         #[arg(long)]
         best_effort_capabilities: bool,
@@ -96,6 +102,9 @@ pub(super) enum Command {
         executable: Option<PathBuf>,
         #[arg(long)]
         url: Option<String>,
+        /// Run ID the external --url target was launched with.
+        #[arg(long, requires = "url")]
+        run_id: Option<String>,
     },
 }
 

@@ -1,4 +1,6 @@
 use super::language::Language;
+use super::pseudo::{pseudo_borrowed, pseudo_owned, pseudo_static};
+use crate::app::types::{RecordingStep, RoomEqStep, SpinoramaStep};
 
 #[derive(Debug, Clone, Copy)]
 pub struct RoomEqEasyTranslations {
@@ -14,6 +16,7 @@ pub struct RoomEqEasyTranslations {
 impl RoomEqEasyTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 language,
                 layout: "Speaker layout",
@@ -85,6 +88,10 @@ impl RoomEqEasyTranslations {
     ) -> String {
         let detail = error.to_string();
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).invalid_layout(error),
+            ),
             Language::English => {
                 format!("The measurements do not match the selected layout: {detail}")
             }
@@ -118,6 +125,7 @@ pub struct HeadphoneEasyTranslations {
 impl HeadphoneEasyTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 language,
                 title: "Easy listening chain",
@@ -171,6 +179,10 @@ impl HeadphoneEasyTranslations {
 
     pub fn applied(self, filters: usize, preamp_db: f64) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).applied(filters, preamp_db),
+            ),
             Language::French => format!(
                 "Chaîne casque sûre appliquée ({filters} filtres, préampli {preamp_db:.1} dB)"
             ),
@@ -188,6 +200,10 @@ impl HeadphoneEasyTranslations {
 
     pub fn summary(self, filters: usize, preamp_db: f64) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).summary(filters, preamp_db),
+            ),
             Language::French => format!(
                 "{filters} filtres appliqués avec un préampli de sécurité de {preamp_db:.1} dB ; gain automatique de sonie activé."
             ),
@@ -216,6 +232,7 @@ pub struct HeadphoneEqTranslations {
     pub select_measurement_description: &'static str,
     pub measurement_file: &'static str,
     pub measurement_file_description: &'static str,
+    pub no_file_selected: &'static str,
     pub headphone_search: &'static str,
     pub search_placeholder: &'static str,
     pub available_headphones: &'static str,
@@ -241,6 +258,7 @@ pub struct HeadphoneEqTranslations {
 impl HeadphoneEqTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 title: "Headphone EQ",
                 measurement_step: "Measurement",
@@ -252,6 +270,7 @@ impl HeadphoneEqTranslations {
                 select_measurement_description: "Choose your headphone measurement source.",
                 measurement_file: "Measurement File",
                 measurement_file_description: "Select a CSV file with your headphone's frequency-response measurement.",
+                no_file_selected: "No file selected",
                 headphone_search: "Headphone Search",
                 search_placeholder: "Type to search headphones…",
                 available_headphones: "Available Headphones",
@@ -284,6 +303,7 @@ impl HeadphoneEqTranslations {
                 select_measurement_description: "Choisissez la source de mesure de votre casque.",
                 measurement_file: "Fichier de mesure",
                 measurement_file_description: "Sélectionnez un fichier CSV contenant la réponse en fréquence du casque.",
+                no_file_selected: "Aucun fichier sélectionné",
                 headphone_search: "Recherche de casque",
                 search_placeholder: "Rechercher un casque…",
                 available_headphones: "Casques disponibles",
@@ -316,6 +336,7 @@ impl HeadphoneEqTranslations {
                 select_measurement_description: "Wählen Sie die Messquelle für Ihren Kopfhörer.",
                 measurement_file: "Messdatei",
                 measurement_file_description: "Wählen Sie eine CSV-Datei mit dem Frequenzgang des Kopfhörers.",
+                no_file_selected: "Keine Datei ausgewählt",
                 headphone_search: "Kopfhörersuche",
                 search_placeholder: "Kopfhörer suchen…",
                 available_headphones: "Verfügbare Kopfhörer",
@@ -348,6 +369,7 @@ impl HeadphoneEqTranslations {
                 select_measurement_description: "Elige la fuente de medición de tus auriculares.",
                 measurement_file: "Archivo de medición",
                 measurement_file_description: "Selecciona un archivo CSV con la respuesta en frecuencia de los auriculares.",
+                no_file_selected: "Ningún archivo seleccionado",
                 headphone_search: "Buscar auriculares",
                 search_placeholder: "Buscar auriculares…",
                 available_headphones: "Auriculares disponibles",
@@ -391,6 +413,7 @@ pub struct StreamsTranslations {
 impl StreamsTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 title: "Streams",
                 subtitle: "HTTPS streams, local SOTF media URLs, HLS, Spotify, and Tidal",
@@ -480,6 +503,7 @@ pub struct PlaylistTranslations {
 impl PlaylistTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 language,
                 title: "Playlists",
@@ -597,6 +621,10 @@ impl PlaylistTranslations {
 
     pub fn tracks(self, count: usize) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).tracks(count),
+            ),
             Language::English => format!("{count} track{}", if count == 1 { "" } else { "s" }),
             Language::French => format!("{count} piste{}", if count == 1 { "" } else { "s" }),
             Language::German => format!("{count} Titel"),
@@ -606,6 +634,10 @@ impl PlaylistTranslations {
 
     pub fn name_required(self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).name_required(),
+            ),
             Language::English => "A playlist name is required.",
             Language::French => "Un nom de liste de lecture est requis.",
             Language::German => "Ein Name für die Wiedergabeliste ist erforderlich.",
@@ -615,6 +647,10 @@ impl PlaylistTranslations {
 
     pub fn library_database_unavailable(self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).library_database_unavailable(),
+            ),
             Language::English => "The local library database is not available.",
             Language::French => {
                 "La base de données de la bibliothèque locale n’est pas disponible."
@@ -626,6 +662,10 @@ impl PlaylistTranslations {
 
     pub fn select_library_album_first(self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).select_library_album_first(),
+            ),
             Language::English => "Select an album in Library first.",
             Language::French => "Sélectionnez d’abord un album dans la bibliothèque.",
             Language::German => "Wählen Sie zuerst ein Album in der Bibliothek aus.",
@@ -635,6 +675,10 @@ impl PlaylistTranslations {
 
     pub fn select_queue_album_first(self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).select_queue_album_first(),
+            ),
             Language::English => "Select an album in Queue first.",
             Language::French => "Sélectionnez d’abord un album dans la file d’attente.",
             Language::German => "Wählen Sie zuerst ein Album in der Warteschlange aus.",
@@ -644,6 +688,10 @@ impl PlaylistTranslations {
 
     pub fn restored(self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).restored(),
+            ),
             Language::English => "Playlist restored",
             Language::French => "Liste de lecture restaurée",
             Language::German => "Wiedergabeliste wiederhergestellt",
@@ -653,6 +701,10 @@ impl PlaylistTranslations {
 
     pub fn imported(self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).imported(),
+            ),
             Language::English => "Playlist imported",
             Language::French => "Liste de lecture importée",
             Language::German => "Wiedergabeliste importiert",
@@ -662,6 +714,10 @@ impl PlaylistTranslations {
 
     pub fn exported(self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).exported(),
+            ),
             Language::English => "Playlist exported",
             Language::French => "Liste de lecture exportée",
             Language::German => "Wiedergabeliste exportiert",
@@ -673,6 +729,10 @@ impl PlaylistTranslations {
 impl PlaylistTranslations {
     pub fn active_playlist_unavailable(self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).active_playlist_unavailable(),
+            ),
             Language::English => "The selected playlist could not be loaded.",
             Language::French => "La liste de lecture sélectionnée n’a pas pu être chargée.",
             Language::German => "Die ausgewählte Wiedergabeliste konnte nicht geladen werden.",
@@ -682,6 +742,10 @@ impl PlaylistTranslations {
 
     pub fn deleted_with_undo(self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).deleted_with_undo(),
+            ),
             Language::English => "Playlist deleted. Undo is available.",
             Language::French => "Liste de lecture supprimée. Annulation disponible.",
             Language::German => "Wiedergabeliste gelöscht. Rückgängig ist verfügbar.",
@@ -691,6 +755,10 @@ impl PlaylistTranslations {
 
     pub fn no_tracks_to_queue(self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).no_tracks_to_queue(),
+            ),
             Language::English => "This playlist has no tracks to queue.",
             Language::French => "Cette liste de lecture ne contient aucun titre à mettre en file.",
             Language::German => "Diese Wiedergabeliste enthält keine Titel für die Warteschlange.",
@@ -700,6 +768,10 @@ impl PlaylistTranslations {
 
     pub fn no_playlist_tracks_available(self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).no_playlist_tracks_available(),
+            ),
             Language::English => "None of this playlist’s tracks are available in the library.",
             Language::French => {
                 "Aucun titre de cette liste de lecture n’est disponible dans la bibliothèque."
@@ -713,6 +785,10 @@ impl PlaylistTranslations {
 
     pub fn all_tracks_already_queued(self, count: usize) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).all_tracks_already_queued(count),
+            ),
             Language::English => format!("All {count} playlist tracks are already in the queue."),
             Language::French => format!("Les {count} titres de la liste sont déjà dans la file."),
             Language::German => {
@@ -724,6 +800,10 @@ impl PlaylistTranslations {
 
     pub fn queued_with_missing(self, added: usize, missing: usize) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).queued_with_missing(added, missing),
+            ),
             Language::English => {
                 format!("Queued {added} tracks; {missing} unavailable tracks were skipped.")
             }
@@ -741,6 +821,10 @@ impl PlaylistTranslations {
 
     pub fn added_to_playlist(self, album: &str) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).added_to_playlist(album),
+            ),
             Language::English => format!("Added {album} to playlist"),
             Language::French => format!("{album} ajouté à la liste de lecture"),
             Language::German => format!("{album} wurde zur Wiedergabeliste hinzugefügt"),
@@ -782,6 +866,7 @@ pub struct PluginRackTranslations {
 impl PluginRackTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 signal_chain: "Signal Chain",
                 graph_routing_title: "Signal chain uses graph routing",
@@ -1151,6 +1236,7 @@ static SPANISH_TUTORIAL_SCREENS: [TutorialSlideTranslations; 7] = [
 impl TutorialTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 screens: &ENGLISH_TUTORIAL_SCREENS,
                 previous: "Previous",
@@ -1218,6 +1304,7 @@ pub struct MetadataEditorTranslations {
 impl MetadataEditorTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 language,
                 fields: MetadataFieldTranslations {
@@ -1356,6 +1443,14 @@ impl MetadataEditorTranslations {
         has_sidecar: bool,
     ) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).preview_summary(
+                    affected_files,
+                    unsupported_writes,
+                    has_sidecar,
+                ),
+            ),
             Language::English => format!(
                 "{affected_files} file(s), {unsupported_writes} unsupported, sidecar {}",
                 if has_sidecar { "yes" } else { "no" }
@@ -1394,6 +1489,7 @@ pub struct FileDialogTranslations {
 impl FileDialogTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 press_escape_to_skip: "Press ESC to skip",
                 enter_apo_path: "Enter path to APO file:",
@@ -1455,6 +1551,7 @@ pub struct WorkflowTranslations {
     language: Language,
     pub success: &'static str,
     pub failed: &'static str,
+    pub retry: &'static str,
     pub loading: &'static str,
     pub loading_versions: &'static str,
     pub no_versions_available: &'static str,
@@ -1470,10 +1567,12 @@ pub struct WorkflowTranslations {
 impl WorkflowTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 language,
                 success: "Success",
                 failed: "Failed",
+                retry: "Retry",
                 loading: "Loading…",
                 loading_versions: "Loading versions…",
                 no_versions_available: "No versions available",
@@ -1489,6 +1588,7 @@ impl WorkflowTranslations {
                 language,
                 success: "Réussi",
                 failed: "Échec",
+                retry: "Réessayer",
                 loading: "Chargement…",
                 loading_versions: "Chargement des versions…",
                 no_versions_available: "Aucune version disponible",
@@ -1504,6 +1604,7 @@ impl WorkflowTranslations {
                 language,
                 success: "Erfolgreich",
                 failed: "Fehlgeschlagen",
+                retry: "Erneut versuchen",
                 loading: "Wird geladen…",
                 loading_versions: "Versionen werden geladen…",
                 no_versions_available: "Keine Versionen verfügbar",
@@ -1519,6 +1620,7 @@ impl WorkflowTranslations {
                 language,
                 success: "Correcto",
                 failed: "Fallido",
+                retry: "Reintentar",
                 loading: "Cargando…",
                 loading_versions: "Cargando versiones…",
                 no_versions_available: "No hay versiones disponibles",
@@ -1535,6 +1637,10 @@ impl WorkflowTranslations {
 
     pub fn progress(self, percent: f32) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).progress(percent),
+            ),
             Language::English => format!("Progress: {percent:.0}%"),
             Language::French => format!("Progression : {percent:.0} %"),
             Language::German => format!("Fortschritt: {percent:.0} %"),
@@ -1544,6 +1650,10 @@ impl WorkflowTranslations {
 
     pub fn iteration_loss(self, iteration: usize, loss: f64) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).iteration_loss(iteration, loss),
+            ),
             Language::English => format!("Iteration: {iteration} | Loss: {loss:.4}"),
             Language::French => format!("Itération : {iteration} | Perte : {loss:.4}"),
             Language::German => format!("Iteration: {iteration} | Verlust: {loss:.4}"),
@@ -1553,9 +1663,58 @@ impl WorkflowTranslations {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct WizardNavigationTranslations {
+    pub back: &'static str,
+    pub close: &'static str,
+    pub continue_to: &'static str,
+    pub finish: &'static str,
+}
+
+impl WizardNavigationTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::Pseudo => Self::pseudo(),
+            Language::English => Self {
+                back: "Back",
+                close: "Close",
+                continue_to: "Continue to",
+                finish: "Finish",
+            },
+            Language::French => Self {
+                back: "Retour",
+                close: "Fermer",
+                continue_to: "Continuer vers",
+                finish: "Terminer",
+            },
+            Language::German => Self {
+                back: "Zurück",
+                close: "Schließen",
+                continue_to: "Weiter zu",
+                finish: "Fertigstellen",
+            },
+            Language::Spanish => Self {
+                back: "Atrás",
+                close: "Cerrar",
+                continue_to: "Continuar a",
+                finish: "Finalizar",
+            },
+        }
+    }
+
+    pub fn primary_action(self, next_step: Option<&str>) -> String {
+        next_step
+            .map(|label| format!("{} {label}", self.continue_to))
+            .unwrap_or_else(|| self.finish.to_string())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct RoomEqWorkflowTranslations {
+    language: Language,
     pub load_measurement_description: &'static str,
     pub no_channels_configured: &'static str,
+    pub no_recordings_found: &'static str,
+    pub use_recording_measurements: &'static str,
     pub delay_optimizer_help: &'static str,
     pub negligible_delay_warning: &'static str,
     pub delay_probe_help: &'static str,
@@ -1576,9 +1735,13 @@ pub struct RoomEqWorkflowTranslations {
 impl RoomEqWorkflowTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
+                language,
                 load_measurement_description: "Load measurement data from a previous recording session or import from a JSON file.",
                 no_channels_configured: "No channels configured. Load measurement data first.",
+                no_recordings_found: "No recordings found. Go to the Recording screen to measure your speakers.",
+                use_recording_measurements: "Use measurements from the Recording screen.",
                 delay_optimizer_help: "Delays are sent to the optimizer automatically. Edit a value to override it, or leave it unchanged.",
                 negligible_delay_warning: "⚠ Delays below 0.3 ms have negligible audible impact; consider setting them to 0.",
                 delay_probe_help: "Run the Probe step in the Recording wizard to capture per-channel delays, or enter values manually after loading a file with probe results.",
@@ -1596,8 +1759,11 @@ impl RoomEqWorkflowTranslations {
                 select: "Select",
             },
             Language::French => Self {
+                language,
                 load_measurement_description: "Chargez les mesures d’une session précédente ou importez un fichier JSON.",
                 no_channels_configured: "Aucun canal configuré. Chargez d’abord les mesures.",
+                no_recordings_found: "Aucun enregistrement trouvé. Ouvrez l’écran Enregistrement pour mesurer vos enceintes.",
+                use_recording_measurements: "Utilisez les mesures de l’écran Enregistrement.",
                 delay_optimizer_help: "Les délais sont transmis automatiquement à l’optimiseur. Modifiez une valeur pour la remplacer ou laissez-la inchangée.",
                 negligible_delay_warning: "⚠ Les délais inférieurs à 0,3 ms ont un impact audible négligeable ; envisagez de les mettre à 0.",
                 delay_probe_help: "Exécutez l’étape Sonde de l’assistant d’enregistrement pour mesurer les délais par canal, ou saisissez-les après avoir chargé un fichier contenant les résultats.",
@@ -1615,8 +1781,11 @@ impl RoomEqWorkflowTranslations {
                 select: "Sélectionner",
             },
             Language::German => Self {
+                language,
                 load_measurement_description: "Laden Sie Messdaten einer früheren Aufnahmesitzung oder importieren Sie eine JSON-Datei.",
                 no_channels_configured: "Keine Kanäle konfiguriert. Laden Sie zuerst Messdaten.",
+                no_recordings_found: "Keine Aufnahmen gefunden. Öffnen Sie den Aufnahmebildschirm, um Ihre Lautsprecher zu messen.",
+                use_recording_measurements: "Verwenden Sie Messungen aus dem Aufnahmebildschirm.",
                 delay_optimizer_help: "Verzögerungen werden automatisch an den Optimierer übergeben. Ändern Sie einen Wert zum Überschreiben oder lassen Sie ihn unverändert.",
                 negligible_delay_warning: "⚠ Verzögerungen unter 0,3 ms sind kaum hörbar; erwägen Sie, sie auf 0 zu setzen.",
                 delay_probe_help: "Führen Sie den Sondenschritt im Aufnahmeassistenten aus, um kanalweise Verzögerungen zu messen, oder geben Sie Werte nach dem Laden einer Datei mit Sondenergebnissen manuell ein.",
@@ -1634,8 +1803,11 @@ impl RoomEqWorkflowTranslations {
                 select: "Auswählen",
             },
             Language::Spanish => Self {
+                language,
                 load_measurement_description: "Cargue mediciones de una sesión anterior o importe un archivo JSON.",
                 no_channels_configured: "No hay canales configurados. Cargue primero las mediciones.",
+                no_recordings_found: "No se encontraron grabaciones. Abra la pantalla Grabación para medir sus altavoces.",
+                use_recording_measurements: "Use las mediciones de la pantalla Grabación.",
                 delay_optimizer_help: "Los retardos se envían automáticamente al optimizador. Edite un valor para sustituirlo o déjelo sin cambios.",
                 negligible_delay_warning: "⚠ Los retardos inferiores a 0,3 ms tienen un impacto audible despreciable; considere ponerlos a 0.",
                 delay_probe_help: "Ejecute el paso Sonda del asistente de grabación para medir los retardos por canal, o introdúzcalos manualmente tras cargar un archivo con resultados de sonda.",
@@ -1654,10 +1826,48 @@ impl RoomEqWorkflowTranslations {
             },
         }
     }
+
+    pub fn step_label(self, step: RoomEqStep) -> &'static str {
+        match (self.language, step) {
+            (Language::Pseudo, step) => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).step_label(step),
+            ),
+            (Language::English, RoomEqStep::LoadData) => "Load Data",
+            (Language::English, RoomEqStep::Delay) => "Delay",
+            (Language::English, RoomEqStep::Process) => "Process",
+            (Language::English, RoomEqStep::Configure) => "Configure",
+            (Language::English, RoomEqStep::Optimize) => "Optimize",
+            (Language::English, RoomEqStep::Review) => "Review",
+            (Language::English, RoomEqStep::Export) => "Export",
+            (Language::French, RoomEqStep::LoadData) => "Données",
+            (Language::French, RoomEqStep::Delay) => "Délais",
+            (Language::French, RoomEqStep::Process) => "Traitement",
+            (Language::French, RoomEqStep::Configure) => "Configurer",
+            (Language::French, RoomEqStep::Optimize) => "Optimiser",
+            (Language::French, RoomEqStep::Review) => "Révision",
+            (Language::French, RoomEqStep::Export) => "Exporter",
+            (Language::German, RoomEqStep::LoadData) => "Daten",
+            (Language::German, RoomEqStep::Delay) => "Verzögerung",
+            (Language::German, RoomEqStep::Process) => "Verarbeitung",
+            (Language::German, RoomEqStep::Configure) => "Konfig.",
+            (Language::German, RoomEqStep::Optimize) => "Optimieren",
+            (Language::German, RoomEqStep::Review) => "Prüfen",
+            (Language::German, RoomEqStep::Export) => "Export",
+            (Language::Spanish, RoomEqStep::LoadData) => "Datos",
+            (Language::Spanish, RoomEqStep::Delay) => "Retardo",
+            (Language::Spanish, RoomEqStep::Process) => "Procesar",
+            (Language::Spanish, RoomEqStep::Configure) => "Configurar",
+            (Language::Spanish, RoomEqStep::Optimize) => "Optimizar",
+            (Language::Spanish, RoomEqStep::Review) => "Revisar",
+            (Language::Spanish, RoomEqStep::Export) => "Exportar",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct EqDiscoveryTranslations {
+    language: Language,
     pub speaker_search_description: &'static str,
     pub loading_speakers: &'static str,
     pub spinorama_after_select: &'static str,
@@ -1680,7 +1890,9 @@ pub struct EqDiscoveryTranslations {
 impl EqDiscoveryTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
+                language,
                 speaker_search_description: "Type your speaker brand and model to search the database.",
                 loading_speakers: "Loading speakers from spinorama.org…",
                 spinorama_after_select: "Spinorama data appears after selecting a speaker with a CEA2034 measurement.",
@@ -1700,6 +1912,7 @@ impl EqDiscoveryTranslations {
                 download_from_spinorama: "Download from spinorama.org",
             },
             Language::French => Self {
+                language,
                 speaker_search_description: "Saisissez la marque et le modèle de l’enceinte pour rechercher dans la base.",
                 loading_speakers: "Chargement des enceintes depuis spinorama.org…",
                 spinorama_after_select: "Les données Spinorama apparaissent après la sélection d’une enceinte avec une mesure CEA2034.",
@@ -1719,6 +1932,7 @@ impl EqDiscoveryTranslations {
                 download_from_spinorama: "Télécharger depuis spinorama.org",
             },
             Language::German => Self {
+                language,
                 speaker_search_description: "Geben Sie Hersteller und Modell des Lautsprechers ein, um die Datenbank zu durchsuchen.",
                 loading_speakers: "Lautsprecher werden von spinorama.org geladen…",
                 spinorama_after_select: "Spinorama-Daten erscheinen nach Auswahl eines Lautsprechers mit CEA2034-Messung.",
@@ -1738,6 +1952,7 @@ impl EqDiscoveryTranslations {
                 download_from_spinorama: "Von spinorama.org herunterladen",
             },
             Language::Spanish => Self {
+                language,
                 speaker_search_description: "Escriba la marca y el modelo del altavoz para buscar en la base de datos.",
                 loading_speakers: "Cargando altavoces de spinorama.org…",
                 spinorama_after_select: "Los datos de Spinorama aparecen al seleccionar un altavoz con medición CEA2034.",
@@ -1756,6 +1971,111 @@ impl EqDiscoveryTranslations {
                 load_from_file: "Cargar desde archivo",
                 download_from_spinorama: "Descargar de spinorama.org",
             },
+        }
+    }
+
+    pub fn spinorama_step_label(self, step: SpinoramaStep) -> &'static str {
+        match (self.language, step) {
+            (Language::Pseudo, step) => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).spinorama_step_label(step),
+            ),
+            (Language::English, SpinoramaStep::SelectSpeaker) => "Select",
+            (Language::English, SpinoramaStep::Configure) => "Optimize",
+            (Language::English, SpinoramaStep::Review) => "Review",
+            (Language::English, SpinoramaStep::Export) => "Export",
+            (Language::French, SpinoramaStep::SelectSpeaker) => "Sélection",
+            (Language::French, SpinoramaStep::Configure) => "Optimiser",
+            (Language::French, SpinoramaStep::Review) => "Révision",
+            (Language::French, SpinoramaStep::Export) => "Exporter",
+            (Language::German, SpinoramaStep::SelectSpeaker) => "Auswahl",
+            (Language::German, SpinoramaStep::Configure) => "Optimieren",
+            (Language::German, SpinoramaStep::Review) => "Prüfen",
+            (Language::German, SpinoramaStep::Export) => "Export",
+            (Language::Spanish, SpinoramaStep::SelectSpeaker) => "Seleccionar",
+            (Language::Spanish, SpinoramaStep::Configure) => "Optimizar",
+            (Language::Spanish, SpinoramaStep::Review) => "Revisar",
+            (Language::Spanish, SpinoramaStep::Export) => "Exportar",
+        }
+    }
+}
+
+impl EqDiscoveryTranslations {
+    pub fn available(self) -> &'static str {
+        match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).available(),
+            ),
+            Language::English => "Available",
+            Language::French => "Disponible",
+            Language::German => "Verfügbar",
+            Language::Spanish => "Disponible",
+        }
+    }
+
+    pub fn not_available(self) -> &'static str {
+        match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).not_available(),
+            ),
+            Language::English => "Not Available",
+            Language::French => "Indisponible",
+            Language::German => "Nicht verfügbar",
+            Language::Spanish => "No disponible",
+        }
+    }
+
+    pub fn speaker_count(self, count: usize) -> String {
+        match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).speaker_count(count),
+            ),
+            Language::English => format!("{count} speakers"),
+            Language::French => format!("{count} enceintes"),
+            Language::German => format!("{count} Lautsprecher"),
+            Language::Spanish => format!("{count} altavoces"),
+        }
+    }
+
+    pub fn matching_speaker_count(self, count: usize) -> String {
+        match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).matching_speaker_count(count),
+            ),
+            Language::English => format!("({count} matches)"),
+            Language::French => format!("({count} résultats)"),
+            Language::German => format!("({count} Treffer)"),
+            Language::Spanish => format!("({count} resultados)"),
+        }
+    }
+
+    pub fn no_speakers_loaded(self) -> &'static str {
+        match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).no_speakers_loaded(),
+            ),
+            Language::English => "No speakers loaded. Click Refresh to load.",
+            Language::French => "Aucune enceinte chargée. Cliquez sur Actualiser.",
+            Language::German => "Keine Lautsprecher geladen. Klicken Sie auf Aktualisieren.",
+            Language::Spanish => "No hay altavoces cargados. Haga clic en Actualizar.",
+        }
+    }
+
+    pub fn no_matching_speakers(self) -> &'static str {
+        match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).no_matching_speakers(),
+            ),
+            Language::English => "No matching speakers found.",
+            Language::French => "Aucune enceinte correspondante trouvée.",
+            Language::German => "Keine passenden Lautsprecher gefunden.",
+            Language::Spanish => "No se encontraron altavoces coincidentes.",
         }
     }
 }
@@ -1798,6 +2118,7 @@ pub struct RecordingWorkflowTranslations {
 impl RecordingWorkflowTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 language,
                 sweep_frequency_range_only: "Frequency-range configuration is available only for sweep signals.",
@@ -1935,6 +2256,10 @@ impl RecordingWorkflowTranslations {
 
     pub fn seconds(self, seconds: u32) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).seconds(seconds),
+            ),
             Language::English => format!("{seconds} seconds"),
             Language::French => format!("{seconds} secondes"),
             Language::German => format!("{seconds} Sekunden"),
@@ -1945,6 +2270,10 @@ impl RecordingWorkflowTranslations {
     /// Status line shown after the user accepts parked ReviewNeeded takes.
     pub fn accepted_takes(self, accepted: usize) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).accepted_takes(accepted),
+            ),
             Language::English => {
                 format!("Accepted {accepted} take(s) despite quality warnings")
             }
@@ -1963,6 +2292,10 @@ impl RecordingWorkflowTranslations {
     /// Move-position modal body: where the mics go and the ~60 cm rule.
     pub fn move_position_body(self, next_seat: usize) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).move_position_body(next_seat),
+            ),
             Language::English => format!(
                 "Reposition every configured microphone to seat {next_seat}, then click Continue. Stay within ~60 cm of the main listening position. Click Cancel to stop the session and save what you have so far."
             ),
@@ -2000,6 +2333,7 @@ pub struct ContextMenuTranslations {
 impl ContextMenuTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 suspend_incompatible_and_play: "Suspend incompatible and play",
                 remove_incompatible_and_play: "Remove incompatible and play",
@@ -2127,6 +2461,7 @@ pub struct DialogAboutTranslations {
 impl DialogTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 language,
                 global_keybindings: "GLOBAL KEYBINDINGS",
@@ -2338,6 +2673,10 @@ impl DialogTranslations {
         use crate::app::types::Screen;
 
         match (self.language, screen) {
+            (Language::Pseudo, screen) => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).screen_name(screen),
+            ),
             (Language::French, Screen::Home | Screen::HomeShelf) => "Accueil",
             (Language::French, Screen::NowPlaying) => "Lecture en cours",
             (Language::French, Screen::Library) => "Bibliothèque",
@@ -2409,6 +2748,10 @@ impl DialogTranslations {
         use crate::app::types::Screen;
 
         match (self.language, screen) {
+            (Language::Pseudo, screen) => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).screen_overview(screen),
+            ),
             (Language::French, Screen::Home | Screen::HomeShelf) => {
                 "Parcourez les albums et ouvrez un rayon pour afficher toute sa sélection."
             }
@@ -2600,6 +2943,10 @@ impl DialogTranslations {
 
     pub fn keyboard_shortcuts_for(self, screen: &'static str) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).keyboard_shortcuts_for(screen),
+            ),
             Language::French => format!("Raccourcis clavier — {screen}"),
             Language::German => format!("Tastenkürzel — {screen}"),
             Language::Spanish => format!("Atajos de teclado — {screen}"),
@@ -2609,6 +2956,10 @@ impl DialogTranslations {
 
     pub fn screen_keybindings(self, screen: &'static str) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).screen_keybindings(screen),
+            ),
             Language::French => format!("RACCOURCIS — {}", screen.to_uppercase()),
             Language::German => format!("TASTENKÜRZEL — {}", screen.to_uppercase()),
             Language::Spanish => format!("ATAJOS — {}", screen.to_uppercase()),
@@ -2618,6 +2969,10 @@ impl DialogTranslations {
 
     pub fn version(self, version: &str) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).version(version),
+            ),
             Language::French => format!("Version {version}"),
             Language::German => format!("Version {version}"),
             Language::Spanish => format!("Versión {version}"),
@@ -2654,11 +3009,16 @@ pub struct ServerSettingsTranslations {
     pub remove: &'static str,
     pub enable: &'static str,
     pub disable: &'static str,
+    pub show_qr: &'static str,
+    pub hide_qr: &'static str,
+    pub configured: &'static str,
+    pub generated_when_qr_shown: &'static str,
 }
 
 impl ServerSettingsTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 serves_media: "This machine serves your media",
                 sotf_api: "SOTF API",
@@ -2686,6 +3046,10 @@ impl ServerSettingsTranslations {
                 remove: "Remove",
                 enable: "Enable",
                 disable: "Disable",
+                show_qr: "Show QR",
+                hide_qr: "Hide QR",
+                configured: "Configured",
+                generated_when_qr_shown: "Generated when QR is shown",
             },
             Language::French => Self {
                 serves_media: "Cette machine diffuse vos médias",
@@ -2714,6 +3078,10 @@ impl ServerSettingsTranslations {
                 remove: "Supprimer",
                 enable: "Activer",
                 disable: "Désactiver",
+                show_qr: "Afficher le QR",
+                hide_qr: "Masquer le QR",
+                configured: "Configuré",
+                generated_when_qr_shown: "Généré à l’affichage du QR",
             },
             Language::German => Self {
                 serves_media: "Dieser Computer stellt Ihre Medien bereit",
@@ -2742,6 +3110,10 @@ impl ServerSettingsTranslations {
                 remove: "Entfernen",
                 enable: "Aktivieren",
                 disable: "Deaktivieren",
+                show_qr: "QR anzeigen",
+                hide_qr: "QR ausblenden",
+                configured: "Konfiguriert",
+                generated_when_qr_shown: "Wird beim Anzeigen des QR-Codes erzeugt",
             },
             Language::Spanish => Self {
                 serves_media: "Este equipo sirve sus archivos multimedia",
@@ -2770,6 +3142,10 @@ impl ServerSettingsTranslations {
                 remove: "Quitar",
                 enable: "Activar",
                 disable: "Desactivar",
+                show_qr: "Mostrar QR",
+                hide_qr: "Ocultar QR",
+                configured: "Configurado",
+                generated_when_qr_shown: "Se genera al mostrar el QR",
             },
         }
     }
@@ -2777,6 +3153,7 @@ impl ServerSettingsTranslations {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PhoneTranslations {
+    language: Language,
     pub home: &'static str,
     pub screen_guide: &'static str,
     pub show_tutorial: &'static str,
@@ -2811,7 +3188,9 @@ pub struct PhoneTranslations {
 impl PhoneTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
+                language: Language::English,
                 home: "Home",
                 screen_guide: "Screen Guide",
                 show_tutorial: "Show Tutorial",
@@ -2843,6 +3222,7 @@ impl PhoneTranslations {
                 wizard: "Wizard",
             },
             Language::French => Self {
+                language: Language::French,
                 home: "Accueil",
                 screen_guide: "Guide des écrans",
                 show_tutorial: "Afficher le tutoriel",
@@ -2874,6 +3254,7 @@ impl PhoneTranslations {
                 wizard: "Assistant",
             },
             Language::German => Self {
+                language: Language::German,
                 home: "Startseite",
                 screen_guide: "Bildschirmübersicht",
                 show_tutorial: "Tutorial anzeigen",
@@ -2905,6 +3286,7 @@ impl PhoneTranslations {
                 wizard: "Assistent",
             },
             Language::Spanish => Self {
+                language: Language::Spanish,
                 home: "Inicio",
                 screen_guide: "Guía de pantallas",
                 show_tutorial: "Mostrar tutorial",
@@ -2939,6 +3321,120 @@ impl PhoneTranslations {
     }
 }
 
+impl PhoneTranslations {
+    pub fn active(self) -> &'static str {
+        match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).active(),
+            ),
+            Language::English => "Active",
+            Language::French => "Actif",
+            Language::German => "Aktiv",
+            Language::Spanish => "Activo",
+        }
+    }
+
+    pub fn muted(self) -> &'static str {
+        match self.language {
+            Language::Pseudo => {
+                pseudo_borrowed(self.language, Self::for_language(Language::English).muted())
+            }
+            Language::English => "Muted",
+            Language::French => "Muet",
+            Language::German => "Stumm",
+            Language::Spanish => "Silenciado",
+        }
+    }
+
+    pub fn done(self) -> &'static str {
+        match self.language {
+            Language::Pseudo => {
+                pseudo_borrowed(self.language, Self::for_language(Language::English).done())
+            }
+            Language::English => "Done",
+            Language::French => "Terminé",
+            Language::German => "Fertig",
+            Language::Spanish => "Listo",
+        }
+    }
+
+    pub fn tracks(self, count: usize) -> String {
+        let value = match self.language {
+            Language::Pseudo => Self::for_language(Language::English).tracks(count),
+            Language::English if count == 1 => "1 track".to_string(),
+            Language::English => format!("{count} tracks"),
+            Language::French if count == 1 => "1 piste".to_string(),
+            Language::French => format!("{count} pistes"),
+            Language::German if count == 1 => "1 Titel".to_string(),
+            Language::German => format!("{count} Titel"),
+            Language::Spanish if count == 1 => "1 pista".to_string(),
+            Language::Spanish => format!("{count} pistas"),
+        };
+        if self.language == Language::Pseudo {
+            pseudo_owned(self.language, value)
+        } else {
+            value
+        }
+    }
+
+    pub fn untitled(self) -> &'static str {
+        match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).untitled(),
+            ),
+            Language::English => "Untitled",
+            Language::French => "Sans titre",
+            Language::German => "Ohne Titel",
+            Language::Spanish => "Sin título",
+        }
+    }
+
+    pub fn unknown_artist(self) -> &'static str {
+        match self.language {
+            Language::Pseudo => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).unknown_artist(),
+            ),
+            Language::English => "Unknown artist",
+            Language::French => "Artiste inconnu",
+            Language::German => "Unbekannter Künstler",
+            Language::Spanish => "Artista desconocido",
+        }
+    }
+
+    pub fn decrease(self, label: &str) -> String {
+        let value = match self.language {
+            Language::Pseudo => Self::for_language(Language::English).decrease(label),
+            Language::English => format!("Decrease {label}"),
+            Language::French => format!("Diminuer {label}"),
+            Language::German => format!("{label} verringern"),
+            Language::Spanish => format!("Disminuir {label}"),
+        };
+        if self.language == Language::Pseudo {
+            pseudo_owned(self.language, value)
+        } else {
+            value
+        }
+    }
+
+    pub fn increase(self, label: &str) -> String {
+        let value = match self.language {
+            Language::Pseudo => Self::for_language(Language::English).increase(label),
+            Language::English => format!("Increase {label}"),
+            Language::French => format!("Augmenter {label}"),
+            Language::German => format!("{label} erhöhen"),
+            Language::Spanish => format!("Aumentar {label}"),
+        };
+        if self.language == Language::Pseudo {
+            pseudo_owned(self.language, value)
+        } else {
+            value
+        }
+    }
+}
+
 /// Copy used by the compact phone-only tool wrappers. Kept separate from
 /// `PhoneTranslations` so each translation bundle remains focused and below
 /// the project struct-field budget.
@@ -2968,6 +3464,7 @@ pub struct PhoneToolTranslations {
 impl PhoneToolTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 spectrum: "Spectrum",
                 held_analyzer_frame: "Held analyzer frame",
@@ -3071,6 +3568,7 @@ pub struct PhoneLibraryTranslations {
 impl PhoneLibraryTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 year: "Year",
                 genre: "Genre",
@@ -3202,6 +3700,7 @@ pub struct RoomEqOverviewTranslations {
 impl RoomEqReportTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 chart: RoomEqChartTranslations {
                     overview: RoomEqOverviewTranslations {
@@ -3460,11 +3959,19 @@ pub struct LevelMeterTranslations {
     pub meters: &'static str,
     pub level_meters: &'static str,
     pub stereo_width_unavailable: &'static str,
+    pub group: &'static str,
+    pub selected: &'static str,
+    pub mute: &'static str,
+    pub solo: &'static str,
+    pub dim: &'static str,
+    pub no_data: &'static str,
+    pub no_data_hint: &'static str,
 }
 
 impl LevelMeterTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 gain_reduction: "Gain Reduction",
                 peak: "Peak",
@@ -3478,6 +3985,13 @@ impl LevelMeterTranslations {
                 meters: "Meters",
                 level_meters: "Level Meters",
                 stereo_width_unavailable: "Stereo width requires two active channels",
+                group: "Group",
+                selected: "Selected",
+                mute: "Mute",
+                solo: "Solo",
+                dim: "Dim",
+                no_data: "No meter data",
+                no_data_hint: "Start playback to see live channel levels.",
             },
             Language::French => Self {
                 gain_reduction: "Réduction de gain",
@@ -3492,6 +4006,13 @@ impl LevelMeterTranslations {
                 meters: "Indicateurs",
                 level_meters: "Indicateurs de niveau",
                 stereo_width_unavailable: "La largeur stéréo nécessite deux canaux actifs",
+                group: "Groupe",
+                selected: "Sélectionné",
+                mute: "Muet",
+                solo: "Solo",
+                dim: "Atténuer",
+                no_data: "Aucune donnée de niveau",
+                no_data_hint: "Lancez la lecture pour voir les niveaux des canaux en direct.",
             },
             Language::German => Self {
                 gain_reduction: "Pegelreduktion",
@@ -3506,6 +4027,13 @@ impl LevelMeterTranslations {
                 meters: "Anzeigen",
                 level_meters: "Pegelanzeigen",
                 stereo_width_unavailable: "Stereobreite erfordert zwei aktive Kanäle",
+                group: "Gruppe",
+                selected: "Ausgewählt",
+                mute: "Stumm",
+                solo: "Solo",
+                dim: "Absenken",
+                no_data: "Keine Pegeldaten",
+                no_data_hint: "Starten Sie die Wiedergabe, um Live-Kanalpegel zu sehen.",
             },
             Language::Spanish => Self {
                 gain_reduction: "Reducción de ganancia",
@@ -3520,9 +4048,23 @@ impl LevelMeterTranslations {
                 meters: "Medidores",
                 level_meters: "Medidores de nivel",
                 stereo_width_unavailable: "La anchura estéreo requiere dos canales activos",
+                group: "Grupo",
+                selected: "Seleccionado",
+                mute: "Silenciar",
+                solo: "Solo",
+                dim: "Atenuar",
+                no_data: "Sin datos de nivel",
+                no_data_hint: "Inicie la reproducción para ver los niveles de canal en directo.",
             },
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct EqBandActionTranslations {
+    pub add: &'static str,
+    pub remove: &'static str,
+    pub reset: &'static str,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -3534,6 +4076,7 @@ pub struct EqViewTranslations {
     pub type_label: &'static str,
     pub algorithm: &'static str,
     pub active: &'static str,
+    pub graph: &'static str,
     pub all: &'static str,
     pub per_channel_short: &'static str,
     pub copy_all_to_selected: &'static str,
@@ -3555,11 +4098,13 @@ pub struct EqViewTranslations {
     pub on: &'static str,
     pub off: &'static str,
     pub mix: &'static str,
+    pub band_actions: EqBandActionTranslations,
 }
 
 impl EqViewTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 no_bands: "No bands",
                 chart_unavailable: "Unable to render chart",
@@ -3568,6 +4113,7 @@ impl EqViewTranslations {
                 type_label: "Type",
                 algorithm: "Algorithm",
                 active: "Active",
+                graph: "Graph",
                 all: "All",
                 per_channel_short: "Per Ch",
                 copy_all_to_selected: "Copy All → Selected",
@@ -3589,6 +4135,11 @@ impl EqViewTranslations {
                 on: "On",
                 off: "Off",
                 mix: "Mix",
+                band_actions: EqBandActionTranslations {
+                    add: "Add band",
+                    remove: "Remove selected band",
+                    reset: "Reset selected band",
+                },
             },
             Language::French => Self {
                 no_bands: "Aucune bande",
@@ -3598,6 +4149,7 @@ impl EqViewTranslations {
                 type_label: "Type",
                 algorithm: "Algorithme",
                 active: "Actif",
+                graph: "Graphique",
                 all: "Tous",
                 per_channel_short: "Par canal",
                 copy_all_to_selected: "Copier tout → sélection",
@@ -3619,6 +4171,11 @@ impl EqViewTranslations {
                 on: "Activé",
                 off: "Désactivé",
                 mix: "Mix",
+                band_actions: EqBandActionTranslations {
+                    add: "Ajouter une bande",
+                    remove: "Supprimer la bande sélectionnée",
+                    reset: "Réinitialiser la bande sélectionnée",
+                },
             },
             Language::German => Self {
                 no_bands: "Keine Bänder",
@@ -3628,6 +4185,7 @@ impl EqViewTranslations {
                 type_label: "Typ",
                 algorithm: "Algorithmus",
                 active: "Aktiv",
+                graph: "Diagramm",
                 all: "Alle",
                 per_channel_short: "Pro Kanal",
                 copy_all_to_selected: "Alle → Auswahl kopieren",
@@ -3649,6 +4207,11 @@ impl EqViewTranslations {
                 on: "Ein",
                 off: "Aus",
                 mix: "Mix",
+                band_actions: EqBandActionTranslations {
+                    add: "Band hinzufügen",
+                    remove: "Ausgewähltes Band entfernen",
+                    reset: "Ausgewähltes Band zurücksetzen",
+                },
             },
             Language::Spanish => Self {
                 no_bands: "Sin bandas",
@@ -3658,6 +4221,7 @@ impl EqViewTranslations {
                 type_label: "Tipo",
                 algorithm: "Algoritmo",
                 active: "Activo",
+                graph: "Gráfico",
                 all: "Todos",
                 per_channel_short: "Por canal",
                 copy_all_to_selected: "Copiar todo → selección",
@@ -3679,6 +4243,11 @@ impl EqViewTranslations {
                 on: "Activado",
                 off: "Desactivado",
                 mix: "Mezcla",
+                band_actions: EqBandActionTranslations {
+                    add: "Añadir banda",
+                    remove: "Eliminar banda seleccionada",
+                    reset: "Restablecer banda seleccionada",
+                },
             },
         }
     }
@@ -3698,6 +4267,7 @@ pub struct AppearanceTranslations {
     pub navigation_mode_description: &'static str,
     pub import: &'static str,
     pub clear: &'static str,
+    pub apply: &'static str,
     pub primary_preview: &'static str,
     pub secondary_preview: &'static str,
     pub destructive_preview: &'static str,
@@ -3717,6 +4287,7 @@ pub struct AppearanceTranslations {
 impl AppearanceTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 text_size: "Text size",
                 text_size_description: "Scales the interface immediately and is saved with Appearance.",
@@ -3730,6 +4301,7 @@ impl AppearanceTranslations {
                 navigation_mode_description: "Standard shows one primary destination at a time. Expert enables the dense Library | Queue | Rack workspace.",
                 import: "Import",
                 clear: "Clear",
+                apply: "Apply",
                 primary_preview: "Primary variant preview",
                 secondary_preview: "Secondary variant preview",
                 destructive_preview: "Destructive variant preview",
@@ -3758,6 +4330,7 @@ impl AppearanceTranslations {
                 navigation_mode_description: "Le mode Standard affiche une destination principale à la fois. Le mode Expert active l’espace dense Bibliothèque | File | Rack.",
                 import: "Importer",
                 clear: "Effacer",
+                apply: "Appliquer",
                 primary_preview: "Aperçu de la variante principale",
                 secondary_preview: "Aperçu de la variante secondaire",
                 destructive_preview: "Aperçu de la variante destructive",
@@ -3786,6 +4359,7 @@ impl AppearanceTranslations {
                 navigation_mode_description: "Standard zeigt jeweils ein Hauptziel. Experte aktiviert den kompakten Arbeitsbereich Mediathek | Warteschlange | Rack.",
                 import: "Importieren",
                 clear: "Leeren",
+                apply: "Anwenden",
                 primary_preview: "Vorschau der primären Variante",
                 secondary_preview: "Vorschau der sekundären Variante",
                 destructive_preview: "Vorschau der destruktiven Variante",
@@ -3814,6 +4388,7 @@ impl AppearanceTranslations {
                 navigation_mode_description: "Estándar muestra un destino principal cada vez. Experto activa el espacio denso Biblioteca | Cola | Rack.",
                 import: "Importar",
                 clear: "Borrar",
+                apply: "Aplicar",
                 primary_preview: "Vista previa de la variante principal",
                 secondary_preview: "Vista previa de la variante secundaria",
                 destructive_preview: "Vista previa de la variante destructiva",
@@ -3850,6 +4425,7 @@ pub struct SpeakerGraphTranslations {
 impl SpeakerGraphTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 original: "Original",
                 total: "Total",
@@ -3917,6 +4493,7 @@ pub struct HeadphoneGraphTranslations {
 impl HeadphoneGraphTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 filter_response: "Filter Response",
                 sum: "Sum",
@@ -3968,17 +4545,46 @@ pub struct KeybindingTranslations {
     pub comparison: &'static str,
     pub action: &'static str,
     pub default_preset: &'static str,
+    pub customize: &'static str,
+    pub customize_description: &'static str,
+    pub edit: &'static str,
+    pub custom: &'static str,
+    pub capture_prompt: &'static str,
+    pub cancel: &'static str,
+    pub save: &'static str,
+    pub overwrite: &'static str,
+    pub reset_this: &'static str,
+    pub reset_all: &'static str,
+    pub reset_all_question: &'static str,
+    pub reset_all_warning: &'static str,
+    pub conflict_prefix: &'static str,
+    pub not_assigned: &'static str,
 }
 
 impl KeybindingTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 language,
                 keymap_preset: "Keymap Preset",
                 comparison: "Keybinding Comparison",
                 action: "Action",
                 default_preset: "Default",
+                customize: "Customize shortcuts",
+                customize_description: "Choose an action, capture a key, and review conflicts before saving.",
+                edit: "Edit",
+                custom: "Custom",
+                capture_prompt: "Press the new shortcut. Escape cancels; Tab leaves capture.",
+                cancel: "Cancel",
+                save: "Save shortcut",
+                overwrite: "Overwrite conflict",
+                reset_this: "Reset this shortcut",
+                reset_all: "Reset all shortcuts…",
+                reset_all_question: "Reset all custom shortcuts?",
+                reset_all_warning: "This restores the selected preset for every customized action and cannot be undone.",
+                conflict_prefix: "Already assigned to",
+                not_assigned: "Not assigned",
             },
             Language::French => Self {
                 language,
@@ -3986,6 +4592,20 @@ impl KeybindingTranslations {
                 comparison: "Comparaison des raccourcis",
                 action: "Action",
                 default_preset: "Par défaut",
+                customize: "Personnaliser les raccourcis",
+                customize_description: "Choisissez une action, saisissez une touche et vérifiez les conflits avant d’enregistrer.",
+                edit: "Modifier",
+                custom: "Personnalisé",
+                capture_prompt: "Appuyez sur le nouveau raccourci. Échap annule ; Tab quitte la saisie.",
+                cancel: "Annuler",
+                save: "Enregistrer le raccourci",
+                overwrite: "Remplacer le conflit",
+                reset_this: "Réinitialiser ce raccourci",
+                reset_all: "Réinitialiser tous les raccourcis…",
+                reset_all_question: "Réinitialiser tous les raccourcis personnalisés ?",
+                reset_all_warning: "Le préréglage sélectionné sera restauré pour chaque action personnalisée. Cette opération est irréversible.",
+                conflict_prefix: "Déjà attribué à",
+                not_assigned: "Non attribué",
             },
             Language::German => Self {
                 language,
@@ -3993,6 +4613,20 @@ impl KeybindingTranslations {
                 comparison: "Vergleich der Tastenbelegungen",
                 action: "Aktion",
                 default_preset: "Standard",
+                customize: "Tastenkürzel anpassen",
+                customize_description: "Aktion wählen, Taste erfassen und Konflikte vor dem Speichern prüfen.",
+                edit: "Bearbeiten",
+                custom: "Benutzerdefiniert",
+                capture_prompt: "Neues Tastenkürzel drücken. Escape bricht ab; Tab verlässt die Erfassung.",
+                cancel: "Abbrechen",
+                save: "Tastenkürzel speichern",
+                overwrite: "Konflikt überschreiben",
+                reset_this: "Dieses Tastenkürzel zurücksetzen",
+                reset_all: "Alle Tastenkürzel zurücksetzen…",
+                reset_all_question: "Alle benutzerdefinierten Tastenkürzel zurücksetzen?",
+                reset_all_warning: "Dadurch wird für jede angepasste Aktion das gewählte Preset wiederhergestellt. Dies kann nicht rückgängig gemacht werden.",
+                conflict_prefix: "Bereits zugewiesen zu",
+                not_assigned: "Nicht zugewiesen",
             },
             Language::Spanish => Self {
                 language,
@@ -4000,6 +4634,20 @@ impl KeybindingTranslations {
                 comparison: "Comparación de atajos",
                 action: "Acción",
                 default_preset: "Predeterminado",
+                customize: "Personalizar atajos",
+                customize_description: "Elija una acción, capture una tecla y revise los conflictos antes de guardar.",
+                edit: "Editar",
+                custom: "Personalizado",
+                capture_prompt: "Pulse el nuevo atajo. Escape cancela; Tab sale de la captura.",
+                cancel: "Cancelar",
+                save: "Guardar atajo",
+                overwrite: "Sobrescribir conflicto",
+                reset_this: "Restablecer este atajo",
+                reset_all: "Restablecer todos los atajos…",
+                reset_all_question: "¿Restablecer todos los atajos personalizados?",
+                reset_all_warning: "Se restaurará el preajuste elegido para cada acción personalizada. Esta acción no se puede deshacer.",
+                conflict_prefix: "Ya está asignado a",
+                not_assigned: "Sin asignar",
             },
         }
     }
@@ -4011,6 +4659,10 @@ impl KeybindingTranslations {
         use crate::app::keybindings::KeybindingCategory;
 
         match (self.language, category) {
+            (Language::Pseudo, category) => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).category_name(category),
+            ),
             (Language::English, KeybindingCategory::Playback) => "Playback",
             (Language::English, KeybindingCategory::Navigation) => "Navigation",
             (Language::English, KeybindingCategory::ScreenSwitch) => "Screen Switching",
@@ -4054,6 +4706,10 @@ impl KeybindingTranslations {
         use crate::app::keybindings::KeymapPreset;
 
         match (self.language, preset) {
+            (Language::Pseudo, preset) => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).preset_description(preset),
+            ),
             (Language::English, KeymapPreset::Default) => {
                 "Default shortcuts optimized for the audio player"
             }
@@ -4094,6 +4750,7 @@ impl KeybindingTranslations {
 
     pub fn action_description(self, action: &'static str) -> &'static str {
         let translations = match self.language {
+            Language::Pseudo => return pseudo_static(action),
             Language::English => return action,
             Language::French => FRENCH_KEYBINDING_ACTIONS,
             Language::German => GERMAN_KEYBINDING_ACTIONS,
@@ -4708,6 +5365,36 @@ const SPANISH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
 ];
 
 #[derive(Debug, Clone, Copy)]
+pub struct SidebarTranslations {
+    pub expand: &'static str,
+    pub collapse: &'static str,
+}
+
+impl SidebarTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::Pseudo => Self::pseudo(),
+            Language::English => Self {
+                expand: "Expand sidebar",
+                collapse: "Collapse sidebar",
+            },
+            Language::French => Self {
+                expand: "Développer la barre latérale",
+                collapse: "Réduire la barre latérale",
+            },
+            Language::German => Self {
+                expand: "Seitenleiste erweitern",
+                collapse: "Seitenleiste einklappen",
+            },
+            Language::Spanish => Self {
+                expand: "Expandir la barra lateral",
+                collapse: "Contraer la barra lateral",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct FooterTranslations {
     pub hal_input_active: &'static str,
     pub processing_system_audio: &'static str,
@@ -4720,11 +5407,17 @@ pub struct FooterTranslations {
     pub next_track: &'static str,
     pub shuffle: &'static str,
     pub repeat: &'static str,
+    pub volume: &'static str,
+    pub volume_adjust_hint: &'static str,
+    pub mute: &'static str,
+    pub unmute: &'static str,
+    pub seek_unavailable: &'static str,
 }
 
 impl FooterTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 hal_input_active: "HAL Input Active",
                 processing_system_audio: "Processing system audio",
@@ -4737,6 +5430,11 @@ impl FooterTranslations {
                 next_track: "Next track",
                 shuffle: "Shuffle",
                 repeat: "Repeat",
+                volume: "Volume",
+                volume_adjust_hint: "Use arrow keys or scroll to adjust volume",
+                mute: "Mute",
+                unmute: "Unmute",
+                seek_unavailable: "Seeking is unavailable for live or unknown-duration audio",
             },
             Language::French => Self {
                 hal_input_active: "Entrée HAL active",
@@ -4750,6 +5448,11 @@ impl FooterTranslations {
                 next_track: "Piste suivante",
                 shuffle: "Lecture aléatoire",
                 repeat: "Répéter",
+                volume: "Volume",
+                volume_adjust_hint: "Utilisez les flèches ou la molette pour régler le volume",
+                mute: "Couper le son",
+                unmute: "Rétablir le son",
+                seek_unavailable: "La recherche est indisponible pour l’audio en direct ou de durée inconnue",
             },
             Language::German => Self {
                 hal_input_active: "HAL-Eingang aktiv",
@@ -4763,6 +5466,11 @@ impl FooterTranslations {
                 next_track: "Nächster Titel",
                 shuffle: "Zufallswiedergabe",
                 repeat: "Wiederholen",
+                volume: "Lautstärke",
+                volume_adjust_hint: "Lautstärke mit den Pfeiltasten oder dem Mausrad ändern",
+                mute: "Stummschalten",
+                unmute: "Stummschaltung aufheben",
+                seek_unavailable: "Spulen ist bei Live-Audio oder unbekannter Dauer nicht verfügbar",
             },
             Language::Spanish => Self {
                 hal_input_active: "Entrada HAL activa",
@@ -4776,6 +5484,11 @@ impl FooterTranslations {
                 pause: "Pausa",
                 seek_forward_30s: "Avanzar 30 segundos",
                 next_track: "Pista siguiente",
+                volume: "Volumen",
+                volume_adjust_hint: "Use las flechas o la rueda para ajustar el volumen",
+                mute: "Silenciar",
+                unmute: "Activar sonido",
+                seek_unavailable: "La búsqueda no está disponible para audio en directo o de duración desconocida",
             },
         }
     }
@@ -4796,6 +5509,7 @@ pub struct AudioDeviceTranslations {
 impl AudioDeviceTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 audio_source: "Audio Source",
                 file_player: "File Player",
@@ -4842,6 +5556,7 @@ impl AudioDeviceTranslations {
 
 #[derive(Debug, Clone, Copy)]
 pub struct RecordingTranslations {
+    language: Language,
     pub ctc_matrix: &'static str,
     pub loopback_input: &'static str,
     pub positions: &'static str,
@@ -4854,7 +5569,9 @@ pub struct RecordingTranslations {
 impl RecordingTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
+                language,
                 ctc_matrix: "CTC Matrix",
                 loopback_input: "Loopback Input",
                 positions: "Positions",
@@ -4864,6 +5581,7 @@ impl RecordingTranslations {
                 reported_dbspl: "Reported dB SPL",
             },
             Language::French => Self {
+                language,
                 ctc_matrix: "Matrice CTC",
                 loopback_input: "Entrée de bouclage",
                 positions: "Positions",
@@ -4873,6 +5591,7 @@ impl RecordingTranslations {
                 reported_dbspl: "Niveau déclaré en dB SPL",
             },
             Language::German => Self {
+                language,
                 ctc_matrix: "CTC-Matrix",
                 loopback_input: "Loopback-Eingang",
                 positions: "Positionen",
@@ -4882,6 +5601,7 @@ impl RecordingTranslations {
                 reported_dbspl: "Gemeldeter dB-SPL-Wert",
             },
             Language::Spanish => Self {
+                language,
                 ctc_matrix: "Matriz CTC",
                 loopback_input: "Entrada de retorno",
                 positions: "Posiciones",
@@ -4890,6 +5610,43 @@ impl RecordingTranslations {
                 continue_action: "Continuar",
                 reported_dbspl: "dB SPL indicado",
             },
+        }
+    }
+
+    pub fn step_label(self, step: RecordingStep) -> &'static str {
+        match (self.language, step) {
+            (Language::Pseudo, step) => pseudo_borrowed(
+                self.language,
+                Self::for_language(Language::English).step_label(step),
+            ),
+            (Language::English, RecordingStep::Config) => "Config",
+            (Language::English, RecordingStep::SplCalibration) => "SPL Calibration",
+            (Language::English, RecordingStep::Capture) => "Capture",
+            (Language::English, RecordingStep::Probe) => "Probe",
+            (Language::English, RecordingStep::BassAnchor) => "Bass Anchor",
+            (Language::English, RecordingStep::Evaluating) => "Evaluating",
+            (Language::English, RecordingStep::Saving) => "Saving",
+            (Language::French, RecordingStep::Config) => "Config",
+            (Language::French, RecordingStep::SplCalibration) => "Calibrage SPL",
+            (Language::French, RecordingStep::Capture) => "Capture",
+            (Language::French, RecordingStep::Probe) => "Sonde",
+            (Language::French, RecordingStep::BassAnchor) => "Graves",
+            (Language::French, RecordingStep::Evaluating) => "Évaluation",
+            (Language::French, RecordingStep::Saving) => "Sauvegarde",
+            (Language::German, RecordingStep::Config) => "Konfig.",
+            (Language::German, RecordingStep::SplCalibration) => "SPL-Kal.",
+            (Language::German, RecordingStep::Capture) => "Aufnahme",
+            (Language::German, RecordingStep::Probe) => "Impuls",
+            (Language::German, RecordingStep::BassAnchor) => "Bass",
+            (Language::German, RecordingStep::Evaluating) => "Auswertung",
+            (Language::German, RecordingStep::Saving) => "Speichern",
+            (Language::Spanish, RecordingStep::Config) => "Config.",
+            (Language::Spanish, RecordingStep::SplCalibration) => "Calibración SPL",
+            (Language::Spanish, RecordingStep::Capture) => "Captura",
+            (Language::Spanish, RecordingStep::Probe) => "Sonda",
+            (Language::Spanish, RecordingStep::BassAnchor) => "Graves",
+            (Language::Spanish, RecordingStep::Evaluating) => "Evaluación",
+            (Language::Spanish, RecordingStep::Saving) => "Guardado",
         }
     }
 }
@@ -4919,6 +5676,7 @@ pub struct FederationTranslations {
 impl FederationTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 streaming: "Streaming",
                 description: "Configure streaming services, radio stations, and remote players.",
@@ -5007,6 +5765,15 @@ impl FederationTranslations {
 pub struct ABCompareTranslations {
     pub path_a: &'static str,
     pub path_b: &'static str,
+    pub use_path_a: &'static str,
+    pub use_path_b: &'static str,
+    pub path_a_active: &'static str,
+    pub path_b_active: &'static str,
+    pub active: &'static str,
+    pub bypass: &'static str,
+    pub resume: &'static str,
+    pub bypassed: &'static str,
+    pub comparison_warning: &'static str,
     pub plugin: &'static str,
     pub plugins: &'static str,
     pub loaded: &'static str,
@@ -5016,9 +5783,19 @@ pub struct ABCompareTranslations {
 impl ABCompareTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 path_a: "PATH A",
                 path_b: "PATH B",
+                use_path_a: "Use A",
+                use_path_b: "Use B",
+                path_a_active: "Path A active",
+                path_b_active: "Path B active",
+                active: "ACTIVE",
+                bypass: "Bypass",
+                resume: "Resume",
+                bypassed: "Bypassed — dry signal",
+                comparison_warning: "Paths can differ in level or latency. Enable Auto Gain for level-matched comparisons. Press A to switch paths.",
                 plugin: "plugin",
                 plugins: "plugins",
                 loaded: "Loaded",
@@ -5027,6 +5804,15 @@ impl ABCompareTranslations {
             Language::French => Self {
                 path_a: "CHEMIN A",
                 path_b: "CHEMIN B",
+                use_path_a: "Utiliser A",
+                use_path_b: "Utiliser B",
+                path_a_active: "Chemin A actif",
+                path_b_active: "Chemin B actif",
+                active: "ACTIF",
+                bypass: "Contourner",
+                resume: "Reprendre",
+                bypassed: "Contourné — signal direct",
+                comparison_warning: "Les chemins peuvent différer en niveau ou en latence. Activez le gain automatique pour comparer les niveaux. Appuyez sur A pour changer de chemin.",
                 plugin: "module",
                 plugins: "modules",
                 loaded: "Chargé",
@@ -5035,6 +5821,15 @@ impl ABCompareTranslations {
             Language::German => Self {
                 path_a: "PFAD A",
                 path_b: "PFAD B",
+                use_path_a: "A verwenden",
+                use_path_b: "B verwenden",
+                path_a_active: "Pfad A aktiv",
+                path_b_active: "Pfad B aktiv",
+                active: "AKTIV",
+                bypass: "Umgehen",
+                resume: "Fortsetzen",
+                bypassed: "Umgangen — Direktsignal",
+                comparison_warning: "Pfade können sich in Pegel oder Latenz unterscheiden. Aktivieren Sie Auto Gain für pegelgleiche Vergleiche. Drücken Sie A, um den Pfad zu wechseln.",
                 plugin: "Plugin",
                 plugins: "Plugins",
                 loaded: "Geladen",
@@ -5043,6 +5838,15 @@ impl ABCompareTranslations {
             Language::Spanish => Self {
                 path_a: "RUTA A",
                 path_b: "RUTA B",
+                use_path_a: "Usar A",
+                use_path_b: "Usar B",
+                path_a_active: "Ruta A activa",
+                path_b_active: "Ruta B activa",
+                active: "ACTIVA",
+                bypass: "Omitir",
+                resume: "Reanudar",
+                bypassed: "Omitido — señal directa",
+                comparison_warning: "Las rutas pueden diferir en nivel o latencia. Active Ganancia automática para comparar niveles. Pulse A para cambiar de ruta.",
                 plugin: "complemento",
                 plugins: "complementos",
                 loaded: "Cargado",
@@ -5073,6 +5877,7 @@ pub struct SpectrumTranslations {
 impl SpectrumTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 no_signal: "No signal",
                 data_unavailable: "No spectrum data available. Play audio to see visualization.",
@@ -5144,6 +5949,7 @@ impl SpectrumTranslations {
 #[derive(Debug, Clone, Copy)]
 pub struct CastTranslations {
     pub cast: &'static str,
+    pub devices: &'static str,
     pub no_devices: &'static str,
     pub preferences: &'static str,
     pub refresh: &'static str,
@@ -5154,8 +5960,10 @@ pub struct CastTranslations {
 impl CastTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 cast: "Cast",
+                devices: "Cast Devices",
                 no_devices: "No Cast devices found",
                 preferences: "Preferences",
                 refresh: "Refresh",
@@ -5164,6 +5972,7 @@ impl CastTranslations {
             },
             Language::French => Self {
                 cast: "Diffuser",
+                devices: "Appareils de diffusion",
                 no_devices: "Aucun appareil de diffusion trouvé",
                 preferences: "Préférences",
                 refresh: "Actualiser",
@@ -5172,6 +5981,7 @@ impl CastTranslations {
             },
             Language::German => Self {
                 cast: "Übertragen",
+                devices: "Übertragungsgeräte",
                 no_devices: "Keine Übertragungsgeräte gefunden",
                 preferences: "Einstellungen",
                 refresh: "Aktualisieren",
@@ -5180,6 +5990,7 @@ impl CastTranslations {
             },
             Language::Spanish => Self {
                 cast: "Transmitir",
+                devices: "Dispositivos de transmisión",
                 no_devices: "No se encontraron dispositivos de transmisión",
                 preferences: "Preferencias",
                 refresh: "Actualizar",
@@ -5200,6 +6011,7 @@ pub struct PlaybackApplyTranslations {
 impl PlaybackApplyTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 title: "Apply to Playback",
                 description: "Apply the EQ to your current playback to hear the difference.",
@@ -5295,6 +6107,7 @@ pub struct PluginCommonTranslations {
 impl PluginCommonTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 language,
                 global: "Global",
@@ -5518,6 +6331,9 @@ impl PluginCommonTranslations {
         use sotf_audio_player::PluginType;
 
         match self.language {
+            Language::Pseudo => {
+                pseudo_static(Self::for_language(Language::English).description(plugin_type))
+            }
             Language::English => match plugin_type {
                 PluginType::EQ => "Shape frequency balance with parametric filters.",
                 PluginType::Gain => "Adjust the overall signal level.",
@@ -5887,6 +6703,7 @@ impl PluginCommonTranslations {
 
     pub fn label(self, label: &'static str) -> &'static str {
         let translations = match self.language {
+            Language::Pseudo => return pseudo_static(label),
             Language::English => return label,
             Language::French => FRENCH_PLUGIN_LABELS,
             Language::German => GERMAN_PLUGIN_LABELS,
@@ -5902,6 +6719,7 @@ impl PluginCommonTranslations {
     #[doc(hidden)]
     pub fn has_localized_label(self, label: &str) -> bool {
         let translations = match self.language {
+            Language::Pseudo => return true,
             Language::English => return true,
             Language::French => FRENCH_PLUGIN_LABELS,
             Language::German => GERMAN_PLUGIN_LABELS,
@@ -5979,6 +6797,9 @@ const FRENCH_PLUGIN_LABELS: &[(&str, &str)] = &[
     ("Right", "Droite"),
     ("Ch", "Can."),
     ("Enabled", "Activé"),
+    ("Bypassed", "Contourné"),
+    ("SOFA loaded", "SOFA chargé"),
+    ("Select a SOFA file", "Sélectionner un fichier SOFA"),
     ("Dim Gain", "Gain d’atténuation"),
     ("Fade Time", "Durée du fondu"),
     ("Knee", "Coude"),
@@ -6088,6 +6909,9 @@ const GERMAN_PLUGIN_LABELS: &[(&str, &str)] = &[
     ("Right", "Rechts"),
     ("Ch", "Kan."),
     ("Enabled", "Aktiviert"),
+    ("Bypassed", "Umgangen"),
+    ("SOFA loaded", "SOFA geladen"),
+    ("Select a SOFA file", "SOFA-Datei auswählen"),
     ("Dim Gain", "Absenkungspegel"),
     ("Fade Time", "Überblendzeit"),
     ("Knee", "Knie"),
@@ -6200,6 +7024,9 @@ const SPANISH_PLUGIN_LABELS: &[(&str, &str)] = &[
     ("Right", "Derecha"),
     ("Ch", "Can."),
     ("Enabled", "Activado"),
+    ("Bypassed", "Omitido"),
+    ("SOFA loaded", "SOFA cargado"),
+    ("Select a SOFA file", "Seleccionar un archivo SOFA"),
     ("Dim Gain", "Ganancia de atenuación"),
     ("Fade Time", "Duración del fundido"),
     ("Knee", "Codo"),
@@ -6382,6 +7209,7 @@ pub struct ExternalPluginSettingsTranslations {
 impl ExternalPluginSettingsTranslations {
     fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 title: "External Plugins",
                 activate: "Activate External Plugins",
@@ -6623,6 +7451,101 @@ impl ExternalPluginSettingsTranslations {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct LibraryFolderTranslations {
+    pub access_problem: &'static str,
+    pub retry: &'static str,
+    pub remove_question: &'static str,
+    pub remove_warning: &'static str,
+    pub cancel: &'static str,
+    pub confirm_remove: &'static str,
+    pub not_found: &'static str,
+    pub not_directory: &'static str,
+    pub permission_denied: &'static str,
+    pub unreadable: &'static str,
+    pub scan_failed: &'static str,
+    pub retry_scan: &'static str,
+}
+
+impl LibraryFolderTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::Pseudo => Self::pseudo(),
+            Language::English => Self {
+                access_problem: "SOTF could not use that folder",
+                retry: "Choose another folder",
+                remove_question: "Remove this library folder?",
+                remove_warning: "Tracks from this folder will be removed from the local library. The files on disk are not changed.",
+                cancel: "Cancel",
+                confirm_remove: "Remove folder",
+                not_found: "The folder does not exist",
+                not_directory: "The selected path is not a folder",
+                permission_denied: "SOTF does not have permission to read this folder",
+                unreadable: "SOTF could not read this folder",
+                scan_failed: "Library scan failed",
+                retry_scan: "Retry scan",
+            },
+            Language::French => Self {
+                access_problem: "SOTF n’a pas pu utiliser ce dossier",
+                retry: "Choisir un autre dossier",
+                remove_question: "Retirer ce dossier de la bibliothèque ?",
+                remove_warning: "Les pistes de ce dossier seront retirées de la bibliothèque locale. Les fichiers sur le disque ne seront pas modifiés.",
+                cancel: "Annuler",
+                confirm_remove: "Retirer le dossier",
+                not_found: "Le dossier n’existe pas",
+                not_directory: "Le chemin sélectionné n’est pas un dossier",
+                permission_denied: "SOTF n’a pas l’autorisation de lire ce dossier",
+                unreadable: "SOTF n’a pas pu lire ce dossier",
+                scan_failed: "L’analyse de la bibliothèque a échoué",
+                retry_scan: "Relancer l’analyse",
+            },
+            Language::German => Self {
+                access_problem: "SOTF konnte diesen Ordner nicht verwenden",
+                retry: "Anderen Ordner wählen",
+                remove_question: "Diesen Bibliotheksordner entfernen?",
+                remove_warning: "Titel aus diesem Ordner werden aus der lokalen Bibliothek entfernt. Dateien auf dem Datenträger bleiben unverändert.",
+                cancel: "Abbrechen",
+                confirm_remove: "Ordner entfernen",
+                not_found: "Der Ordner ist nicht vorhanden",
+                not_directory: "Der ausgewählte Pfad ist kein Ordner",
+                permission_denied: "SOTF hat keine Berechtigung, diesen Ordner zu lesen",
+                unreadable: "SOTF konnte diesen Ordner nicht lesen",
+                scan_failed: "Bibliotheksscan fehlgeschlagen",
+                retry_scan: "Scan wiederholen",
+            },
+            Language::Spanish => Self {
+                access_problem: "SOTF no pudo usar esta carpeta",
+                retry: "Elegir otra carpeta",
+                remove_question: "¿Quitar esta carpeta de la biblioteca?",
+                remove_warning: "Las pistas de esta carpeta se quitarán de la biblioteca local. Los archivos del disco no se modificarán.",
+                cancel: "Cancelar",
+                confirm_remove: "Quitar carpeta",
+                not_found: "La carpeta no existe",
+                not_directory: "La ruta seleccionada no es una carpeta",
+                permission_denied: "SOTF no tiene permiso para leer esta carpeta",
+                unreadable: "SOTF no pudo leer esta carpeta",
+                scan_failed: "Falló el análisis de la biblioteca",
+                retry_scan: "Reintentar el análisis",
+            },
+        }
+    }
+
+    pub fn access_error_message(
+        self,
+        error: &sotf_audio_player::LibraryDirectoryAccessError,
+    ) -> String {
+        let summary = match error {
+            sotf_audio_player::LibraryDirectoryAccessError::NotFound(_) => self.not_found,
+            sotf_audio_player::LibraryDirectoryAccessError::NotDirectory(_) => self.not_directory,
+            sotf_audio_player::LibraryDirectoryAccessError::PermissionDenied(_) => {
+                self.permission_denied
+            }
+            sotf_audio_player::LibraryDirectoryAccessError::Unreadable { .. } => self.unreadable,
+        };
+        format!("{summary}: {}", error.path().display())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct SettingsSurfaceTranslations {
     pub scanner_threads: &'static str,
     pub thread_count: &'static str,
@@ -6630,6 +7553,14 @@ pub struct SettingsSurfaceTranslations {
     pub metadata_services: &'static str,
     pub musicbrainz_description: &'static str,
     pub musicbrainz: &'static str,
+    pub metadata_search_enabled: &'static str,
+    pub metadata_search_disabled: &'static str,
+    pub enable_metadata_search: &'static str,
+    pub disable_metadata_search: &'static str,
+    pub metadata_save_failed: &'static str,
+    pub anonymous: &'static str,
+    pub credentials_saved: &'static str,
+    pub anonymous_search_enabled: &'static str,
     pub miscellaneous: &'static str,
     pub max_cpu_cores: &'static str,
     pub max_cpu_cores_description: &'static str,
@@ -6643,6 +7574,7 @@ pub struct SettingsSurfaceTranslations {
 impl SettingsSurfaceTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 scanner_threads: "Scanner Threads",
                 thread_count: "Thread Count",
@@ -6650,6 +7582,14 @@ impl SettingsSurfaceTranslations {
                 metadata_services: "Metadata Services",
                 musicbrainz_description: "MusicBrainz search works without an account. Optional credentials are reserved for user-data features.",
                 musicbrainz: "MusicBrainz",
+                metadata_search_enabled: "Metadata search is enabled.",
+                metadata_search_disabled: "Metadata search is disabled.",
+                enable_metadata_search: "Enable metadata search",
+                disable_metadata_search: "Disable metadata search",
+                metadata_save_failed: "Could not save metadata preferences",
+                anonymous: "Anonymous",
+                credentials_saved: "Credentials saved",
+                anonymous_search_enabled: "Anonymous search enabled",
                 miscellaneous: "Miscellaneous",
                 max_cpu_cores: "Maximum CPU Cores",
                 max_cpu_cores_description: "Limit how many CPU cores SOTF can use. Lower values leave more capacity for other applications.",
@@ -6666,6 +7606,14 @@ impl SettingsSurfaceTranslations {
                 metadata_services: "Services de métadonnées",
                 musicbrainz_description: "La recherche MusicBrainz fonctionne sans compte. Les identifiants facultatifs sont réservés aux fonctions de données utilisateur.",
                 musicbrainz: "MusicBrainz",
+                metadata_search_enabled: "La recherche de métadonnées est activée.",
+                metadata_search_disabled: "La recherche de métadonnées est désactivée.",
+                enable_metadata_search: "Activer la recherche de métadonnées",
+                disable_metadata_search: "Désactiver la recherche de métadonnées",
+                metadata_save_failed: "Impossible d’enregistrer les préférences de métadonnées",
+                anonymous: "Anonyme",
+                credentials_saved: "Identifiants enregistrés",
+                anonymous_search_enabled: "Recherche anonyme activée",
                 miscellaneous: "Divers",
                 max_cpu_cores: "Nombre maximal de cœurs CPU",
                 max_cpu_cores_description: "Limitez le nombre de cœurs CPU utilisables par SOTF. Une valeur basse laisse plus de ressources aux autres applications.",
@@ -6682,6 +7630,14 @@ impl SettingsSurfaceTranslations {
                 metadata_services: "Metadatendienste",
                 musicbrainz_description: "Die MusicBrainz-Suche funktioniert ohne Konto. Optionale Zugangsdaten sind für Benutzerdatenfunktionen reserviert.",
                 musicbrainz: "MusicBrainz",
+                metadata_search_enabled: "Die Metadatensuche ist aktiviert.",
+                metadata_search_disabled: "Die Metadatensuche ist deaktiviert.",
+                enable_metadata_search: "Metadatensuche aktivieren",
+                disable_metadata_search: "Metadatensuche deaktivieren",
+                metadata_save_failed: "Metadaten-Einstellungen konnten nicht gespeichert werden",
+                anonymous: "Anonym",
+                credentials_saved: "Zugangsdaten gespeichert",
+                anonymous_search_enabled: "Anonyme Suche aktiviert",
                 miscellaneous: "Verschiedenes",
                 max_cpu_cores: "Maximale CPU-Kerne",
                 max_cpu_cores_description: "Begrenzt die von SOTF nutzbaren CPU-Kerne. Niedrigere Werte lassen anderen Anwendungen mehr Leistung.",
@@ -6698,6 +7654,14 @@ impl SettingsSurfaceTranslations {
                 metadata_services: "Servicios de metadatos",
                 musicbrainz_description: "La búsqueda en MusicBrainz funciona sin cuenta. Las credenciales opcionales se reservan para funciones de datos de usuario.",
                 musicbrainz: "MusicBrainz",
+                metadata_search_enabled: "La búsqueda de metadatos está activada.",
+                metadata_search_disabled: "La búsqueda de metadatos está desactivada.",
+                enable_metadata_search: "Activar la búsqueda de metadatos",
+                disable_metadata_search: "Desactivar la búsqueda de metadatos",
+                metadata_save_failed: "No se pudieron guardar las preferencias de metadatos",
+                anonymous: "Anónimo",
+                credentials_saved: "Credenciales guardadas",
+                anonymous_search_enabled: "Búsqueda anónima activada",
                 miscellaneous: "Varios",
                 max_cpu_cores: "Máximo de núcleos de CPU",
                 max_cpu_cores_description: "Limita los núcleos de CPU que puede usar SOTF. Los valores bajos dejan más capacidad para otras aplicaciones.",
@@ -6772,6 +7736,7 @@ pub struct PluginGraphNodeTranslations {
 impl PluginGraphNodeTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 signal: "Signal",
                 source: "Source",
@@ -6871,6 +7836,7 @@ impl PluginGraphNodeTranslations {
 impl PluginGraphTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 nodes: PluginGraphNodeTranslations::for_language(Language::English),
                 keyboard_editor: "Keyboard graph editor",
@@ -7009,8 +7975,13 @@ pub struct ListeningTestTranslations {
 }
 
 impl ListeningTestTranslations {
+    fn english() -> Self {
+        Translations::for_language(Language::English).listening_test
+    }
+
     pub fn parameter_reset(&self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_static(Self::english().parameter_reset()),
             Language::English => "Reset",
             Language::French => "Réinitialiser",
             Language::German => "Zurücksetzen",
@@ -7020,6 +7991,7 @@ impl ListeningTestTranslations {
 
     pub fn parameter_editor(&self, expert: bool) -> &'static str {
         match (self.language, expert) {
+            (Language::Pseudo, expert) => pseudo_static(Self::english().parameter_editor(expert)),
             (Language::English, false) => "Edit parameters",
             (Language::English, true) => "Expert JSON",
             (Language::French, false) => "Modifier les paramètres",
@@ -7033,6 +8005,7 @@ impl ListeningTestTranslations {
 
     pub fn how_to_listen_title(&self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_static(Self::english().how_to_listen_title()),
             Language::English => "How to listen",
             Language::French => "Comment écouter",
             Language::German => "So hören Sie richtig",
@@ -7042,6 +8015,7 @@ impl ListeningTestTranslations {
 
     pub fn how_to_listen_reopen(&self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_static(Self::english().how_to_listen_reopen()),
             Language::English => "Listening guide",
             Language::French => "Guide d’écoute",
             Language::German => "Hörleitfaden",
@@ -7051,6 +8025,7 @@ impl ListeningTestTranslations {
 
     pub fn how_to_listen_acknowledge(&self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_static(Self::english().how_to_listen_acknowledge()),
             Language::English => "I’m ready to listen",
             Language::French => "Je suis prêt à écouter",
             Language::German => "Ich bin bereit zuzuhören",
@@ -7060,6 +8035,7 @@ impl ListeningTestTranslations {
 
     pub fn how_to_listen_items(&self) -> [&'static str; 7] {
         match self.language {
+            Language::Pseudo => Self::english().how_to_listen_items().map(pseudo_static),
             Language::English => [
                 "Verify the intended output device.",
                 "State whether you use headphones or speakers; with speakers, keep one listening position.",
@@ -7101,6 +8077,7 @@ impl ListeningTestTranslations {
 
     pub fn fatigue_interval(&self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_static(Self::english().fatigue_interval()),
             Language::English => "Break reminder interval",
             Language::French => "Intervalle de rappel de pause",
             Language::German => "Intervall für Pausenerinnerung",
@@ -7110,6 +8087,10 @@ impl ListeningTestTranslations {
 
     pub fn fatigue_prompt(&self, completed_trials: usize) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::english().fatigue_prompt(completed_trials),
+            ),
             Language::English => format!(
                 "You have completed {completed_trials} blind trials. Take a short listening break before continuing."
             ),
@@ -7127,6 +8108,7 @@ impl ListeningTestTranslations {
 
     pub fn fatigue_continue(&self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_static(Self::english().fatigue_continue()),
             Language::English => "Continue when ready",
             Language::French => "Continuer lorsque vous êtes prêt",
             Language::German => "Fortsetzen, wenn Sie bereit sind",
@@ -7171,8 +8153,15 @@ pub struct EqTrainingTranslations {
 }
 
 impl EqTrainingTranslations {
+    fn english() -> Self {
+        Translations::for_language(Language::English)
+            .listening_test
+            .eq
+    }
+
     pub fn chart_series(&self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_static(Self::english().chart_series()),
             Language::English => "Training EQ",
             Language::French => "EQ d’entraînement",
             Language::German => "Trainings-EQ",
@@ -7182,6 +8171,7 @@ impl EqTrainingTranslations {
 
     pub fn frequency_axis(&self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_static(Self::english().frequency_axis()),
             Language::English => "Frequency (Hz)",
             Language::French => "Fréquence (Hz)",
             Language::German => "Frequenz (Hz)",
@@ -7191,6 +8181,7 @@ impl EqTrainingTranslations {
 
     pub fn gain_axis(&self) -> &'static str {
         match self.language {
+            Language::Pseudo => pseudo_static(Self::english().gain_axis()),
             Language::English => "Gain (dB)",
             Language::French => "Gain (dB)",
             Language::German => "Verstärkung (dB)",
@@ -7200,6 +8191,7 @@ impl EqTrainingTranslations {
 
     pub fn adaptive_status(&self, enabled: bool) -> &'static str {
         match (self.language, enabled) {
+            (Language::Pseudo, enabled) => pseudo_static(Self::english().adaptive_status(enabled)),
             (Language::English, true) => "Adaptive difficulty: on",
             (Language::English, false) => "Adaptive difficulty: off",
             (Language::French, true) => "Difficulté adaptative : activée",
@@ -7213,6 +8205,7 @@ impl EqTrainingTranslations {
 
     pub fn clip_loop_status(&self, enabled: bool) -> &'static str {
         match (self.language, enabled) {
+            (Language::Pseudo, enabled) => pseudo_static(Self::english().clip_loop_status(enabled)),
             (Language::English, true) => "Clip loop enabled",
             (Language::English, false) => "Clip loop disabled",
             (Language::French, true) => "Boucle de l’extrait activée",
@@ -7226,6 +8219,9 @@ impl EqTrainingTranslations {
 
     pub fn clip_loop_range(&self, start: f64, end: f64) -> String {
         match self.language {
+            Language::Pseudo => {
+                pseudo_owned(self.language, Self::english().clip_loop_range(start, end))
+            }
             Language::English => format!("Loop {start:.1}–{end:.1} s"),
             Language::French => format!("Boucle {start:.1}–{end:.1} s"),
             Language::German => format!("Schleife {start:.1}–{end:.1} s"),
@@ -7235,6 +8231,7 @@ impl EqTrainingTranslations {
 
     pub fn accuracy(&self, value: f64) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(self.language, Self::english().accuracy(value)),
             Language::English => format!("Accuracy {value:.0}%"),
             Language::French => format!("Précision {value:.0} %"),
             Language::German => format!("Genauigkeit {value:.0} %"),
@@ -7244,6 +8241,10 @@ impl EqTrainingTranslations {
 
     pub fn trial_progress(&self, current: usize, total: usize, accuracy: f64) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::english().trial_progress(current, total, accuracy),
+            ),
             Language::English => format!("Trial {current}/{total} · Accuracy {accuracy:.0}%"),
             Language::French => format!("Essai {current}/{total} · Précision {accuracy:.0} %"),
             Language::German => format!("Versuch {current}/{total} · Genauigkeit {accuracy:.0} %"),
@@ -7252,6 +8253,7 @@ impl EqTrainingTranslations {
     }
     pub fn streak(&self, count: usize) -> String {
         match self.language {
+            Language::Pseudo => pseudo_owned(self.language, Self::english().streak(count)),
             Language::English => format!("70% streak {count}"),
             Language::French => format!("Série à 70 % : {count}"),
             Language::German => format!("70-%-Serie: {count}"),
@@ -7266,6 +8268,9 @@ impl EqTrainingTranslations {
         use sotf_audio_player::ear_training::EqTrainingExercise;
 
         match (self.language, exercise) {
+            (Language::Pseudo, exercise) => {
+                pseudo_static(Self::english().exercise_display(exercise))
+            }
             (Language::English, EqTrainingExercise::BandIdentification) => {
                 "Exercise: band identification"
             }
@@ -7468,6 +8473,8 @@ pub struct AutoEqFormTranslations {
     pub shelf_frequency_hz: &'static str,
     pub system_type: &'static str,
     pub optimization_mode: &'static str,
+    pub mixed: &'static str,
+    pub mixed_phase: &'static str,
     pub target_curve: &'static str,
     pub room_configuration: &'static str,
     pub optimizer_configuration: &'static str,
@@ -7480,6 +8487,9 @@ pub struct AutoEqFormTranslations {
 pub struct AutoEqSectionTranslations {
     pub recommended: &'static str,
     pub processing: &'static str,
+    pub simple: &'static str,
+    pub customize: &'static str,
+    pub all_parameters: &'static str,
     pub edit_custom_target_curve: &'static str,
     pub flat_loss_description: &'static str,
     pub epa_loss_description: &'static str,
@@ -7488,9 +8498,13 @@ pub struct AutoEqSectionTranslations {
 impl AutoEqSectionTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 recommended: "Recommended",
                 processing: "Processing",
+                simple: "Simple",
+                customize: "Customize",
+                all_parameters: "All Parameters",
                 edit_custom_target_curve: "Edit Custom Target Curve",
                 flat_loss_description: "Flat: minimize frequency response deviation",
                 epa_loss_description: "EPA: optimize perceived quality (psychoacoustic)",
@@ -7498,6 +8512,9 @@ impl AutoEqSectionTranslations {
             Language::French => Self {
                 recommended: "Recommandé",
                 processing: "Traitement",
+                simple: "Simple",
+                customize: "Personnaliser",
+                all_parameters: "Tous les paramètres",
                 edit_custom_target_curve: "Modifier la courbe cible personnalisée",
                 flat_loss_description: "Plat : minimiser l’écart de réponse en fréquence",
                 epa_loss_description: "EPA : optimiser la qualité perçue (psychoacoustique)",
@@ -7505,6 +8522,9 @@ impl AutoEqSectionTranslations {
             Language::German => Self {
                 recommended: "Empfohlen",
                 processing: "Verarbeitung",
+                simple: "Einfach",
+                customize: "Anpassen",
+                all_parameters: "Alle Parameter",
                 edit_custom_target_curve: "Benutzerdefinierte Zielkurve bearbeiten",
                 flat_loss_description: "Linear: Frequenzgangabweichung minimieren",
                 epa_loss_description: "EPA: wahrgenommene Qualität optimieren (psychoakustisch)",
@@ -7512,6 +8532,9 @@ impl AutoEqSectionTranslations {
             Language::Spanish => Self {
                 recommended: "Recomendado",
                 processing: "Procesamiento",
+                simple: "Simple",
+                customize: "Personalizar",
+                all_parameters: "Todos los parámetros",
                 edit_custom_target_curve: "Editar curva objetivo personalizada",
                 flat_loss_description: "Plano: minimizar la desviación de la respuesta en frecuencia",
                 epa_loss_description: "EPA: optimizar la calidad percibida (psicoacústica)",
@@ -7580,6 +8603,7 @@ pub struct AutoEqBlockTranslations {
 impl AutoEqBlockTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 fir_taps: "FIR Taps",
                 phase: "Phase",
@@ -7671,6 +8695,7 @@ impl AutoEqBlockTranslations {
 impl AutoEqParameterTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 loss_function: "Loss Function",
                 number_filters: "Number of Filters",
@@ -7806,6 +8831,7 @@ impl AutoEqParameterTranslations {
 impl AutoEqFormTranslations {
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self {
                 preset: "Preset",
                 filter_design: "Filter Design",
@@ -7829,6 +8855,8 @@ impl AutoEqFormTranslations {
                 shelf_frequency_hz: "Shelf Frequency (Hz)",
                 system_type: "System Type",
                 optimization_mode: "Optimization Mode",
+                mixed: "Mixed",
+                mixed_phase: "Mixed Phase",
                 target_curve: "Target Curve",
                 room_configuration: "Room Configuration",
                 optimizer_configuration: "Optimizer Configuration",
@@ -7859,6 +8887,8 @@ impl AutoEqFormTranslations {
                 shelf_frequency_hz: "Fréquence du plateau (Hz)",
                 system_type: "Type de système",
                 optimization_mode: "Mode d’optimisation",
+                mixed: "Mixte",
+                mixed_phase: "Phase mixte",
                 target_curve: "Courbe cible",
                 room_configuration: "Configuration de la pièce",
                 optimizer_configuration: "Configuration de l’optimiseur",
@@ -7889,6 +8919,8 @@ impl AutoEqFormTranslations {
                 shelf_frequency_hz: "Shelving-Frequenz (Hz)",
                 system_type: "Systemtyp",
                 optimization_mode: "Optimierungsmodus",
+                mixed: "Gemischt",
+                mixed_phase: "Mischphase",
                 target_curve: "Zielkurve",
                 room_configuration: "Raumkonfiguration",
                 optimizer_configuration: "Optimiererkonfiguration",
@@ -7919,6 +8951,8 @@ impl AutoEqFormTranslations {
                 shelf_frequency_hz: "Frecuencia de estante (Hz)",
                 system_type: "Tipo de sistema",
                 optimization_mode: "Modo de optimización",
+                mixed: "Mixto",
+                mixed_phase: "Fase mixta",
                 target_curve: "Curva objetivo",
                 room_configuration: "Configuración de sala",
                 optimizer_configuration: "Configuración del optimizador",
@@ -8024,8 +9058,6 @@ pub struct Translations {
     pub settings_remove: &'static str,
     pub settings_library_actions: &'static str,
     pub settings_rescan_all: &'static str,
-    pub settings_scanning_in_progress: &'static str,
-    pub settings_scan_progress: &'static str,
 
     // Settings - ReplayGain
     pub settings_replaygain: &'static str,
@@ -8331,6 +9363,7 @@ impl Translations {
     /// Get translations for a specific language
     pub fn for_language(language: Language) -> Self {
         match language {
+            Language::Pseudo => Self::pseudo(),
             Language::English => Self::english(),
             Language::French => Self::french(),
             Language::German => Self::german(),
@@ -8560,8 +9593,6 @@ impl Translations {
             settings_remove: "Remove",
             settings_library_actions: "Library Actions",
             settings_rescan_all: "Rescan All",
-            settings_scanning_in_progress: "Scanning in progress...",
-            settings_scan_progress: "{} tracks, {} albums found so far",
 
             settings_replaygain: "ReplayGain",
             settings_enable_replaygain: "Enable ReplayGain",
@@ -9065,8 +10096,6 @@ impl Translations {
             settings_remove: "Supprimer",
             settings_library_actions: "Actions de la bibliothèque",
             settings_rescan_all: "Rescanner tout",
-            settings_scanning_in_progress: "Scan en cours...",
-            settings_scan_progress: "{} pistes, {} albums trouvés",
 
             settings_replaygain: "ReplayGain",
             settings_enable_replaygain: "Activer ReplayGain",
@@ -9570,8 +10599,6 @@ impl Translations {
             settings_remove: "Entfernen",
             settings_library_actions: "Bibliothek-Aktionen",
             settings_rescan_all: "Alles neu scannen",
-            settings_scanning_in_progress: "Scan läuft...",
-            settings_scan_progress: "{} Titel, {} Alben gefunden",
 
             settings_replaygain: "ReplayGain",
             settings_enable_replaygain: "ReplayGain aktivieren",
@@ -10075,8 +11102,6 @@ impl Translations {
             settings_remove: "Eliminar",
             settings_library_actions: "Acciones de biblioteca",
             settings_rescan_all: "Reescanear todo",
-            settings_scanning_in_progress: "Escaneando...",
-            settings_scan_progress: "{} pistas, {} álbumes encontrados",
 
             settings_replaygain: "ReplayGain",
             settings_enable_replaygain: "Activar ReplayGain",
@@ -10358,3 +11383,5 @@ impl Translations {
         }
     }
 }
+
+include!("translations_pseudo_generated.rs");

@@ -548,8 +548,11 @@ mod plugin_action_tests {
 
 #[cfg(feature = "dev-api")]
 mod plugin_query_tests {
+    use super::super::dev_api::actions::plugin_action;
     use super::super::dev_api::queries::plugin_query;
+    use crate::PluginSettings;
     use crate::plugin_graph::PluginGraph;
+    use serde_json::json;
 
     #[test]
     fn plugin_query_count_empty_graph() {
@@ -613,6 +616,35 @@ mod plugin_query_tests {
                 .unwrap(),
             20.0
         );
+    }
+
+    #[test]
+    fn plugin_query_dynamic_eq_param_properties_and_value() {
+        let mut graph = PluginGraph::with_default_rack();
+        let eq_idx = graph.user_plugin_insert_index();
+        plugin_action(&mut graph, "PluginAdd", Some(json!({"plugin_type":"EQ"}))).unwrap();
+
+        let plugin = graph.get_plugin_mut(eq_idx).unwrap();
+        let PluginSettings::EQ { filters, .. } = &mut plugin.settings else {
+            panic!("expected EQ settings");
+        };
+        assert_eq!(filters.len(), 5);
+        filters[4].frequency = 4_321.0;
+
+        let prefix = format!("plugins.plugin.{eq_idx}.param.16");
+        assert_eq!(
+            plugin_query(&graph, &format!("{prefix}.name")).unwrap(),
+            json!("Frequency")
+        );
+        assert_eq!(
+            plugin_query(&graph, &format!("{prefix}.type")).unwrap(),
+            json!("float")
+        );
+        assert_eq!(
+            plugin_query(&graph, &format!("{prefix}.value")).unwrap(),
+            json!(4_321.0)
+        );
+        assert!(plugin_query(&graph, &format!("plugins.plugin.{eq_idx}.param.20.name")).is_err());
     }
 
     #[test]

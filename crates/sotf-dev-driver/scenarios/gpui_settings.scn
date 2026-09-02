@@ -1,9 +1,13 @@
-# GPUI Settings screen — comprehensive preferences coverage.
+# GPUI Settings screen — visible preferences coverage.
 #
-# Covers: all 9 settings tabs, theme cycling, language cycling, font size,
-#         design system switching, replay gain state, audio device queries.
+# Covers all ten settings tabs through their rendered tab controls, changes
+# appearance and release-channel state through visible controls, and verifies
+# language, keymap, library, font-scale, and device observability.
 
 focus       settings
+# Startup health can precede asynchronous audio-engine reconfiguration on
+# macOS; let that settle before exercising repeated whole-window rerenders.
+sleep       2s
 assert      screen.focused == "Settings"
 assert      settings.active_tab == "Library"
 
@@ -11,41 +15,91 @@ assert      settings.active_tab == "Library"
 query       settings.theme
 query       settings.language
 query       settings.font_scale
+query       settings.library_folder_count
 
 # ── Theme tab ───────────────────────────────────────────────────────────────
-action      SettingsSetTab {"tab":"Theme"}
+click       settings.tab.Theme
 sleep       200ms
 assert      settings.active_tab == "Theme"
+screenshot  settings-theme-top
 
-# Cycle through themes and read back.
-action      CycleTheme
-sleep       100ms
-query       settings.theme
-
-action      CycleTheme
-sleep       100ms
-query       settings.theme
+# The accessibility controls and theme cards are below the fold at 700×600.
+scroll      settings.content -600
+sleep       200ms
+assert_in_viewport settings.appearance.reduce-motion
+screenshot  settings-theme-accessibility
+click       settings.appearance.reduce-motion
+assert      settings.reduce_motion == true timeout=2s
+scroll      settings.content -800
+sleep       200ms
+assert_in_viewport settings.appearance.theme.Light
+click       settings.appearance.theme.Light
+assert      settings.theme == "Light" timeout=2s
+screenshot  settings-theme-light-reduced-motion
 
 # ── Language tab ────────────────────────────────────────────────────────────
-action      SettingsSetTab {"tab":"Language"}
+click       settings.tab.Language
 sleep       200ms
 assert      settings.active_tab == "Language"
-
-action      CycleLanguage
-sleep       100ms
-query       settings.language
-
-action      CycleLanguage
-sleep       100ms
-query       settings.language
+assert_focused settings-tab-Language
+key         tab
+assert_focused settings-tab-Keybindings
+key         space
+assert      settings.active_tab == "Keybindings" timeout=2s
+click       settings.tab.Language
+assert      settings.active_tab == "Language" timeout=2s
+assert_visible settings.language.en
+assert_visible settings.language.fr
+assert_visible settings.language.de
+assert_visible settings.language.es
+assert_accessible button English
+assert_accessible button Français
+assert_accessible button Deutsch
+assert_accessible button Español
+assert_selected settings.language.en == true
+click       settings.language.fr
+assert      settings.language == "French"
+assert_selected settings.language.en == false
+assert_selected settings.language.fr == true
+assert_focused settings-language-fr
+screenshot  settings-language-french
+key         tab
+assert_focused settings-language-de
+key         space
+assert      settings.language == "German" timeout=2s
+assert_selected settings.language.de == true
+click       settings.language.en
+assert      settings.language == "English"
 
 # ── Keybindings tab ─────────────────────────────────────────────────────────
-action      SettingsSetTab {"tab":"Keybindings"}
+click       settings.tab.Keybindings
 sleep       200ms
 assert      settings.active_tab == "Keybindings"
+assert_visible settings.keymap-preset.Default
+assert_visible settings.keymap-preset.Vim
+assert_visible settings.keymap-preset.Emacs
+assert_visible settings.keymap-preset.VSCode
+assert_accessible button Default
+assert_accessible button Vim
+assert_accessible button Emacs
+assert_accessible button VSCode
+assert_selected settings.keymap-preset.Default == true
+click       settings.keymap-preset.Vim
+wait_until  settings.keymap_preset == "Vim" timeout=2s
+assert_selected settings.keymap-preset.Default == false
+assert_selected settings.keymap-preset.Vim == true
+assert_focused keymap-preset-Vim
+key         tab
+assert_focused keymap-preset-Emacs
+key         enter
+wait_until  settings.keymap_preset == "Emacs" timeout=2s
+assert_selected settings.keymap-preset.Emacs == true
+click       settings.keymap-preset.Default
+wait_until  settings.keymap_preset == "Default" timeout=2s
+screenshot  settings-keybindings
 
 # ── Audio Device tab ────────────────────────────────────────────────────────
-action      SettingsSetTab {"tab":"AudioDevice"}
+click       settings.tab.AudioDevice
 sleep       200ms
 assert      settings.active_tab == "AudioDevice"
 
@@ -54,7 +108,7 @@ query       audio.output_device_count
 query       audio.input_device_count
 
 # ── Misc tab (plugins / performance) ────────────────────────────────────────
-action      SettingsSetTab {"tab":"Misc"}
+click       settings.tab.Misc
 sleep       200ms
 assert      settings.active_tab == "Misc"
 
@@ -72,38 +126,91 @@ sleep       100ms
 assert      settings.font_scale == 1.0
 
 # ── Federation tab ──────────────────────────────────────────────────────────
-action      SettingsSetTab {"tab":"Federation"}
+click       settings.tab.Federation
 sleep       200ms
 assert      settings.active_tab == "Federation"
+screenshot  settings-federation
 
 # ── Servers tab ─────────────────────────────────────────────────────────────
-action      SettingsSetTab {"tab":"Servers"}
+click       settings.tab.Servers
 sleep       200ms
 assert      settings.active_tab == "Servers"
 
+# ── Metadata tab ─────────────────────────────────────────────────────────────
+click       settings.tab.Metadata
+sleep       200ms
+assert      settings.active_tab == "Metadata"
+screenshot  settings-metadata
+
 # ── Release Channel tab ─────────────────────────────────────────────────────
-action      SettingsSetTab {"tab":"ReleaseChannel"}
+click       settings.tab.ReleaseChannel
 sleep       200ms
 assert      settings.active_tab == "ReleaseChannel"
+click       settings.release-channel.Beta
+assert      settings.release_channel == "Beta" timeout=2s
+screenshot  settings-release-beta
 
-# ── Design system switching ─────────────────────────────────────────────────
-# Design system can be switched from any screen; do it from settings.
-action      SetDesignAppleHig
-sleep       100ms
-query       settings.design_language
+# ── Compact and enlarged-font matrix ────────────────────────────────────────
+click       settings.tab.Library
+assert      settings.active_tab == "Library"
+resize      700 600
+sleep       300ms
+screenshot  settings-compact-100
 
-action      SetDesignMaterial3
-sleep       100ms
-query       settings.design_language
+click       settings.tab.Theme
+sleep       200ms
+assert_in_viewport settings.appearance.font-scale
+click       settings.appearance.font-scale
+key         cmd-a
+type        "150"
+key         enter
+assert      settings.font_scale == 1.5 tolerance=0.01
+screenshot  settings-compact-150
 
-action      SetDesignFluent
-sleep       100ms
-query       settings.design_language
+click       settings.appearance.font-scale
+key         cmd-a
+type        "200"
+key         enter
+assert      settings.font_scale == 2.0 tolerance=0.01
+screenshot  settings-compact-200
 
-action      SetDesignNeutral
-sleep       100ms
-query       settings.design_language
+# Preset controls remain individually reachable, named, and wrapped at the
+# smallest supported viewport with 200% text.
+click       settings.tab.Keybindings
+sleep       200ms
+assert      settings.active_tab == "Keybindings"
+assert_in_viewport settings.keymap-preset.Default
+assert_in_viewport settings.keymap-preset.Vim
+assert_in_viewport settings.keymap-preset.Emacs
+assert_in_viewport settings.keymap-preset.VSCode
+assert_accessible button Default
+assert_accessible button Vim
+assert_accessible button Emacs
+assert_accessible button VSCode
+accessibility
+screenshot  settings-keybindings-compact-200
+scroll settings.keybinding.content -250
+sleep 200ms
+assert_in_viewport settings.keybinding.edit.switchtolibrary
+
+# Language controls use the same individually focusable contract and must wrap
+# without clipping at the smallest supported viewport and largest text scale.
+click       settings.tab.Language
+sleep       200ms
+assert      settings.active_tab == "Language"
+assert_in_viewport settings.language.en
+assert_in_viewport settings.language.fr
+assert_in_viewport settings.language.de
+assert_in_viewport settings.language.es
+assert_accessible button English
+assert_accessible button Français
+assert_accessible button Deutsch
+assert_accessible button Español
+accessibility
+screenshot  settings-language-compact-200
 
 # ── Return to library ───────────────────────────────────────────────────────
-focus       library
+action      ResetFontSize
+resize      1200 832
+click       sidebar.nav-library
 assert      screen.focused == "Library"

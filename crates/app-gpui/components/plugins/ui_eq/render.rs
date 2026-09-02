@@ -1,5 +1,7 @@
 // intentional-file: fixed pixel values here are graph and plugin control geometry.
-use super::super::common::{render_knob_sized, render_midi_badge, render_midi_page_indicator};
+use super::super::common::{
+    render_knob_sized_with_focus, render_midi_badge, render_midi_page_indicator,
+};
 use super::calculate::calculate_band_response;
 use super::calculate::calculate_dynamic_y_range;
 use super::calculate::calculate_plot_width_without_legend;
@@ -26,6 +28,8 @@ use crate::app::actions::{
     EqChartNudgeDown, EqChartNudgeDownFine, EqChartNudgeLeft, EqChartNudgeLeftFine,
     EqChartNudgeRight, EqChartNudgeRightFine, EqChartNudgeUp, EqChartNudgeUpFine,
 };
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::DevTrackExt;
 use crate::app::{AppState, ToastMessage};
 use crate::components::design::Ds;
 use crate::components::graphs::common::rgba_to_u32;
@@ -37,6 +41,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_audio_kit::PotentiometerSize;
 use gpui_px::{ChartTheme, ScaleType, line};
+use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
 use math_audio_iir_fir::BiquadFilterType;
 use sotf_audio::plugins::EqFilterTopology;
 use sotf_audio_player::{EQFilter, PluginSettings};
@@ -125,6 +130,10 @@ pub(crate) enum EqGlobalControl {
 enum EqBandAction {
     Add,
     Remove(usize),
+    Reset {
+        band_idx: usize,
+        indexing: EqBandIndexing,
+    },
 }
 
 /// Per-filter-type Q bounds for the EQ editor: notch filters accept very
@@ -815,6 +824,7 @@ pub(crate) fn render_eq_property_strip(
                     state.selected_param,
                     state.is_editing,
                     midi_overlay,
+                    state.exact_entry_focus_handle.clone(),
                     theme,
                 ))
                 .child(render_eq_knob_with_midi(
@@ -830,6 +840,7 @@ pub(crate) fn render_eq_property_strip(
                     state.selected_param,
                     state.is_editing,
                     midi_overlay,
+                    state.exact_entry_focus_handle.clone(),
                     theme,
                 ))
                 .child({
@@ -847,6 +858,7 @@ pub(crate) fn render_eq_property_strip(
                         state.selected_param,
                         state.is_editing,
                         midi_overlay,
+                        state.exact_entry_focus_handle.clone(),
                         theme,
                     )
                 })
@@ -864,6 +876,16 @@ pub(crate) fn render_eq_property_strip(
                     )
                 })),
         )
+        .child(render_eq_graph_action_row(
+            d,
+            entity,
+            plugin_idx,
+            band_idx,
+            state.filters.len(),
+            indexing,
+            text.band_actions,
+            theme,
+        ))
         .into_any_element()
 }
 
@@ -909,58 +931,64 @@ where
 }
 
 fn render_eq_band_action_button(
-    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     action: EqBandAction,
+    label: &'static str,
     enabled: bool,
     theme: &Theme,
-) -> impl IntoElement {
-    let (id, label, bg) = match action {
-        EqBandAction::Add => ("eq-add-band", "+", theme.success),
-        EqBandAction::Remove(_) => ("eq-remove-band", "-", theme.error),
+) -> AnyElement {
+    let (id, selector, variant) = match action {
+        EqBandAction::Add => ("eq-add-band", "eq.band.add", ButtonVariant::Primary),
+        EqBandAction::Remove(_) => (
+            "eq-remove-band",
+            "eq.band.remove",
+            ButtonVariant::Destructive,
+        ),
+        EqBandAction::Reset { .. } => ("eq-reset-band", "eq.band.reset", ButtonVariant::Secondary),
     };
 
-    div()
-        .id(id)
-        .key_context("plugin-control")
-        .w(px(28.0))
-        .h(px(24.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .text_size(d.text_sm)
-        .font_weight(FontWeight::BOLD)
-        .rounded(d.r_sm)
-        .bg(if enabled {
-            bg
-        } else {
-            theme.background_secondary
-        })
-        .text_color(if enabled {
-            theme.text_on_accent
-        } else {
-            theme.text_muted
-        })
-        .when(enabled, |el| {
-            el.cursor_pointer().hover(|s| s.opacity(0.8)).on_mouse_down(
-                MouseButton::Left,
-                move |_, _, cx| {
-                    entity.update(cx, |state, cx| {
-                        state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                        let result = match action {
-                            EqBandAction::Add => state.app.add_eq_band(),
-                            EqBandAction::Remove(band_idx) => state.app.remove_eq_band(band_idx),
-                        };
-                        if let Err(e) = result {
-                            log::warn!("Failed to update EQ bands: {}", e);
-                        }
-                        cx.notify();
-                    });
-                },
-            )
-        })
-        .child(label)
+    let button = Button::new(id, label)
+        .variant(variant)
+        .size(ButtonSize::Xs)
+        .theme(theme.to_button_theme())
+        .aria_label(label)
+        .disabled(!enabled)
+        .on_click_event(move |_event, _window, cx| {
+            entity.update(cx, |state, cx| {
+                state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                let result = match action {
+                    EqBandAction::Add => state.app.add_eq_band(),
+                    EqBandAction::Remove(band_idx) => state.app.remove_eq_band(band_idx),
+                    EqBandAction::Reset { band_idx, indexing } => {
+                        state.app.plugin_state.selected_eq_band = band_idx;
+                        state.app.set_plugin_param(
+                            plugin_idx,
+                            indexing.param(band_idx, indexing.frequency),
+                            pk(EQ, "freq").default_f64(),
+                        );
+                        state.app.set_plugin_param(
+                            plugin_idx,
+                            indexing.param(band_idx, indexing.q),
+                            pk(EQ, "q").default_f64(),
+                        );
+                        state.app.set_plugin_param(
+                            plugin_idx,
+                            indexing.param(band_idx, indexing.gain),
+                            pk(EQ, "gain").default_f64(),
+                        );
+                        Ok(())
+                    }
+                };
+                if let Err(error) = result {
+                    log::warn!("Failed to update EQ bands: {error}");
+                }
+                cx.notify();
+            });
+        });
+    #[cfg(feature = "dev-api")]
+    let button = button.dev_track(selector);
+    button.into_any_element()
 }
 
 fn render_eq_graph_action_row(
@@ -969,6 +997,8 @@ fn render_eq_graph_action_row(
     plugin_idx: usize,
     selected_band_idx: usize,
     num_bands: usize,
+    indexing: EqBandIndexing,
+    text: crate::app::i18n::EqBandActionTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     div()
@@ -979,18 +1009,29 @@ fn render_eq_graph_action_row(
         .gap(d.grid)
         .pt(d.pad_y_half)
         .child(render_eq_band_action_button(
-            d,
             entity.clone(),
             plugin_idx,
             EqBandAction::Remove(selected_band_idx),
+            text.remove,
             num_bands > 0,
             theme,
         ))
         .child(render_eq_band_action_button(
-            d,
+            entity.clone(),
+            plugin_idx,
+            EqBandAction::Reset {
+                band_idx: selected_band_idx,
+                indexing,
+            },
+            text.reset,
+            num_bands > 0,
+            theme,
+        ))
+        .child(render_eq_band_action_button(
             entity,
             plugin_idx,
             EqBandAction::Add,
+            text.add,
             true,
             theme,
         ))
@@ -1364,6 +1405,7 @@ pub(crate) fn render_eq_visualization_sized(
 
         // Main control point circle (rendered on top)
         let hit_radius = geometry.control_point_hit_radius;
+        let chart_focus_handle = focus_handle.clone();
         let control_point = div()
             .id(("eq-control-point", i))
             .absolute()
@@ -1388,8 +1430,8 @@ pub(crate) fn render_eq_visualization_sized(
             )
             .on_mouse_down(MouseButton::Left, {
                 let entity_click = entity.clone();
-                move |event, _window, cx| {
-                    cx.stop_propagation();
+                move |event, window, cx| {
+                    window.focus(&chart_focus_handle, cx);
                     if event.click_count >= 2 {
                         // Double-click: reset band to default values
                         entity_click.update(cx, |state, cx| {
@@ -1414,8 +1456,9 @@ pub(crate) fn render_eq_visualization_sized(
                         });
                     } else {
                         // Single click: select this band
-                        entity_click.update(cx, |state, _| {
+                        entity_click.update(cx, |state, cx| {
                             state.app.plugin_state.selected_eq_band = band_idx;
+                            cx.notify();
                         });
                     }
                 }
@@ -1439,6 +1482,10 @@ pub(crate) fn render_eq_visualization_sized(
             )
             .into_any_element();
 
+        #[cfg(feature = "dev-api")]
+        let control_point = control_point
+            .dev_track(format!("eq.band.{band_idx}.point"))
+            .into_any_element();
         control_points.push(control_point);
     }
 
@@ -1459,6 +1506,7 @@ pub(crate) fn render_eq_visualization_sized(
         .id("eq-chart-container")
         .key_context("EqChart")
         .track_focus(&focus_handle)
+        .focusable()
         .focus(move |style| style.border_2().border_color(focus_ring_color))
         .relative()
         .w(px(width))
@@ -1740,6 +1788,8 @@ pub(crate) fn render_eq_visualization_sized(
             }
         });
 
+    #[cfg(feature = "dev-api")]
+    let container = container.dev_track("eq.chart");
     EqChartWrapper::new(container.into_any_element(), bounds_ref).into_any_element()
 }
 
@@ -1758,16 +1808,17 @@ pub(crate) fn render_eq_knob_with_midi(
     selected_param: usize,
     is_editing: bool,
     midi_overlay: Option<&MidiOverlay>,
+    exact_entry_focus_handle: FocusHandle,
     theme: &Theme,
-) -> impl IntoElement {
+) -> AnyElement {
     let midi_assignment = midi_overlay.and_then(|o| o.assignments.get(&param_idx));
 
-    div()
+    let control = div()
         .flex()
         .flex_col()
         .items_center()
         .gap(d.grid)
-        .child(render_knob_sized(
+        .child(render_knob_sized_with_focus(
             entity,
             plugin_idx,
             label,
@@ -1780,9 +1831,13 @@ pub(crate) fn render_eq_knob_with_midi(
             is_editing,
             None,
             PotentiometerSize::Xs,
+            exact_entry_focus_handle,
             theme,
         ))
-        .children(midi_assignment.map(|assignment| render_midi_badge(d, assignment, theme)))
+        .children(midi_assignment.map(|assignment| render_midi_badge(d, assignment, theme)));
+    #[cfg(feature = "dev-api")]
+    let control = control.dev_track(format!("eq.param.{param_idx}"));
+    control.into_any_element()
 }
 
 /// Render the EQ plugin with graphical visualization
@@ -1889,17 +1944,7 @@ pub fn render_eq_plugin(
             graph_width,
             state.layout_scale,
             eq_chart_focus_handle.clone(),
-        ))
-        .when(layout == EqCompactLayout::Current, |graph| {
-            graph.child(render_eq_graph_action_row(
-                &ds,
-                entity.clone(),
-                plugin_idx,
-                selected_band_idx,
-                num_bands,
-                theme,
-            ))
-        });
+        ));
 
     // Clone values needed for closures
     let channels = state.channels;

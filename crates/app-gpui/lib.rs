@@ -18,6 +18,8 @@ pub mod asset_cache;
 pub mod eq_layout;
 pub mod level_meter_render;
 mod multiband_presets;
+#[cfg(any(test, feature = "dev-api"))]
+mod performance_metrics;
 pub mod plugin_file_picker;
 pub mod queue_render;
 
@@ -117,7 +119,7 @@ pub use ui::{
     DEFAULT_MAX_FONT_SIZE_PX, DEFAULT_MIN_FONT_SIZE_PX, combined_scale_bounds,
     compute_combined_scale, compute_responsive_scale, engine_stop_without_queue_should_clear,
     estimate_grid_dimensions, is_phone_sized_window, responsive_scale_reference_size,
-    screen_shows_rack_data, should_auto_advance_on_engine_stop, silent_loudness,
+    screen_shows_rack_data, should_auto_advance_on_engine_stop, visible_loudness,
 };
 
 // Re-export room EQ rack-apply helper for testing.

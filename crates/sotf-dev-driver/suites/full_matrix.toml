@@ -25,11 +25,23 @@ timeout = "10s"
 tags = ["gpui"]
 
 [[scenario]]
-name = "gpui-transport"
-path = "crates/sotf-dev-driver/scenarios/gpui_transport.scn"
-timeout = "10s"
+name = "now-playing-transport"
+path = "crates/sotf-dev-driver/scenarios/now_playing_transport_seek.scn"
+timeout = "60s"
 seed_demo_audio = true
-tags = ["gpui"]
+tags = ["gpui", "now-playing", "transport", "accessibility"]
+
+[[scenario]]
+name = "playback-performance-budget"
+path = "crates/sotf-dev-driver/scenarios/playback_performance_budget.scn"
+timeout = "30s"
+seed_demo_audio = true
+viewport = "1440x900"
+tags = ["gpui", "now-playing", "playback", "performance"]
+theme = "Dark"
+language = "English"
+font_scale = 1.0
+reduced_motion = true
 
 [[scenario]]
 name = "gpui-shell-navigation-ui"
@@ -149,24 +161,33 @@ tags = ["gpui"]
 [[scenario]]
 name = "gpui-settings"
 path = "crates/sotf-dev-driver/scenarios/gpui_settings.scn"
-timeout = "30s"
-tags = ["gpui"]
+timeout = "60s"
+tags = ["gpui", "settings", "ui", "responsive", "accessibility", "keyboard"]
 
 [[scenario]]
 name = "gpui-playlists"
 path = "crates/sotf-dev-driver/scenarios/gpui_playlists.scn"
-timeout = "10s"
-tags = ["gpui"]
+timeout = "60s"
+seed_demo_audio = true
+viewport = "1440x900"
+tags = ["gpui", "playlists", "ui", "crud", "accessibility", "persistence"]
 
 [[scenario]]
 name = "gpui-queue-manage-reorder"
 path = "crates/sotf-dev-driver/scenarios/queue_manage_reorder.scn"
 timeout = "30s"
 seed_demo_audio = true
+viewport = "1440x900"
 tags = ["gpui", "queue", "ui", "reorder", "undo", "seeded"]
 
 [[scenario]]
 name = "gpui-level-meters"
-path = "crates/sotf-dev-driver/scenarios/gpui_level_meters.scn"
-timeout = "10s"
-tags = ["gpui"]
+path = "crates/sotf-dev-driver/scenarios/meters_signal_and_empty.scn"
+timeout = "30s"
+tags = ["gpui", "meters", "multichannel", "ui", "accessibility"]
+
+[[scenario]]
+name = "gpui-plugin-visual-matrix"
+path = "crates/sotf-dev-driver/scenarios/plugin_visual_matrix.scn"
+timeout = "15m"
+tags = ["gpui", "plugins", "visual", "responsive", "theme", "locale", "accessibility"]

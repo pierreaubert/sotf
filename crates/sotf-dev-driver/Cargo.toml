@@ -20,10 +20,12 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 sotf-dev-api = { path = "../sotf-dev-api" }
 sysinfo = "0.31.4"
-tempfile = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
 uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [[bin]]
 name = "sotf-dev-driver"

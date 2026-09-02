@@ -356,13 +356,13 @@ impl PlayerView {
                             .px(d.pad_x)
                             .py(d.pad_y_half)
                             .text_size(d.text_xs)
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme_cast.text_muted)
-                            .child(if cast_running {
-                                "Cast Devices (scanning...)"
-                            } else {
-                                "Cast Devices"
-                            }),
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme_cast.text_muted)
+                    .child(if cast_running {
+                        format!("{} ({})", text.devices, text.scanning)
+                    } else {
+                        text.devices.to_string()
+                    }),
                     );
 
                 if cast_devices.is_empty() && !cast_running {

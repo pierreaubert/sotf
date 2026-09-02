@@ -18,8 +18,107 @@ use anyhow::{Result, anyhow};
 use gpui::{AnyWindowHandle, App};
 use sotf_audio_player::recording_types::RecordingResult;
 use sotf_audio_player::room_eq_types::RoomEqWizardMode;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
+
+pub(super) fn qa_ui_environment(
+    payload: serde_json::Value,
+    window: AnyWindowHandle,
+    cx: &mut App,
+) -> Result<()> {
+    let string_value = |key: &str| -> Result<Option<String>> {
+        payload
+            .get(key)
+            .filter(|value| !value.is_null())
+            .map(|value| {
+                value
+                    .as_str()
+                    .filter(|value| !value.trim().is_empty())
+                    .map(str::to_owned)
+                    .ok_or_else(|| anyhow!("UI environment `{key}` must be a non-empty string"))
+            })
+            .transpose()
+    };
+    let theme = string_value("theme")?
+        .map(|value| match value.to_ascii_lowercase().as_str() {
+            "dark" => Ok(crate::app::ThemeId::Dark),
+            "light" => Ok(crate::app::ThemeId::Light),
+            "midnight" => Ok(crate::app::ThemeId::Midnight),
+            "forest" => Ok(crate::app::ThemeId::Forest),
+            "blackandwhite" | "black-and-white" | "high-contrast" => {
+                Ok(crate::app::ThemeId::BlackAndWhite)
+            }
+            "onyx" => Ok(crate::app::ThemeId::Onyx),
+            "protanopia" => Ok(crate::app::ThemeId::Protanopia),
+            "deuteranopia" => Ok(crate::app::ThemeId::Deuteranopia),
+            "tritanopia" => Ok(crate::app::ThemeId::Tritanopia),
+            _ => Err(anyhow!("unknown UI environment theme `{value}`")),
+        })
+        .transpose()?;
+    let language = string_value("language")?
+        .map(|value| match value.to_ascii_lowercase().as_str() {
+            "english" | "en" => Ok(crate::i18n::Language::English),
+            "french" | "fr" => Ok(crate::i18n::Language::French),
+            "german" | "de" => Ok(crate::i18n::Language::German),
+            "spanish" | "es" => Ok(crate::i18n::Language::Spanish),
+            "pseudo" | "qps-ploc" => Ok(crate::i18n::Language::Pseudo),
+            _ => Err(anyhow!("unknown UI environment language `{value}`")),
+        })
+        .transpose()?;
+    let release_channel = string_value("release_channel")?
+        .map(|value| match value.to_ascii_lowercase().as_str() {
+            "prod" | "stable" => Ok(sotf_audio_player::ReleaseChannel::Prod),
+            "beta" => Ok(sotf_audio_player::ReleaseChannel::Beta),
+            "alpha" => Ok(sotf_audio_player::ReleaseChannel::Alpha),
+            _ => Err(anyhow!("unknown UI environment release channel `{value}`")),
+        })
+        .transpose()?;
+    let font_scale = payload
+        .get("font_scale")
+        .filter(|value| !value.is_null())
+        .map(|value| {
+            value
+                .as_f64()
+                .filter(|value| value.is_finite() && (0.5..=2.0).contains(value))
+                .map(|value| value as f32)
+                .ok_or_else(|| anyhow!("UI environment `font_scale` must be between 0.5 and 2.0"))
+        })
+        .transpose()?;
+    let reduced_motion = payload
+        .get("reduced_motion")
+        .filter(|value| !value.is_null())
+        .map(|value| {
+            value
+                .as_bool()
+                .ok_or_else(|| anyhow!("UI environment `reduced_motion` must be boolean"))
+        })
+        .transpose()?;
+
+    with_player_view(window, cx, |view, cx| {
+        view.state.update(cx, |state, _| {
+            if let Some(theme) = theme {
+                state.app.set_theme(theme);
+            }
+            if let Some(language) = language {
+                state.app.set_language(language);
+            }
+            if let Some(font_scale) = font_scale {
+                state.app.ui_state.font_scale = font_scale;
+            }
+            if let Some(reduced_motion) = reduced_motion {
+                state.app.set_reduce_motion(reduced_motion);
+            }
+            if let Some(release_channel) = release_channel {
+                state.app.set_release_channel(release_channel);
+            }
+        });
+        if font_scale.is_some() {
+            view.recalculate_pagination(cx, true);
+        }
+        cx.notify();
+        Ok(())
+    })
+}
 
 pub(super) fn qa_seed(
     payload: serde_json::Value,
@@ -336,6 +435,35 @@ pub(super) fn qa_spinorama_discovery_fixture(
         })
         .transpose()?
         .unwrap_or_else(|| "Spinorama fixture catalog request failed".to_string());
+    let catalog_request_plan = payload
+        .get("catalog_requests")
+        .map(|value| {
+            value
+                .as_array()
+                .ok_or_else(|| anyhow!("Spinorama fixture `catalog_requests` must be an array"))?
+                .iter()
+                .map(|request| {
+                    let request = request.as_object().ok_or_else(|| {
+                        anyhow!("Spinorama catalog request plans must be objects")
+                    })?;
+                    let delay_ms = request
+                        .get("delay_ms")
+                        .and_then(serde_json::Value::as_u64)
+                        .ok_or_else(|| {
+                            anyhow!("Spinorama catalog request plan needs integer `delay_ms`")
+                        })?;
+                    let should_fail = request
+                        .get("fail")
+                        .and_then(serde_json::Value::as_bool)
+                        .ok_or_else(|| {
+                            anyhow!("Spinorama catalog request plan needs boolean `fail`")
+                        })?;
+                    Ok((delay_ms, should_fail))
+                })
+                .collect::<Result<VecDeque<_>>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
     let speakers = payload
         .get("speakers")
         .and_then(serde_json::Value::as_object)
@@ -465,6 +593,7 @@ pub(super) fn qa_spinorama_discovery_fixture(
                     catalog_delay_ms,
                     catalog_failures_remaining,
                     catalog_failure_message,
+                    catalog_request_plan,
                     versions,
                     measurements,
                     responses,

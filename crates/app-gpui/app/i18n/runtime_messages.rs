@@ -1,4 +1,4 @@
-use super::Language;
+use super::{Language, pseudo_expand};
 use std::borrow::Cow;
 
 #[derive(Debug, Clone, Copy)]
@@ -12,6 +12,9 @@ impl RuntimeMessageTranslations {
     }
 
     pub fn translate<'a>(self, message: &'a str) -> Cow<'a, str> {
+        if self.language == Language::Pseudo {
+            return Cow::Owned(pseudo_expand(message));
+        }
         if self.language == Language::English {
             return Cow::Borrowed(message);
         }
@@ -22,6 +25,7 @@ impl RuntimeMessageTranslations {
                 Language::French => pattern.french,
                 Language::German => pattern.german,
                 Language::Spanish => pattern.spanish,
+                Language::Pseudo => unreachable!("pseudo messages expand their source directly"),
             };
             if let Some(translated) = translate_pattern(pattern.source, target, message) {
                 return Cow::Owned(translated);
@@ -157,6 +161,24 @@ const RUNTIME_MESSAGE_PATTERNS: &[RuntimeMessagePattern] = &[
         "No se encontró la carpeta de preajustes"
     ),
     message!(
+        "Could not save the feature channel: {error}",
+        "Impossible d’enregistrer le canal de fonctionnalités : {error}",
+        "Feature-Kanal konnte nicht gespeichert werden: {error}",
+        "No se pudo guardar el canal de funciones: {error}"
+    ),
+    message!(
+        "Could not save the library folder removal: {error}",
+        "Impossible d’enregistrer la suppression du dossier de bibliothèque : {error}",
+        "Entfernen des Bibliotheksordners konnte nicht gespeichert werden: {error}",
+        "No se pudo guardar la eliminación de la carpeta de la biblioteca: {error}"
+    ),
+    message!(
+        "Could not save the library folder: {error}",
+        "Impossible d’enregistrer le dossier de bibliothèque : {error}",
+        "Bibliotheksordner konnte nicht gespeichert werden: {error}",
+        "No se pudo guardar la carpeta de la biblioteca: {error}"
+    ),
+    message!(
         "Directory added. Press 's' to scan.",
         "Dossier ajouté. Appuyez sur « s » pour l’analyser.",
         "Ordner hinzugefügt. Drücken Sie „s“ zum Scannen.",
@@ -217,6 +239,12 @@ const RUNTIME_MESSAGE_PATTERNS: &[RuntimeMessagePattern] = &[
         "No se pudo eliminar la fuente: {e}"
     ),
     message!(
+        "Failed to format Headphone EQ export: {error}",
+        "Échec du formatage de l’export EQ casque : {error}",
+        "Kopfhörer-EQ-Export konnte nicht formatiert werden: {error}",
+        "No se pudo dar formato a la exportación de EQ de auriculares: {error}"
+    ),
+    message!(
         "Failed to load APO file: {}",
         "Échec du chargement APO : {}",
         "APO-Datei konnte nicht geladen werden: {}",
@@ -233,6 +261,12 @@ const RUNTIME_MESSAGE_PATTERNS: &[RuntimeMessagePattern] = &[
         "Échec de la sauvegarde de la source : {e}",
         "Quelle konnte nicht gespeichert werden: {e}",
         "No se pudo guardar la fuente: {e}"
+    ),
+    message!(
+        "Failed to save Headphone EQ export: {error}",
+        "Échec de l’enregistrement de l’export EQ casque : {error}",
+        "Kopfhörer-EQ-Export konnte nicht gespeichert werden: {error}",
+        "No se pudo guardar la exportación de EQ de auriculares: {error}"
     ),
     message!(
         "Failed to save: {}",
@@ -991,6 +1025,12 @@ const RUNTIME_MESSAGE_PATTERNS: &[RuntimeMessagePattern] = &[
         "État de recherche casque indisponible",
         "Kopfhörer-Abrufstatus nicht verfügbar",
         "Estado de búsqueda de auriculares no disponible"
+    ),
+    message!(
+        "Headphone EQ export saved for QA",
+        "Export EQ casque enregistré pour la QA",
+        "Kopfhörer-EQ-Export für QA gespeichert",
+        "Exportación de EQ de auriculares guardada para QA"
     ),
     message!(
         "Internal error: {}",

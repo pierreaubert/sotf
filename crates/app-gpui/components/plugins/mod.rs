@@ -113,6 +113,7 @@ pub fn render_plugin_content(
     plugin_graph: &PluginGraph,
     midi_overlay: Option<&MidiOverlay>,
     eq_chart_focus_handle: FocusHandle,
+    plugin_exact_entry_focus_handle: FocusHandle,
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
     let d = Ds::from_cx(cx);
@@ -243,6 +244,7 @@ pub fn render_plugin_content(
             plugin_graph,
             midi_overlay,
             eq_chart_focus_handle,
+            plugin_exact_entry_focus_handle,
         };
         render_fn(&ctx, cx)
     } else if settings.layout().is_some() {

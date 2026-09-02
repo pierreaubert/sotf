@@ -33,6 +33,9 @@ pub struct CustomViewRenderContext<'a> {
     /// Stable chart focus target supplied by the owning PlayerView. Renderers
     /// must not re-read PlayerView while it is already rendering.
     pub eq_chart_focus_handle: FocusHandle,
+    /// Stable focus target for the one selected plugin parameter exact editor.
+    /// Only one selected knob renders its exact editor at a time.
+    pub plugin_exact_entry_focus_handle: FocusHandle,
 }
 
 /// Function signature for custom view renderers.

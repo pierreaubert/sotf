@@ -6,26 +6,38 @@
 
 focus library
 assert screen.focused == "Library"
+action ResetFontSize
+assert settings.font_scale == 1.0 tolerance=0.01
 assert queue.length == 0
 wait_until library.album_count > 0 timeout=5s
+# The model query can lead the rendered album-card registry by one frame while
+# the seeded library finishes its initial layout.
+sleep 500ms
 assert_visible library.album.0
 assert_visible library.album.1
 click library.album.0
+sleep 100ms
 key enter
 wait_until queue.length == 1 timeout=2s
 click library.album.1
+sleep 100ms
 key enter
 wait_until queue.length == 2 timeout=2s
+assert queue.first_title == "Demo"
+assert queue.second_title == "Library"
 click sidebar.nav-queue
 assert screen.focused == "Queue"
 assert_visible queue.move_down.0
 click queue.move_down.0
+assert queue.first_title == "Library"
+assert queue.second_title == "Demo"
+assert queue.current_index == 1
 # Let GPUI repaint the expanded row after its index changes before selecting its
 # newly registered remove control.
 sleep 100ms
-assert_visible queue.remove.0
+assert_visible queue.remove.1
 assert_accessible button Remove from Queue
-click queue.remove.0
+click queue.remove.1
 wait_until queue.length == 1 timeout=2s
 assert queue.can_undo_remove == true
 assert_visible queue.undo_remove
@@ -43,6 +55,50 @@ assert_visible queue.undo_clear
 click queue.undo_clear
 wait_until queue.length >= 2 timeout=2s
 assert queue.can_undo_clear == false
-assert_visible queue.move_down.0
 accessibility
-screenshot queue-manage-reorder
+screenshot queue-manage-reorder-regular
+
+# Solved queue-slot sizing must stay usable at the supported compact width
+# and enlarged text scales. Header actions are release-critical controls.
+resize 700 600
+sleep 300ms
+assert_in_viewport queue.save_as_playlist
+assert_in_viewport queue.clear
+assert_non_overlapping sidebar.nav-queue queue.clear
+assert_visible meters.panel
+screenshot queue-manage-reorder-compact-100
+
+click sidebar.nav-preferences-button
+click settings.tab.Theme
+assert_in_viewport settings.appearance.font-scale
+click settings.appearance.font-scale
+key cmd-a
+type "150"
+key enter
+assert settings.font_scale == 1.5 tolerance=0.01
+click sidebar.nav-queue
+assert screen.focused == "Queue"
+sleep 300ms
+assert_in_viewport queue.save_as_playlist
+assert_in_viewport queue.clear
+assert_visible meters.lufs-panel
+screenshot queue-manage-reorder-compact-150
+
+click sidebar.nav-preferences-button
+click settings.tab.Theme
+assert_in_viewport settings.appearance.font-scale
+click settings.appearance.font-scale
+key cmd-a
+type "200"
+key enter
+assert settings.font_scale == 2.0 tolerance=0.01
+click sidebar.nav-queue
+assert screen.focused == "Queue"
+sleep 300ms
+assert_in_viewport queue.save_as_playlist
+assert_in_viewport queue.clear
+assert_absent meters.panel
+assert_absent meters.lufs-panel
+screenshot queue-manage-reorder-compact-200
+
+action ResetFontSize

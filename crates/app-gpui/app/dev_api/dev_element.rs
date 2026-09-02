@@ -74,7 +74,12 @@ impl<E: Element> Element for DevTrack<E> {
         // Deferred elements can be repositioned between prepaint and paint.
         // Publish the final screen-space bounds used for hit testing so QA
         // clicks target menus, popovers, and dialogs at their painted location.
-        registry::record_with_state(&self.selector, bounds, self.state.clone());
+        registry::record_with_state(
+            window.window_handle().window_id().as_u64(),
+            &self.selector,
+            bounds,
+            self.state.clone(),
+        );
         self.inner.paint(
             id,
             inspector_id,

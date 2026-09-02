@@ -15,4 +15,5 @@ mod qa;
 mod types;
 mod with;
 
+pub use dispatch::merge_missing_tracked_elements;
 pub use parse::*;

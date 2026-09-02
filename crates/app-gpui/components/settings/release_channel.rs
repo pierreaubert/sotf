@@ -1,3 +1,5 @@
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::DevTrackExt;
 use crate::app::types::Screen;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
@@ -5,6 +7,19 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
 use sotf_audio_player::{PluginType, ReleaseChannel};
+
+macro_rules! dev_track {
+    ($element:expr, $selector:expr) => {{
+        #[cfg(feature = "dev-api")]
+        {
+            $element.dev_track($selector)
+        }
+        #[cfg(not(feature = "dev-api"))]
+        {
+            $element
+        }
+    }};
+}
 
 /// A row in the feature availability table.
 struct FeatureRow {
@@ -67,7 +82,7 @@ impl PlayerView {
                                     )))
                                     .flex()
                                     .flex_col()
-                                    .w(rems(13.75))
+                                    .w(rems(13.25))
                                     .p(d.card)
                                     .rounded(d.r_md)
                                     .border_2()
@@ -97,8 +112,7 @@ impl PlayerView {
                                             .mt(d.grid)
                                             .child(channel.description()),
                                     )
-                                    .child(
-                                        div().mt(d.gap_md).child(
+                                    .child(div().mt(d.gap_md).child(dev_track!(
                                             Button::new(
                                                 SharedString::from(format!(
                                                     "select-channel-{}",
@@ -106,6 +120,11 @@ impl PlayerView {
                                                 )),
                                                 if is_selected { "Active" } else { "Select" },
                                             )
+                                            .aria_label(if is_selected {
+                                                format!("{} feature channel active", channel.name())
+                                            } else {
+                                                format!("Select {} feature channel", channel.name())
+                                            })
                                             .variant(if is_selected {
                                                 ButtonVariant::Primary
                                             } else {
@@ -116,14 +135,22 @@ impl PlayerView {
                                             .theme(theme.to_button_theme())
                                             .on_click_event(cx.listener(
                                                 move |view, _: &ClickEvent, _window, cx| {
-                                                    view.state.update(cx, |state, _cx| {
+                                                    view.state.update(cx, |state, cx| {
                                                         state.app.set_release_channel(channel_val);
+                                                        let layout = state.layout.read(cx);
+                                                        if let Err(error) = state.app.save_config(layout) {
+                                                            state.app.ui_state.toast_message = Some(
+                                                                crate::app::ToastMessage::error(format!(
+                                                                    "Could not save the feature channel: {error}"
+                                                                )),
+                                                            );
+                                                        }
                                                     });
                                                     cx.notify();
                                                 },
                                             )),
-                                        ),
-                                    ),
+                                            format!("settings.release-channel.{}", channel.name())
+                                        ))),
                             );
                         }
 

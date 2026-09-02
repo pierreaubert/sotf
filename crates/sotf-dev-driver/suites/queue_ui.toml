@@ -9,5 +9,5 @@ size = "1440x900"
 name = "queue-manage-reorder"
 path = "crates/sotf-dev-driver/scenarios/queue_manage_reorder.scn"
 seed_demo_audio = true
-timeout = "30s"
-tags = ["queue", "ui", "reorder", "undo", "seeded"]
+timeout = "60s"
+tags = ["queue", "ui", "reorder", "undo", "seeded", "responsive", "accessibility"]

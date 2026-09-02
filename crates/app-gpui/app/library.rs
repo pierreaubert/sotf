@@ -93,9 +93,16 @@ impl App {
     }
 
     /// Add a directory to the library (interactive version with UI feedback)
-    pub fn add_directory(&mut self, path: PathBuf) {
+    pub fn add_directory(&mut self, path: PathBuf) -> bool {
+        if let Err(error) = sotf_audio_player::validate_library_directory(&path) {
+            self.settings.library.directory_error = Some(error.clone());
+            self.ui_state.toast_message = Some(ToastMessage::error(error.to_string()));
+            return false;
+        }
+
         match self.library_state.library.add_directory(path) {
             Ok(needs_scan) => {
+                self.settings.library.directory_error = None;
                 if needs_scan {
                     self.scan.needs_rescan = true;
                     self.ui_state.toast_message =
@@ -104,9 +111,11 @@ impl App {
                     self.ui_state.toast_message =
                         Some(ToastMessage::warning("Directory already exists."));
                 }
+                needs_scan
             }
             Err(msg) => {
                 self.ui_state.toast_message = Some(ToastMessage::error(msg));
+                false
             }
         }
     }
@@ -159,6 +168,7 @@ impl App {
         self.library_state.scan_in_progress = true;
         self.library_state.scan_progress_tracks = 0;
         self.library_state.scan_progress_albums = 0;
+        self.settings.library.scan_error = None;
         self.scan.total_files = 0;
         self.scan.started_at = Some(std::time::Instant::now());
         self.scan.progress_elapsed_secs = 0;
@@ -291,6 +301,21 @@ impl App {
         }
     }
 
+    /// Remove a top-level configured directory by its stable list index.
+    ///
+    /// Settings renders only top-level entries, so routing through the
+    /// flattened tree selection can remove the wrong row when an earlier
+    /// directory is expanded.
+    pub fn remove_library_directory(&mut self, index: usize) -> bool {
+        if self.library_state.remove_directory(index).is_none() {
+            return false;
+        }
+        self.ui_state.toast_message =
+            Some(ToastMessage::success("Directory removed and cleaned up."));
+        self.install_external_plugin_runtime_sandbox();
+        true
+    }
+
     /// Start library scan (sets up progress tracking flags)
     pub fn start_library_scan(&mut self) {
         self.scan_library().ok();
@@ -355,6 +380,7 @@ impl App {
                         self.update_library_scan_timing();
                     }
                     sotf_audio_player::LibraryScanMessage::Complete { tracks, albums } => {
+                        self.settings.library.scan_error = None;
                         self.library_state.scan_progress_tracks = tracks;
                         self.library_state.scan_progress_albums = albums;
                         if self.scan.total_files == 0 {
@@ -372,6 +398,7 @@ impl App {
                     }
                     sotf_audio_player::LibraryScanMessage::Error { message } => {
                         log::error!("Library scan failed: {}", message);
+                        self.settings.library.scan_error = Some(message.clone());
                         self.ui_state.toast_message =
                             Some(ToastMessage::error(format!("Scan failed: {}", message)));
                         done = true;
@@ -394,6 +421,7 @@ impl App {
 
         if reload_needed && let Err(e) = self.load_library_from_database() {
             log::error!("Failed to reload library after scan: {}", e);
+            self.settings.library.scan_error = Some(e.to_string());
             self.ui_state.toast_message = Some(ToastMessage::error(
                 "Scan complete but failed to reload library.",
             ));

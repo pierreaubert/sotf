@@ -42,6 +42,12 @@ impl App {
     pub fn start_tidal_login(&mut self, index: usize) {
         use sotf_audio_player::federation_config::SourceConnectionConfig;
 
+        self.federation.service_login_error = None;
+        #[cfg(feature = "dev-api")]
+        {
+            self.federation.qa_tidal_login_sender = None;
+        }
+
         if self.federation.tidal_login.is_some() {
             self.ui_state.toast_message = Some(ToastMessage::warning(
                 "A Tidal login is already in progress.",
@@ -87,6 +93,11 @@ impl App {
     #[cfg(feature = "tidal")]
     pub fn cancel_tidal_login(&mut self) {
         self.federation.tidal_login = None;
+        #[cfg(feature = "dev-api")]
+        {
+            self.federation.qa_tidal_login_sender = None;
+        }
+        self.federation.service_login_error = None;
     }
 
     /// Drain Tidal login messages; apply tokens and persist on completion.
@@ -142,12 +153,13 @@ impl App {
                     finished = true;
                 }
                 TidalLoginMessage::Expired => {
-                    self.ui_state.toast_message = Some(ToastMessage::warning(
-                        "Tidal login code expired; please try again.",
-                    ));
+                    let error = "Tidal login code expired; please try again.".to_string();
+                    self.federation.service_login_error = Some(error.clone());
+                    self.ui_state.toast_message = Some(ToastMessage::warning(error));
                     finished = true;
                 }
                 TidalLoginMessage::Failed(error) => {
+                    self.federation.service_login_error = Some(error.clone());
                     self.ui_state.toast_message =
                         Some(ToastMessage::error(format!("Tidal login failed: {error}")));
                     finished = true;
@@ -158,6 +170,8 @@ impl App {
         // A dead worker that never reported a terminal message means the
         // thread panicked; do not leave the UI stuck in "waiting".
         if disconnected && !finished {
+            self.federation.service_login_error =
+                Some("Tidal login worker stopped unexpectedly.".to_string());
             self.ui_state.toast_message = Some(ToastMessage::error(
                 "Tidal login worker stopped unexpectedly.",
             ));
@@ -198,9 +212,77 @@ impl App {
         }
 
         if self.save_federation_source_or_revert(index, previous, "save Tidal login") {
+            self.federation.service_login_error = None;
             self.ui_state.toast_message = Some(ToastMessage::success("Tidal login successful."));
             sotf_audio_player::reset_service_sessions();
         }
+    }
+
+    /// Deterministic completion seam for rendered QA; tokens never leave the
+    /// isolated QA directory or cross the dev API response boundary.
+    #[cfg(all(feature = "tidal", feature = "dev-api"))]
+    pub(crate) fn qa_complete_tidal_login(&mut self, index: usize) {
+        let Some(source_id) = self
+            .federation
+            .sources
+            .get(index)
+            .map(|source| source.source_id.clone())
+        else {
+            return;
+        };
+        self.federation.tidal_login = None;
+        self.federation.qa_tidal_login_sender = None;
+        self.complete_tidal_login(&source_id, "qa-access-token", "qa-refresh-token");
+    }
+
+    /// Install a deterministic Tidal login outcome for rendered QA. This
+    /// never returns token material through the dev API.
+    #[cfg(all(feature = "tidal", feature = "dev-api"))]
+    pub(crate) fn qa_set_tidal_login_fixture(&mut self, result: &str) -> Result<(), String> {
+        use sotf_audio_player::federation_config::SourceConnectionConfig;
+
+        let Some(index) =
+            self.federation.sources.iter().position(|source| {
+                matches!(source.connection, SourceConnectionConfig::Tidal { .. })
+            })
+        else {
+            return Err("add a Tidal source before setting the login fixture".to_string());
+        };
+        let source_id = self.federation.sources[index].source_id.clone();
+
+        match result {
+            "prompt" => {
+                let (sender, receiver) = std::sync::mpsc::channel();
+                self.federation.qa_tidal_login_sender = Some(sender);
+                self.federation.tidal_login = Some(TidalLoginState {
+                    source_id,
+                    receiver,
+                    prompt: Some(TidalLoginPrompt {
+                        verification_url: "https://login.tidal.com/device".to_string(),
+                        user_code: "QA-CODE".to_string(),
+                        expires_in_secs: 600,
+                    }),
+                });
+                self.federation.service_login_error = None;
+                self.ui_state.toast_message = None;
+            }
+            "failed" => {
+                self.federation.tidal_login = None;
+                self.federation.qa_tidal_login_sender = None;
+                let error = "Invalid credentials or network unavailable.".to_string();
+                self.federation.service_login_error = Some(error);
+                self.ui_state.toast_message = None;
+            }
+            "completed" => self.qa_complete_tidal_login(index),
+            _ => {
+                return Err(
+                    "Tidal login fixture result must be `prompt`, `failed`, or `completed`"
+                        .to_string(),
+                );
+            }
+        }
+
+        Ok(())
     }
 
     /// Log out of Tidal: clear both tokens from the source and persist.
@@ -226,6 +308,7 @@ impl App {
         }
 
         if self.save_federation_source_or_revert(index, previous, "log out of Tidal") {
+            self.federation.service_login_error = None;
             self.ui_state.toast_message = Some(ToastMessage::success("Logged out of Tidal."));
             sotf_audio_player::reset_service_sessions();
         }
@@ -241,6 +324,8 @@ impl App {
     #[cfg(feature = "spotify")]
     pub fn start_spotify_login(&mut self, index: usize) {
         use sotf_audio_player::federation_config::SourceConnectionConfig;
+
+        self.federation.service_login_error = None;
 
         if self.federation.spotify_login.is_some() {
             self.ui_state.toast_message = Some(ToastMessage::warning(
@@ -287,6 +372,7 @@ impl App {
     #[cfg(feature = "spotify")]
     pub fn cancel_spotify_login(&mut self) {
         self.federation.spotify_login = None;
+        self.federation.service_login_error = None;
     }
 
     /// Drain Spotify login messages.
@@ -316,12 +402,14 @@ impl App {
                     login.authorize_url = Some(url);
                 }
                 SpotifyLoginMessage::Completed => {
+                    self.federation.service_login_error = None;
                     self.ui_state.toast_message =
                         Some(ToastMessage::success("Spotify login successful."));
                     sotf_audio_player::reset_service_sessions();
                     finished = true;
                 }
                 SpotifyLoginMessage::Failed(error) => {
+                    self.federation.service_login_error = Some(error.clone());
                     self.ui_state.toast_message = Some(ToastMessage::error(format!(
                         "Spotify login failed: {error}"
                     )));
@@ -331,6 +419,8 @@ impl App {
         }
 
         if disconnected && !finished {
+            self.federation.service_login_error =
+                Some("Spotify login worker stopped unexpectedly.".to_string());
             self.ui_state.toast_message = Some(ToastMessage::error(
                 "Spotify login worker stopped unexpectedly.",
             ));
@@ -373,6 +463,7 @@ impl App {
 
         match sotf_audio_player::service_login::clear_spotify_cached_credentials(&cache_dir) {
             Ok(true) => {
+                self.federation.service_login_error = None;
                 self.ui_state.toast_message = Some(ToastMessage::success("Logged out of Spotify."));
                 sotf_audio_player::reset_service_sessions();
             }
@@ -381,6 +472,7 @@ impl App {
                     Some(ToastMessage::info("No Spotify credentials were cached."));
             }
             Err(e) => {
+                self.federation.service_login_error = Some(e.to_string());
                 self.ui_state.toast_message = Some(ToastMessage::error(format!(
                     "Failed to delete Spotify credentials: {e}"
                 )));

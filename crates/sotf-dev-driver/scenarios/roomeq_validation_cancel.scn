@@ -22,8 +22,10 @@ assert      roomeq.step == "Optimize"
 # running, and retry must restore the normal Start affordance.
 click       roomeq.optimize_start
 wait_until  roomeq.optimization_status == "Running" timeout=10s
+timing_start cancel
 click       roomeq.optimize_cancel
 wait_until  roomeq.optimization_status == "Cancelled" timeout=30s
+timing_end   cancel max=5s
 assert      roomeq.step == "Optimize"
 assert_visible roomeq.optimize_start
 click       roomeq.optimize_start

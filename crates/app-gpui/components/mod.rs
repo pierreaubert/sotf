@@ -23,7 +23,7 @@ pub use plugins::{
 };
 
 use crate::app::SettingsTab;
-use crate::app::i18n::PlaybackApplyTranslations;
+use crate::app::i18n::{Language, PlaybackApplyTranslations, WizardNavigationTranslations};
 use crate::app::types::PluginUpdateType;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
@@ -33,10 +33,52 @@ use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::accessibility::{
+    AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState,
+};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize,
     TextWeight, VStack,
 };
+use std::collections::HashMap;
+
+thread_local! {
+    static SETTINGS_TAB_FOCUS_HANDLES: std::cell::RefCell<HashMap<ElementId, FocusHandle>> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
+const SETTINGS_COMPACT_TAB_HEADER_EFFECTIVE_WIDTH: f32 = 800.0;
+
+fn settings_tab_focus_handle(id: &ElementId, cx: &mut App) -> FocusHandle {
+    SETTINGS_TAB_FOCUS_HANDLES.with(|handles| {
+        handles
+            .borrow_mut()
+            .entry(id.clone())
+            .or_insert_with(|| cx.focus_handle())
+            .clone()
+    })
+}
+
+fn focus_settings_tab_relative(
+    handles: &[FocusHandle],
+    window: &mut Window,
+    cx: &mut App,
+    backwards: bool,
+) -> bool {
+    let Some(current) = handles.iter().position(|handle| handle.is_focused(window)) else {
+        return false;
+    };
+    let next = if backwards {
+        current.checked_sub(1)
+    } else {
+        (current + 1 < handles.len()).then_some(current + 1)
+    };
+    let Some(next) = next else {
+        return false;
+    };
+    window.focus(&handles[next], cx);
+    true
+}
 
 pub fn settings_tab_icon_name(tab: SettingsTab) -> IconName {
     match tab {
@@ -112,10 +154,8 @@ pub(crate) fn themed_tooltip(
 }
 
 /// Consistent primary-action copy for every guided workflow.
-pub fn wizard_continue_label(next_step: Option<&str>) -> String {
-    next_step
-        .map(|label| format!("Continue to {label}"))
-        .unwrap_or_else(|| "Finish".to_string())
+pub fn wizard_continue_label(language: Language, next_step: Option<&str>) -> String {
+    WizardNavigationTranslations::for_language(language).primary_action(next_step)
 }
 
 impl PlayerView {
@@ -131,6 +171,12 @@ impl PlayerView {
             SettingsTab::fallback_for_platform()
         };
         let translations = state.app.ui_state.translations.clone();
+        // Full translated labels can consume the content area well before the
+        // phone breakpoint once text scaling is applied. Use icon tabs while
+        // there is still enough room for a useful settings viewport below.
+        let compact_tab_header = state.app.ui_state.window_width
+            / state.app.ui_state.font_scale.max(1.0)
+            < SETTINGS_COMPACT_TAB_HEADER_EFFECTIVE_WIDTH;
 
         // Content area based on active tab
         let content = match active_tab {
@@ -200,6 +246,7 @@ impl PlayerView {
                             .items_center()
                             .justify_center()
                             .gap(d.grid);
+                        let mut tab_focus_handles = Vec::with_capacity(tab_data.len());
 
                         for tab_variant in tab_data {
                             let label = settings_tab_label(tab_variant, &translations);
@@ -219,17 +266,30 @@ impl PlayerView {
                                 text_unselected
                             };
                             let icon_name = settings_tab_icon_name(tab_variant);
+                            let element_id = ElementId::from(SharedString::from(format!(
+                                "settings-tab-{tab_variant:?}"
+                            )));
+                            let focus_handle = settings_tab_focus_handle(&element_id, cx);
+                            cx.register_accessible(AccessibilityNode {
+                                element_id: element_id.clone(),
+                                label: label.into(),
+                                props: AriaProps::with_role(AriaRole::Button)
+                                    .maybe_state(is_selected, AriaState::Pressed(true)),
+                            });
+                            let entity_for_key = state_entity.clone();
+                            let tooltip_theme = theme.clone();
 
                             let tab = div()
-                                .id(SharedString::from(format!(
-                                    "settings-tab-{:?}",
-                                    tab_variant
-                                )))
+                                .id(element_id)
                                 .flex()
                                 .items_center()
                                 .gap(d.grid)
                                 .flex_shrink_0()
-                                .px(d.pad_x)
+                                .px(if compact_tab_header {
+                                    d.pad_y_half
+                                } else {
+                                    d.pad_x
+                                })
                                 .py(d.pad_y_half)
                                 .rounded(d.r_md)
                                 .border_1()
@@ -247,8 +307,17 @@ impl PlayerView {
                                 })
                                 .whitespace_nowrap()
                                 .cursor_pointer()
+                                .focusable()
+                                .track_focus(&focus_handle)
+                                .track_focus_element(&focus_handle)
+                                .focus_visible(|style| style.border_color(accent).bg(surface_hover))
                                 .child(Icon::new(icon_name).size(IconSize::Xs).color(icon_color))
-                                .child(label)
+                                .when(!compact_tab_header, |el| el.child(label))
+                                .when(compact_tab_header, |el| {
+                                    el.tooltip(move |_window, cx| {
+                                        themed_tooltip(label, &tooltip_theme, cx)
+                                    })
+                                })
                                 .when(!is_selected, |el| {
                                     el.hover(move |s| s.bg(surface_hover).text_color(text_hover))
                                 })
@@ -257,6 +326,15 @@ impl PlayerView {
                                     entity_clone.update(cx, |state, _cx| {
                                         state.app.ui_state.active_settings_tab = tab_variant;
                                     });
+                                })
+                                .on_key_down(move |event: &KeyDownEvent, _window, cx| {
+                                    if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                                        entity_for_key.update(cx, |state, cx| {
+                                            state.app.ui_state.active_settings_tab = tab_variant;
+                                            cx.notify();
+                                        });
+                                        cx.stop_propagation();
+                                    }
                                 });
 
                             #[cfg(feature = "dev-api")]
@@ -269,10 +347,22 @@ impl PlayerView {
                                 )
                             };
 
+                            tab_focus_handles.push(focus_handle);
                             tabs_container = tabs_container.child(tab);
                         }
 
-                        tabs_container
+                        tabs_container.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                            if event.keystroke.key.as_str() == "tab"
+                                && focus_settings_tab_relative(
+                                    &tab_focus_handles,
+                                    window,
+                                    cx,
+                                    event.keystroke.modifiers.shift,
+                                )
+                            {
+                                cx.stop_propagation();
+                            }
+                        })
                     })),
             )
             // Content with vertical scroll

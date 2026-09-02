@@ -17,14 +17,15 @@ mod probe;
 mod saving;
 mod spl_calibration;
 
+use crate::app::i18n::{RecordingTranslations, WizardNavigationTranslations};
 use crate::app::types::{RecordingStep, Screen};
 use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonTheme, ButtonVariant, HStack, StackSpacing, StepStatus, WizardHeader,
-    WizardStep, WizardTheme,
+    Button, ButtonSize, ButtonTheme, ButtonVariant, HStack, Heading, StackSpacing, StepStatus,
+    WizardHeader, WizardStep, WizardTheme,
 };
 
 macro_rules! dev_track {
@@ -93,6 +94,9 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let title = state.app.ui_state.translations.screen_recording;
+        let language = state.app.ui_state.language;
+        let translations = RecordingTranslations::for_language(language);
+        let wizard_text = WizardNavigationTranslations::for_language(language);
         let theme_id = state.app.ui_state.theme_id;
         let current_step = state.app.measurement_state.recording_state.step;
         let is_recording = state.app.measurement_state.recording_state.is_recording();
@@ -133,7 +137,7 @@ impl PlayerView {
                     RecordingStep::Evaluating => "evaluating",
                     RecordingStep::Saving => "saving",
                 };
-                WizardStep::new(id, s.label())
+                WizardStep::new(id, translations.step_label(*s))
             })
             .collect();
 
@@ -144,18 +148,21 @@ impl PlayerView {
         let next_disabled = !state.app.can_advance_workflow_step();
 
         let header = WizardHeader::new()
-            .title(title)
             .steps(steps)
             .step_statuses(step_statuses)
             .current_step(step_index)
             .theme(wizard_theme.clone());
 
         let back_label = match current_step {
-            RecordingStep::Config => "Close",
-            _ => "Back",
+            RecordingStep::Config => wizard_text.close,
+            _ => wizard_text.back,
         };
-        let next_label =
-            crate::components::wizard_continue_label(current_step.next().map(|next| next.label()));
+        let next_label = crate::components::wizard_continue_label(
+            language,
+            current_step
+                .next()
+                .map(|next| translations.step_label(next)),
+        );
 
         let navigation = HStack::new()
             .spacing(StackSpacing::Sm)
@@ -165,16 +172,12 @@ impl PlayerView {
                     .size(ButtonSize::Sm)
                     .disabled(is_recording)
                     .theme(button_theme.clone())
-                    .build()
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|view, _, _, cx| {
-                            view.state.update(cx, |state, _| {
-                                state.app.move_workflow_step(false);
-                            });
-                            cx.notify();
-                        }),
-                    ),
+                    .on_click_event(cx.listener(|view, _, _, cx| {
+                        view.state.update(cx, |state, _| {
+                            state.app.move_workflow_step(false);
+                        });
+                        cx.notify();
+                    })),
                 "recording.back"
             ))
             .child(dev_track!(
@@ -191,17 +194,33 @@ impl PlayerView {
                     })),
                 "recording.next"
             ));
-        let navigation = navigation.build().flex_none();
+        let navigation = navigation.build().flex_none().ml_auto();
 
         // Home button for navigation back to Library
         let state_for_home = self.state.clone();
         let text_muted = theme.text_muted;
         let surface_hover = theme.surface_hover;
+        let home_button = div()
+            .id("recording-home-button")
+            .flex()
+            .items_center()
+            .justify_center()
+            .w(rems(2.5))
+            .h(rems(2.0))
+            .cursor_pointer()
+            .rounded(d.r_md)
+            .hover(move |s| s.bg(surface_hover))
+            .child(Icon::new(IconName::Home).color(text_muted))
+            .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                state_for_home.update(cx, |state, _cx| {
+                    state.app.ui_state.current_screen = Screen::Library;
+                });
+            });
 
         div()
             .flex()
-            .items_center()
-            .justify_between()
+            .flex_col()
+            .gap(d.gap)
             .min_w_0()
             .px(d.card)
             .py(d.card)
@@ -211,26 +230,17 @@ impl PlayerView {
             // Home button on the left
             .child(
                 div()
-                    .id("recording-home-button")
                     .flex()
                     .items_center()
-                    .justify_center()
-                    .w(rems(2.5))
-                    .h(rems(2.0))
-                    .cursor_pointer()
-                    .rounded(d.r_md)
-                    .hover(move |s| s.bg(surface_hover))
-                    .child(Icon::new(IconName::Home).color(text_muted))
-                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                        state_for_home.update(cx, |state, _cx| {
-                            state.app.ui_state.current_screen = Screen::Library;
-                        });
-                    }),
+                    .gap(d.gap)
+                    .min_w_0()
+                    .child(home_button)
+                    .child(Heading::h4(title)),
             )
             // Centered header with flex-1
             .child(
                 div()
-                    .flex_1()
+                    .w_full()
                     .min_w_0()
                     .flex()
                     .justify_center()

@@ -14,9 +14,12 @@ pub mod plugin;
 pub mod shared;
 pub mod ui;
 
+#[cfg(feature = "dev-api")]
+pub use app::QaLibraryPickerResult;
 pub use app::{
-    App, AppState, DividerDragState, DividerType, QueueState, RACK_STRIP_DEFAULT_HEIGHT,
-    RACK_STRIP_MAX_HEIGHT, RACK_STRIP_MIN_HEIGHT, WorkflowNodeMapping, rack_strip_height_from_drag,
+    App, AppState, DividerDragState, DividerType, LibraryFolderSettingsState, QueueState,
+    RACK_STRIP_DEFAULT_HEIGHT, RACK_STRIP_MAX_HEIGHT, RACK_STRIP_MIN_HEIGHT, WorkflowNodeMapping,
+    rack_strip_height_from_drag,
 };
 pub use audio_device::AudioDeviceState;
 pub use input::InputState;

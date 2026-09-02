@@ -4,7 +4,7 @@
 
 use sotf_audio_player::ui_models::spinorama_eq::SpinoramaEqScreenModel;
 #[cfg(feature = "dev-api")]
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::ops::{Deref, DerefMut};
 
 use super::room_eq::AutoEqField;
@@ -112,6 +112,9 @@ pub struct QaSpinoramaDiscoveryFixture {
     pub catalog_delay_ms: u64,
     pub catalog_failures_remaining: usize,
     pub catalog_failure_message: String,
+    /// Optional per-request delay/failure plan. This lets rendered QA prove
+    /// that a slow older completion cannot replace a newer failure/result.
+    pub catalog_request_plan: VecDeque<(u64, bool)>,
     pub versions: HashMap<String, Vec<String>>,
     pub measurements: HashMap<(String, String), Vec<String>>,
     /// Offline response curves keyed by speaker, version, and measurement.
