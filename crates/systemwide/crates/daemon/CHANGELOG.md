@@ -1,5 +1,16 @@
 # 0.1.38 (unreleased)
 
+## Atomic live configuration
+
+- Add a generation-checked `apply_configuration` transaction for Configbar
+  device, channel, sample-rate, and buffer-size changes.
+- Validate the complete device/format request before teardown, use the engine's
+  mute ramp around live stream replacement, and restore the previous HAL timing,
+  channel geometry, device, and pipeline after a failed apply. Recovery errors
+  return the restored generation so the next Configbar mutation stays current.
+- Keep legacy configuration commands response-compatible while routing channel
+  and timing changes through the same daemon-owned transaction.
+
 ## Transactional systemwide DSP graphs
 
 - `load_plugin_artifact` now accepts validated engine DAG artifacts while

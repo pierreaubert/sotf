@@ -2013,6 +2013,12 @@ struct ConfigurationView: View {
         statusWatermark.accepts(snapshotGeneration: generation)
     }
 
+    private func adoptPipelineGeneration(from response: AudioEngineClient.Response?) {
+        guard let generation = response?.data?["generation"]?.value as? Int,
+              generation >= 0 else { return }
+        daemonPipelineGeneration = UInt64(generation)
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // Left level meter (input monitor)
@@ -2222,11 +2228,25 @@ struct ConfigurationView: View {
                                 return
                             }
                             let previousDevice = lastConfirmedDevice ?? lastDaemonSelectedDevice
+                            let previousOutputChannels = lastConfirmedOutputChannels
+                            let requestedOutputChannels = min(
+                                max(halOutputChannels, 1),
+                                selectedOutputDeviceChannelLimit ?? 32
+                            )
+                            if halOutputChannels != requestedOutputChannels {
+                                programmaticOutputChannelSync = true
+                                halOutputChannels = requestedOutputChannels
+                                syncMeterArrays(outputChannels: requestedOutputChannels)
+                            }
                             let statusGeneration = beginDaemonMutation()
                             deviceMutationGeneration &+= 1
                             let mutationGeneration = deviceMutationGeneration
                             deviceMutationInFlight = true
-                            var command: [String: Any] = ["command": "set_device", "device": newDevice]
+                            var command: [String: Any] = [
+                                "command": "apply_configuration",
+                                "output_device": newDevice,
+                                "output_channels": requestedOutputChannels,
+                            ]
                             if let daemonPipelineGeneration {
                                 command["base_generation"] = daemonPipelineGeneration
                             }
@@ -2234,16 +2254,22 @@ struct ConfigurationView: View {
                                 guard mutationGeneration == deviceMutationGeneration,
                                       acceptsStatusSnapshot(statusGeneration) else { return }
                                 deviceMutationInFlight = false
+                                adoptPipelineGeneration(from: response)
                                 if response?.success == true {
                                     lastConfirmedDevice = newDevice
                                     lastDaemonSelectedDevice = newDevice
-                                    syncOutputChannelsToSelectedDevice(applyChange: true)
+                                    lastConfirmedOutputChannels = requestedOutputChannels
                                 } else {
                                     errorMessage = response?.error ?? "Failed to set output device: \(newDevice)"
                                     showingError = true
                                     if let previous = previousDevice {
                                         programmaticDeviceSelection = previous
                                         selectedDevice = previous
+                                    }
+                                    if halOutputChannels != previousOutputChannels {
+                                        programmaticOutputChannelSync = true
+                                        halOutputChannels = previousOutputChannels
+                                        syncMeterArrays(outputChannels: previousOutputChannels)
                                     }
                                     loadDevices()
                                 }
@@ -3267,7 +3293,7 @@ struct ConfigurationView: View {
         channelMutationInFlight = true
 
         var command: [String: Any] = [
-            "command": "set_pipeline_channels",
+            "command": "apply_configuration",
             "input_channels": requestedInputChannels,
             "output_channels": requestedOutputChannels
         ]
@@ -3279,6 +3305,7 @@ struct ConfigurationView: View {
             guard mutationGeneration == channelMutationGeneration,
                   acceptsStatusSnapshot(statusGeneration) else { return }
             channelMutationInFlight = false
+            adoptPipelineGeneration(from: response)
             if response?.success == true {
                 lastConfirmedInputChannels = requestedInputChannels
                 lastConfirmedOutputChannels = requestedOutputChannels
@@ -3602,8 +3629,16 @@ struct ConfigurationView: View {
     private func setSampleRate(_ rate: UInt32) {
         halConfigError = nil
         let statusGeneration = beginDaemonMutation()
-        client.sendCommandAsync(["command": "set_sample_rate", "rate": rate]) { response in
+        var command: [String: Any] = [
+            "command": "apply_configuration",
+            "sample_rate": rate,
+        ]
+        if let daemonPipelineGeneration {
+            command["base_generation"] = daemonPipelineGeneration
+        }
+        client.sendCommandAsync(command) { response in
             guard acceptsStatusSnapshot(statusGeneration) else { return }
+            adoptPipelineGeneration(from: response)
             if response?.success == true {
                 print("Sample rate set to \(rate) Hz")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -3620,8 +3655,16 @@ struct ConfigurationView: View {
     private func setBufferFrames(_ frames: UInt32) {
         halConfigError = nil
         let statusGeneration = beginDaemonMutation()
-        client.sendCommandAsync(["command": "set_buffer_frames", "frames": frames]) { response in
+        var command: [String: Any] = [
+            "command": "apply_configuration",
+            "buffer_frames": frames,
+        ]
+        if let daemonPipelineGeneration {
+            command["base_generation"] = daemonPipelineGeneration
+        }
+        client.sendCommandAsync(command) { response in
             guard acceptsStatusSnapshot(statusGeneration) else { return }
+            adoptPipelineGeneration(from: response)
             if response?.success == true {
                 print("Buffer frames set to \(frames)")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {

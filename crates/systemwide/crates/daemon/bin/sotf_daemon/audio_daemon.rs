@@ -2,6 +2,7 @@ use super::command::Command;
 use super::configured::{configured_output_device, persist_output_device};
 use super::consts::LEGACY_SOCKET_PATH;
 use super::consts::MAX_HAL_CHANNELS;
+use super::consts::SUPPORTED_SAMPLE_RATES;
 use super::consts::empty_loudness_json;
 use super::consts::get_socket_path;
 use super::consts::metering_source_json;
@@ -68,6 +69,63 @@ struct DriverConfigWire {
     driver_installed: bool,
     driver_ready: bool,
     platform_supported: bool,
+}
+
+/// Temporarily uses the engine's click-free mute ramp around a pipeline
+/// teardown. The manager preserves this mute state while the replacement
+/// engine starts, then the guard restores the user's unmuted state.
+struct ReconfigurationMuteGuard {
+    manager: Arc<Mutex<AudioEngineManager>>,
+    restore_unmuted: bool,
+}
+
+impl ReconfigurationMuteGuard {
+    fn begin(manager: &Arc<Mutex<AudioEngineManager>>) -> Result<Self, String> {
+        let restore_unmuted = {
+            let manager = manager.lock();
+            if manager.get_state() == sotf_audio::manager::StreamingState::Playing
+                && manager.get_playback_state() == sotf_audio::PlaybackState::Playing
+                && !manager.is_muted()
+            {
+                if let Err(error) = manager.set_mute(true) {
+                    // AudioEngineManager records the requested mute state
+                    // before sending it to the engine. Restore that cache even
+                    // when the output thread has already disappeared.
+                    if let Err(restore_error) = manager.set_mute(false) {
+                        log::error!(
+                            "Failed to restore mute state after reconfiguration mute error: {restore_error}"
+                        );
+                    }
+                    return Err(format!(
+                        "Failed to mute output before reconfiguration: {error}"
+                    ));
+                }
+                true
+            } else {
+                false
+            }
+        };
+
+        if restore_unmuted {
+            // Match the engine output gain ramp before tearing down CoreAudio.
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        Ok(Self {
+            manager: Arc::clone(manager),
+            restore_unmuted,
+        })
+    }
+}
+
+impl Drop for ReconfigurationMuteGuard {
+    fn drop(&mut self) {
+        if self.restore_unmuted
+            && let Err(error) = self.manager.lock().set_mute(false)
+        {
+            log::error!("Failed to restore output mute after reconfiguration: {error}");
+        }
+    }
 }
 
 impl From<&driver_common::DriverStatus> for DriverConfigWire {
@@ -679,6 +737,19 @@ impl SystemwideController {
             Command::SetVolume { volume } => self.handle_set_volume(volume),
             Command::ListDevices => self.handle_list_devices(),
             Command::SetDevice { device } => self.handle_set_device(&device),
+            Command::ApplyConfiguration {
+                sample_rate,
+                buffer_frames,
+                input_channels,
+                output_channels,
+                output_device,
+            } => self.handle_apply_configuration(
+                sample_rate,
+                buffer_frames,
+                input_channels,
+                output_channels,
+                output_device,
+            ),
             Command::LoadPlugins {
                 plugins,
                 input_channels,
@@ -1155,6 +1226,36 @@ impl SystemwideController {
         }
     }
 
+    fn resolve_safe_output_device(&self, device: &str) -> Result<String, String> {
+        use cpal::traits::DeviceTrait;
+
+        let is_asio = sotf_audio::devices::is_asio_device(device);
+        let host = sotf_audio::devices::get_host_for_device(Some(device));
+        let device_name = sotf_audio::devices::strip_asio_prefix(device);
+        let cpal_device = sotf_audio::devices::find_device(&host, device_name, false)
+            .map_err(|error| format!("Device '{device}' not found. {error}"))?;
+        let resolved_name = cpal_device
+            .description()
+            .map(|description| description.name().to_string())
+            .unwrap_or_else(|_| "Unknown Device".to_string());
+
+        if !is_safe_output_device_name(&resolved_name) {
+            return Err(format!(
+                "'{resolved_name}' is a virtual/loopback device and cannot be used as the Systemwide speaker output. Select hardware speakers/headphones here, and select SotF Virtual Audio in macOS Sound Output."
+            ));
+        }
+
+        Ok(if is_asio {
+            format!(
+                "{}{}",
+                sotf_audio::devices::ASIO_DEVICE_PREFIX,
+                resolved_name
+            )
+        } else {
+            resolved_name
+        })
+    }
+
     pub(super) fn handle_set_device(&self, device: &str) -> Response {
         use cpal::traits::DeviceTrait;
         let is_asio = sotf_audio::devices::is_asio_device(device);
@@ -1255,6 +1356,37 @@ impl SystemwideController {
         driver_sample_rate: u32,
         driver_buffer_frames: u32,
     ) -> Response {
+        self.apply_pipeline_plan_with_driver_config(
+            plan,
+            driver_status,
+            driver_sample_rate,
+            driver_buffer_frames,
+            false,
+        )
+    }
+
+    fn apply_pipeline_plan_with_driver_config(
+        &self,
+        plan: PipelinePlan,
+        driver_status: driver_common::DriverStatus,
+        driver_sample_rate: u32,
+        driver_buffer_frames: u32,
+        force_driver_config: bool,
+    ) -> Response {
+        let _mute_guard = match ReconfigurationMuteGuard::begin(&self.manager) {
+            Ok(guard) => guard,
+            Err(error) => return Response::err(error),
+        };
+        let restore_driver_sample_rate = if driver_status.sample_rate > 0 {
+            driver_status.sample_rate
+        } else {
+            driver_sample_rate
+        };
+        let restore_driver_buffer_frames = if driver_status.buffer_frames > 0 {
+            driver_status.buffer_frames
+        } else {
+            driver_buffer_frames
+        };
         let fallback_input_channels = if driver_status.channel_count > 0 {
             driver_status.channel_count as usize
         } else {
@@ -1267,8 +1399,12 @@ impl SystemwideController {
                 .and_then(|spec| state.prepare_from_spec(spec, fallback_input_channels).ok())
         };
 
-        let response =
-            self.apply_pipeline_plan_once(plan, driver_sample_rate, driver_buffer_frames, false);
+        let response = self.apply_pipeline_plan_once(
+            plan,
+            driver_sample_rate,
+            driver_buffer_frames,
+            force_driver_config,
+        );
         if response.success {
             self.system_state.lock().clear_pipeline_recovery();
             return response;
@@ -1295,8 +1431,8 @@ impl SystemwideController {
         };
         let restore = self.apply_pipeline_plan_once(
             previous_plan,
-            driver_sample_rate,
-            driver_buffer_frames,
+            restore_driver_sample_rate,
+            restore_driver_buffer_frames,
             true,
         );
         if restore.success {
@@ -1735,33 +1871,7 @@ impl SystemwideController {
                 "set_pipeline_channels requires input_channels or output_channels",
             );
         }
-
-        let (plugins, graph, current_input_channels, current_output_channels) = {
-            let state = self.system_state.lock();
-            (
-                state.user_plugins(),
-                state.user_graph(),
-                state.input_channels(),
-                state.output_channels(),
-            )
-        };
-
-        let next_input_channels = input_channels.unwrap_or(current_input_channels);
-        let next_output_channels = output_channels.unwrap_or(current_output_channels);
-
-        if let Some(graph) = graph {
-            self.handle_load_plugin_graph_with_channels(
-                graph,
-                next_input_channels,
-                next_output_channels,
-            )
-        } else {
-            self.handle_load_plugins_with_channels(
-                plugins,
-                next_input_channels,
-                next_output_channels,
-            )
-        }
+        self.handle_apply_configuration(None, None, input_channels, output_channels, None)
     }
 
     pub(super) fn handle_get_loudness(&self) -> Response {
@@ -2242,71 +2352,184 @@ impl SystemwideController {
     // Driver config handlers
     // =========================================================================
 
-    pub(super) fn handle_set_sample_rate(&self, rate: u32) -> Response {
-        const SUPPORTED: [u32; 6] = [44100, 48000, 88200, 96000, 176400, 192000];
-
-        if !SUPPORTED.contains(&rate) {
-            return Response::err(format!(
-                "Unsupported sample rate: {}. Supported: {:?}",
-                rate, SUPPORTED
-            ));
+    pub(super) fn handle_apply_configuration(
+        &self,
+        sample_rate: Option<u32>,
+        buffer_frames: Option<u32>,
+        input_channels: Option<usize>,
+        output_channels: Option<usize>,
+        output_device: Option<String>,
+    ) -> Response {
+        if sample_rate.is_none()
+            && buffer_frames.is_none()
+            && input_channels.is_none()
+            && output_channels.is_none()
+            && output_device.is_none()
+        {
+            return Response::err("Configuration patch must contain at least one field");
         }
 
-        let manager = self.manager.lock();
-        let state = manager.get_state();
-        drop(manager);
+        if let Some(rate) = sample_rate
+            && !SUPPORTED_SAMPLE_RATES.contains(&rate)
+        {
+            return Response::err(format!(
+                "Unsupported sample rate: {rate}. Supported: {SUPPORTED_SAMPLE_RATES:?}"
+            ));
+        }
+        if let Some(frames) = buffer_frames
+            && !(64..=4096).contains(&frames)
+        {
+            return Response::err(format!(
+                "Buffer frames must be between 64 and 4096, got: {frames}"
+            ));
+        }
+        for (name, channels) in [("input", input_channels), ("output", output_channels)] {
+            if let Some(channels) = channels
+                && !(1..=MAX_HAL_CHANNELS).contains(&channels)
+            {
+                return Response::err(format!(
+                    "Invalid {name} channel count: {channels}. Must be between 1 and {MAX_HAL_CHANNELS}."
+                ));
+            }
+        }
 
-        if state != sotf_audio::manager::StreamingState::Idle {
-            return Response::err(
-                "Cannot change sample rate while playback is active; stop playback and retry",
+        let driver_status = self.driver_manager.lock().status();
+        let requested_sample_rate = sample_rate.unwrap_or({
+            if driver_status.sample_rate > 0 {
+                driver_status.sample_rate
+            } else {
+                48_000
+            }
+        });
+        let requested_buffer_frames = buffer_frames.unwrap_or({
+            if driver_status.buffer_frames > 0 {
+                driver_status.buffer_frames
+            } else {
+                512
+            }
+        });
+        let fallback_input_channels = if driver_status.channel_count > 0 {
+            driver_status.channel_count as usize
+        } else {
+            2
+        };
+
+        let resolved_output_device = match output_device.as_deref() {
+            Some(device) if device.trim().is_empty() => {
+                return Response::err("Output device must not be empty");
+            }
+            Some(device) => match self.resolve_safe_output_device(device) {
+                Ok(device) => Some(device),
+                Err(error) => return Response::err(error),
+            },
+            None => None,
+        };
+
+        let plan = {
+            let state = self.system_state.lock();
+            let mut next = state.desired_spec();
+            if let Some(channels) = input_channels {
+                next.input_channels = channels;
+            }
+            if let Some(channels) = output_channels {
+                next.output_channels = channels;
+            }
+            if let Some(device) = resolved_output_device.clone() {
+                next.output_device = Some(device);
+            }
+            match state.prepare_from_spec(next, fallback_input_channels) {
+                Ok(plan) => plan,
+                Err(error) => return Response::err(error),
+            }
+        };
+
+        if let Some(device) = plan.spec.output_device.as_deref() {
+            let max_channels = match self
+                .device_registry
+                .lock()
+                .max_output_channels(device, requested_sample_rate)
+            {
+                Ok(channels) => channels,
+                Err(error) => return Response::err(error),
+            };
+            if plan.spec.output_channels > max_channels {
+                return Response::err(format!(
+                    "Output device '{}' supports at most {} channels at {}Hz, but configuration requires {}",
+                    sotf_audio::devices::strip_asio_prefix(device),
+                    max_channels,
+                    requested_sample_rate,
+                    plan.spec.output_channels
+                ));
+            }
+        }
+
+        let requested_input_channels = plan.spec.input_channels;
+        let requested_output_channels = plan.spec.output_channels;
+        let requested_output_device = plan.spec.output_device.clone();
+        let force_driver_config = sample_rate.is_some() || buffer_frames.is_some();
+        let response = self.apply_pipeline_plan_with_driver_config(
+            plan,
+            driver_status,
+            requested_sample_rate,
+            requested_buffer_frames,
+            force_driver_config,
+        );
+        if !response.success {
+            // A failed apply can still restart and commit the previous plan.
+            // Return that recovery generation so optimistic clients do not
+            // issue their next mutation against the pre-recovery generation.
+            let generation = self.system_state.lock().generation();
+            return Response {
+                data: Some(serde_json::json!({ "generation": generation })),
+                ..response
+            };
+        }
+
+        if output_device.is_some()
+            && let Some(device) = requested_output_device.as_deref()
+            && let Err(error) = persist_output_device(device)
+        {
+            log::error!(
+                "Output device '{}' active but could not be persisted for the next daemon start: {}",
+                device,
+                error
             );
         }
 
-        let mut driver = self.driver_manager.lock();
-        let result = driver.request_config(DriverConfig::with_sample_rate(rate));
+        let applied_driver = self.driver_manager.lock().status();
+        let generation = self.system_state.lock().generation();
+        Response::ok(serde_json::json!({
+            "generation": generation,
+            // Preserve the legacy set_sample_rate/set_buffer_frames response
+            // fields while exposing the richer transactional result.
+            "sample_rate": requested_sample_rate,
+            "buffer_frames": requested_buffer_frames,
+            "requested": {
+                "sample_rate": requested_sample_rate,
+                "buffer_frames": requested_buffer_frames,
+                "input_channels": requested_input_channels,
+                "output_channels": requested_output_channels,
+                "output_device": requested_output_device,
+            },
+            "applied": {
+                "sample_rate": applied_driver.sample_rate,
+                "buffer_frames": applied_driver.buffer_frames,
+                "input_channels": applied_driver.channel_count,
+                "output_channels": requested_output_channels,
+                "output_device": requested_output_device,
+            },
+            "negotiated": applied_driver.sample_rate != requested_sample_rate
+                || applied_driver.buffer_frames != requested_buffer_frames
+                || applied_driver.channel_count != requested_input_channels as u32,
+        }))
+    }
 
-        match result {
-            driver_common::ConfigResult::Accepted
-            | driver_common::ConfigResult::Negotiated { .. } => {
-                log::info!("Sample rate set to {}Hz via driver", rate);
-                Response::ok(serde_json::json!({ "sample_rate": rate }))
-            }
-            driver_common::ConfigResult::Error(e) => {
-                Response::err(format!("Failed to set sample rate: {}", e))
-            }
-            _ => Response::err("Driver returned an unknown configuration result"),
-        }
+    pub(super) fn handle_set_sample_rate(&self, rate: u32) -> Response {
+        self.handle_apply_configuration(Some(rate), None, None, None, None)
     }
 
     pub(super) fn handle_set_buffer_frames(&self, frames: u32) -> Response {
-        if !(64..=4096).contains(&frames) {
-            return Response::err(format!(
-                "Buffer frames must be between 64 and 4096, got: {}",
-                frames
-            ));
-        }
-
-        let state = self.manager.lock().get_state();
-        if state != sotf_audio::manager::StreamingState::Idle {
-            return Response::err(
-                "Cannot change buffer size while playback is active; stop playback and retry",
-            );
-        }
-
-        let mut driver = self.driver_manager.lock();
-        let result = driver.request_config(DriverConfig::with_buffer_frames(frames));
-
-        match result {
-            driver_common::ConfigResult::Accepted
-            | driver_common::ConfigResult::Negotiated { .. } => {
-                log::info!("Buffer frames set to {} via driver", frames);
-                Response::ok(serde_json::json!({ "buffer_frames": frames }))
-            }
-            driver_common::ConfigResult::Error(e) => {
-                Response::err(format!("Failed to set buffer frames: {}", e))
-            }
-            _ => Response::err("Driver returned an unknown configuration result"),
-        }
+        self.handle_apply_configuration(None, Some(frames), None, None, None)
     }
 
     pub(super) fn handle_get_driver_config(&self) -> Response {

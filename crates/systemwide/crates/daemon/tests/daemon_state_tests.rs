@@ -284,9 +284,8 @@ fn systemwide_pkg_ships_launch_agent_and_exposes_installer_progress_and_logs() {
     );
     assert!(
         daemon_plist.contains("__SOTF_LOG_DIR__/sotf-daemon.log")
-            && configbar_plist.contains(
-                "/Applications/sotf-systemwide.app/Contents/MacOS/sotf-systemwide"
-            )
+            && configbar_plist
+                .contains("/Applications/sotf-systemwide.app/Contents/MacOS/sotf-systemwide")
             && configbar_plist.contains("__SOTF_LOG_DIR__/sotf-systemwide.log")
             && configbar_plist.contains("__SOTF_LOG_DIR__/sotf-systemwide.error.log"),
         "LaunchAgent templates should use the installed app path and installer-resolved durable logs"
@@ -423,7 +422,8 @@ fn configbar_output_device_refresh_tracks_channel_limits() {
         "toolbar should expose and send HAL input channel counts up to 32"
     );
     assert!(
-        configbar.contains("syncOutputChannelsToSelectedDevice(applyChange: true)"),
+        configbar.contains("selectedOutputDeviceChannelLimit ?? 32")
+            && configbar.contains("\"output_channels\": requestedOutputChannels"),
         "device refresh/selection should clamp the channel selection when metadata changes"
     );
     assert!(
@@ -622,7 +622,7 @@ fn configbar_plugin_chain_loader_delegates_artifact_planning_to_daemon() {
 }
 
 #[test]
-fn configbar_channel_apply_uses_patch_intent_instead_of_replaying_plugins() {
+fn configbar_configuration_actions_use_atomic_patch_intents() {
     let source = include_str!("../configbar/src/ConfigBar.swift");
     let apply_start = source
         .find("private func applyHALConfiguration()")
@@ -633,13 +633,90 @@ fn configbar_channel_apply_uses_patch_intent_instead_of_replaying_plugins() {
     let body = &source[apply_start..load_start];
 
     assert!(
-        body.contains("\"command\": \"set_pipeline_channels\"")
+        body.contains("\"command\": \"apply_configuration\"")
             && body.contains("\"input_channels\": requestedInputChannels")
             && body.contains("\"output_channels\": requestedOutputChannels"),
-        "HAL channel apply should use the daemon's typed channel patch command"
+        "HAL channel apply should use the daemon's atomic configuration patch command"
     );
     assert!(
         !body.contains("client.getPlugins()") && !body.contains("\"command\": \"load_plugins\""),
         "HAL channel apply must not replay a stale plugin list"
     );
+    let adopt_generation = body
+        .find("adoptPipelineGeneration(from: response)")
+        .expect("HAL channel apply should adopt returned generations");
+    let success_branch = body
+        .find("if response?.success == true")
+        .expect("HAL channel apply should branch on daemon success");
+    assert!(
+        adopt_generation < success_branch,
+        "HAL channel apply must adopt a recovery generation before branching on success"
+    );
+}
+
+#[test]
+fn configbar_timing_and_device_actions_are_single_configuration_mutations() {
+    let source = include_str!("../configbar/src/ConfigBar.swift");
+
+    assert_eq!(
+        source
+            .matches("adoptPipelineGeneration(from: response)")
+            .count(),
+        4,
+        "every completed atomic configuration action should adopt a returned generation"
+    );
+
+    let sample_rate_start = source
+        .find("private func setSampleRate(_ rate: UInt32)")
+        .expect("sample-rate mutation should exist");
+    let buffer_frames_start = source
+        .find("private func setBufferFrames(_ frames: UInt32)")
+        .expect("buffer-frame mutation should exist");
+    let config_status_start = source
+        .find("private func configStatusDisplay(")
+        .expect("configuration status helper should follow timing mutations");
+    let sample_rate_body = &source[sample_rate_start..buffer_frames_start];
+    let buffer_frames_body = &source[buffer_frames_start..config_status_start];
+    assert!(
+        sample_rate_body.contains("\"command\": \"apply_configuration\"")
+            && sample_rate_body.contains("\"sample_rate\": rate")
+            && !sample_rate_body.contains("\"command\": \"set_sample_rate\"")
+            && buffer_frames_body.contains("\"command\": \"apply_configuration\"")
+            && buffer_frames_body.contains("\"buffer_frames\": frames")
+            && !buffer_frames_body.contains("\"command\": \"set_buffer_frames\""),
+        "timing controls should use the atomic configuration command"
+    );
+
+    let device_start = source
+        .find(".onChange(of: selectedDevice)")
+        .expect("device picker mutation should exist");
+    let refresh_start = source[device_start..]
+        .find("Button(action: {")
+        .map(|offset| device_start + offset)
+        .expect("device refresh button should follow picker mutation");
+    let device_body = &source[device_start..refresh_start];
+    assert!(
+        device_body.contains("\"command\": \"apply_configuration\"")
+            && device_body.contains("\"output_device\": newDevice")
+            && device_body.contains("\"output_channels\": requestedOutputChannels")
+            && !device_body.contains("syncOutputChannelsToSelectedDevice(applyChange: true)"),
+        "device selection and its channel clamp must be one daemon mutation"
+    );
+
+    for (name, body) in [
+        ("sample-rate", sample_rate_body),
+        ("buffer-frame", buffer_frames_body),
+        ("device", device_body),
+    ] {
+        let adopt_generation = body
+            .find("adoptPipelineGeneration(from: response)")
+            .unwrap_or_else(|| panic!("{name} apply should adopt returned generations"));
+        let success_branch = body
+            .find("if response?.success == true")
+            .unwrap_or_else(|| panic!("{name} apply should branch on daemon success"));
+        assert!(
+            adopt_generation < success_branch,
+            "{name} apply must adopt a recovery generation before branching on success"
+        );
+    }
 }

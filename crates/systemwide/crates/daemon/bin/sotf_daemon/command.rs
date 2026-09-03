@@ -31,6 +31,23 @@ pub(super) enum Command {
     ListDevices,
     #[serde(rename = "set_device")]
     SetDevice { device: String },
+    /// Apply one daemon-owned Systemwide configuration transaction.
+    ///
+    /// Every field is a patch: omitted values are resolved from the current
+    /// daemon state while the pipeline mutation lock is held.
+    #[serde(rename = "apply_configuration")]
+    ApplyConfiguration {
+        #[serde(default)]
+        sample_rate: Option<u32>,
+        #[serde(default)]
+        buffer_frames: Option<u32>,
+        #[serde(default)]
+        input_channels: Option<usize>,
+        #[serde(default)]
+        output_channels: Option<usize>,
+        #[serde(default)]
+        output_device: Option<String>,
+    },
     #[serde(rename = "load_plugins")]
     LoadPlugins {
         plugins: Vec<PluginConfig>,
@@ -136,6 +153,7 @@ impl Command {
                 | Command::Stop
                 | Command::Seek { .. }
                 | Command::SetDevice { .. }
+                | Command::ApplyConfiguration { .. }
                 | Command::LoadPlugins { .. }
                 | Command::LoadPluginArtifact { .. }
                 | Command::LoadPluginArtifactPath { .. }
@@ -160,6 +178,7 @@ impl Command {
         matches!(
             self,
             Command::SetDevice { .. }
+                | Command::ApplyConfiguration { .. }
                 | Command::LoadPlugins { .. }
                 | Command::LoadPluginArtifact { .. }
                 | Command::LoadPluginArtifactPath { .. }
@@ -194,6 +213,7 @@ impl Command {
             Command::SetVolume { .. } => "set_volume",
             Command::ListDevices => "list_devices",
             Command::SetDevice { .. } => "set_device",
+            Command::ApplyConfiguration { .. } => "apply_configuration",
             Command::LoadPlugins { .. } => "load_plugins",
             Command::LoadPluginArtifact { .. } => "load_plugin_artifact",
             Command::LoadPluginArtifactPath { .. } => "load_plugin_artifact_path",

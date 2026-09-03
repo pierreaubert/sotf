@@ -468,6 +468,16 @@ fn command_name_covers_all_variants() {
             "set_device",
         ),
         (
+            Command::ApplyConfiguration {
+                sample_rate: Some(96_000),
+                buffer_frames: Some(256),
+                input_channels: Some(2),
+                output_channels: Some(2),
+                output_device: None,
+            },
+            "apply_configuration",
+        ),
+        (
             Command::SetInputChannels { channels: 2 },
             "set_input_channels",
         ),
@@ -1400,6 +1410,78 @@ mod ipc_safety_tests {
     }
 
     #[test]
+    fn testkit_atomic_configuration_requires_a_field() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = daemon.handle_command(Command::ApplyConfiguration {
+            sample_rate: None,
+            buffer_frames: None,
+            input_channels: None,
+            output_channels: None,
+            output_device: None,
+        });
+
+        assert!(!response.success);
+        assert!(
+            response
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("at least one field"))
+        );
+    }
+
+    #[test]
+    fn testkit_stale_atomic_configuration_is_rejected_before_driver_mutation() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(Arc::clone(&state));
+
+        let response = send_owner_ipc_command(
+            &daemon,
+            r#"{"command":"apply_configuration","base_generation":99,"sample_rate":96000,"buffer_frames":256,"input_channels":4}"#,
+        );
+
+        assert_eq!(response["success"], false);
+        assert!(
+            response["error"]
+                .as_str()
+                .is_some_and(|error| error.contains("generation conflict"))
+        );
+        assert!(state.lock().requested_configs.is_empty());
+    }
+
+    #[test]
+    fn testkit_atomic_configuration_applies_one_coherent_driver_format() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(Arc::clone(&state));
+
+        let response = daemon.handle_command(Command::ApplyConfiguration {
+            sample_rate: Some(96_000),
+            buffer_frames: Some(256),
+            input_channels: Some(4),
+            output_channels: Some(2),
+            output_device: None,
+        });
+
+        assert!(response.success, "atomic apply failed: {response:?}");
+        let data = response.data.expect("atomic configuration result");
+        assert_eq!(data["requested"]["sample_rate"], 96_000);
+        assert_eq!(data["requested"]["buffer_frames"], 256);
+        assert_eq!(data["requested"]["input_channels"], 4);
+        assert_eq!(data["applied"]["sample_rate"], 96_000);
+        assert_eq!(data["applied"]["buffer_frames"], 256);
+        assert_eq!(data["applied"]["input_channels"], 4);
+        assert_eq!(data["negotiated"], false);
+
+        let driver = state.lock();
+        assert_eq!(
+            driver.requested_configs,
+            vec![DriverConfig::new(96_000, 256, 4)],
+            "one atomic command must produce one HAL format request"
+        );
+    }
+
+    #[test]
     fn testkit_load_plugin_artifact_accepts_rack_chain_without_ui_flattening() {
         let state = fake_driver_state();
         let daemon = test_daemon_with_driver(state);
@@ -1874,7 +1956,13 @@ mod ipc_safety_tests {
             response
                 .error
                 .as_deref()
-                .is_some_and(|error| error.contains("restored the last working pipeline"))
+                .is_some_and(|error| error.contains("restored the last working pipeline")),
+            "unexpected recovery response: {response:?}"
+        );
+        assert_eq!(
+            response.data.as_ref().map(|data| &data["generation"]),
+            Some(&serde_json::json!(2)),
+            "a recovered failure must return the replacement pipeline generation"
         );
 
         let state = daemon.system_state.lock();
@@ -1882,6 +1970,47 @@ mod ipc_safety_tests {
         assert_eq!(state.output_channels(), 2);
         assert_eq!(state.user_plugins().len(), 1);
         assert_eq!(state.applied_generation(), Some(2));
+    }
+
+    #[test]
+    fn testkit_failed_atomic_configuration_restores_driver_timing_and_channels() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(Arc::clone(&state));
+        let seed = daemon.handle_command(Command::LoadPlugins {
+            plugins: vec![test_plugin("eq")],
+            input_channels: 2,
+            output_channels: 2,
+        });
+        assert!(seed.success, "failed to seed pipeline: {seed:?}");
+
+        state.lock().fail_next_config = Some("injected config failure".to_string());
+        let response = daemon.handle_command(Command::ApplyConfiguration {
+            sample_rate: Some(96_000),
+            buffer_frames: Some(256),
+            input_channels: Some(4),
+            output_channels: None,
+            output_device: None,
+        });
+
+        assert!(!response.success);
+        assert_eq!(
+            response.data.as_ref().map(|data| &data["generation"]),
+            Some(&serde_json::json!(2)),
+            "atomic rollback must return the replacement pipeline generation"
+        );
+
+        let driver = state.lock();
+        assert_eq!(
+            driver.requested_configs,
+            vec![
+                DriverConfig::new(96_000, 256, 4),
+                DriverConfig::new(48_000, 512, 2),
+            ],
+            "rollback must restore the complete pre-transaction HAL format"
+        );
+        assert_eq!(driver.status.sample_rate, 48_000);
+        assert_eq!(driver.status.buffer_frames, 512);
+        assert_eq!(driver.status.channel_count, 2);
     }
 
     #[test]

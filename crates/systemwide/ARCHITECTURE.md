@@ -363,7 +363,8 @@ The command enum currently covers:
 - Playback: `load`, `play`, `pause`, `stop`, `seek`, `set_volume`.
 - Device and driver config: `list_devices`, `set_device`, `driver_status`,
   `set_input_channels`, `set_output_channels`, `set_pipeline_channels`,
-  `set_sample_rate`, `set_buffer_frames`, `get_driver_config`.
+  `set_sample_rate`, `set_buffer_frames`, `apply_configuration`,
+  `get_driver_config`.
 - Plugin chain: `load_plugins`, `get_plugins`, `get_available_plugins`,
   `add_plugin`, `remove_plugin`, `update_plugin`, `reorder_plugins`.
 - Metering: `get_loudness`, `get_metering`.
@@ -779,6 +780,17 @@ The reverse path also exists: daemon commands such as `set_sample_rate`,
 `set_buffer_frames`, or `load_plugins` can call `DriverManager.request_config`,
 which writes daemon-originated config requests into shared memory and waits for
 the HAL side to acknowledge them.
+
+Configbar uses `apply_configuration` when a user changes the physical output,
+channel geometry, sample rate, or buffer size. The command patches the
+daemon-owned desired state under the common pipeline mutation lock, validates
+the complete requested format and output before teardown, and performs one
+stop/configure/start/commit transition. Active output is muted with the engine
+gain ramp around replacement. A failed apply restores the previous graph,
+device, channel geometry, sample rate, and buffer size before releasing the
+mute. Its error response carries the restored pipeline generation so the next
+UI intent cannot reuse a stale concurrency token; failure of that restore
+retains the existing explicit `restart_daemon` recovery state.
 
 ## Installation And Upgrade Lifecycle
 

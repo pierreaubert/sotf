@@ -153,6 +153,7 @@ final class ConfigBarIPCTests: XCTestCase {
 
         let pipelineMutationCommands = [
             "set_device",
+            "apply_configuration",
             "load_plugins",
             "load_plugin_artifact",
             "add_plugin",

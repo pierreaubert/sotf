@@ -44,6 +44,13 @@ rolled to `.1` during upgrades. The final installer component starts Configbar
 through the console user's launchd domain and verifies the installed executable
 stays running.
 
+Configbar device, channel, sample-rate, and buffer-size changes are submitted as
+one generation-checked `apply_configuration` transaction. The daemon validates
+the complete requested format and physical output before mutating HAL or the
+engine, temporarily ramps active output to mute during replacement, and restores
+the complete previous driver format and pipeline if the requested transition
+fails.
+
 ## Crates
 
 | Crate | Lib name | Purpose |

@@ -128,6 +128,7 @@ public enum ConfigBarIPC {
     public static func responseTimeoutMicros(for command: [String: Any]) -> useconds_t {
         switch command["command"] as? String {
         case "set_device",
+             "apply_configuration",
              "load_plugins",
              "load_plugin_artifact",
              "load_plugin_artifact_path",
