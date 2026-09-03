@@ -191,6 +191,11 @@ class AudioEngineClient {
             print("Failed to create socket")
             return false
         }
+        guard ConfigBarIPC.suppressSigPipe(on: socketFD) else {
+            print("Failed to configure daemon socket for recoverable broken pipes")
+            closeConnection()
+            return false
+        }
 
         // Connect to daemon
         var addr = sockaddr_un()
@@ -997,14 +1002,20 @@ class DaemonManager {
     /// Callback when daemon status changes
     var onStatusChange: ((Bool) -> Void)?
 
-    private var daemonLogURL: URL {
-        let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory,
+    private var logDirectoryURL: URL {
+        let library = FileManager.default.urls(
+            for: .libraryDirectory,
             in: .userDomainMask
         ).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        return appSupport
-            .appendingPathComponent("org.spinorama.sotf")
-            .appendingPathComponent("sotf-daemon.log")
+        return library.appendingPathComponent("Logs/SotF")
+    }
+
+    private var daemonLogURL: URL {
+        logDirectoryURL.appendingPathComponent("sotf-daemon.log")
+    }
+
+    private var configBarLogURL: URL {
+        logDirectoryURL.appendingPathComponent("sotf-systemwide.log")
     }
 
     init() {
@@ -1214,6 +1225,11 @@ class DaemonManager {
     /// Open the daemon log in the user's configured application.
     func openDaemonLog() {
         NSWorkspace.shared.open(daemonLogURL)
+    }
+
+    /// Open ConfigBar's launchd stdout log in the user's configured application.
+    func openConfigBarLog() {
+        NSWorkspace.shared.open(configBarLogURL)
     }
 
     /// A Configbar can adopt a daemon owned by launchd or a developer. In
@@ -1607,6 +1623,9 @@ public class StatusBarController: NSObject, ObservableObject {
             },
             onViewDaemonLog: { [weak self] in
                 self?.daemonManager.openDaemonLog()
+            },
+            onViewConfigBarLog: { [weak self] in
+                self?.daemonManager.openConfigBarLog()
             }
         )
 
@@ -1891,6 +1910,7 @@ struct ConfigurationView: View {
     let onRestartDaemon: () -> Void
     let restartActionTitle: () -> String
     let onViewDaemonLog: () -> Void
+    let onViewConfigBarLog: () -> Void
 
     @State private var devices: [AudioEngineClient.AudioDevice] = []
     @State private var selectedDevice: String = ""
@@ -2027,10 +2047,14 @@ struct ConfigurationView: View {
                             updateDaemonStatus()
                         }
                         .buttonStyle(.borderless)
-                        Button("View Log") {
-                            onViewDaemonLog()
-                        }
-                        .buttonStyle(.borderless)
+                    Button("Daemon Log") {
+                        onViewDaemonLog()
+                    }
+                    .buttonStyle(.borderless)
+                    Button("ConfigBar Log") {
+                        onViewConfigBarLog()
+                    }
+                    .buttonStyle(.borderless)
                         ProgressView()
                             .controlSize(.small)
                     }
@@ -3286,23 +3310,56 @@ struct ConfigurationView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             loadingPluginConfiguration = true
-            var command: [String: Any] = [
-                "command": "load_plugin_artifact_path",
-                "path": url.path
-            ]
-            if let daemonPipelineGeneration {
-                command["base_generation"] = daemonPipelineGeneration
-            }
-            client.sendCommandAsync(command) { response in
+            submitPluginConfig(url: url, baseGeneration: daemonPipelineGeneration, mayRetry: true)
+        }
+    }
+
+    private func submitPluginConfig(
+        url: URL,
+        baseGeneration: UInt64?,
+        mayRetry: Bool
+    ) {
+        var command: [String: Any] = [
+            "command": "load_plugin_artifact_path",
+            "path": url.path
+        ]
+        if let baseGeneration {
+            command["base_generation"] = baseGeneration
+        }
+        client.sendCommandAsync(command) { response in
+            if response?.success == true {
                 loadingPluginConfiguration = false
-                if response?.success == true {
-                    print("✅ Plugin configuration loaded from: \(url.path)")
-                    pluginRackRefreshToken += 1
-                } else {
-                    errorMessage = response?.error ?? "Failed to apply plugin configuration"
-                    showingError = true
-                }
+                print("✅ Plugin configuration loaded from: \(url.path)")
+                pluginRackRefreshToken += 1
+                updateDaemonStatus()
+                return
             }
+
+            if mayRetry, isConfigBarGenerationConflict(response?.error) {
+                AudioEngineClient.pollStatus { status, reachable in
+                    guard reachable else {
+                        loadingPluginConfiguration = false
+                        errorMessage = "The pipeline changed and the daemon could not be refreshed. Reconnect and retry."
+                        showingError = true
+                        return
+                    }
+                    daemonPipelineGeneration = status.generation
+                    pluginRackRefreshToken += 1
+                    submitPluginConfig(
+                        url: url,
+                        baseGeneration: status.generation,
+                        mayRetry: false
+                    )
+                }
+                return
+            }
+
+            loadingPluginConfiguration = false
+            errorMessage = configBarMutationErrorMessage(
+                daemonError: response?.error,
+                fallback: "Failed to apply plugin configuration"
+            )
+            showingError = true
         }
     }
 

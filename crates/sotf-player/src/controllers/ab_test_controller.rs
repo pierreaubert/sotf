@@ -395,9 +395,11 @@ mod tests {
 
     #[test]
     fn runtime_settings_preserve_band_mask() {
-        let mut params = ABComparePluginParams::default();
-        params.band_mask_low_hz = 123.0;
-        params.band_mask_high_hz = 4_567.0;
+        let params = ABComparePluginParams {
+            band_mask_low_hz: 123.0,
+            band_mask_high_hz: 4_567.0,
+            ..ABComparePluginParams::default()
+        };
 
         let settings = settings_from_params(&params).unwrap();
         match settings {

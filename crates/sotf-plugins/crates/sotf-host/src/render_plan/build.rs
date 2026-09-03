@@ -273,10 +273,24 @@ mod tests {
         };
 
         assert_eq!(
-            snapshot(320.0),
+            snapshot(315.0),
             (
                 vec!["primary".to_string()],
                 vec!["timing".to_string(), "metering".to_string()],
+            )
+        );
+        assert_eq!(
+            snapshot(316.0),
+            (
+                vec!["primary".to_string(), "timing".to_string()],
+                vec!["metering".to_string()],
+            )
+        );
+        assert_eq!(
+            snapshot(320.0),
+            (
+                vec!["primary".to_string(), "timing".to_string()],
+                vec!["metering".to_string()],
             )
         );
         assert_eq!(

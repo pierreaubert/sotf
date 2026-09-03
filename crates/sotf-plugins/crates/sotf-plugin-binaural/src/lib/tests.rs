@@ -722,7 +722,9 @@ fn streaming_process_holds_output_for_reported_latency() {
         let expected_frame = plugin.latency_samples() + impulse_frame;
         assert!(
             rendered[..expected_frame * 2]
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .all(|frame| frame.iter().all(|sample| sample.abs() < 1.0e-7)),
             "callback {callback_frames}: output escaped before fixed latency at frame {expected_frame}"
         );

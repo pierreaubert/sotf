@@ -1756,7 +1756,7 @@ fn crossover_automation_is_callback_partition_invariant() {
     whole
         .process_in_place(&mut a, &ProcessContext::new(48_000, 1024))
         .unwrap();
-    for chunk in b.chunks_exact_mut(64 * 2) {
+    for chunk in b.as_chunks_mut::<128>().0.iter_mut() {
         split
             .process_in_place(chunk, &ProcessContext::new(48_000, 64))
             .unwrap();

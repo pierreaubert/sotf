@@ -231,6 +231,74 @@ mod tests {
     }
 
     #[test]
+    fn room_eq_v2_asymmetric_iir_file_builds_the_expected_graph() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("dsp-iir.json");
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&serde_json::json!({
+                "version": "2.1.0",
+                "channels": {
+                    "L": {
+                        "channel": "L",
+                        "plugins": [{
+                            "plugin_type": "eq",
+                            "parameters": {
+                                "label": "room_eq_correction",
+                                "filters": [{
+                                    "filter_type": "peak",
+                                    "freq": 55.8,
+                                    "q": 2.07,
+                                    "db_gain": -9.0
+                                }]
+                            }
+                        }]
+                    },
+                    "R": {
+                        "channel": "R",
+                        "plugins": [
+                            {
+                                "plugin_type": "delay",
+                                "parameters": {"delay_ms": 0.19}
+                            },
+                            {
+                                "plugin_type": "eq",
+                                "parameters": {
+                                    "label": "room_eq_correction",
+                                    "filters": [{
+                                        "filter_type": "peak",
+                                        "freq": 86.8,
+                                        "q": 3.0,
+                                        "db_gain": 3.0
+                                    }]
+                                }
+                            }
+                        ]
+                    }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let file_plan = plan_plugin_artifact_file(&path, 48_000.0).unwrap();
+        assert_eq!(file_plan.required_channels, Some(2));
+        let PluginArtifactPlan::Graph { graph } = file_plan.plan else {
+            panic!("RoomEQ v2.1 artifact did not produce a graph");
+        };
+        assert_eq!(graph.nodes.len(), 5);
+        assert_eq!(graph.edges.len(), 4);
+        assert_eq!(
+            graph
+                .nodes
+                .iter()
+                .filter(|node| node.plugin_type == "delay")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
     #[ignore = "requires SOTF_GENERATED_ROOM_EQ_DIR"]
     fn all_generated_room_eq_files_build_graphs() {
         fn visit(path: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {

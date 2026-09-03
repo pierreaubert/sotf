@@ -107,7 +107,7 @@ mod tests {
 
         ramp.apply(&mut samples, 3, 1_000, 1.0);
 
-        for frame in samples.chunks_exact(3) {
+        for frame in samples.as_chunks::<3>().0 {
             assert_eq!(frame[0], frame[1]);
             assert_eq!(frame[1], frame[2]);
         }

@@ -253,6 +253,12 @@ validate_pkg_payload() {
         exit 1
     fi
 
+    if ! /usr/bin/lsbom -s "$app_bom" | grep -qx "./Library/Application Support/SotF/org.spinorama.sotf-systemwide.plist"; then
+        rm -rf "$expanded_parent"
+        log_error "Systemwide component payload missing ConfigBar LaunchAgent plist"
+        exit 1
+    fi
+
     if $BUILD_HAL; then
         local hal_bom="$expanded_dir/SotFHAL.pkg/Bom"
         if [ ! -f "$hal_bom" ] ||
@@ -285,6 +291,16 @@ build_components() {
 
     cd "$PROJECT_ROOT"
 
+    # Never allow a previous package run to supply an embedded daemon or
+    # ConfigBar executable. Cargo tracks the complete Rust dependency graph;
+    # SwiftPM's scratch tree is regenerated so source/target membership and
+    # generated module dependencies cannot survive a Package.swift change.
+    log_info "Resolving current workspace dependencies..."
+    cargo metadata --locked --format-version 1 --no-deps >/dev/null
+    swift package --package-path "$CONFIGBAR_DIR" resolve
+    rm -f "$BUILD_DIR/$DAEMON_BINARY" "$BUILD_DIR/$SYSTEMWIDE_BINARY"
+    rm -rf "$BUILD_DIR/configbar-swiftpm"
+
     if $DEBUG; then
         # Debug builds - call cargo directly since Justfile only has release targets
         log_info "Building daemon binary (debug)..."
@@ -313,6 +329,10 @@ build_components() {
     # Verify daemon binary exists
     if [ ! -f "$BUILD_DIR/$DAEMON_BINARY" ]; then
         log_error "Daemon binary not found at $BUILD_DIR/$DAEMON_BINARY"
+        exit 1
+    fi
+    if [ ! -f "$BUILD_DIR/$SYSTEMWIDE_BINARY" ]; then
+        log_error "Systemwide executable not found at $BUILD_DIR/$SYSTEMWIDE_BINARY"
         exit 1
     fi
 
@@ -468,6 +488,12 @@ EOF
     # Copy daemon binary to Helpers
     cp "$BUILD_DIR/$DAEMON_BINARY" "$APP_BUNDLE/Contents/Helpers/"
     chmod +x "$APP_BUNDLE/Contents/Helpers/$DAEMON_BINARY"
+    if ! cmp -s \
+        "$BUILD_DIR/$DAEMON_BINARY" \
+        "$APP_BUNDLE/Contents/Helpers/$DAEMON_BINARY"; then
+        log_error "Embedded daemon differs from freshly built daemon"
+        exit 1
+    fi
 
     # Copy HAL driver bundle to Resources only for the legacy DMG/manual
     # installation path. The pkg installs HAL as its own component package.
@@ -811,7 +837,15 @@ quit_systemwide_app() {
     /usr/bin/pkill -TERM -x "SotF Systemwide" >/dev/null 2>&1 || true
     /usr/bin/pkill -TERM -x "SotF Toolbar" >/dev/null 2>&1 || true
     /usr/bin/pkill -TERM -x "SotF ConfigBar" >/dev/null 2>&1 || true
-    /bin/sleep 1
+    local elapsed=0
+    while /usr/bin/pgrep -x "sotf-systemwide" >/dev/null 2>&1 && [ "$elapsed" -lt 5 ]; do
+        /bin/sleep 1
+        elapsed=$((elapsed + 1))
+    done
+    if /usr/bin/pgrep -x "sotf-systemwide" >/dev/null 2>&1; then
+        echo "SotF Systemwide did not exit; sending KILL"
+        /usr/bin/pkill -KILL -x "sotf-systemwide" >/dev/null 2>&1 || true
+    fi
 }
 
 restart_coreaudio() {
@@ -844,15 +878,17 @@ remove_bundle() {
 }
 
 DAEMON_AGENT_LABEL="org.spinorama.sotf-daemon"
+CONFIGBAR_AGENT_LABEL="org.spinorama.sotf-systemwide"
 
-bootout_daemon_launch_agent() {
+bootout_launch_agents() {
     local user_info
     local console_uid
 
     user_info="$(console_user_and_uid)"
     if [ -n "$user_info" ]; then
         console_uid="${user_info##*:}"
-        echo "Booting out $DAEMON_AGENT_LABEL for gui/$console_uid"
+        echo "Booting out SotF LaunchAgents for gui/$console_uid"
+        /bin/launchctl bootout "gui/$console_uid/$CONFIGBAR_AGENT_LABEL" >/dev/null 2>&1 || true
         /bin/launchctl bootout "gui/$console_uid/$DAEMON_AGENT_LABEL" >/dev/null 2>&1 || true
     fi
 }
@@ -868,8 +904,8 @@ fi
 # Create target directory if needed
 sudo /usr/bin/install -d -o root -g wheel -m 755 "${TARGET_DIR}"
 
+bootout_launch_agents
 quit_systemwide_app
-bootout_daemon_launch_agent
 quiesce_sotf_daemon
 
 sudo /usr/bin/killall "${HELPER_NAME}" 2>/dev/null || true
@@ -1093,10 +1129,18 @@ create_pkg() {
 #!/bin/bash
 
 INSTALL_LOG="/Library/Logs/SotF/installer.log"
+INSTALL_LOG_ROLLOVER_BYTES=10485760
 SOTF_INSTALL_STEP="Starting SotF installation"
 
 /bin/mkdir -p "$(/usr/bin/dirname "$INSTALL_LOG")"
 /bin/chmod 755 "$(/usr/bin/dirname "$INSTALL_LOG")"
+if [ -f "$INSTALL_LOG" ]; then
+    install_log_size="$(/usr/bin/stat -f '%z' "$INSTALL_LOG" 2>/dev/null || echo 0)"
+    if [ "$install_log_size" -ge "$INSTALL_LOG_ROLLOVER_BYTES" ]; then
+        /bin/mv -f "$INSTALL_LOG" "$INSTALL_LOG.1"
+        /bin/chmod 644 "$INSTALL_LOG.1"
+    fi
+fi
 /usr/bin/touch "$INSTALL_LOG"
 /bin/chmod 644 "$INSTALL_LOG"
 exec > >(/usr/bin/tee -a "$INSTALL_LOG") 2>&1
@@ -1154,6 +1198,8 @@ INSTALLER_COMMON
     # bar app only adopts it.
     cp "$PROJECT_ROOT/builds/macos/org.spinorama.sotf-daemon.plist" \
         "$pkg_root/Library/Application Support/SotF/"
+    cp "$PROJECT_ROOT/builds/macos/org.spinorama.sotf-systemwide.plist" \
+        "$pkg_root/Library/Application Support/SotF/"
 
     # Copy HAL driver to pkg root
     if $BUILD_HAL && [ -d "$DRIVER_BUNDLE" ]; then
@@ -1170,8 +1216,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/installer-common.sh"
 
-AGENT_LABEL="org.spinorama.sotf-daemon"
-AGENT_SRC="/Library/Application Support/SotF/org.spinorama.sotf-daemon.plist"
+DAEMON_AGENT_LABEL="org.spinorama.sotf-daemon"
+CONFIGBAR_AGENT_LABEL="org.spinorama.sotf-systemwide"
+AGENT_TEMPLATE_DIR="/Library/Application Support/SotF"
+LOG_ROLLOVER_BYTES=10485760
 
 installer_step "Registering the SotF background audio service"
 
@@ -1184,25 +1232,72 @@ if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ]; then
     exit 0
 fi
 CONSOLE_UID="$(/usr/bin/id -u "$CONSOLE_USER")"
+CONSOLE_GROUP="$(/usr/bin/id -gn "$CONSOLE_USER")"
 USER_HOME="$(/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
 [ -n "$USER_HOME" ] || USER_HOME="/Users/$CONSOLE_USER"
-AGENT_DST="$USER_HOME/Library/LaunchAgents/$AGENT_LABEL.plist"
+LAUNCH_AGENTS_DIR="$USER_HOME/Library/LaunchAgents"
+LOG_DIR="$USER_HOME/Library/Logs/SotF"
+DAEMON_AGENT_DST="$LAUNCH_AGENTS_DIR/$DAEMON_AGENT_LABEL.plist"
+CONFIGBAR_AGENT_DST="$LAUNCH_AGENTS_DIR/$CONFIGBAR_AGENT_LABEL.plist"
 
-/bin/mkdir -p "$USER_HOME/Library/LaunchAgents"
-/bin/rm -f "$AGENT_DST"
-/usr/sbin/chown "$CONSOLE_USER" "$USER_HOME/Library/LaunchAgents"
-/usr/bin/ditto "$AGENT_SRC" "$AGENT_DST"
-/usr/sbin/chown "$CONSOLE_USER" "$AGENT_DST"
-/bin/chmod 644 "$AGENT_DST"
+install_agent() {
+    local label="$1"
+    local destination="$2"
+    local stdout_path="$3"
+    local stderr_path="$4"
 
-# Replace any live instance of the label with the freshly installed plist.
-"/bin/launchctl" bootout "gui/$CONSOLE_UID/$AGENT_LABEL" >/dev/null 2>&1 || true
+    /bin/rm -f "$destination"
+    /usr/bin/ditto "$AGENT_TEMPLATE_DIR/$label.plist" "$destination"
+    /usr/libexec/PlistBuddy -c "Set :StandardOutPath $stdout_path" "$destination"
+    /usr/libexec/PlistBuddy -c "Set :StandardErrorPath $stderr_path" "$destination"
+    /usr/sbin/chown "$CONSOLE_USER:$CONSOLE_GROUP" "$destination"
+    /bin/chmod 644 "$destination"
+}
+
+prepare_log() {
+    local log_path="$1"
+    local log_size=0
+
+    if [ -f "$log_path" ]; then
+        log_size="$(/usr/bin/stat -f '%z' "$log_path" 2>/dev/null || echo 0)"
+        if [ "$log_size" -ge "$LOG_ROLLOVER_BYTES" ]; then
+            /bin/mv -f "$log_path" "$log_path.1"
+            /usr/sbin/chown "$CONSOLE_USER:$CONSOLE_GROUP" "$log_path.1"
+            /bin/chmod 600 "$log_path.1"
+        fi
+    fi
+    /usr/bin/touch "$log_path"
+    /usr/sbin/chown "$CONSOLE_USER:$CONSOLE_GROUP" "$log_path"
+    /bin/chmod 600 "$log_path"
+}
+
+/bin/mkdir -p "$LAUNCH_AGENTS_DIR" "$LOG_DIR"
+/usr/sbin/chown "$CONSOLE_USER:$CONSOLE_GROUP" "$LAUNCH_AGENTS_DIR" "$LOG_DIR"
+/bin/chmod 700 "$LOG_DIR"
+
+install_agent \
+    "$DAEMON_AGENT_LABEL" \
+    "$DAEMON_AGENT_DST" \
+    "$LOG_DIR/sotf-daemon.log" \
+    "$LOG_DIR/sotf-daemon.log"
+install_agent \
+    "$CONFIGBAR_AGENT_LABEL" \
+    "$CONFIGBAR_AGENT_DST" \
+    "$LOG_DIR/sotf-systemwide.log" \
+    "$LOG_DIR/sotf-systemwide.error.log"
+
+# Replace any live instances with the freshly installed plists. ConfigBar is
+# started by the final package component after the HAL payload has landed.
+"/bin/launchctl" bootout "gui/$CONSOLE_UID/$DAEMON_AGENT_LABEL" >/dev/null 2>&1 || true
+"/bin/launchctl" bootout "gui/$CONSOLE_UID/$CONFIGBAR_AGENT_LABEL" >/dev/null 2>&1 || true
+
+prepare_log "$LOG_DIR/sotf-daemon.log"
+prepare_log "$LOG_DIR/sotf-systemwide.log"
+prepare_log "$LOG_DIR/sotf-systemwide.error.log"
 installer_step "Starting the SotF background audio service"
-if "/bin/launchctl" bootstrap "gui/$CONSOLE_UID" "$AGENT_DST"; then
-    echo "Registered $AGENT_LABEL LaunchAgent for $CONSOLE_USER (gui/$CONSOLE_UID)"
-else
-    echo "Warning: could not bootstrap $AGENT_LABEL; the menu bar app will retry via kickstart"
-fi
+/bin/launchctl bootstrap "gui/$CONSOLE_UID" "$DAEMON_AGENT_DST"
+/bin/launchctl print "gui/$CONSOLE_UID/$DAEMON_AGENT_LABEL" >/dev/null
+echo "Registered $DAEMON_AGENT_LABEL LaunchAgent for $CONSOLE_USER (gui/$CONSOLE_UID)"
 
 exit 0
 POSTINSTALL
@@ -1218,16 +1313,58 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/installer-common.sh"
 installer_step "Launching SotF Systemwide"
 
-# Get the user who initiated the installation
-CONSOLE_USER=$(stat -f "%Su" /dev/console)
-
-if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
-    echo "Launching SotF Systemwide for user: $CONSOLE_USER"
-    # Use launchctl to run as the console user
-    sudo -u "$CONSOLE_USER" open -a "/Applications/sotf-systemwide.app" &
-else
-    echo "No console user found, skipping auto-launch"
+CONSOLE_USER="$(/usr/bin/stat -f "%Su" /dev/console 2>/dev/null || true)"
+if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ]; then
+    echo "No console user found; skipping auto-launch"
+    exit 0
 fi
+
+CONSOLE_UID="$(/usr/bin/id -u "$CONSOLE_USER")"
+USER_HOME="$(/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
+[ -n "$USER_HOME" ] || USER_HOME="/Users/$CONSOLE_USER"
+AGENT_LABEL="org.spinorama.sotf-systemwide"
+AGENT_DST="$USER_HOME/Library/LaunchAgents/$AGENT_LABEL.plist"
+APP_EXECUTABLE="/Applications/sotf-systemwide.app/Contents/MacOS/sotf-systemwide"
+
+if [ ! -f "$AGENT_DST" ]; then
+    echo "Error: ConfigBar LaunchAgent is missing: $AGENT_DST"
+    exit 1
+fi
+if [ ! -x "$APP_EXECUTABLE" ]; then
+    echo "Error: ConfigBar executable is missing or not executable: $APP_EXECUTABLE"
+    exit 1
+fi
+
+run_as_console_user() {
+    /bin/launchctl asuser "$CONSOLE_UID" /usr/bin/sudo -u "$CONSOLE_USER" "$@"
+}
+
+echo "Starting freshly installed SotF Systemwide for user: $CONSOLE_USER"
+run_as_console_user /bin/launchctl bootout "gui/$CONSOLE_UID/$AGENT_LABEL" >/dev/null 2>&1 || true
+run_as_console_user /bin/launchctl bootstrap "gui/$CONSOLE_UID" "$AGENT_DST"
+run_as_console_user /bin/launchctl kickstart "gui/$CONSOLE_UID/$AGENT_LABEL"
+/bin/launchctl print "gui/$CONSOLE_UID/$AGENT_LABEL" >/dev/null
+
+APP_PID=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+    APP_PID="$(/usr/bin/pgrep -u "$CONSOLE_UID" -x "sotf-systemwide" | /usr/bin/head -n 1 || true)"
+    [ -n "$APP_PID" ] && break
+    /bin/sleep 1
+done
+if [ -z "$APP_PID" ]; then
+    echo "Error: ConfigBar LaunchAgent loaded, but sotf-systemwide did not stay running"
+    exit 1
+fi
+
+APP_COMMAND="$(/bin/ps -p "$APP_PID" -o command= 2>/dev/null || true)"
+case "$APP_COMMAND" in
+    "$APP_EXECUTABLE"|"$APP_EXECUTABLE "*) ;;
+    *)
+        echo "Error: ConfigBar PID $APP_PID is not the newly installed executable: $APP_COMMAND"
+        exit 1
+        ;;
+esac
+echo "Verified ConfigBar PID $APP_PID from $APP_EXECUTABLE"
 
 exit 0
 LAUNCHSCRIPT
@@ -1256,6 +1393,7 @@ source "$SCRIPT_DIR/installer-common.sh"
 installer_step "Stopping the current SotF audio service"
 
 DAEMON_AGENT_LABEL="org.spinorama.sotf-daemon"
+CONFIGBAR_AGENT_LABEL="org.spinorama.sotf-systemwide"
 
 daemon_is_running() {
     /usr/bin/pgrep -x "sotf-daemon" >/dev/null 2>&1
@@ -1388,23 +1526,32 @@ quit_systemwide_app() {
     /usr/bin/pkill -TERM -x "SotF Systemwide" >/dev/null 2>&1 || true
     /usr/bin/pkill -TERM -x "SotF Toolbar" >/dev/null 2>&1 || true
     /usr/bin/pkill -TERM -x "SotF ConfigBar" >/dev/null 2>&1 || true
-    /bin/sleep 1
+    local elapsed=0
+    while /usr/bin/pgrep -x "sotf-systemwide" >/dev/null 2>&1 && [ "$elapsed" -lt 5 ]; do
+        /bin/sleep 1
+        elapsed=$((elapsed + 1))
+    done
+    if /usr/bin/pgrep -x "sotf-systemwide" >/dev/null 2>&1; then
+        echo "SotF Systemwide did not exit; sending KILL"
+        /usr/bin/pkill -KILL -x "sotf-systemwide" >/dev/null 2>&1 || true
+    fi
 }
 
-bootout_daemon_launch_agent() {
+bootout_launch_agents() {
     local user_info
     local console_uid
 
     user_info="$(console_user_and_uid)"
     if [ -n "$user_info" ]; then
         console_uid="${user_info##*:}"
-        echo "Booting out $DAEMON_AGENT_LABEL for gui/$console_uid"
+        echo "Booting out SotF LaunchAgents for gui/$console_uid"
+        /bin/launchctl bootout "gui/$console_uid/$CONFIGBAR_AGENT_LABEL" >/dev/null 2>&1 || true
         /bin/launchctl bootout "gui/$console_uid/$DAEMON_AGENT_LABEL" >/dev/null 2>&1 || true
     fi
 }
 
+bootout_launch_agents
 quit_systemwide_app
-bootout_daemon_launch_agent
 quiesce_sotf_daemon
 
 installer_step "Removing legacy SotF applications"

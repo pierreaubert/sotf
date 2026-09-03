@@ -114,6 +114,7 @@ struct PlaybackRuntime {
     config: StreamConfig,
     output_format: SampleFormat,
     channels: usize,
+    logical_channels: usize,
     frame_size: usize,
     buffer_ms: u32,
     producer: Producer<f32>,
@@ -258,7 +259,7 @@ impl PlaybackRuntime {
 
         send_playback_event(
             &event_tx,
-            ThreadEvent::PlaybackChannelsChanged(channels),
+            ThreadEvent::PlaybackChannelsChanged(initial_channels),
             "initial playback channels",
         );
         let coreaudio_device_id = coreaudio_output_device_id(&device_name);
@@ -321,6 +322,7 @@ impl PlaybackRuntime {
             config,
             output_format,
             channels,
+            logical_channels: initial_channels,
             frame_size,
             buffer_ms,
             producer,
@@ -479,7 +481,9 @@ impl PlaybackRuntime {
                 )),
             );
         }
-        if requested.sample_rate == self.config.sample_rate && requested.channels == self.channels {
+        if requested.sample_rate == self.config.sample_rate
+            && requested.channels == self.logical_channels
+        {
             if !ticket.try_complete_execution() {
                 return (
                     RuntimeDecision::Proceed,
@@ -490,7 +494,7 @@ impl PlaybackRuntime {
                 RuntimeDecision::Proceed,
                 Ok(PlaybackConfiguration {
                     sample_rate: self.config.sample_rate,
-                    channels: self.channels,
+                    channels: self.logical_channels,
                 }),
             );
         }
@@ -499,7 +503,7 @@ impl PlaybackRuntime {
         log::info!(
             "[Playback Thread] Reconfiguring output: {}Hz/{}ch -> {}Hz/{}ch (drained {} frames)",
             self.config.sample_rate,
-            self.channels,
+            self.logical_channels,
             requested.sample_rate,
             requested.channels,
             drained,
@@ -526,7 +530,7 @@ impl PlaybackRuntime {
             Ok(rebuilt) => {
                 let actual = PlaybackConfiguration {
                     sample_rate: rebuilt.config.sample_rate,
-                    channels: rebuilt.channels,
+                    channels: rebuilt.logical_channels,
                 };
                 if !ticket.try_complete_execution() {
                     drop(rebuilt);
@@ -657,7 +661,7 @@ impl PlaybackRuntime {
                     );
                     send_playback_event(
                         &self.event_tx,
-                        ThreadEvent::PlaybackChannelsChanged(self.channels),
+                        ThreadEvent::PlaybackChannelsChanged(self.logical_channels),
                         "sample-rate rebuild channels",
                     );
                     self.drain_pending_messages();
@@ -694,23 +698,24 @@ impl PlaybackRuntime {
     }
 
     fn handle_channel_update(&mut self, mut new_channels: usize) -> RuntimeDecision {
+        let logical_channels = new_channels;
         log::debug!(
             "[Playback Thread] RECEIVED UpdateChannels({}) command, current channels={}",
             new_channels,
-            self.channels
+            self.logical_channels
         );
-        if new_channels == self.channels {
+        if new_channels == self.logical_channels {
             log::debug!(
                 "[Playback Thread] UpdateChannels({}) - no change needed (already at {} channels)",
                 new_channels,
-                self.channels
+                self.logical_channels
             );
             return RuntimeDecision::Proceed;
         }
 
         log::info!(
             "[Playback Thread] Updating channel count: {} -> {}",
-            self.channels,
+            self.logical_channels,
             new_channels
         );
 
@@ -734,6 +739,12 @@ impl PlaybackRuntime {
                 "[Playback Thread] Device adjusted channels back to {} (same as current), \
                  skipping rebuild. Processing chain output will be converted in the frame receive path.",
                 self.channels
+            );
+            self.logical_channels = logical_channels;
+            send_playback_event(
+                &self.event_tx,
+                ThreadEvent::PlaybackChannelsChanged(self.logical_channels),
+                "logical playback channels changed",
             );
             return RuntimeDecision::Proceed;
         }
@@ -804,9 +815,10 @@ impl PlaybackRuntime {
                     );
                     send_playback_event(
                         &self.event_tx,
-                        ThreadEvent::PlaybackChannelsChanged(self.channels),
+                        ThreadEvent::PlaybackChannelsChanged(logical_channels),
                         "channel rebuild channels",
                     );
+                    self.logical_channels = logical_channels;
 
                     let final_drained = self.drain_pending_messages();
                     if final_drained > 0 {
@@ -962,7 +974,7 @@ impl PlaybackRuntime {
                 output_device: self.output_device.as_deref(),
                 allow_virtual_output: self.allow_virtual_output,
                 sample_rate: self.config.sample_rate,
-                requested_channels: self.channels,
+                requested_channels: self.logical_channels,
                 buffer_ms: self.buffer_ms,
                 buffer_size: initial_buffer_size(self.output_access_status, self.frame_size),
                 event_tx: self.event_tx.clone(),
@@ -1034,6 +1046,7 @@ impl PlaybackRuntime {
         self.config = rebuilt.config;
         self.output_format = rebuilt.output_format;
         self.channels = rebuilt.channels;
+        self.logical_channels = rebuilt.logical_channels;
         self.buffer_capacity = rebuilt.buffer_capacity;
         self.conversion_buffer = conversion_buffer_for_ring(self.buffer_capacity);
         self.coreaudio_device_id = coreaudio_output_device_id(&self.device_name);
@@ -1048,7 +1061,7 @@ impl PlaybackRuntime {
 
         send_playback_event(
             &self.event_tx,
-            ThreadEvent::PlaybackChannelsChanged(self.channels),
+            ThreadEvent::PlaybackChannelsChanged(self.logical_channels),
             "playback channels changed",
         );
         send_playback_event(
@@ -1526,9 +1539,27 @@ impl PlaybackRuntime {
 
 fn set_realtime_priority(sample_rate: u32, frame_size: usize) {
     let _ = (sample_rate, frame_size);
-    log::warn!(
-        "[Playback Thread] cpal owns hardware-callback scheduling; the feeder is intentionally not given a hard realtime policy"
-    );
+    // CPAL owns the hardware callback and its hard realtime scheduling. The
+    // producer still has an audio deadline, so give it the same soft realtime
+    // QoS as processing without claiming THREAD_TIME_CONSTRAINT_POLICY.
+    #[cfg(target_os = "macos")]
+    {
+        match super::super::rt_priority::set_realtime_priority(
+            super::super::rt_priority::RtPriority::Processing,
+            None,
+        ) {
+            Ok(true) => log::info!("[Playback Thread] Audio-work priority set successfully"),
+            Ok(false) => {
+                log::debug!("[Playback Thread] Audio-work priority unavailable on platform")
+            }
+            Err(error) => {
+                log::warn!("[Playback Thread] Failed to set audio-work priority: {error}")
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    log::debug!("[Playback Thread] Backend callback owns scheduling; feeder priority unchanged");
 }
 
 fn sanitize_output_device(output_device: Option<String>) -> Option<String> {

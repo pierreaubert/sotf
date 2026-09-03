@@ -558,7 +558,12 @@ fn targeted_processing_has_no_cross_channel_control_leakage_at_twelve_channels()
         plugin
             .process_in_place(&mut audio, &ProcessContext::new(48_000, frames))
             .unwrap();
-        audio.chunks_exact(12).map(|frame| frame[0]).collect()
+        audio
+            .as_chunks::<12>()
+            .0
+            .iter()
+            .map(|frame| frame[0])
+            .collect()
     }
 
     assert_eq!(render(false), render(true));

@@ -526,7 +526,7 @@ mod tests {
             },
             SourceConnectionConfig::Tidal { .. } => match index {
                 0 => masked(set_value),
-                1 | 2 | 3 => set_value.to_string(),
+                1..=3 => set_value.to_string(),
                 _ => String::new(),
             },
             SourceConnectionConfig::Spotify { .. } => match index {

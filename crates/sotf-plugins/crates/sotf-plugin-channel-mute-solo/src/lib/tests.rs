@@ -608,7 +608,9 @@ fn settled_processing_uses_static_block_path_and_transition_sensitive_metadata()
     assert_eq!(plugin.static_path_blocks, 1);
     assert!(
         block
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .all(|frame| { frame[0].abs() < 1.0e-7 && (frame[1] - 1.0).abs() < 1.0e-7 })
     );
 

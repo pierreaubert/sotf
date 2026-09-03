@@ -770,6 +770,8 @@ impl RecordingScreenModel {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::field_reassign_with_default)]
+
     use super::*;
     use crate::recording_types::{
         BassAnchorChannelResult, BassAnchorResults, DelayProbeChannelResult, DelayProbeResults,

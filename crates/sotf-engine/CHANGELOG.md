@@ -1,4 +1,9 @@
-# 1.0.32 (unreleased)
+# 1.0.32-33
+
+## CoreAudio output stability
+
+- On macOS, elevate the HAL decoder and playback feeder to the engine's soft audio-work QoS class while leaving CoreAudio's hard realtime callback policy under CPAL ownership. This prevents unrelated filesystem or UI load from starving the producer stages without changing Linux/Windows scheduler policy.
+- Open the smallest advertised native CoreAudio channel layout when a device does not advertise the requested layout, while keeping the DSP graph's logical channel count independent and zero-filling unused hardware channels. This prevents stereo graphs from stalling devices such as EVO8 that expose a native six-channel stream.
 
 ## Transactional structural host updates
 

@@ -1,5 +1,5 @@
 use super::command::Command;
-use super::configured::configured_output_device_from_env;
+use super::configured::{configured_output_device, persist_output_device};
 use super::consts::LEGACY_SOCKET_PATH;
 use super::consts::MAX_HAL_CHANNELS;
 use super::consts::empty_loudness_json;
@@ -521,7 +521,7 @@ impl SystemwideController {
             let _mutation = daemon.pipeline_mutation.lock();
             println!("Auto-starting driver playback (2ch)...");
 
-            let output_device = configured_output_device_from_env();
+            let output_device = configured_output_device();
             println!("   Output device: {:?}", output_device);
 
             if let Some(device) = output_device {
@@ -1228,6 +1228,14 @@ impl SystemwideController {
                 );
                 if !resp.success {
                     return resp;
+                }
+
+                if let Err(error) = persist_output_device(&stored_name) {
+                    log::error!(
+                        "Output device '{}' is active but could not be persisted for the next daemon start: {}",
+                        stored_name,
+                        error
+                    );
                 }
 
                 Response::ok_empty()

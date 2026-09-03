@@ -160,6 +160,23 @@ public enum ConfigBarIPC {
         Int32
     ) -> Int
 
+    /// Prevent a stale Unix-domain connection from terminating ConfigBar.
+    /// Darwin raises SIGPIPE by default when `send` races a daemon-side close;
+    /// the UI must receive `EPIPE` and reconnect instead.
+    @discardableResult
+    public static func suppressSigPipe(on socketFD: Int32) -> Bool {
+        var enabled: Int32 = 1
+        return withUnsafePointer(to: &enabled) { pointer in
+            Darwin.setsockopt(
+                socketFD,
+                SOL_SOCKET,
+                SO_NOSIGPIPE,
+                pointer,
+                socklen_t(MemoryLayout<Int32>.size)
+            )
+        } == 0
+    }
+
     /// Send all bytes in `data`, handling short writes and EINTR.
     @discardableResult
     public static func writeAll(
@@ -170,6 +187,12 @@ public enum ConfigBarIPC {
         }
     ) -> Bool {
         guard !data.isEmpty else { return true }
+        // Keep the safety guarantee at the write boundary as well as the
+        // socket factories. A new caller must not be able to make a stale
+        // daemon connection process-fatal by omitting SO_NOSIGPIPE.
+        guard suppressSigPipe(on: fd) else {
+            return false
+        }
 
         return data.withUnsafeBytes { rawBuffer in
             guard let baseAddress = rawBuffer.baseAddress else { return false }
@@ -258,6 +281,10 @@ public enum ConfigBarIPC {
 
         let socketFD = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
         guard socketFD >= 0 else { return nil }
+        guard suppressSigPipe(on: socketFD) else {
+            Darwin.close(socketFD)
+            return nil
+        }
         let copiedLength = withUnsafeMutableBytes(of: &address.sun_path) { rawBuffer -> Int in
             guard let baseAddress = rawBuffer.baseAddress else { return -1 }
             return socketPath.withCString { pathCString in

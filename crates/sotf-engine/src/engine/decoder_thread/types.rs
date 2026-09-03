@@ -35,6 +35,27 @@ pub(super) fn run_decoder_thread(
     recycle_rx: Receiver<Vec<f32>>,
     dsd_output: DsdOutputMode,
 ) -> Result<(), String> {
+    // The HAL reader feeds every downstream audio stage. Leaving it at the
+    // default QoS lets unrelated filesystem/UI work starve it even though the
+    // CoreAudio callback itself is realtime, which presents as ring underruns.
+    // Use the same soft realtime/QoS class as DSP processing; hard
+    // THREAD_TIME_CONSTRAINT_POLICY remains reserved for backend callbacks.
+    #[cfg(target_os = "macos")]
+    {
+        match super::super::rt_priority::set_realtime_priority(
+            super::super::rt_priority::RtPriority::Processing,
+            None,
+        ) {
+            Ok(true) => log::info!("[Decoder Thread] Audio-work priority set successfully"),
+            Ok(false) => {
+                log::debug!("[Decoder Thread] Audio-work priority unavailable on platform")
+            }
+            Err(error) => {
+                log::warn!("[Decoder Thread] Failed to set audio-work priority: {error}")
+            }
+        }
+    }
+
     let mut state = DecoderState::new(recycle_rx, dsd_output);
 
     log::info!(

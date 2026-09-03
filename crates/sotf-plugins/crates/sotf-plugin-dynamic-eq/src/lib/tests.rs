@@ -589,7 +589,7 @@ fn zero_gain_and_settled_dry_fast_paths_preserve_dsp_state() {
     let mut zero_gain = DynamicEqPlugin::new(2);
     zero_gain.initialize(48_000).unwrap();
     let mut input = vec![0.0; 2_048];
-    for (frame, pair) in input.chunks_exact_mut(2).enumerate() {
+    for (frame, pair) in input.as_chunks_mut::<2>().0.iter_mut().enumerate() {
         pair[0] = (std::f32::consts::TAU * 1_000.0 * frame as f32 / 48_000.0).sin();
         pair[1] = -pair[0];
     }

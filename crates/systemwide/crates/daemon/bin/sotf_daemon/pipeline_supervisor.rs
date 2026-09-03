@@ -1,4 +1,4 @@
-use super::configured::configured_output_device_from_env;
+use super::configured::configured_output_device;
 use super::consts::MAX_HAL_CHANNELS;
 use super::misc::is_safe_output_device_name;
 use super::misc::sanitize_user_plugins;
@@ -97,7 +97,7 @@ impl PipelineSupervisor {
 
         let mut output_device = self.desired.output_device.clone();
         if output_device.is_none() {
-            output_device = configured_output_device_from_env();
+            output_device = configured_output_device();
         }
 
         if output_device

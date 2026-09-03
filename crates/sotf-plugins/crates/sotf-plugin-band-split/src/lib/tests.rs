@@ -112,8 +112,10 @@ fn control_rate_automation_tracks_per_sample_reference_without_zipper_energy() {
         );
 
         let zipper_power = actual
-            .chunks_exact(2)
-            .zip(expected.chunks_exact(2))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .zip(expected.as_chunks::<2>().0)
             .map(|(actual, expected)| actual[0] + actual[1] - expected[0] - expected[1])
             .collect::<Vec<_>>()
             .windows(2)

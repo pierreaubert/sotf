@@ -64,31 +64,32 @@ struct EQEditor: View {
     let onUpdate: ([String: Any]) -> Void
 
     @State private var filters: [[String: Any]] = []
+    @State private var channelFilters: [[[String: Any]]] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(filters.enumerated()), id: \.offset) { index, filter in
-                EQBandRow(
-                    index: index,
-                    filter: filter,
-                    onUpdate: { updatedFilter in
-                        filters[index] = updatedFilter
-                        emitUpdate()
-                    },
-                    onRemove: {
-                        filters.remove(at: index)
-                        emitUpdate()
+            if channelFilters.isEmpty {
+                filterRows(filters: filters, channel: nil)
+            } else {
+                ForEach(channelFilters.indices, id: \.self) { channel in
+                    GroupBox("Channel \(channel + 1)") {
+                        filterRows(filters: channelFilters[channel], channel: channel)
                     }
-                )
+                }
             }
 
             Button(action: {
-                filters.append([
+                let newFilter: [String: Any] = [
                     "filter_type": "peak",
-                    "frequency": 1000.0,
+                    "freq": 1000.0,
                     "q": 1.0,
-                    "gain_db": 0.0
-                ] as [String: Any])
+                    "db_gain": 0.0
+                ]
+                if channelFilters.isEmpty {
+                    filters.append(newFilter)
+                } else {
+                    channelFilters[0].append(newFilter)
+                }
                 emitUpdate()
             }) {
                 Label("Add Band", systemImage: "plus.circle")
@@ -96,15 +97,47 @@ struct EQEditor: View {
             .buttonStyle(.borderless)
         }
         .onAppear {
-            if let f = parameters["filters"] as? [[String: Any]] {
+            if let perChannel = parameters["channel_filters"] as? [[[String: Any]]] {
+                channelFilters = perChannel
+            } else if let f = parameters["filters"] as? [[String: Any]] {
                 filters = f
             }
         }
     }
 
+    @ViewBuilder
+    private func filterRows(filters rows: [[String: Any]], channel: Int?) -> some View {
+        ForEach(Array(rows.enumerated()), id: \.offset) { index, filter in
+            EQBandRow(
+                index: index,
+                filter: filter,
+                onUpdate: { updatedFilter in
+                    if let channel {
+                        channelFilters[channel][index] = updatedFilter
+                    } else {
+                        filters[index] = updatedFilter
+                    }
+                    emitUpdate()
+                },
+                onRemove: {
+                    if let channel {
+                        channelFilters[channel].remove(at: index)
+                    } else {
+                        filters.remove(at: index)
+                    }
+                    emitUpdate()
+                }
+            )
+        }
+    }
+
     private func emitUpdate() {
         var params = parameters
-        params["filters"] = filters
+        if channelFilters.isEmpty {
+            params["filters"] = filters
+        } else {
+            params["channel_filters"] = channelFilters
+        }
         onUpdate(params)
     }
 }
@@ -119,6 +152,8 @@ struct EQBandRow: View {
     @State private var frequency: Double = 1000.0
     @State private var q: Double = 1.0
     @State private var gainDb: Double = 0.0
+    @State private var isLoaded = false
+    @State private var usesRoomEQKeys = false
 
     let filterTypes = ["peak", "lowshelf", "highshelf", "lowpass", "highpass", "notch", "bandpass"]
 
@@ -158,20 +193,38 @@ struct EQBandRow: View {
             .buttonStyle(.borderless)
         }
         .onAppear {
+            usesRoomEQKeys = filter["freq"] != nil || filter["db_gain"] != nil
             filterType = filter["filter_type"] as? String ?? "peak"
-            frequency = filter["frequency"] as? Double ?? 1000.0
+            frequency = filter["freq"] as? Double
+                ?? filter["frequency"] as? Double
+                ?? 1000.0
             q = filter["q"] as? Double ?? 1.0
-            gainDb = filter["gain_db"] as? Double ?? 0.0
+            gainDb = filter["db_gain"] as? Double
+                ?? filter["gain_db"] as? Double
+                ?? 0.0
+            DispatchQueue.main.async {
+                isLoaded = true
+            }
         }
     }
 
     private func emitUpdate() {
-        onUpdate([
-            "filter_type": filterType,
-            "frequency": frequency,
-            "q": q,
-            "gain_db": gainDb
-        ] as [String: Any])
+        guard isLoaded else { return }
+        if usesRoomEQKeys {
+            onUpdate([
+                "filter_type": filterType,
+                "freq": frequency,
+                "q": q,
+                "db_gain": gainDb
+            ] as [String: Any])
+        } else {
+            onUpdate([
+                "filter_type": filterType,
+                "frequency": frequency,
+                "q": q,
+                "gain_db": gainDb
+            ] as [String: Any])
+        }
     }
 }
 

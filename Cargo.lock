@@ -330,7 +330,7 @@ checksum = "fb5dfbc6d8d2675589ccbe4d0fd61df2419075625f8c1a62325e718e2b0049f9"
 
 [[package]]
 name = "app-cli"
-version = "0.5.23"
+version = "0.5.24"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -10201,7 +10201,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-cast"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "env_logger",
  "log",
@@ -10215,7 +10215,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-daemon"
-version = "0.1.37"
+version = "0.1.38"
 dependencies = [
  "cpal",
  "ctrlc",
@@ -10251,7 +10251,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-dev-driver"
-version = "0.8.4"
+version = "0.8.5"
 dependencies = [
  "anyhow",
  "clap",
@@ -10271,7 +10271,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-dlna"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "env_logger",
  "log",
@@ -10290,7 +10290,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-engine"
-version = "1.0.32"
+version = "1.0.33"
 dependencies = [
  "arc-swap",
  "bytemuck",
@@ -10357,7 +10357,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-federation"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "log",
  "proptest",
@@ -10497,7 +10497,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-iamf"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "approx",
  "log",
@@ -10509,7 +10509,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-ios"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "anyhow",
  "crossbeam",
@@ -10528,7 +10528,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-media-controls"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "block2 0.6.2",
  "dispatch2",
@@ -10577,7 +10577,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-player"
-version = "0.5.126"
+version = "0.5.127"
 dependencies = [
  "anyhow",
  "audioadapter-buffers",
@@ -11251,7 +11251,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-service-spotify"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "librespot-core",
  "librespot-oauth",
@@ -11270,7 +11270,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-service-tidal"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "log",
  "reqwest 0.13.4",
@@ -11282,11 +11282,11 @@ dependencies = [
 
 [[package]]
 name = "sotf-services"
-version = "0.8.1"
+version = "0.8.2"
 
 [[package]]
 name = "sotf-streaming"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "env_logger",
  "insta",
@@ -11323,7 +11323,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-tls"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -11362,7 +11362,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-tui"
-version = "0.5.209"
+version = "0.5.210"
 dependencies = [
  "anyhow",
  "autoeq",

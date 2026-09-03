@@ -25,10 +25,24 @@ macOS Audio Apps (Safari, Spotify, ...)
   Physical speakers / headphones
 ```
 
+The daemon remembers the last physical output device that completed a
+successful pipeline transition. On the next cold start it restores that device
+before opening playback; `SOTF_OUTPUT_DEVICE` remains the explicit override.
+Persisted virtual/loopback device names are ignored to preserve the no-feedback
+invariant.
+
 External processes (Swift menubar app, GPUI configbar) control the daemon over a Unix domain socket with a JSON line protocol.
 Configbar mutations are serialized off the main thread; its status and
 metering polls reuse a reconnecting client connection. A live daemon started by
 launchd or a developer is adopted rather than killed and replaced.
+
+The macOS installer registers daemon and Configbar as per-user LaunchAgents.
+Runtime logs are `~/Library/Logs/SotF/sotf-daemon.log`,
+`~/Library/Logs/SotF/sotf-systemwide.log`, and
+`~/Library/Logs/SotF/sotf-systemwide.error.log`; files at least 10 MiB are
+rolled to `.1` during upgrades. The final installer component starts Configbar
+through the console user's launchd domain and verifies the installed executable
+stays running.
 
 ## Crates
 

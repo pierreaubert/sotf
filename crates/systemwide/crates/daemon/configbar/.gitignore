@@ -1,6 +1,6 @@
 .DS_Store
 *.app
 *~
-/docs
-/.build
+docs
+.build
 

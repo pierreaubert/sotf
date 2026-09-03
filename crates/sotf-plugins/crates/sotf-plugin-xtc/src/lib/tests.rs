@@ -220,7 +220,9 @@ fn test_roomeq_recommended_matrix_supports_more_than_two_speakers() {
         .unwrap();
     assert!(produced > 0);
     let center_energy: f32 = output
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .take(produced)
         .map(|frame| frame[2].abs())
         .sum();

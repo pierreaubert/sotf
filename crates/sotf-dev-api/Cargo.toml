@@ -19,3 +19,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+# Exercise canonical hashing with insertion-ordered JSON maps even when this
+# crate is tested independently of workspace feature unification.
+serde_json = { workspace = true, features = ["preserve_order"] }

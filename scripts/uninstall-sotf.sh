@@ -167,6 +167,7 @@ log_info "[2/6] Unloading LaunchAgents..."
 # Boot out the daemon agent from the gui domain first; the plist uses
 # KeepAlive so plain unload may not stop a launchd-managed daemon.
 launchctl bootout "gui/$(id -u)/${DAEMON_BUNDLE_ID}" 2>/dev/null || true
+launchctl bootout "gui/$(id -u)/${SYSTEMWIDE_BUNDLE_ID}" 2>/dev/null || true
 
 # Unload Systemwide LaunchAgent
 if [ -f "${SYSTEMWIDE_PLIST}" ]; then
@@ -211,6 +212,10 @@ done
 if [ -f "/Library/Application Support/SotF/org.spinorama.sotf-daemon.plist" ]; then
     sudo rm -f "/Library/Application Support/SotF/org.spinorama.sotf-daemon.plist"
     log_success "Removed staged daemon LaunchAgent plist"
+fi
+if [ -f "/Library/Application Support/SotF/org.spinorama.sotf-systemwide.plist" ]; then
+    sudo rm -f "/Library/Application Support/SotF/org.spinorama.sotf-systemwide.plist"
+    log_success "Removed staged ConfigBar LaunchAgent plist"
 fi
 
 log_info "[4/6] Removing applications..."
@@ -278,6 +283,12 @@ fi
 
 # Remove logs (unless --keep-logs)
 if [ "$KEEP_LOGS" = false ]; then
+    rm -f "$USER_HOME/Library/Logs/SotF/sotf-daemon.log" 2>/dev/null || true
+    rm -f "$USER_HOME/Library/Logs/SotF/sotf-daemon.log.1" 2>/dev/null || true
+    rm -f "$USER_HOME/Library/Logs/SotF/sotf-systemwide.log" 2>/dev/null || true
+    rm -f "$USER_HOME/Library/Logs/SotF/sotf-systemwide.log.1" 2>/dev/null || true
+    rm -f "$USER_HOME/Library/Logs/SotF/sotf-systemwide.error.log" 2>/dev/null || true
+    rm -f "$USER_HOME/Library/Logs/SotF/sotf-systemwide.error.log.1" 2>/dev/null || true
     rm -f /tmp/sotf-systemwide.log 2>/dev/null || true
     rm -f /tmp/sotf-systemwide.error.log 2>/dev/null || true
     rm -f /tmp/sotf-toolbar.log 2>/dev/null || true
@@ -313,7 +324,7 @@ fi
 
 if [ "$KEEP_LOGS" = true ]; then
     echo "Log files were kept. To remove them:"
-    echo "  rm -f /tmp/sotf-*.log /tmp/autoeq-*.log"
+    echo "  rm -f '$USER_HOME/Library/Logs/SotF/'*.log* /tmp/sotf-*.log /tmp/autoeq-*.log"
     echo ""
 fi
 

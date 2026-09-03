@@ -1335,8 +1335,10 @@ fn autogain_target_lufs_changes_compensation() {
 
 #[test]
 fn autogain_target_lufs_updates_the_helper() {
-    let mut params = CrossfeedPluginParams::default();
-    params.autogain_enabled = true;
+    let params = CrossfeedPluginParams {
+        autogain_enabled: true,
+        ..CrossfeedPluginParams::default()
+    };
     let mut plugin = CrossfeedPlugin::new(params).unwrap();
     plugin.initialize(48_000).unwrap();
     plugin
@@ -1529,7 +1531,12 @@ fn hrtf_preserves_mono_fold_and_bounds_antiphase_input() {
         })
         .collect();
     let output = render_hrtf(&input, &[4096]);
-    for (source, rendered) in input.chunks_exact(2).zip(output.chunks_exact(2)) {
+    for (source, rendered) in input
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .zip(output.as_chunks::<2>().0)
+    {
         assert!(((source[0] + source[1]) - (rendered[0] + rendered[1])).abs() < 1e-6);
     }
     let peak = output

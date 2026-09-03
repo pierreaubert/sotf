@@ -100,8 +100,19 @@ fn playback_feeder_does_not_claim_hardware_callback_realtime_policy() {
     )
     .unwrap();
 
-    assert!(runtime.contains("cpal owns hardware-callback scheduling"));
+    assert!(runtime.contains("CPAL owns the hardware callback"));
+    assert!(runtime.contains("RtPriority::Processing"));
     assert!(!runtime.contains("RtPriority::Playback"));
+}
+
+#[test]
+fn decoder_uses_soft_audio_work_priority() {
+    let decoder = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/engine/decoder_thread/types.rs"),
+    )
+    .unwrap();
+    assert!(decoder.contains("RtPriority::Processing"));
+    assert!(!decoder.contains("RtPriority::Playback"));
 }
 
 #[test]

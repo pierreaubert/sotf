@@ -880,11 +880,15 @@ fn rendered_audio_preserves_lr_energy_at_every_width_and_frequency() {
             // to reach their steady-state unit-energy sinusoidal response.
             let skip = 12_000;
             let left = output[skip * 2..]
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|frame| (frame[0] as f64).powi(2))
                 .sum::<f64>();
             let right = output[skip * 2..]
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|frame| (frame[1] as f64).powi(2))
                 .sum::<f64>();
             let ratio = (right / left).sqrt();
@@ -897,7 +901,9 @@ fn rendered_audio_preserves_lr_energy_at_every_width_and_frequency() {
                 .map(|sample| (*sample as f64).powi(2))
                 .sum::<f64>();
             let fold_energy = output[skip * 2..]
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|frame| (((frame[0] + frame[1]) * 0.5) as f64).powi(2))
                 .sum::<f64>();
             assert!(
@@ -972,9 +978,16 @@ fn settled_zero_width_uses_exact_duplicate_fast_path() {
             &ProcessContext::new(48_000, input.len()),
         )
         .unwrap();
-    assert!(output.chunks_exact(2).zip(&input).all(|(frame, input)| {
-        frame[0].to_bits() == input.to_bits() && frame[1].to_bits() == input.to_bits()
-    }));
+    assert!(
+        output
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .zip(&input)
+            .all(|(frame, input)| {
+                frame[0].to_bits() == input.to_bits() && frame[1].to_bits() == input.to_bits()
+            })
+    );
     assert_eq!(plugin.duplicate_fast_path_frames, input.len());
     assert_eq!(plugin.smoothed_width_frames, 0);
 }
@@ -1002,7 +1015,9 @@ fn settled_nonzero_width_avoids_per_sample_smoother_work() {
     assert!(output.iter().all(|sample| sample.is_finite()));
     assert!(
         output
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .skip(2_048)
             .any(|frame| (frame[0] - frame[1]).abs() > 1.0e-4)
     );

@@ -266,6 +266,9 @@ fn daemon_pkg_preinstall_quiesces_running_daemon_before_upgrade() {
 #[test]
 fn systemwide_pkg_ships_launch_agent_and_exposes_installer_progress_and_logs() {
     let source = include_str!("../../../../../scripts/build-systemwide.sh");
+    let daemon_plist = include_str!("../../../../../builds/macos/org.spinorama.sotf-daemon.plist");
+    let configbar_plist =
+        include_str!("../../../../../builds/macos/org.spinorama.sotf-systemwide.plist");
 
     assert!(
         source.contains("local hal_pkg_root=\"$DMG_DIR/pkg-root-hal\"")
@@ -275,10 +278,33 @@ fn systemwide_pkg_ships_launch_agent_and_exposes_installer_progress_and_logs() {
     );
     assert!(
         source.contains("$pkg_root/Library/Application Support/SotF/")
-            && source.contains(
-                "AGENT_SRC=\"/Library/Application Support/SotF/org.spinorama.sotf-daemon.plist\""
-            ),
-        "the LaunchAgent plist consumed by postinstall must be present in the app component payload"
+            && source.contains("$PROJECT_ROOT/builds/macos/org.spinorama.sotf-daemon.plist")
+            && source.contains("$PROJECT_ROOT/builds/macos/org.spinorama.sotf-systemwide.plist"),
+        "both LaunchAgent plists consumed by postinstall must be present in the app component payload"
+    );
+    assert!(
+        daemon_plist.contains("__SOTF_LOG_DIR__/sotf-daemon.log")
+            && configbar_plist.contains(
+                "/Applications/sotf-systemwide.app/Contents/MacOS/sotf-systemwide"
+            )
+            && configbar_plist.contains("__SOTF_LOG_DIR__/sotf-systemwide.log")
+            && configbar_plist.contains("__SOTF_LOG_DIR__/sotf-systemwide.error.log"),
+        "LaunchAgent templates should use the installed app path and installer-resolved durable logs"
+    );
+    assert!(
+        source.contains("/usr/libexec/PlistBuddy -c \"Set :StandardOutPath $stdout_path\"")
+            && source.contains("LOG_DIR=\"$USER_HOME/Library/Logs/SotF\"")
+            && source.contains("LOG_ROLLOVER_BYTES=10485760")
+            && source.contains("prepare_log \"$LOG_DIR/sotf-daemon.log\"")
+            && source.contains("prepare_log \"$LOG_DIR/sotf-systemwide.log\""),
+        "postinstall should resolve, prepare, and bound daemon and ConfigBar logs"
+    );
+    assert!(
+        source.contains("launchctl asuser \"$CONSOLE_UID\"")
+            && source.contains("bootstrap \"gui/$CONSOLE_UID\" \"$AGENT_DST\"")
+            && source.contains("kickstart \"gui/$CONSOLE_UID/$AGENT_LABEL\"")
+            && source.contains("Verified ConfigBar PID $APP_PID from $APP_EXECUTABLE"),
+        "auto-launch should start ConfigBar in the user launchd domain and verify the installed executable"
     );
     assert!(
         source.contains("<title>SotF Systemwide $VERSION</title>"),
@@ -294,10 +320,31 @@ fn systemwide_pkg_ships_launch_agent_and_exposes_installer_progress_and_logs() {
     );
     assert!(
         source.contains("/Library/Logs/SotF/installer.log")
+            && source.contains("INSTALL_LOG_ROLLOVER_BYTES=10485760")
             && source.contains("SotF installation failed")
             && source.contains("Open Logs")
             && source.contains("/usr/bin/open -a Console \"$INSTALL_LOG\""),
         "script failures should retain diagnostics and offer to open them"
+    );
+}
+
+#[test]
+fn systemwide_pkg_preinstall_boots_out_both_launch_agents() {
+    let source = include_str!("../../../../../scripts/build-systemwide.sh");
+    let preinstall_start = source
+        .find("cat > \"$pkg_scripts/preinstall\"")
+        .expect("app package preinstall should exist");
+    let hal_preinstall_start = source
+        .find("cat > \"$hal_pkg_scripts/preinstall\"")
+        .expect("HAL package preinstall should exist");
+    let preinstall_source = &source[preinstall_start..hal_preinstall_start];
+
+    assert!(
+        preinstall_source.contains("CONFIGBAR_AGENT_LABEL=\"org.spinorama.sotf-systemwide\"")
+            && preinstall_source.contains("bootout \"gui/$console_uid/$CONFIGBAR_AGENT_LABEL\"")
+            && preinstall_source.contains("bootout \"gui/$console_uid/$DAEMON_AGENT_LABEL\"")
+            && preinstall_source.contains("bootout_launch_agents\nquit_systemwide_app"),
+        "preinstall should unload both installed agents before replacing the app"
     );
 }
 

@@ -410,11 +410,14 @@ pub fn canonical_json_hash(value: &Value) -> Result<String, serde_json::Error> {
 fn canonicalize(value: &Value) -> Value {
     match value {
         Value::Object(map) => {
-            let sorted = map
+            // serde_json::Map preserves insertion order when the workspace
+            // enables `serde_json/preserve_order`. Sort explicitly so hashes
+            // do not depend on feature unification or construction order.
+            let sorted: BTreeMap<String, Value> = map
                 .iter()
                 .map(|(key, value)| (key.clone(), canonicalize(value)))
                 .collect();
-            Value::Object(sorted)
+            Value::Object(sorted.into_iter().collect())
         }
         Value::Array(values) => Value::Array(values.iter().map(canonicalize).collect()),
         _ => value.clone(),

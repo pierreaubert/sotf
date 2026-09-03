@@ -256,11 +256,18 @@ final class ConfigBarIPCTests: XCTestCase {
     }
 
     func testWriteAllRetriesShortWrites() {
+        var sockets: [Int32] = [-1, -1]
+        XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &sockets), 0)
+        defer {
+            Darwin.close(sockets[0])
+            Darwin.close(sockets[1])
+        }
+
         let payload = Data("abcdefghijklmnopqrstuvwxyz".utf8)
         var calls = 0
         var written = 0
 
-        let result = ConfigBarIPC.writeAll(fd: -1, data: payload) { _, _, count, _ in
+        let result = ConfigBarIPC.writeAll(fd: sockets[0], data: payload) { _, _, count, _ in
             calls += 1
             let amount = min(3, count)
             written += amount
@@ -290,5 +297,19 @@ final class ConfigBarIPCTests: XCTestCase {
 
         XCTAssertEqual(count, payload.count)
         XCTAssertEqual(Data(received), payload)
+    }
+
+    func testWriteToClosedDaemonSocketReturnsFailureWithoutSIGPIPE() throws {
+        var sockets: [Int32] = [-1, -1]
+        XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &sockets), 0)
+        defer { Darwin.close(sockets[0]) }
+
+        Darwin.close(sockets[1])
+
+        // writeAll itself must install SO_NOSIGPIPE. Without that invariant,
+        // this send terminates the test process instead of returning false.
+        XCTAssertFalse(
+            ConfigBarIPC.writeAll(fd: sockets[0], data: Data("stale\n".utf8))
+        )
     }
 }

@@ -1,4 +1,4 @@
-# 0.1.37 (unreleased)
+# 0.1.38 (unreleased)
 
 ## Transactional systemwide DSP graphs
 
@@ -12,6 +12,10 @@
 
 ## Review-driven startup and IPC hardening
 
+- Install and manage both daemon and Configbar LaunchAgents, retain their logs
+  under `~/Library/Logs/SotF` with bounded upgrade-time rollover, and verify the
+  newly installed Configbar is running from the current app bundle before the
+  installer reports success.
 - Fix the macOS distribution package so the daemon LaunchAgent plist is part
   of the installed app component instead of being staged outside its pkg root.
 - Show the release version in the native Installer title, publish descriptive
@@ -65,6 +69,10 @@
   snapshots/plugin state/dumps, and 1 MiB only for the plugin catalog.
 
 ## Diagnostics and recovery UX (QA-SYS-003)
+
+- Persist the last successfully applied physical output device and restore it before daemon cold-start playback, so interfaces such as EVO8 do not require an away-and-back device toggle after every launch.
+- Suppress `SIGPIPE` at every Configbar daemon-socket creation and write. Plugin and RoomEQ configuration mutations now return a recoverable error if the daemon connection closes instead of terminating Configbar.
+- Display and edit RoomEQ per-channel EQ parameters (`channel_filters`, `freq`, and `db_gain`) without emitting graph mutations while SwiftUI controls initialize.
 
 - Recover physical output streams that remain callback-active but silent after
   a long idle by rebuilding the applied pipeline once when HAL capture resumes.

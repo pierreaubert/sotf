@@ -13,6 +13,7 @@ pub(super) struct RebuiltPlaybackStream {
     pub(super) config: StreamConfig,
     pub(super) output_format: SampleFormat,
     pub(super) channels: usize,
+    pub(super) logical_channels: usize,
     pub(super) buffer_capacity: usize,
 }
 

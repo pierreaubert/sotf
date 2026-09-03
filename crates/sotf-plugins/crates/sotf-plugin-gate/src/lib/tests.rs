@@ -1259,7 +1259,7 @@ fn non_finite_audio_and_sidechain_do_not_poison_state() {
     assert!(poisoned[0].is_finite() && poisoned[2].is_finite());
 
     let mut recovery = vec![0.25; 512 * 2];
-    for frame in recovery.chunks_exact_mut(2) {
+    for frame in recovery.as_chunks_mut::<2>().0 {
         frame[1] = 0.25;
     }
     gate.process_in_place(&mut recovery, &ProcessContext::new(48_000, 512))

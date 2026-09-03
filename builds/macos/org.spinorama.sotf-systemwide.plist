@@ -6,7 +6,7 @@
 	<string>org.spinorama.sotf-systemwide</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Applications/SotF Systemwide.app/Contents/MacOS/sotf-systemwide</string>
+		<string>/Applications/sotf-systemwide.app/Contents/MacOS/sotf-systemwide</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
@@ -22,8 +22,8 @@
 		<string>Aqua</string>
 	</array>
 	<key>StandardOutPath</key>
-	<string>/tmp/sotf-systemwide.log</string>
+	<string>__SOTF_LOG_DIR__/sotf-systemwide.log</string>
 	<key>StandardErrorPath</key>
-	<string>/tmp/sotf-systemwide.error.log</string>
+	<string>__SOTF_LOG_DIR__/sotf-systemwide.error.log</string>
 </dict>
 </plist>

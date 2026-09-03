@@ -394,6 +394,10 @@ final class ConfigBarModelTests: XCTestCase {
     }
 
     func testGenerationConflictUsesActionableRackMessage() {
+        XCTAssertTrue(isConfigBarGenerationConflict(
+            "Pipeline generation conflict: intent was based on generation 1, current generation is 7."
+        ))
+        XCTAssertFalse(isConfigBarGenerationConflict("Failed to build plugin graph"))
         let message = configBarMutationErrorMessage(
             daemonError: "Pipeline generation conflict: intent was based on generation 1, current generation is 7.",
             fallback: "Failed to update plugin"

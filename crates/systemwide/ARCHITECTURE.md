@@ -122,9 +122,18 @@ capture drivers:
   reload commands: request count, total/max latency, largest serialized
   response, and budget-exceed counts. Current diagnostic budgets are 5 ms / 64
   KiB for metering and 1 s / 256 KiB for pipeline reloads.
+- Playback tracks logical DSP channels separately from the physical CoreAudio stream layout. If a device advertises only a wider native layout, the engine opens the smallest compatible native stream, maps logical channels to its leading outputs, and zero-fills unused outputs; graph validation and UI channel requirements continue to use the logical count.
+- The daemon persists the last successfully applied physical output device in the per-user application-support directory and restores it before cold-start playback. Environment selection remains an explicit override. Missing, invalid, or virtual persisted devices are rejected instead of routing processed audio back into the virtual capture device.
+- Configbar enables `SO_NOSIGPIPE` on every daemon socket. A daemon-side close therefore becomes a recoverable `EPIPE`/reconnect result instead of terminating the menu bar process while a configuration mutation is in flight.
+- On macOS, the HAL decoder, DSP processing thread, and playback feeder all run in the engine's soft audio-work QoS class. CPAL/CoreAudio alone owns the hardware callback's hard realtime policy; Linux/Windows feeder scheduling is unchanged.
 - Audio-path wall-clock heartbeat refresh and default debug tracing were
   removed. Swift IO tracing is available only when `SOTF_AUDIO_TRACE` is
   compiled in.
+- The installer owns both per-user LaunchAgents: `org.spinorama.sotf-daemon`
+  and `org.spinorama.sotf-systemwide`. It replaces both plists, starts the
+  daemon immediately, then starts and verifies Configbar after the HAL package
+  lands. launchd output is retained under `~/Library/Logs/SotF`; installation
+  rolls files at 10 MiB so the preceding run remains available as `.1`.
 - The production daemon process is owned by the `org.spinorama.sotf-daemon`
   LaunchAgent (`builds/macos/org.spinorama.sotf-daemon.plist`), registered by
   the installer for the console user with `RunAtLoad` plus `KeepAlive`.
@@ -807,12 +816,15 @@ sequenceDiagram
 
 Important details:
 
-- The daemon is a per-user LaunchAgent (`org.spinorama.sotf-daemon`). The
+- Daemon and Configbar are per-user LaunchAgents
+  (`org.spinorama.sotf-daemon` and `org.spinorama.sotf-systemwide`). The
   preinstall script boots the agent out of the gui domain *before* quiescing
   the daemon; otherwise `KeepAlive` would respawn it mid-install and race the
-  payload replacement. The app postinstall registers the freshly shipped
-  plist (`/Library/Application Support/SotF/org.spinorama.sotf-daemon.plist`)
-  into `~/Library/LaunchAgents` and bootstraps it for the console user.
+  payload replacement. The app postinstall installs both freshly shipped
+  plist templates from `/Library/Application Support/SotF` into
+  `~/Library/LaunchAgents`, patches their absolute per-user log paths, and
+  bootstraps the daemon for the console user. The final package component
+  bootstraps and verifies Configbar after the HAL component completes.
 - The installer does not rely on `launchctl kickstart` for `coreaudiod`; that
   is restricted on modern macOS.
 - Runtime cleanup targets the secure daemon socket, legacy socket, `audio.shm`,

@@ -126,6 +126,7 @@ pub(super) fn rebuild_playback_stream(
         config,
         output_format,
         channels,
+        logical_channels: params.requested_channels,
         buffer_capacity,
     })
 }

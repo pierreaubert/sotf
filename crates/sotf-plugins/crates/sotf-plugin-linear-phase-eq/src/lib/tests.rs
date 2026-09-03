@@ -486,9 +486,7 @@ fn test_get_parameter_unknown_returns_none() {
 fn test_reset_clears_overlap() {
     let mut plugin = LinearPhaseEqPlugin::new(2, 48000);
     for ch in 0..plugin.channels {
-        for sample in &mut plugin.overlap[ch] {
-            *sample = 1.0;
-        }
+        plugin.overlap[ch].fill(1.0);
     }
     plugin.reset();
     for ch in 0..plugin.channels {

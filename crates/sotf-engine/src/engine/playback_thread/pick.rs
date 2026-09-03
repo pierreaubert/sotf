@@ -82,18 +82,22 @@ pub(super) fn choose_output_format(device: &Device, config: &StreamConfig) -> (S
     available_channels.dedup();
 
     if available_channels.iter().any(|&ch| ch >= config.channels) {
-        // Pick format from ANY sample-rate-compatible config (ignoring channel count).
-        let fmt = pick_format_any_channels(&candidates, config.sample_rate);
+        let stream_channels = compatible_stream_channels(config.channels, &available_channels);
+        // Select the format from the same native layout that will be opened.
+        // Choosing format and channel count independently can synthesize an
+        // unsupported pair (for example F32/6ch from F32/2ch + I16/6ch).
+        let fmt = pick_preferred_output_format(&candidates, stream_channels, config.sample_rate);
         if let Some(fmt) = fmt {
             log::info!(
-                "[Playback Thread] No exact {}ch config; using requested count with {:?} format \
+                "[Playback Thread] No exact {}ch config; using {}ch stream with {:?} format \
                  (device supports {:?}ch). Device configs: {:?}",
                 config.channels,
+                stream_channels,
                 fmt,
                 available_channels,
                 log_configs()
             );
-            return (fmt, config.channels);
+            return (fmt, stream_channels);
         }
     }
 
@@ -132,6 +136,22 @@ pub(super) fn choose_output_format(device: &Device, config: &StreamConfig) -> (S
     )
 }
 
+fn compatible_stream_channels(requested: u16, available: &[u16]) -> u16 {
+    #[cfg(target_os = "macos")]
+    {
+        available
+            .iter()
+            .copied()
+            .find(|&channels| channels >= requested)
+            .unwrap_or(requested)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = available;
+        requested
+    }
+}
+
 pub(super) fn pick_preferred_output_format(
     candidates: &[(SampleFormat, u16, cpal::SampleRate, cpal::SampleRate)],
     channels: u16,
@@ -155,23 +175,33 @@ pub(super) fn pick_preferred_output_format(
     })
 }
 
-/// Pick preferred format from ANY channel count config (for sample-rate compatibility).
-/// Used when no exact channel match exists but the device supports >= requested channels.
-pub(super) fn pick_format_any_channels(
-    candidates: &[(SampleFormat, u16, cpal::SampleRate, cpal::SampleRate)],
-    sample_rate: cpal::SampleRate,
-) -> Option<SampleFormat> {
-    [
-        SampleFormat::F32,
-        SampleFormat::I32,
-        SampleFormat::I16,
-        SampleFormat::U32,
-        SampleFormat::U16,
-    ]
-    .into_iter()
-    .find(|fmt| {
-        candidates
-            .iter()
-            .any(|c| c.0 == *fmt && c.2 <= sample_rate && c.3 >= sample_rate)
-    })
+#[cfg(test)]
+mod tests {
+    use super::{compatible_stream_channels, pick_preferred_output_format};
+    use cpal::{SampleFormat, SampleRate};
+
+    #[test]
+    fn compatible_stream_uses_native_coreaudio_channel_count() {
+        let actual = compatible_stream_channels(2, &[6]);
+        #[cfg(target_os = "macos")]
+        assert_eq!(actual, 6);
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(actual, 2);
+    }
+
+    #[test]
+    fn wider_stream_format_matches_the_selected_native_channel_layout() {
+        let rate: SampleRate = 44_100;
+        let candidates = [
+            (SampleFormat::F32, 2, rate, rate),
+            (SampleFormat::I16, 6, rate, rate),
+        ];
+        let channels = compatible_stream_channels(4, &[2, 6]);
+        let format = pick_preferred_output_format(&candidates, channels, rate);
+
+        #[cfg(target_os = "macos")]
+        assert_eq!((format, channels), (Some(SampleFormat::I16), 6));
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!((format, channels), (None, 4));
+    }
 }

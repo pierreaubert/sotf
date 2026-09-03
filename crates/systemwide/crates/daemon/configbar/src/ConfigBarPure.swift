@@ -215,12 +215,16 @@ public struct ConfigBarRefreshGate {
     }
 }
 
+public func isConfigBarGenerationConflict(_ daemonError: String?) -> Bool {
+    daemonError?.localizedCaseInsensitiveContains("generation conflict") == true
+}
+
 public func configBarMutationErrorMessage(
     daemonError: String?,
     fallback: String
 ) -> String {
     guard let daemonError else { return fallback }
-    if daemonError.localizedCaseInsensitiveContains("generation conflict") {
+    if isConfigBarGenerationConflict(daemonError) {
         return "The pipeline changed while this view was open. Refreshed to the current version; please retry."
     }
     return daemonError

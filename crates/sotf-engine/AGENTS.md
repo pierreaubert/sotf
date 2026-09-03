@@ -68,5 +68,5 @@ cargo test -p sotf-engine --features playback-runtime-harness --test playback_ru
 - Per-frame allocations on the audio thread cause crackling — always pre-allocate in `build()`, reuse via `Option::take()` during `process()`
 - GC thread handles deferred deallocation of old plugin chains
 - Output clipping (`sample.clamp(-1.0, 1.0)`) in cpal callback prevents saturation
-- The engine elevates the processing worker. cpal/CoreAudio callbacks own the deadline-critical consumer work and backend scheduling; the playback feeder stays normal priority. Verify the selected backend's callback scheduling on Linux/Windows.
+- The engine elevates the processing worker. On macOS, the decoder and playback feeder also use soft USER_INTERACTIVE QoS while cpal/CoreAudio retains ownership of the hard callback policy. The feeder stays at normal priority on Linux/Windows; verify the selected backend's callback scheduling there.
 - Embedders may enable `EngineConfig::watch_config` for file reloads, but should leave the separate `EngineConfig::watch_signals` opt-in disabled unless they intentionally want process-global SIGINT/SIGTERM/SIGHUP handlers

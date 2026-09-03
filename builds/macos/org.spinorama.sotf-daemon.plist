@@ -21,9 +21,9 @@
 		<string>Aqua</string>
 	</array>
 	<key>StandardOutPath</key>
-	<string>/tmp/sotf-daemon.launchd.log</string>
+	<string>__SOTF_LOG_DIR__/sotf-daemon.log</string>
 	<key>StandardErrorPath</key>
-	<string>/tmp/sotf-daemon.launchd.log</string>
+	<string>__SOTF_LOG_DIR__/sotf-daemon.log</string>
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>RUST_LOG</key>
