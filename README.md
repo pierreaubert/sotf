@@ -46,6 +46,15 @@ The main UI application shows you the audio player. You can access the other fun
 
 This is mainly a Rust application with some python and shell scripts. We want to keep it portable so we minimise C/C++ dependencies.
 
+
+### Use of AI tooling
+
+AI tooling is welcome. Warning: there a are a few areas where Claude and Codex are making mistakes consistently and dont understand the issues. They will not help you (or at least they cant in Sep 2026). Fundamentally they increase the code complexity and get lost, they introduced subtle bugs and created many regressions. Be very careful with:
+- sotf-engine: the audio engine with tight control over memory and multi-threading
+- systemwide: the interaction with the OS are poorly understood or outdated.
+- sotf-plugins: the llm dont really undestand audio plugins and do stupid things which are highly audible.
+The other parts of the code do benefit with using your favorite model and harness.
+
 ### Cargo
 
 Install [rustup](https://rustup.rs/) first.
