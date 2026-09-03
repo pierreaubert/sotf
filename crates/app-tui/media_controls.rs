@@ -1,5 +1,6 @@
 use sotf_media_controls::{
-    MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, PlatformConfig, WindowHandle,
+    MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MprisCapabilities,
+    PlatformConfig, WindowHandle,
 };
 use std::sync::mpsc;
 use std::time::Duration;
@@ -18,6 +19,7 @@ impl TuiMediaControls {
             dbus_name: "sotf_player",
             display_name: "SOTF Player",
             hwnd: get_hwnd(),
+            mpris_capabilities: MprisCapabilities::default(),
         };
 
         let mut controls = MediaControls::new(config)?;

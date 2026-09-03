@@ -380,7 +380,7 @@ impl PlayerView {
                             .gap(d.grid)
                             .child(
                                 div()
-                                    .text_size(d.text_lg)
+                                    .text_size(d.text_base)
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(theme.text_primary)
                                     .child(text.live_preview),

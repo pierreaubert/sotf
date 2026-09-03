@@ -45,6 +45,10 @@ pub struct DitherPlugin {
 
 impl DitherPlugin {
     pub fn new(channels: usize) -> Self {
+        assert!(
+            channels > 0,
+            "Dither requires at least one channel, got {channels}"
+        );
         let bit_depth_index = default_bit_depth();
         let noise_shaping = default_noise_shaping();
         let dither_type = default_dither_type();
@@ -74,6 +78,10 @@ impl DitherPlugin {
     }
 
     pub fn from_params(channels: usize, params: DitherPluginParams) -> Self {
+        assert!(
+            channels > 0,
+            "Dither requires at least one channel, got {channels}"
+        );
         let bit_depth_index = params.bit_depth.min(BIT_DEPTHS.len() - 1);
         let bits = BIT_DEPTHS[bit_depth_index];
         let scale = 2.0_f32.powi(bits - 1);
@@ -300,9 +308,21 @@ impl ParametricInPlacePlugin for DitherPlugin {
         buffer: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<usize> {
-        enable_ftz_daz();
         let nf = context.num_frames;
         let ch = self.channels;
+        // Complete all frame/channel arithmetic and buffer validation before
+        // touching DSP state. A short host buffer must be a control-thread
+        // error, never an audio-thread panic.
+        let sample_len = nf
+            .checked_mul(ch)
+            .ok_or_else(|| "Dither block sample count overflow".to_string())?;
+        if buffer.len() < sample_len {
+            return Err(format!(
+                "Dither buffer too small: need {sample_len} samples, got {}",
+                buffer.len()
+            ));
+        }
+        enable_ftz_daz();
         let scale = self.scale;
         let inv_scale = self.inv_scale;
         // Signed PCM uses one more negative code than positive code.  Keep

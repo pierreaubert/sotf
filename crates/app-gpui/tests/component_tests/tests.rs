@@ -5688,10 +5688,9 @@ fn sidebar_device_actions_have_keyboard_and_accessibility_contracts() {
 
     assert!(sidebar.contains("\"nav-refresh-devices\""));
     assert!(sidebar.contains("\"nav-scan-cast\""));
-    assert!(action_button.contains(".track_focus(&focus_handle)"));
-    assert!(action_button.contains(".focus_visible"));
-    assert!(action_button.contains("AriaRole::Button"));
-    assert!(action_button.contains("key == \"enter\" || key == \"space\""));
+    assert!(action_button.contains("gpui_ui_kit::Button::new"));
+    assert!(action_button.contains(".on_click"));
+    assert!(action_button.contains(".theme(button_theme)"));
     assert!(action_button.contains(".dev_track(format!(\"sidebar.{id}\"))"));
 
     let preferences_button = sidebar
@@ -5809,26 +5808,36 @@ fn phone_shared_pointer_controls_publish_keyboard_and_accessibility_contracts() 
         ("fn render_phone_play_button", "fn format_phone_time"),
     ] {
         let control = section(start, end);
-        assert!(control.contains("interactive_focus_handle"), "{start}");
-        assert!(control.contains(".track_focus(&"), "{start}");
-        assert!(control.contains(".focus_visible"), "{start}");
-        assert!(control.contains("AriaRole::Button"), "{start}");
-        assert!(
-            control.contains("key == \"enter\" || key == \"space\""),
-            "{start}"
+        let uses_toolkit_button = matches!(
+            start,
+            "fn render_phone_icon_button"
+                | "fn render_phone_sheet_action_button"
+                | "fn render_phone_plugin_graph_remove_button"
+                | "fn render_phone_wizard_button"
+                | "fn render_phone_transport_button"
+                | "fn render_phone_play_button"
         );
-        assert!(control.contains("apply_native_accessibility"), "{start}");
+        if uses_toolkit_button {
+            assert!(control.contains("gpui_ui_kit::"), "{start}");
+            assert!(control.contains(".on_click"), "{start}");
+        } else {
+            assert!(control.contains("interactive_focus_handle"), "{start}");
+            assert!(control.contains(".track_focus(&"), "{start}");
+            assert!(control.contains(".focus_visible"), "{start}");
+            assert!(control.contains("AriaRole::Button"), "{start}");
+            assert!(
+                control.contains("key == \"enter\" || key == \"space\""),
+                "{start}"
+            );
+            assert!(control.contains("apply_native_accessibility"), "{start}");
+        }
     }
 
     let tool_toggle = section("fn render_phone_tool_toggle", "fn move_phone_wizard_step");
     assert!(tool_toggle.contains("view_for_toggle.update"));
 
-    let tool_wrapper = section(
-        "fn render_phone_tool_wrapper",
-        "fn render_phone_tool_toggle",
-    );
-    assert!(tool_wrapper.contains("view_for_wizard_back.update"));
-    assert!(tool_wrapper.contains("view_for_wizard_next.update"));
+    assert!(phone.contains("view_for_wizard_back.update"));
+    assert!(phone.contains("view_for_wizard_next.update"));
 
     let eq_sheet = section(
         "fn render_phone_eq_parameter_sheet",

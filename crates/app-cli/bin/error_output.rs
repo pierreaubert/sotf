@@ -5,21 +5,51 @@
 //! here ensure that such values are redacted before they reach stderr or log
 //! files.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Debug override for URL redaction, set once from `--show-urls` at startup.
+///
+/// Off by default so embedded secrets stay redacted; when enabled, full URLs
+/// (including any secrets) pass through to ease stream-failure diagnosis.
+static SHOW_URLS: AtomicBool = AtomicBool::new(false);
+
+/// Set the `--show-urls` debug override. Call once from `main` after parsing
+/// CLI arguments; both binaries share this module.
+pub fn set_show_urls(show: bool) {
+    SHOW_URLS.store(show, Ordering::Relaxed);
+}
+
+/// Query parameter keys treated as secret-bearing (case-insensitive).
+const SECRET_KEYS: &[&str] = &[
+    "token", "api_key", "apikey", "secret", "password", "passwd", "auth", "bearer",
+];
+
 /// Redact secret-bearing values from a string intended for user-facing output.
 ///
-/// This replaces any token that looks like a URI/URL (`scheme://...`) with
-/// `[URL REDACTED]` and any common secret query parameter
-/// (`token=...`, `api_key=...`, etc.) with `[REDACTED]`. This prevents
+/// Only URLs that actually carry secrets are replaced with `[URL REDACTED]`:
+/// those with userinfo (`scheme://user:pass@host...`) or with a secret query
+/// parameter (`token=...`, `api_key=...`, etc.). Plain stream URLs pass
+/// through unchanged so failures stay debuggable. Standalone secret pairs
+/// (`token=...` outside a URL) become `[REDACTED]`. This prevents
 /// authentication tokens, API keys, and other secrets from leaking in
 /// network/server error messages.
 pub fn redact_secrets(input: &str) -> String {
+    redact_with(input, SHOW_URLS.load(Ordering::Relaxed))
+}
+
+fn redact_with(input: &str, show_urls: bool) -> String {
     let chars: Vec<char> = input.chars().collect();
     let mut output = String::with_capacity(input.len());
     let mut i = 0;
 
     while i < chars.len() {
         if let Some(url_len) = detect_url_at(&chars[i..]) {
-            output.push_str("[URL REDACTED]");
+            let url: String = chars[i..i + url_len].iter().collect();
+            if !show_urls && url_has_secret(&url) {
+                output.push_str("[URL REDACTED]");
+            } else {
+                output.push_str(&url);
+            }
             i += url_len;
         } else if let Some(secret_len) = detect_secret_at(&chars[i..]) {
             output.push_str("[REDACTED]");
@@ -31,6 +61,28 @@ pub fn redact_secrets(input: &str) -> String {
     }
 
     output
+}
+
+/// Report whether a URL string carries secret material: userinfo in the
+/// authority (`scheme://user:pass@host...`) or a secret query parameter.
+fn url_has_secret(url: &str) -> bool {
+    let Some(scheme_end) = url.find("://") else {
+        return false;
+    };
+    let rest = &url[scheme_end + 3..];
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    if rest[..authority_end].contains('@') {
+        return true;
+    }
+    let Some(query_start) = rest.find('?') else {
+        return false;
+    };
+    let query = &rest[query_start + 1..];
+    let query = query.split('#').next().unwrap_or(query);
+    query.split('&').any(|pair| {
+        let key = pair.split('=').next().unwrap_or(pair).to_lowercase();
+        SECRET_KEYS.contains(&key.as_str())
+    })
 }
 
 /// Detect a secret-bearing query parameter at the start of a character slice.
@@ -55,10 +107,7 @@ fn detect_secret_at(slice: &[char]) -> Option<usize> {
     }
 
     let key: String = key_chars.iter().collect::<String>().to_lowercase();
-    let secret_keys = [
-        "token", "api_key", "apikey", "secret", "password", "passwd", "auth", "bearer",
-    ];
-    if !secret_keys.contains(&key.as_str()) {
+    if !SECRET_KEYS.contains(&key.as_str()) {
         return None;
     }
 
@@ -120,7 +169,7 @@ fn detect_url_at(slice: &[char]) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::redact_secrets;
+    use super::{redact_secrets, redact_with};
 
     #[test]
     fn redact_secrets_leaves_plain_text_unchanged() {
@@ -143,10 +192,31 @@ mod tests {
     }
 
     #[test]
-    fn redact_secrets_redacts_multiple_urls() {
-        let input = "Try http://a.com?x=1 or https://b.com?y=2";
-        let expected = "Try [URL REDACTED] or [URL REDACTED]";
+    fn redact_secrets_preserves_plain_urls_without_secrets() {
+        let input = "Try http://a.com/stream?x=1 or https://b.com/play?y=2";
+        assert_eq!(redact_secrets(input), input);
+    }
+
+    #[test]
+    fn redact_secrets_redacts_url_with_userinfo() {
+        let input = "Failed: https://user:s3cret@example.com/stream";
+        let expected = "Failed: [URL REDACTED]";
         assert_eq!(redact_secrets(input), expected);
+    }
+
+    #[test]
+    fn redact_secrets_shows_secret_urls_when_show_urls_enabled() {
+        let input = "Failed: https://example.com/play?token=SECRET123";
+        assert_eq!(
+            redact_with(input, true),
+            input,
+            "show_urls bypass must preserve the full URL"
+        );
+        assert_eq!(
+            redact_with(input, false),
+            "Failed: [URL REDACTED]",
+            "default path must still redact secret-bearing URLs"
+        );
     }
 
     #[test]

@@ -2,6 +2,7 @@ use super::stereo_imager_plugin::StereoImagerPlugin;
 use super::stereo_imager_plugin_params::StereoImagerPluginParams;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::ParameterSet;
 use sotf_host::plugin::ProcessContext;
 
 fn make_context(num_frames: usize) -> ProcessContext<'static> {
@@ -620,5 +621,131 @@ fn test_process_freq_swap_when_low_greater_than_high() {
         .unwrap();
 
     // Processing should not crash and output should be finite
+    assert!(buffer.iter().all(|s| s.is_finite()));
+}
+
+// -------------------------------------------------------------------------
+// Hostile automation: NaN/inf/out-of-range must be rejected with state untouched
+// -------------------------------------------------------------------------
+
+fn single_float_set(id: &str, value: f32) -> ParameterSet {
+    let mut values = ParameterSet::new();
+    values.insert(ParameterId::from(id), ParameterValue::Float(value));
+    values
+}
+
+#[test]
+fn test_hostile_width_values_rejected_with_state_untouched() {
+    let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    plugin.initialize(48000).unwrap();
+
+    for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -1.0, 2.5] {
+        assert!(
+            plugin.apply_values(single_float_set("width", bad)).is_err(),
+            "width={bad} must be rejected"
+        );
+        // Field, smoother target, and cached schema must be untouched.
+        assert_eq!(plugin.width, 1.0, "width field changed by {bad}");
+        assert!(
+            (plugin.width_smoother.target() - 1.0).abs() <= f32::EPSILON,
+            "width smoother poisoned by {bad}"
+        );
+        assert_eq!(
+            plugin.parametric_get_parameter(&ParameterId::from("width")),
+            Some(ParameterValue::Float(1.0)),
+        );
+    }
+
+    // A valid value still applies afterwards, proving the plugin is usable.
+    plugin.apply_values(single_float_set("width", 1.5)).unwrap();
+    assert_eq!(plugin.width, 1.5);
+}
+
+#[test]
+fn test_hostile_crossover_values_rejected_with_state_untouched() {
+    let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    plugin.initialize(48000).unwrap();
+
+    // Out-of-range / non-finite low_mid_freq.
+    for bad in [f32::NAN, f32::INFINITY, 10.0, 5000.0] {
+        assert!(
+            plugin
+                .apply_values(single_float_set("low_mid_freq", bad))
+                .is_err(),
+            "low_mid_freq={bad} must be rejected"
+        );
+    }
+    // Out-of-range / non-finite mid_high_freq.
+    for bad in [f32::NAN, f32::NEG_INFINITY, 500.0, 20000.0] {
+        assert!(
+            plugin
+                .apply_values(single_float_set("mid_high_freq", bad))
+                .is_err(),
+            "mid_high_freq={bad} must be rejected"
+        );
+    }
+    // Joint in-range set that violates low < mid ordering.
+    let mut both = ParameterSet::new();
+    both.insert(
+        ParameterId::from("low_mid_freq"),
+        ParameterValue::Float(500.0),
+    );
+    both.insert(
+        ParameterId::from("mid_high_freq"),
+        ParameterValue::Float(400.0),
+    );
+    assert!(plugin.apply_values(both).is_err());
+
+    // Equal boundaries (low == mid == 1000) also violate strict ordering.
+    let mut equal = ParameterSet::new();
+    equal.insert(
+        ParameterId::from("low_mid_freq"),
+        ParameterValue::Float(1000.0),
+    );
+    equal.insert(
+        ParameterId::from("mid_high_freq"),
+        ParameterValue::Float(1000.0),
+    );
+    assert!(plugin.apply_values(equal).is_err());
+
+    assert_eq!(plugin.low_mid_freq, 250.0);
+    assert_eq!(plugin.mid_high_freq, 4000.0);
+    assert!((plugin.low_mid_freq_smoother.target() - 250.0).abs() <= f32::EPSILON);
+    assert!((plugin.mid_high_freq_smoother.target() - 4000.0).abs() <= f32::EPSILON);
+}
+
+#[test]
+fn test_hostile_mix_and_unknown_rejected_then_output_stays_finite() {
+    let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    plugin.initialize(48000).unwrap();
+
+    for bad in [f32::NAN, f32::INFINITY, -0.5, 1.5] {
+        assert!(
+            plugin.apply_values(single_float_set("mix", bad)).is_err(),
+            "mix={bad} must be rejected"
+        );
+    }
+    // Wrong type must be rejected, not silently stored.
+    let mut wrong_type = ParameterSet::new();
+    wrong_type.insert(ParameterId::from("width"), ParameterValue::Int(1));
+    assert!(plugin.apply_values(wrong_type).is_err());
+    // Unknown parameter must be rejected.
+    assert!(
+        plugin
+            .apply_values(single_float_set("nonexistent", 1.0))
+            .is_err()
+    );
+
+    assert_eq!(plugin.mix, 1.0);
+    assert!((plugin.mix_smoother.target() - 1.0).abs() <= f32::EPSILON);
+
+    // Smoothers were never poisoned: a block must come out fully finite.
+    let num_frames = 256;
+    let mut buffer: Vec<f32> = (0..num_frames * 2)
+        .map(|i| (i as f32 * 0.05).sin() * 0.7)
+        .collect();
+    plugin
+        .process_in_place(&mut buffer, &make_context(num_frames))
+        .unwrap();
     assert!(buffer.iter().all(|s| s.is_finite()));
 }

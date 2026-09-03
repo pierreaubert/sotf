@@ -19,6 +19,22 @@ pub(crate) fn ensure_spinorama_speakers_loading(app: &mut App) {
     spawn_spinorama_speaker_load();
 }
 
+/// Map a loss-function form value to the `autoeq` loss type.
+///
+/// Returns `None` for values the form layer cannot produce through its own
+/// cycling (e.g. a stale/foreign persisted config). Callers must surface the
+/// `None` case as a failed optimization — never panic, least of all inside
+/// the spawned worker thread where a panic would leave the UI stuck in
+/// `Running` with no result ever arriving in the slot.
+pub(super) fn parse_loss_function(loss_function: &str) -> Option<autoeq::LossType> {
+    match loss_function {
+        "flat" => Some(autoeq::LossType::SpeakerFlat),
+        "flat-asymmetric" => Some(autoeq::LossType::SpeakerFlatAsymmetric),
+        "score" => Some(autoeq::LossType::SpeakerScore),
+        _ => None,
+    }
+}
+
 pub(super) fn spawn_spinorama_speaker_load() {
     let result_slot = SPEAKERS_RESULT
         .get_or_init(|| Arc::new(Mutex::new(None)))
@@ -54,6 +70,23 @@ pub(super) fn spawn_spinorama_optimization(app: &mut App) {
             return;
         }
     };
+
+    // Validate the loss-function form value before spawning: an unknown
+    // value (e.g. from a stale or hand-edited persisted config) must fail
+    // fast here instead of panicking inside the worker thread, where the
+    // panic would silently kill the thread and wedge the UI in `Running`.
+    let loss_function_value = app
+        .spinorama_eq
+        .model
+        .optimizer_config
+        .loss_function
+        .clone();
+    if parse_loss_function(&loss_function_value).is_none() {
+        app.spinorama_eq.model.optimization_status = OptimizationStatus::Failed;
+        app.spinorama_eq.model.error_message =
+            Some(format!("Unknown loss function: {loss_function_value}"));
+        return;
+    }
 
     app.spinorama_eq.model.optimization_status = OptimizationStatus::Running;
     app.spinorama_eq.model.error_message = None;
@@ -143,12 +176,18 @@ pub(super) fn spawn_spinorama_optimization(app: &mut App) {
             "ls-pk-hs" => autoeq::PeqModel::LsPkHs,
             _ => autoeq::PeqModel::Pk,
         };
-        // Map loss function string to LossType enum
-        args.loss = match loss_function.as_str() {
-            "flat" => autoeq::LossType::SpeakerFlat,
-            "flat-asymmetric" => autoeq::LossType::SpeakerFlatAsymmetric,
-            "score" => autoeq::LossType::SpeakerScore,
-            other => panic!("Unknown loss function: {}", other),
+        // Map loss function string to LossType enum. Unknown values are
+        // rejected at the form layer above; this arm is defense-in-depth so
+        // the worker reports `Err` through the result slot instead of
+        // panicking (a thread panic would wedge the UI in `Running`).
+        args.loss = match parse_loss_function(&loss_function) {
+            Some(loss) => loss,
+            None => {
+                if let Ok(mut guard) = result_slot2.lock() {
+                    *guard = Some(Err(format!("Unknown loss function: {loss_function}")));
+                }
+                return;
+            }
         };
         // Psychoacoustic smoothing not directly on Args — handled via smooth settings
         let _ = psychoacoustic; // TODO: map when autoeq supports it directly

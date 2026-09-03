@@ -416,3 +416,65 @@ fn open_rejects_no_mix_presentations() {
     let err = IamfDecoder::open(Cursor::new(&stream)).unwrap_err();
     assert!(matches!(err, IamfError::NoMixPresentations));
 }
+
+#[test]
+fn open_rejects_channel_element_with_zero_layers() {
+    // Crafted bitstream: channel element declares no layers. The scalable
+    // config parser accepts that shape; `open()` must report ParseError
+    // (defense in depth alongside the renderer's own empty-layer check)
+    // instead of panicking.
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&leb128_u32(0)); // audio_element_id
+    payload.push(0x00); // Channel
+    payload.extend_from_slice(&leb128_u32(0)); // codec_config_id
+    payload.extend_from_slice(&leb128_u32(1)); // num_substreams
+    payload.extend_from_slice(&leb128_u32(0)); // substream_id 0
+    payload.extend_from_slice(&leb128_u32(0)); // num_parameters
+    payload.push(0x00); // num_layers=0 (top 3 bits)
+
+    let mut stream = Vec::new();
+    stream.extend_from_slice(&seq_header_obu());
+    stream.extend_from_slice(&codec_config_lpcm_obu());
+    stream.extend_from_slice(&obu_header(1, &payload));
+    stream.extend_from_slice(&mix_presentation_stereo_obu());
+
+    let err = IamfDecoder::open(Cursor::new(&stream)).unwrap_err();
+    assert!(
+        matches!(err, IamfError::ParseError(_)),
+        "zero-layer channel element must be a ParseError, got {err:?}"
+    );
+}
+
+#[test]
+fn decode_next_rejects_out_of_range_substream_id() {
+    // Crafted bitstream: the element references substream ID 7 but only one
+    // decoder slot exists. Decoding must return an error, not panic on the
+    // out-of-bounds slot access.
+    let mut element = Vec::new();
+    element.extend_from_slice(&leb128_u32(0)); // audio_element_id
+    element.push(0x00); // Channel
+    element.extend_from_slice(&leb128_u32(0)); // codec_config_id
+    element.extend_from_slice(&leb128_u32(1)); // num_substreams
+    element.extend_from_slice(&leb128_u32(7)); // substream_id 7: no such slot
+    element.extend_from_slice(&leb128_u32(0)); // num_parameters
+    element.push(0x20); // num_layers=1 (top 3 bits)
+    element.push(0x10);
+    element.push(0x01);
+    element.push(0x01);
+
+    let mut stream = Vec::new();
+    stream.extend_from_slice(&seq_header_obu());
+    stream.extend_from_slice(&codec_config_lpcm_obu());
+    stream.extend_from_slice(&obu_header(1, &element));
+    stream.extend_from_slice(&mix_presentation_stereo_obu());
+    stream.extend_from_slice(&temporal_delimiter_obu());
+    stream.extend_from_slice(&audio_frame_obu(7, &[0i16; 4]));
+
+    let mut decoder = IamfDecoder::open(Cursor::new(&stream)).unwrap();
+    let mut output = vec![0.0_f32; 4];
+    let err = decoder.decode_next(&mut output).unwrap_err();
+    assert!(
+        matches!(err, IamfError::ParseError(_)),
+        "out-of-range substream ID must be a ParseError, got {err:?}"
+    );
+}

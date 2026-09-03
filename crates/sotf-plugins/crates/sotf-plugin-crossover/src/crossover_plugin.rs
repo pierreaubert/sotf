@@ -1002,7 +1002,9 @@ impl Plugin for CrossoverPlugin {
         if self.kind == CrossoverKind::LinearPhase {
             if self.is_multiway() {
                 let num_bands = self.num_bands();
-                let mb = self.fir_multiband.as_mut().unwrap();
+                let mb = self.fir_multiband.as_mut().ok_or_else(|| {
+                    "crossover multiband FIR bank missing for multi-way linear-phase mode; rebuild the graph".to_string()
+                })?;
 
                 for frame in 0..num_frames {
                     let in_off = frame * in_ch;
@@ -1041,7 +1043,9 @@ impl Plugin for CrossoverPlugin {
                     }
                 }
             } else {
-                let xover = self.fir_crossover_2way.as_mut().unwrap();
+                let xover = self.fir_crossover_2way.as_mut().ok_or_else(|| {
+                    "crossover two-way FIR bank missing for linear-phase mode; rebuild the graph".to_string()
+                })?;
                 for frame in 0..num_frames {
                     let in_off = frame * in_ch;
                     let out_off = frame * out_ch;
@@ -1067,7 +1071,10 @@ impl Plugin for CrossoverPlugin {
         } else if self.is_multiway() {
             // Multi-way processing
             let num_bands = self.num_bands();
-            let banks = self.multiband.as_mut().unwrap();
+            let banks = self.multiband.as_mut().ok_or_else(|| {
+                "crossover LR multiband bank missing for multi-way mode; rebuild the graph"
+                    .to_string()
+            })?;
 
             // Sub-block size for frequency updates: every 16 samples to avoid
             // zipper noise while keeping CPU cost reasonable.

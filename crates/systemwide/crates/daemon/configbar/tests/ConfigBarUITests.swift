@@ -108,6 +108,32 @@ final class ConfigBarUITests: XCTestCase {
         XCTAssertFalse(isConfigBarVirtualDevice("Built-in Output"))
     }
 
+    func testLifecycleWorkKeepsMainQueueResponsiveAndCompletesOnMain() {
+        let lifecycleStarted = expectation(description: "slow lifecycle work started")
+        let mainQueueResponsive = expectation(description: "main queue remains responsive")
+        let completion = expectation(description: "lifecycle completion")
+        let releaseLifecycleWork = DispatchSemaphore(value: 0)
+        let manager = DaemonManager { _ in
+            XCTAssertFalse(Thread.isMainThread)
+            lifecycleStarted.fulfill()
+            XCTAssertEqual(releaseLifecycleWork.wait(timeout: .now() + 1), .success)
+            return true
+        }
+
+        manager.kickstartAgentForTesting { started in
+            XCTAssertTrue(Thread.isMainThread)
+            XCTAssertTrue(started)
+            completion.fulfill()
+        }
+        DispatchQueue.main.async {
+            mainQueueResponsive.fulfill()
+        }
+
+        wait(for: [lifecycleStarted, mainQueueResponsive], timeout: 1)
+        releaseLifecycleWork.signal()
+        wait(for: [completion], timeout: 1)
+    }
+
     func testDaemonManagerAdoptsLiveFixtureAndRemainsResponsive() throws {
         let path = "/tmp/sotf-configbar-adoption-\(getpid()).sock"
         let serverFD = try makeUnixServer(path: path)

@@ -33,7 +33,7 @@ mod state_helpers;
 mod tests;
 mod thread_event_visitor;
 mod types;
-mod validate;
+pub(crate) mod validate;
 mod wait;
 
 use config_update_queue::run_manager_thread;

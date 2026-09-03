@@ -88,8 +88,22 @@ impl DsdDataSource {
                 let cached_end = cache_start.saturating_add(*cache_len as u64);
                 if relative_offset >= *cache_start && relative_end <= cached_end {
                     let cache_offset = usize::try_from(relative_offset - *cache_start)
-                        .expect("cached DSD offset fits cache length");
-                    dest.copy_from_slice(&cache[cache_offset..cache_offset + dest.len()]);
+                        .map_err(|_| {
+                            AudioDecoderError::DecodingFailed(format!(
+                                "DSD cached offset is too large to address at byte {relative_offset}"
+                            ))
+                        })?;
+                    let cache_end = cache_offset.checked_add(dest.len()).ok_or_else(|| {
+                        AudioDecoderError::DecodingFailed(format!(
+                            "DSD cached read length overflows at byte {relative_offset}"
+                        ))
+                    })?;
+                    let cached = cache.get(cache_offset..cache_end).ok_or_else(|| {
+                        AudioDecoderError::DecodingFailed(format!(
+                            "DSD cache is inconsistent at byte {relative_offset}"
+                        ))
+                    })?;
+                    dest.copy_from_slice(cached);
                     return Ok(());
                 }
 
@@ -103,9 +117,26 @@ impl DsdDataSource {
                             "Failed to seek DSD data at byte {relative_offset}: {error}"
                         ))
                     })?;
+                if dest.len() > cache.len() {
+                    // Oversized read: larger than the whole cache, so bypass it
+                    // and read straight into the destination. The cache is
+                    // invalidated (a later small read simply refills it).
+                    file.read_exact(dest).map_err(|error| {
+                        AudioDecoderError::IoError(format!(
+                            "Failed to read DSD data at byte {relative_offset}: {error}"
+                        ))
+                    })?;
+                    *cache_start = relative_offset;
+                    *cache_len = 0;
+                    return Ok(());
+                }
                 let available =
                     usize::try_from((*data_len - relative_offset).min(cache.len() as u64))
-                        .expect("bounded DSD cache length fits usize");
+                        .map_err(|_| {
+                            AudioDecoderError::DecodingFailed(format!(
+                                "DSD read at byte {relative_offset} exceeds addressable length"
+                            ))
+                        })?;
                 file.read_exact(&mut cache[..available]).map_err(|error| {
                     AudioDecoderError::IoError(format!(
                         "Failed to read DSD data at byte {relative_offset}: {error}"
@@ -113,7 +144,12 @@ impl DsdDataSource {
                 })?;
                 *cache_start = relative_offset;
                 *cache_len = available;
-                dest.copy_from_slice(&cache[..dest.len()]);
+                let cached = cache.get(..dest.len()).ok_or_else(|| {
+                    AudioDecoderError::DecodingFailed(format!(
+                        "DSD cache refill is short at byte {relative_offset}"
+                    ))
+                })?;
+                dest.copy_from_slice(cached);
                 Ok(())
             }
         }

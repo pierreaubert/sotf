@@ -50,6 +50,71 @@ unsafe impl Send for WindowHandle<'_> {}
 // SAFETY: same justification as `Send`.
 unsafe impl Sync for WindowHandle<'_> {}
 
+/// MPRIS capability advertisement (Linux / FreeBSD only).
+///
+/// Controls which capabilities the MPRIS player advertises over D-Bus
+/// (`can_play`, `can_pause`, `can_go_next`, `can_go_previous`, `can_seek`,
+/// `can_control`). Desktop clients hide controls the app does not advertise,
+/// so an app that cannot honor remote seeking should clear
+/// [`MprisCapabilities::seek`] instead of silently ignoring the events.
+///
+/// [`MprisCapabilities::all`] (the default) preserves the historical behavior
+/// of advertising full control. Ignored on macOS and on stub platforms.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "six independent MPRIS capability flags map 1:1 onto the mpris-server builder; a bitmask would only obscure the call site"
+)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MprisCapabilities {
+    /// Advertise `can_play`.
+    pub play: bool,
+    /// Advertise `can_pause`.
+    pub pause: bool,
+    /// Advertise `can_go_next`.
+    pub next: bool,
+    /// Advertise `can_go_previous`.
+    pub previous: bool,
+    /// Advertise `can_seek` (covers `SetPosition` / `SeekBy` requests).
+    pub seek: bool,
+    /// Advertise `can_control` (master switch for remote control).
+    pub control: bool,
+}
+
+impl MprisCapabilities {
+    /// Advertise full control (historical default).
+    #[must_use]
+    pub fn all() -> Self {
+        Self {
+            play: true,
+            pause: true,
+            next: true,
+            previous: true,
+            seek: true,
+            control: true,
+        }
+    }
+
+    /// Advertise no capabilities. The player still appears on D-Bus for
+    /// metadata/status display, but clients offer no controls.
+    #[must_use]
+    pub fn none() -> Self {
+        Self {
+            play: false,
+            pause: false,
+            next: false,
+            previous: false,
+            seek: false,
+            control: false,
+        }
+    }
+}
+
+impl Default for MprisCapabilities {
+    fn default() -> Self {
+        Self::all()
+    }
+}
+
 /// Platform-specific construction config.
 #[derive(Debug, Clone, Default)]
 pub struct PlatformConfig<'a> {
@@ -57,6 +122,10 @@ pub struct PlatformConfig<'a> {
     pub dbus_name: &'a str,
     /// User-visible application name.
     pub display_name: &'a str,
+    /// MPRIS capability advertisement on Linux / FreeBSD. Ignored on macOS
+    /// (which always wires the fixed command set documented on
+    /// [`MediaControlEvent`]) and on stub platforms.
+    pub mpris_capabilities: MprisCapabilities,
     /// Windows HWND. Ignored on macOS / Linux; currently unused because the
     /// Windows backend is a no-op.
     ///
@@ -90,6 +159,14 @@ impl<'a> PlatformConfig<'a> {
     #[must_use]
     pub fn with_display_name(mut self, name: &'a str) -> Self {
         self.display_name = name;
+        self
+    }
+
+    /// Builder-style constructor for the MPRIS capability advertisement
+    /// (Linux / FreeBSD). Ignored on other platforms.
+    #[must_use]
+    pub fn with_mpris_capabilities(mut self, caps: MprisCapabilities) -> Self {
+        self.mpris_capabilities = caps;
         self
     }
 }
@@ -133,12 +210,22 @@ pub enum MediaControlEvent {
     Previous,
     Stop,
     /// Absolute position requested by the user (e.g. dragging the scrubber).
+    ///
+    /// Wired on macOS (`changePlaybackPositionCommand`) and on MPRIS. MPRIS
+    /// clients only offer it when [`MprisCapabilities::seek`] is advertised.
     SetPosition(MediaPosition),
     /// Volume in `[0.0, 1.0]`.
+    ///
+    /// MPRIS-only: macOS does not forward volume changes to the app.
     SetVolume(f64),
     /// "Skip 10s" style seek with implementation-defined offset.
+    ///
+    /// Currently produced by neither backend (MPRIS skip requests arrive as
+    /// `SeekBy`); retained for API completeness.
     Seek(SeekDirection),
     /// Explicit duration-offset seek.
+    ///
+    /// MPRIS-only: macOS wires no skip-interval command.
     SeekBy(SeekDirection, Duration),
     /// MPRIS-only: foreground / "raise window" request. Linux consumers
     /// should handle this if the app has a visible window; otherwise desktop
@@ -262,5 +349,34 @@ mod tests {
             SeekBy(_, _)
         ));
         assert!(matches!(OpenUri("uri".to_string()), OpenUri(_)));
+    }
+
+    #[test]
+    fn mpris_capabilities_default_advertises_full_control() {
+        let caps = MprisCapabilities::default();
+        assert_eq!(caps, MprisCapabilities::all());
+        assert!(caps.play);
+        assert!(caps.pause);
+        assert!(caps.next);
+        assert!(caps.previous);
+        assert!(caps.seek);
+        assert!(caps.control);
+    }
+
+    #[test]
+    fn mpris_capabilities_none_disables_everything() {
+        let caps = MprisCapabilities::none();
+        assert!(!caps.play);
+        assert!(!caps.pause);
+        assert!(!caps.next);
+        assert!(!caps.previous);
+        assert!(!caps.seek);
+        assert!(!caps.control);
+    }
+
+    #[test]
+    fn platform_config_builder_sets_mpris_capabilities() {
+        let cfg = PlatformConfig::default().with_mpris_capabilities(MprisCapabilities::none());
+        assert_eq!(cfg.mpris_capabilities, MprisCapabilities::none());
     }
 }

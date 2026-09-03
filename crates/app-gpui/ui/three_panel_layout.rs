@@ -31,16 +31,7 @@ impl PlayerView {
             .map_or(0.0, |node| node.width);
         let rack_mode = crate::ui::layout_tree::solved_rack_display_mode(&solved);
 
-        let divider_theme = PaneDividerTheme {
-            background: theme.background,
-            background_hover: theme.surface_hover,
-            background_collapsed: theme.surface,
-            foreground: theme.text_muted,
-            foreground_hover: theme.text_secondary,
-            border: theme.border,
-            tint: crate::theme::Theme::with_opacity(theme.accent, 0.42),
-            tint_hover: theme.accent,
-        };
+        let divider_theme = crate::ui::layout_tree::pane_divider_theme(&theme);
 
         div()
             .flex()
@@ -196,6 +187,9 @@ impl PlayerView {
                     div()
                         .w(px(library_width))
                         .h_full()
+                        .flex_none()
+                        .min_w_0()
+                        .min_h_0()
                         .overflow_hidden()
                         .child(self.render_library_screen(cx)),
                 )
@@ -248,6 +242,8 @@ impl PlayerView {
                 div()
                     .flex_1()
                     .h_full()
+                    .min_w_0()
+                    .min_h_0()
                     .overflow_hidden()
                     .child(self.render_queue_content(queue_width, cx)),
             )
@@ -255,7 +251,7 @@ impl PlayerView {
             .when(rack_visible, |d| {
                 d.child({
                     PaneDivider::vertical("queue-rack-h-divider", CollapseDirection::Right)
-                    .label(rack_label)
+                        .label(rack_label)
                         .collapsed(!rack_visible)
                         .theme(divider_theme)
                         .on_toggle({
@@ -288,6 +284,9 @@ impl PlayerView {
                     div()
                         .w(px(rack_width))
                         .h_full()
+                        .flex_none()
+                        .min_w_0()
+                        .min_h_0()
                         .overflow_hidden()
                         .child(self.render_rack_for_mode(rack_mode, cx)),
                 )
@@ -322,16 +321,7 @@ impl PlayerView {
             .map_or(0.0, |node| node.width);
         let rack_mode = crate::ui::layout_tree::solved_rack_display_mode(&solved);
 
-        let divider_theme = PaneDividerTheme {
-            background: theme.background,
-            background_hover: theme.surface_hover,
-            background_collapsed: theme.surface,
-            foreground: theme.text_muted,
-            foreground_hover: theme.text_secondary,
-            border: theme.border,
-            tint: crate::theme::Theme::with_opacity(theme.accent, 0.42),
-            tint_hover: theme.accent,
-        };
+        let divider_theme = crate::ui::layout_tree::pane_divider_theme(&theme);
 
         div()
             .flex()
@@ -473,6 +463,9 @@ impl PlayerView {
                     div()
                         .h(px(library_height))
                         .w_full()
+                        .flex_none()
+                        .min_w_0()
+                        .min_h_0()
                         .overflow_hidden()
                         .child(self.render_library_screen(cx)),
                 )
@@ -514,6 +507,8 @@ impl PlayerView {
                 div()
                     .flex_1()
                     .w_full()
+                    .min_w_0()
+                    .min_h_0()
                     .overflow_hidden()
                     .child(self.render_queue_content(queue_width, cx)),
             )
@@ -521,7 +516,7 @@ impl PlayerView {
             .when(rack_visible, |d| {
                 d.child({
                     PaneDivider::horizontal("queue-rack-v-divider", CollapseDirection::Down)
-                    .label(rack_label)
+                        .label(rack_label)
                         .collapsed(!rack_visible)
                         .theme(divider_theme)
                         .on_toggle({
@@ -554,6 +549,9 @@ impl PlayerView {
                     div()
                         .h(px(rack_height))
                         .w_full()
+                        .flex_none()
+                        .min_w_0()
+                        .min_h_0()
                         .overflow_hidden()
                         .child(self.render_rack_for_mode(rack_mode, cx)),
                 )
@@ -594,9 +592,7 @@ impl PlayerView {
                     .py(d.pad_y_half)
                     .border_b_1()
                     .border_color(theme.border)
-                    .text_size(d.text_xs)
-                    .text_color(theme.text_muted)
-                    .child("OUTPUT"),
+                    .child(Text::caption("OUTPUT")),
             )
             // Output meters
             .child(div().flex_1().p(d.pad_y).child(self.render_side_meter(

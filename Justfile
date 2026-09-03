@@ -142,12 +142,17 @@ test-pr: test-unit-core test-integration-engine test-integration-player test-dev
 [group('test')]
 [macos]
 systemwide-lab:
-	SOTF_SYSTEMWIDE_RUNTIME_DIR="/private/tmp/sotf-systemwide-lab-$USER" cargo test -p sotf-daemon --bin sotf-daemon testkit
-	SOTF_SYSTEMWIDE_RUNTIME_DIR="/private/tmp/sotf-systemwide-lab-$USER" cargo test -p sotf-daemon --test daemon_state_tests
-	SOTF_SYSTEMWIDE_RUNTIME_DIR="/private/tmp/sotf-systemwide-lab-$USER" cargo test -p sotf-daemon --features hal --test ipc_line_tests -- --test-threads=1
-	SOTF_SYSTEMWIDE_RUNTIME_DIR="/private/tmp/sotf-systemwide-lab-$USER" cargo test -p driver-hal --lib
-	SOTF_SYSTEMWIDE_RUNTIME_DIR="/private/tmp/sotf-systemwide-lab-$USER" cargo test -p driver-hal --test streaming_regression_tests
-	SOTF_SYSTEMWIDE_RUNTIME_DIR="/private/tmp/sotf-systemwide-lab-$USER" swift test --package-path crates/systemwide/crates/daemon/configbar --scratch-path target/configbar-swiftpm
+	#!/usr/bin/env bash
+	set -euo pipefail
+	runtime_dir="$(mktemp -d /private/tmp/sotf-systemwide-lab.XXXXXX)"
+	trap 'rm -rf "$runtime_dir"' EXIT
+	export SOTF_SYSTEMWIDE_RUNTIME_DIR="$runtime_dir"
+	cargo test -p sotf-daemon --bin sotf-daemon testkit
+	cargo test -p sotf-daemon --test daemon_state_tests
+	cargo test -p sotf-daemon --features hal --test ipc_line_tests -- --test-threads=1
+	cargo test -p driver-hal --lib
+	cargo test -p driver-hal --test streaming_regression_tests
+	swift test --package-path crates/systemwide/crates/daemon/configbar --scratch-path target/configbar-swiftpm
 
 # ----------------------------------------------------------------------
 # COVERAGE

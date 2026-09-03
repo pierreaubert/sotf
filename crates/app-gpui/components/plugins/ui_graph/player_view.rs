@@ -1105,7 +1105,7 @@ impl PlayerView {
                         .gap(d.section)
                         .child(
                             div()
-                                .text_size(d.text_lg)
+                                .text_size(d.text_base)
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(theme.text_primary)
                                 .child(graph_text.nodes.parametric_eq),
@@ -1123,7 +1123,7 @@ impl PlayerView {
                         .gap(d.section)
                         .child(
                             div()
-                                .text_size(d.text_lg)
+                                .text_size(d.text_base)
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(theme.text_primary)
                                 .child(graph_text.nodes.gain),
@@ -1148,7 +1148,7 @@ impl PlayerView {
                 .gap(d.section)
                 .child(
                     div()
-                        .text_size(d.text_lg)
+                        .text_size(d.text_base)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
                         .child(graph_text.nodes.audio_player),
@@ -1166,7 +1166,7 @@ impl PlayerView {
                 .gap(d.section)
                 .child(
                     div()
-                        .text_size(d.text_lg)
+                        .text_size(d.text_base)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
                         .child(graph_text.nodes.output_device),
@@ -1184,7 +1184,7 @@ impl PlayerView {
                 .gap(d.section)
                 .child(
                     div()
-                        .text_size(d.text_lg)
+                        .text_size(d.text_base)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
                         .child(graph_text.nodes.input_device),

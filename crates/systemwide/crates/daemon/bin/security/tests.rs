@@ -247,7 +247,7 @@ fn test_key_manager_enable_disable() {
     // may intentionally return a disabled fallback, and set_enabled(true)
     // must not silently claim encryption is active without a cipher.
     #[cfg(all(target_os = "macos", feature = "hal"))]
-    assert_eq!(manager.is_enabled(), starts_enabled);
+    assert!(manager.is_enabled());
     #[cfg(not(all(target_os = "macos", feature = "hal")))]
     assert!(!manager.is_enabled());
 

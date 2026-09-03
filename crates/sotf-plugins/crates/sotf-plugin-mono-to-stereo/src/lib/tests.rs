@@ -1024,6 +1024,55 @@ fn settled_nonzero_width_avoids_per_sample_smoother_work() {
 }
 
 #[test]
+fn non_finite_input_is_silenced_and_never_poisons_state() {
+    // Exercise both the exact-duplicate fast path (width 0, no Haas) and the
+    // decorrelator path (width 1): non-finite samples must surface as silence
+    // and must not poison the allpass/delay state for later blocks.
+    for width in [0.0_f32, 1.0] {
+        let mut plugin = MonoToStereoPlugin::new();
+        plugin.initialize(48_000).unwrap();
+        plugin.stereo_width.reset(width);
+        plugin.haas_delay_ms = 0.0;
+        plugin.update_haas_delay_samples();
+        let frames = 1_024;
+        let mut input = vec![0.1_f32; frames];
+        input[4] = f32::NAN;
+        input[111] = f32::INFINITY;
+        input[512] = f32::NEG_INFINITY;
+        let mut output = vec![0.0_f32; frames * 2];
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, frames))
+            .unwrap();
+        assert!(
+            output.iter().all(|sample| sample.is_finite()),
+            "width={width}: non-finite input leaked into output"
+        );
+        // The left channel always carries the (sanitized) input sample.
+        for frame in [4, 111, 512] {
+            assert_eq!(
+                output[frame * 2],
+                0.0,
+                "width={width}: non-finite input at frame {frame} must surface as silence"
+            );
+        }
+
+        // State must not be poisoned: finite input afterwards stays finite.
+        let finite_input = vec![0.1_f32; frames];
+        plugin
+            .process(
+                &finite_input,
+                &mut output,
+                &ProcessContext::new(48_000, frames),
+            )
+            .unwrap();
+        assert!(
+            output.iter().all(|sample| sample.is_finite()),
+            "width={width}: state was poisoned by earlier non-finite input"
+        );
+    }
+}
+
+#[test]
 fn leaving_duplicate_fast_path_primes_state_without_a_transition_spike() {
     let mut plugin = MonoToStereoPlugin::new();
     plugin.initialize(48_000).unwrap();

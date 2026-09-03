@@ -610,7 +610,7 @@ impl PlayerView {
                     .child(
                         div()
                             .min_w_0()
-                            .text_size(d.text_lg)
+                            .text_size(d.text_base)
                             .font_weight(FontWeight::BOLD)
                             .text_color(theme.text_primary)
                             .overflow_hidden()
@@ -724,7 +724,7 @@ impl PlayerView {
                     .child(
                         div()
                             .min_w_0()
-                            .text_size(d.text_lg)
+                            .text_size(d.text_base)
                             .font_weight(FontWeight::BOLD)
                             .text_color(theme.text_primary)
                             .overflow_hidden()

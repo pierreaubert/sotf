@@ -371,17 +371,25 @@ fn render_choice_buttons(
         .items_center()
         .gap(d.grid)
         .child(
-            Button::new(
-                SharedString::from(format!("choice-prev-{}-{}", plugin_idx, param_idx)),
-                previous_label,
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ButtonSize::Xs)
-            .aria_label(previous_label)
-            .on_click_event(move |_, window, cx| on_prev(window, cx)),
+            div().flex_none().child(
+                Button::new(
+                    SharedString::from(format!("choice-prev-{}-{}", plugin_idx, param_idx)),
+                    previous_label,
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ButtonSize::Xs)
+                .aria_label(previous_label)
+                .on_click_event(move |_, window, cx| on_prev(window, cx)),
+            ),
         )
         .child(
             div()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .text_ellipsis()
+                .whitespace_nowrap()
+                .text_center()
                 .text_size(d.text_sm)
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(accent)
@@ -389,13 +397,15 @@ fn render_choice_buttons(
                 .child(value_str.to_string()),
         )
         .child(
-            Button::new(
-                SharedString::from(format!("choice-next-{}-{}", plugin_idx, param_idx)),
-                next_label,
-            )
-            .variant(ButtonVariant::Ghost)
-            .size(ButtonSize::Xs)
-            .aria_label(next_label)
-            .on_click_event(move |_, window, cx| on_next(window, cx)),
+            div().flex_none().child(
+                Button::new(
+                    SharedString::from(format!("choice-next-{}-{}", plugin_idx, param_idx)),
+                    next_label,
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ButtonSize::Xs)
+                .aria_label(next_label)
+                .on_click_event(move |_, window, cx| on_next(window, cx)),
+            ),
         )
 }

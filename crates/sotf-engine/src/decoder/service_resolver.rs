@@ -37,10 +37,10 @@ pub enum ResolvedServiceStream {
     ///
     /// - `channels` must match the engine's configured input channel count.
     ///   The plugin chain is built for the manager's (currently stereo)
-    ///   placeholder spec before the resolver runs, and nothing re-checks the
-    ///   real channel count at runtime — a mismatched resolver would feed
-    ///   N-channel frames into a 2-channel host. Reporting the resolved spec
-    ///   back to the manager is a known follow-up.
+    ///   placeholder spec before the resolver runs. Gapless-queue validation
+    ///   re-checks the resolved count via [`check_service_pcm_conformance`];
+    ///   a mismatch is reported back to the manager instead of feeding
+    ///   N-channel frames into a 2-channel host.
     /// - The reader must be interruptible or timeout-bound. `PcmDecoder`
     ///   blocks in `reader.read()` on the decoder thread, so a stalled reader
     ///   (e.g. network hang) leaves Pause/Stop/Shutdown unanswered until the
@@ -77,6 +77,32 @@ impl std::fmt::Debug for ResolvedServiceStream {
                 .finish(),
         }
     }
+}
+
+/// Check a resolved service stream's channel count against the channel count
+/// the engine's plugin chain was built for (`expected_channels`, normally
+/// `EngineConfig::input_channels`).
+///
+/// Callers pass the channel count of a resolved `Pcm` stream (`Url`
+/// resolutions need no check: they flow through the normal Symphonia
+/// format-detection path). A mismatch is a hard error — without this, the
+/// resolver's N-channel frames would be fed into a chain built for a
+/// different width with no runtime conversion.
+///
+/// Returns the human-readable reason so callers can wrap it in
+/// [`crate::decoder::AudioDecoderError::ServiceError`].
+pub(crate) fn check_service_pcm_conformance(
+    channels: u16,
+    expected_channels: usize,
+) -> Result<(), String> {
+    if channels as usize != expected_channels {
+        return Err(format!(
+            "service PCM channel mismatch: resolver returned {} channels \
+             but the plugin chain expects {expected_channels}",
+            channels,
+        ));
+    }
+    Ok(())
 }
 
 /// Resolver callback: maps (service, track id) to a decodable stream.

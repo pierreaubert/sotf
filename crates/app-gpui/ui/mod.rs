@@ -8,7 +8,7 @@ use crate::components::plugins::level_meters::LevelMeterManager;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::theme::ThemeState as UiKitThemeState;
-use gpui_ui_kit::{CollapseDirection, NumberInput, NumberInputSize, PaneDivider, PaneDividerTheme};
+use gpui_ui_kit::{CollapseDirection, NumberInput, NumberInputSize, PaneDivider, Text};
 use sotf_audio::manager::StreamingState;
 use std::sync::Arc;
 use std::time::Duration;

@@ -1,10 +1,11 @@
 #![allow(clippy::field_reassign_with_default)]
-use super::audio_daemon::try_acquire_client_slot;
 use super::audio_daemon::{
     AudioDaemon, CaptureResumeTracker, METERING_LATENCY_BUDGET_MICROS,
     PIPELINE_RESPONSE_BUDGET_BYTES, PLAYBACK_IDLE_REBUILD_THRESHOLD, RuntimeTelemetry,
-    pipeline_timing_after_config_request, rack_plugins_to_linear_graph, reorder_linear_graph,
+    join_initial_playback_thread, pipeline_timing_after_config_request,
+    rack_plugins_to_linear_graph, reorder_linear_graph, wait_for_playback_observation,
 };
+use super::audio_daemon::{ClientSlot, clone_client_shutdown_stream, try_acquire_client_slot};
 use super::command::Command;
 use super::configured::configured_output_device_from_value;
 use super::consts::{MAX_HAL_CHANNELS, MAX_IPC_CLIENTS, MAX_IPC_COMMAND_BYTES};
@@ -20,7 +21,9 @@ use super::misc::{
 };
 use super::pipeline_reconfigure_outcome::acknowledged_config_for_outcome;
 use super::pipeline_reconfigure_outcome::handle_driver_config_change;
+use super::pipeline_reconfigure_outcome::publish_reconfigured_driver_readiness;
 use super::pipeline_reconfigure_outcome::reconfigure_audio_pipeline;
+use super::pipeline_reconfigure_outcome::wait_for_reconfigured_playback;
 use super::pipeline_spec::{PipelineSpec, pipeline_spec_to_json};
 use super::pipeline_supervisor::PipelineSupervisor;
 use super::plugin::{
@@ -700,6 +703,59 @@ mod ipc_safety_tests {
         active.store(0, std::sync::atomic::Ordering::Release);
         assert!(try_acquire_client_slot(&active));
         assert_eq!(active.load(std::sync::atomic::Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn ipc_client_slot_guard_releases_failed_setup_admission() {
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        assert!(try_acquire_client_slot(&active));
+        assert_eq!(active.load(std::sync::atomic::Ordering::Acquire), 1);
+
+        let slot = ClientSlot(Arc::clone(&active));
+        drop(slot);
+
+        assert_eq!(active.load(std::sync::atomic::Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn ipc_clone_failure_releases_its_admitted_client_slot() {
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        assert!(try_acquire_client_slot(&active));
+
+        let result: std::io::Result<(ClientSlot, ())> =
+            clone_client_shutdown_stream(ClientSlot(Arc::clone(&active)), || {
+                Err(std::io::Error::other("forced try_clone failure"))
+            });
+
+        assert!(result.is_err());
+        assert_eq!(active.load(std::sync::atomic::Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn shutdown_joins_initial_playback_worker_before_returning() {
+        let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let completed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let worker_running = Arc::clone(&running);
+        let worker_started = Arc::clone(&started);
+        let worker_completed = Arc::clone(&completed);
+        let worker = std::thread::spawn(move || {
+            worker_started.store(true, std::sync::atomic::Ordering::Release);
+            while worker_running.load(std::sync::atomic::Ordering::Acquire) {
+                std::thread::yield_now();
+            }
+            worker_completed.store(true, std::sync::atomic::Ordering::Release);
+        });
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        while !started.load(std::sync::atomic::Ordering::Acquire) {
+            assert!(std::time::Instant::now() < deadline, "worker did not start");
+            std::thread::yield_now();
+        }
+        running.store(false, std::sync::atomic::Ordering::Release);
+
+        join_initial_playback_thread(worker);
+        assert!(completed.load(std::sync::atomic::Ordering::Acquire));
     }
 
     #[test]
@@ -1769,6 +1825,32 @@ mod ipc_safety_tests {
     }
 
     #[test]
+    fn runtime_telemetry_classifies_every_pipeline_mutation_wire_name() {
+        let telemetry = RuntimeTelemetry::default();
+        let commands = [
+            "load_plugins",
+            "load_plugin_artifact",
+            "load_plugin_artifact_path",
+            "add_plugin",
+            "remove_plugin",
+            "update_plugin",
+            "reorder_plugins",
+            "reorder_graph",
+            "set_input_channels",
+            "set_output_channels",
+            "set_pipeline_channels",
+        ];
+        for command in commands {
+            telemetry.record_command(command, std::time::Duration::ZERO, 0);
+        }
+
+        assert_eq!(
+            telemetry.snapshot()["pipeline_reload"]["requests"],
+            commands.len()
+        );
+    }
+
+    #[test]
     fn testkit_dump_state_includes_snapshot_and_plugins() {
         let state = fake_driver_state();
         let daemon = test_daemon_with_driver(state);
@@ -1798,6 +1880,7 @@ mod ipc_safety_tests {
             &daemon.manager,
             DriverConfig::new(48_000, 512, 10),
             &daemon.system_state,
+            &daemon.running,
         );
 
         let pipeline = daemon.system_state.lock();
@@ -1816,6 +1899,44 @@ mod ipc_safety_tests {
         let (actual, result) = state.last_ack.as_ref().expect("config ack");
         assert_eq!(actual.channel_count, 10);
         assert!(matches!(result, ConfigResult::Accepted));
+    }
+
+    #[test]
+    fn restarted_reconfiguration_waits_for_callback_before_publishing_ready() {
+        let driver_state = fake_driver_state();
+        let daemon = test_daemon_with_driver(Arc::clone(&driver_state));
+        let active_config = DriverConfig::new(48_000, 512, 2);
+
+        let error = publish_reconfigured_driver_readiness(
+            &daemon.driver_manager,
+            &daemon.system_state,
+            active_config,
+            Err("Playback did not reach hardware callback".into()),
+        )
+        .expect_err("a missing callback must not publish readiness");
+        assert!(error.contains("hardware callback"));
+        assert!(!driver_state.lock().engine_ready);
+        assert!(matches!(
+            driver_state
+                .lock()
+                .last_ack
+                .as_ref()
+                .expect("timeout must be acknowledged")
+                .1,
+            driver_common::ConfigResult::Error(_)
+        ));
+        assert!(daemon.system_state.lock().pipeline_recovery().is_some());
+
+        daemon.system_state.lock().clear_pipeline_recovery();
+        publish_reconfigured_driver_readiness(
+            &daemon.driver_manager,
+            &daemon.system_state,
+            active_config,
+            Ok(()),
+        )
+        .expect("a callback observation should publish readiness");
+        assert!(driver_state.lock().engine_ready);
+        assert!(daemon.system_state.lock().pipeline_recovery().is_none());
     }
 
     #[test]
@@ -1911,18 +2032,12 @@ mod ipc_safety_tests {
         let response =
             send_owner_ipc_command(&daemon, r#"{"command":"set_encryption","enabled":true}"#);
 
-        if cfg!(all(target_os = "macos", feature = "hal")) {
-            assert_eq!(response["success"], true);
-            assert_eq!(response["data"]["enabled"], true);
-            assert!(response["data"]["fingerprint"].is_string());
-        } else {
-            assert_eq!(response["success"], false);
-            assert!(
-                response["error"]
-                    .as_str()
-                    .is_some_and(|error| error.contains("no session cipher"))
-            );
-        }
+        assert_eq!(response["success"], false);
+        assert!(
+            response["error"]
+                .as_str()
+                .is_some_and(|error| error.contains("Encrypted realtime transport is unavailable"))
+        );
     }
 
     #[test]
@@ -2121,6 +2236,61 @@ mod ipc_safety_tests {
         drop(state);
         let stopped = daemon.handle_command(Command::Stop);
         assert!(stopped.success, "failed to stop test engine: {stopped:?}");
+    }
+
+    #[test]
+    fn plugin_and_dump_snapshots_keep_payloads_with_their_generation() {
+        let daemon = Arc::new(AudioDaemon::new());
+        let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let writer_daemon = Arc::clone(&daemon);
+        let writer_done = Arc::clone(&done);
+        let writer = std::thread::spawn(move || {
+            for _ in 0..1_000 {
+                let mutation = writer_daemon.pipeline_mutation.lock();
+                let mut state = writer_daemon.system_state.lock();
+                let next_generation = state.generation() + 1;
+                let plan = state
+                    .prepare_plan(
+                        vec![PluginConfig {
+                            plugin_type: "gain".to_string(),
+                            parameters: serde_json::json!({
+                                "generation_marker": next_generation
+                            }),
+                        }],
+                        2,
+                        2,
+                        2,
+                    )
+                    .expect("generation marker plan");
+                state.commit_applied(&plan);
+                drop(state);
+                drop(mutation);
+                std::thread::yield_now();
+            }
+            writer_done.store(true, std::sync::atomic::Ordering::Release);
+        });
+
+        while !done.load(std::sync::atomic::Ordering::Acquire) {
+            let plugins = daemon.handle_get_plugins().data.expect("plugin response");
+            if let Some(plugin) = plugins["plugins"]
+                .as_array()
+                .and_then(|items| items.first())
+            {
+                assert_eq!(
+                    plugin["parameters"]["generation_marker"],
+                    plugins["generation"]
+                );
+            }
+
+            let dump = daemon.handle_dump_state().data.expect("dump response");
+            if let Some(plugin) = dump["plugins"].as_array().and_then(|items| items.first()) {
+                assert_eq!(
+                    plugin["parameters"]["generation_marker"],
+                    dump["snapshot"]["generation"]
+                );
+            }
+        }
+        writer.join().expect("generation writer");
     }
 
     #[test]
@@ -2422,6 +2592,43 @@ mod command_roundtrip_tests {
     }
 
     #[test]
+    fn playback_readiness_wait_policy_covers_success_and_timeout() {
+        let running = Arc::new(Mutex::new(true));
+        let mut polls = 0;
+        wait_for_playback_observation(
+            &running,
+            std::time::Duration::from_millis(100),
+            "test startup",
+            || {
+                polls += 1;
+                Ok(polls == 3)
+            },
+        )
+        .expect("third observation should publish readiness");
+        assert_eq!(polls, 3);
+
+        let timeout = wait_for_playback_observation(
+            &running,
+            std::time::Duration::ZERO,
+            "test startup",
+            || Ok(false),
+        )
+        .expect_err("missing callback must time out");
+        assert!(timeout.contains("hardware callback"), "{timeout}");
+    }
+
+    #[test]
+    fn reconfigured_playback_readiness_is_cancelled_by_daemon_shutdown() {
+        let manager = Arc::new(Mutex::new(AudioEngineManager::new()));
+        let running = Arc::new(Mutex::new(false));
+
+        let error = wait_for_reconfigured_playback(&manager, &running)
+            .expect_err("shutdown must prevent readiness publication");
+
+        assert!(error.contains("shutdown requested"), "{error}");
+    }
+
+    #[test]
     fn playback_callback_policy_only_bypasses_explicit_test_drivers() {
         let macos_hal = driver_common::DriverStatus::new(
             true,
@@ -2555,6 +2762,7 @@ mod command_roundtrip_tests {
         let resp = run_command(Command::Status);
         assert!(resp.success);
         let data = resp.data.expect("status data");
+        assert_eq!(data["consistency"], "best_effort");
         assert!(data.get("state").is_some());
         assert!(data.get("volume").is_some());
         assert!(data.get("selected_device").is_some());
@@ -2807,19 +3015,12 @@ mod command_roundtrip_tests {
     #[serial]
     fn handle_set_encryption_reports_build_capability() {
         let resp = run_command(Command::SetEncryption { enabled: true });
-        if cfg!(all(target_os = "macos", feature = "hal")) {
-            assert!(resp.success, "{:?}", resp.error);
-            let data = resp.data.expect("encryption data");
-            assert_eq!(data["enabled"], true);
-            assert!(data.get("fingerprint").is_some());
-        } else {
-            assert!(!resp.success);
-            assert!(
-                resp.error
-                    .as_deref()
-                    .is_some_and(|error| error.contains("no session cipher"))
-            );
-        }
+        assert!(!resp.success);
+        assert!(
+            resp.error
+                .as_deref()
+                .is_some_and(|error| error.contains("Encrypted realtime transport is unavailable"))
+        );
     }
 
     #[test]

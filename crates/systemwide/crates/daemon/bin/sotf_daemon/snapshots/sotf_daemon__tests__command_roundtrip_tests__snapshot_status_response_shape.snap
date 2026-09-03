@@ -11,6 +11,7 @@ expression: data
     "playback_output_device": null
   },
   "channels": 2,
+  "consistency": "best_effort",
   "driver": {
     "capture_active": false,
     "channel_count": 0,

@@ -27,6 +27,8 @@ use super::types::EncryptedRecordRead;
 use super::validate::{open_existing_shared_memory_file, open_shared_memory_file};
 use memmap2::MmapMut;
 use std::io;
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{Ordering, fence};
 
@@ -43,6 +45,10 @@ const CONFIGURING_IO_MASK: u32 = CONFIGURING_READ_COMMIT | CONFIGURING_WRITE_COM
 pub struct SharedAudioBuffer {
     pub(super) mmap: MmapMut,
     pub(super) path: PathBuf,
+    #[cfg(unix)]
+    pub(super) backing_device: u64,
+    #[cfg(unix)]
+    pub(super) backing_inode: u64,
     pub(super) audio_offset: usize,
     /// Maximum audio capacity based on original mmap size (for validation)
     pub(super) max_audio_capacity: usize,
@@ -298,6 +304,8 @@ impl SharedAudioBuffer {
             file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
             grant_coreaudiod_shared_memory_access(path);
         }
+        #[cfg(unix)]
+        let backing_metadata = file.metadata()?;
 
         // SAFETY: We hold the only handle to the file we just sized; the
         // mapping is `MAP_SHARED` and the kernel guarantees the pages are
@@ -308,6 +316,10 @@ impl SharedAudioBuffer {
         let mut buffer = Self {
             mmap,
             path: path.to_path_buf(),
+            #[cfg(unix)]
+            backing_device: backing_metadata.dev(),
+            #[cfg(unix)]
+            backing_inode: backing_metadata.ino(),
             audio_offset,
             max_audio_capacity,
         };
@@ -331,6 +343,30 @@ impl SharedAudioBuffer {
     /// Filesystem path backing this shared memory mapping.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Whether the path still names the regular file backing this mapping.
+    ///
+    /// An mmap remains usable after its directory entry is unlinked. Without
+    /// this identity check, the daemon can keep reporting stale readiness from
+    /// an orphaned mapping while new readers and the HAL process open a
+    /// different file (or no file at all).
+    pub fn backing_file_is_current(&self) -> bool {
+        let Ok(metadata) = std::fs::symlink_metadata(&self.path) else {
+            return false;
+        };
+        if !metadata.file_type().is_file() {
+            return false;
+        }
+
+        #[cfg(unix)]
+        {
+            metadata.dev() == self.backing_device && metadata.ino() == self.backing_inode
+        }
+        #[cfg(not(unix))]
+        {
+            true
+        }
     }
 
     /// Create or open the default per-user shared memory file.
@@ -367,6 +403,8 @@ impl SharedAudioBuffer {
         // attacker-controlled symlink here would otherwise bypass the
         // validation performed during creation.
         let file = open_existing_shared_memory_file(path)?;
+        #[cfg(unix)]
+        let backing_metadata = file.metadata()?;
 
         // SAFETY: see `create_or_open_with_max_geometry`. The file is sized
         // by the daemon; we map it read/write and validate the magic/version
@@ -453,6 +491,10 @@ impl SharedAudioBuffer {
         Ok(Self {
             mmap,
             path: path.to_path_buf(),
+            #[cfg(unix)]
+            backing_device: backing_metadata.dev(),
+            #[cfg(unix)]
+            backing_inode: backing_metadata.ino(),
             audio_offset,
             max_audio_capacity,
         })
@@ -520,6 +562,19 @@ impl SharedAudioBuffer {
             header.engine_ready.store(0, Ordering::Release);
             header.daemon_heartbeat_ms.store(0, Ordering::Release);
         }
+    }
+
+    /// Reset state owned by a newly started daemon without disturbing the
+    /// HAL-owned `driver_ready` flag.
+    ///
+    /// A same-geometry open intentionally preserves the mapping for a
+    /// coreaudiod-only restart. A fresh daemon must explicitly withdraw its
+    /// readiness/heartbeat and discard samples left by the previous daemon.
+    pub fn reset_daemon_runtime_state(&mut self) -> bool {
+        self.set_engine_ready(false);
+        self.reconfigure_quiesced(None, None, None);
+        self.header().write_position.load(Ordering::Acquire) == 0
+            && self.header().read_position.load(Ordering::Acquire) == 0
     }
 
     /// Refresh the daemon liveness heartbeat read by the HAL driver.

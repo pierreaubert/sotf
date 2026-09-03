@@ -474,54 +474,18 @@ fn systemwide_lab_scenario_matrix_over_unix_socket() {
     );
 
     let encryption_enabled = daemon.send(r#"{"command":"set_encryption","enabled":true}"#);
-    if cfg!(all(target_os = "macos", feature = "hal")) {
-        assert_eq!(encryption_enabled["success"], true, "{encryption_enabled}");
-        assert_eq!(encryption_enabled["data"]["enabled"], true);
-        let first_fingerprint = encryption_enabled["data"]["fingerprint"]
+    assert_eq!(encryption_enabled["success"], false);
+    assert!(
+        encryption_enabled["error"]
             .as_str()
-            .expect("enabled encryption publishes a fingerprint")
-            .to_string();
-
-        let rotated = daemon.send(r#"{"command":"rotate_encryption_key"}"#);
-        assert_eq!(rotated["success"], true, "{rotated}");
-        let rotated_fingerprint = rotated["data"]["fingerprint"]
-            .as_str()
-            .expect("rotation publishes the replacement fingerprint");
-        assert_ne!(rotated_fingerprint, first_fingerprint);
-
-        let encryption_status = daemon.send(r#"{"command":"encryption_status"}"#);
-        assert_eq!(encryption_status["success"], true);
-        assert_eq!(encryption_status["data"]["enabled"], true);
-        assert!(encryption_status["data"].get("transport_state").is_some());
-        assert_eq!(
-            encryption_status["data"]["fingerprint"],
-            rotated["data"]["fingerprint"]
-        );
-        let hal_key_path = PathBuf::from(
-            encryption_status["data"]["key_path"]
-                .as_str()
-                .expect("encryption status publishes the HAL key path"),
-        );
-        assert!(hal_key_path.starts_with(daemon._temp_dir.path()));
-        assert!(hal_key_path.exists());
-        assert!(daemon._temp_dir.path().join("daemon-session.key").exists());
-    } else {
-        assert_eq!(encryption_enabled["success"], false);
-        assert!(
-            encryption_enabled["error"]
-                .as_str()
-                .is_some_and(|error| error.contains("no session cipher"))
-        );
-        let rotation = daemon.send(r#"{"command":"rotate_encryption_key"}"#);
-        assert_eq!(rotation["success"], false);
-        let encryption_status = daemon.send(r#"{"command":"encryption_status"}"#);
-        assert_eq!(encryption_status["success"], true);
-        assert_eq!(encryption_status["data"]["enabled"], false);
-        assert_eq!(
-            encryption_status["data"]["transport_state"],
-            "not_applicable"
-        );
-    }
+            .is_some_and(|error| { error.contains("Encrypted realtime transport is unavailable") })
+    );
+    let rotation = daemon.send(r#"{"command":"rotate_encryption_key"}"#);
+    assert_eq!(rotation["success"], true);
+    let encryption_status = daemon.send(r#"{"command":"encryption_status"}"#);
+    assert_eq!(encryption_status["success"], true);
+    assert_eq!(encryption_status["data"]["enabled"], false);
+    assert_eq!(encryption_status["data"]["transport_state"], "unavailable");
 
     let reconfigured = daemon
         .send(r#"{"command":"set_pipeline_channels","input_channels":10,"output_channels":2}"#);

@@ -2,26 +2,40 @@ use std::fs::{File, OpenOptions};
 use std::path::Path;
 
 /// Try to acquire an exclusive advisory lock on `sotf.lock` in the config dir.
+///
 /// Returns the open `File` (must be held for process lifetime) and whether the
 /// exclusive lock was obtained. If not, a second instance is already running.
+///
+/// An unopenable lock file (e.g. read-only `$HOME`) is NOT fatal: it yields
+/// `(None, false)` so the caller can degrade to read-only mode instead of
+/// crashing startup.
 #[cfg(unix)]
-pub(super) fn try_acquire_lock(config_dir: &Path) -> (File, bool) {
+pub(super) fn try_acquire_lock(config_dir: &Path) -> (Option<File>, bool) {
     use std::os::unix::io::AsRawFd;
 
     let lock_path = config_dir.join("sotf.lock");
-    let file = OpenOptions::new()
+    let file = match OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
         .open(&lock_path)
-        .expect("Failed to open lock file");
+    {
+        Ok(file) => file,
+        Err(e) => {
+            log::warn!(
+                "Could not open lock file {}: {e}; starting in read-only mode",
+                lock_path.display()
+            );
+            return (None, false);
+        }
+    };
 
     let exclusive = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) == 0 };
-    (file, exclusive)
+    (Some(file), exclusive)
 }
 
 #[cfg(windows)]
-pub(super) fn try_acquire_lock(config_dir: &Path) -> (File, bool) {
+pub(super) fn try_acquire_lock(config_dir: &Path) -> (Option<File>, bool) {
     use std::os::windows::io::AsRawHandle;
 
     #[link(name = "kernel32")]
@@ -49,12 +63,21 @@ pub(super) fn try_acquire_lock(config_dir: &Path) -> (File, bool) {
     }
 
     let lock_path = config_dir.join("sotf.lock");
-    let file = OpenOptions::new()
+    let file = match OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
         .open(&lock_path)
-        .expect("Failed to open lock file");
+    {
+        Ok(file) => file,
+        Err(e) => {
+            log::warn!(
+                "Could not open lock file {}: {e}; starting in read-only mode",
+                lock_path.display()
+            );
+            return (None, false);
+        }
+    };
 
     let mut overlapped = Overlapped {
         internal: 0,
@@ -76,11 +99,59 @@ pub(super) fn try_acquire_lock(config_dir: &Path) -> (File, bool) {
             &mut overlapped,
         ) != 0
     };
-    (file, exclusive)
+    (Some(file), exclusive)
 }
 
 #[cfg(not(any(unix, windows)))]
-pub(super) fn try_acquire_lock(_config_dir: &Path) -> (File, bool) {
-    let file = tempfile::tempfile().expect("Failed to create temp lock file");
-    (file, true)
+pub(super) fn try_acquire_lock(_config_dir: &Path) -> (Option<File>, bool) {
+    match tempfile::tempfile() {
+        Ok(file) => (Some(file), true),
+        Err(e) => {
+            log::warn!("Could not create temp lock file: {e}; starting in read-only mode");
+            (None, false)
+        }
+    }
+}
+
+/// Resolve the startup lock state from an optional config dir.
+///
+/// A missing config dir or an unopenable lock file degrades to `(None,
+/// false)` — the caller starts in read-only mode instead of crashing.
+pub(super) fn acquire_startup_lock(config_dir: Option<&Path>) -> (Option<File>, bool) {
+    match config_dir {
+        Some(dir) => try_acquire_lock(dir),
+        None => {
+            log::warn!("Could not determine config directory — starting in read-only mode");
+            (None, false)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lock_open_failure_degrades_to_read_only_instead_of_panicking() {
+        // A regular file used as the "config dir" makes `<file>/sotf.lock`
+        // unopenable, simulating an unavailable lock location.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let blocker = dir.path().join("not-a-dir");
+        std::fs::write(&blocker, b"x").expect("write blocker file");
+        let (_lock, acquired) = try_acquire_lock(&blocker);
+        assert!(!acquired, "unopenable lock file must mean read-only");
+    }
+
+    #[test]
+    fn missing_config_dir_degrades_to_read_only() {
+        let (_lock, acquired) = acquire_startup_lock(None);
+        assert!(!acquired, "missing config dir must mean read-only");
+    }
+
+    #[test]
+    fn healthy_config_dir_does_not_panic() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // Either outcome is a valid lock state; the point is no panic.
+        let (_lock, _acquired) = acquire_startup_lock(Some(dir.path()));
+    }
 }

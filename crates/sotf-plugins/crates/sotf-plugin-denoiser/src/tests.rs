@@ -1292,3 +1292,74 @@ fn test_fft_returns_result() {
     let inv = plugin.apply_gains_and_inverse_fft();
     assert!(inv.is_ok(), "FFT inverse should return Ok");
 }
+
+#[test]
+fn test_initialize_rejects_zero_sample_rate() {
+    let mut plugin = DenoiserPlugin::new(2, false);
+    let err = plugin.initialize(0).unwrap_err();
+    assert!(
+        err.contains("sample rate"),
+        "Expected sample-rate rejection, got: {err}"
+    );
+    // Valid rates still accepted.
+    plugin.initialize(SAMPLE_RATE).unwrap();
+    assert_eq!(plugin.config.sample_rate, SAMPLE_RATE);
+}
+
+#[test]
+fn test_non_finite_input_is_sanitized_and_state_recovers() {
+    let mut plugin = DenoiserPlugin::new(2, false);
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    // One block of NaN/inf: must not error, must produce finite output, and
+    // must not poison the long-memory MCRA/profile estimators.
+    let num_frames = 4096;
+    let mut poisoned = make_test_signal(num_frames, 2, 1000.0);
+    for (i, sample) in poisoned.iter_mut().enumerate() {
+        if i % 3 == 0 {
+            *sample = f32::NAN;
+        } else if i % 3 == 1 {
+            *sample = f32::INFINITY;
+        }
+    }
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
+    plugin.process_in_place(&mut poisoned, &context).unwrap();
+    assert!(
+        poisoned.iter().all(|sample| sample.is_finite()),
+        "sanitized block must produce finite output"
+    );
+    for ch in 0..2 {
+        assert!(
+            plugin.mcra.noise_psd[ch].iter().all(|v| v.is_finite()),
+            "noise_psd must stay finite after NaN block"
+        );
+        assert!(
+            plugin.mcra.min_psd[ch].iter().all(|v| v.is_finite()),
+            "min_psd must stay finite after NaN block"
+        );
+        assert!(
+            plugin.mcra.min_psd_b[ch].iter().all(|v| v.is_finite()),
+            "min_psd_b must stay finite after NaN block"
+        );
+        assert!(
+            plugin.mcra.speech_presence[ch]
+                .iter()
+                .all(|v| v.is_finite()),
+            "speech_presence must stay finite after NaN block"
+        );
+    }
+
+    // Recovery: clean blocks afterwards process normally with finite output
+    // and finite estimator state (no reset() needed).
+    for _ in 0..3 {
+        let mut clean = make_test_signal(num_frames, 2, 1000.0);
+        plugin.process_in_place(&mut clean, &context).unwrap();
+        assert!(clean.iter().all(|sample| sample.is_finite()));
+    }
+    for ch in 0..2 {
+        assert!(
+            plugin.mcra.noise_psd[ch].iter().all(|v| v.is_finite()),
+            "noise_psd must stay finite after recovery blocks"
+        );
+    }
+}

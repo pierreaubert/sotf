@@ -251,3 +251,56 @@ fn test_samples_to_encrypted_into() {
     let expected = samples_to_encrypted(&samples);
     assert_eq!(&output[..written], &expected[..]);
 }
+
+fn write_key_file(path: &std::path::Path, key: &[u8; 32], mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::write(path, key).expect("write test key file");
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+        .expect("set test key file mode");
+}
+
+/// Regression guard: a symlink swapped in for the session key file must be
+/// refused, even when it points at a well-formed 0600 key. Otherwise an
+/// attacker who can write the key directory could redirect the HAL to
+/// attacker-controlled key bytes.
+#[test]
+fn test_load_session_key_refuses_symlink_swap() {
+    use super::misc::load_session_key_from_path;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let real = dir.path().join("session.key");
+    write_key_file(&real, &[0xABu8; 32], 0o600);
+    let link = dir.path().join("link.key");
+    std::os::unix::fs::symlink(&real, &link).expect("symlink test key file");
+
+    let err = load_session_key_from_path(&link).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+}
+
+/// A properly owned 0600 key file must still load (guard against
+/// over-blocking the hardening).
+#[test]
+fn test_load_session_key_accepts_owned_0600_file() {
+    use super::misc::load_session_key_from_path;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("session.key");
+    let expected = [0x5Au8; 32];
+    write_key_file(&path, &expected, 0o600);
+
+    let loaded = load_session_key_from_path(&path).expect("valid key must load");
+    assert_eq!(loaded, expected);
+}
+
+/// A group/other-readable key file must be refused.
+#[test]
+fn test_load_session_key_refuses_group_readable_file() {
+    use super::misc::load_session_key_from_path;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("session.key");
+    write_key_file(&path, &[0x5Au8; 32], 0o644);
+
+    let err = load_session_key_from_path(&path).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+}

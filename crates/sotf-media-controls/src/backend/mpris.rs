@@ -15,8 +15,8 @@ use mpris_server::{
 use tokio::sync::mpsc;
 
 use crate::{
-    Error, MediaControlEvent, MediaMetadata, MediaPlayback, MediaPosition, SeekDirection,
-    backend::EventHandler, types::PlatformConfig,
+    Error, MediaControlEvent, MediaMetadata, MediaPlayback, MediaPosition, MprisCapabilities,
+    SeekDirection, backend::EventHandler, types::PlatformConfig,
 };
 
 /// Commands sent from the public API into the runtime thread.
@@ -63,12 +63,20 @@ impl MprisBackend {
 
         let dbus_name = format!("org.mpris.MediaPlayer2.{}", config.dbus_name);
         let identity = config.display_name.to_owned();
+        let caps = config.mpris_capabilities;
         let cmd_tx_for_thread = cmd_tx.clone();
 
         let runtime_thread = std::thread::Builder::new()
             .name("sotf-mpris".to_string())
             .spawn(move || {
-                run_mpris_thread(dbus_name, identity, cmd_tx_for_thread, cmd_rx, init_tx);
+                run_mpris_thread(
+                    dbus_name,
+                    identity,
+                    caps,
+                    cmd_tx_for_thread,
+                    cmd_rx,
+                    init_tx,
+                );
             })
             .map_err(|e| Error::Init(format!("spawn mpris thread: {e}")))?;
 
@@ -118,6 +126,7 @@ impl Drop for MprisBackend {
 fn run_mpris_thread(
     dbus_name: String,
     identity: String,
+    caps: MprisCapabilities,
     cmd_tx: mpsc::UnboundedSender<Cmd>,
     mut cmd_rx: mpsc::UnboundedReceiver<Cmd>,
     init_tx: std::sync::mpsc::SyncSender<Result<(), String>>,
@@ -138,7 +147,7 @@ fn run_mpris_thread(
     // `LocalSet` rather than the bare current-thread runtime.
     let local = tokio::task::LocalSet::new();
     local.block_on(&runtime, async move {
-        let player = match build_player(&dbus_name, &identity, cmd_tx).await {
+        let player = match build_player(&dbus_name, &identity, caps, cmd_tx).await {
             Ok(p) => p,
             Err(e) => {
                 let _ = init_tx.send(Err(format!("build player: {e}")));
@@ -178,16 +187,17 @@ fn run_mpris_thread(
 async fn build_player(
     dbus_name: &str,
     identity: &str,
+    caps: MprisCapabilities,
     cmd_tx: mpsc::UnboundedSender<Cmd>,
 ) -> Result<Player, Box<dyn std::error::Error + Send + Sync>> {
     let player = Player::builder(dbus_name)
         .identity(identity.to_string())
-        .can_play(true)
-        .can_pause(true)
-        .can_go_next(true)
-        .can_go_previous(true)
-        .can_seek(true)
-        .can_control(true)
+        .can_play(caps.play)
+        .can_pause(caps.pause)
+        .can_go_next(caps.next)
+        .can_go_previous(caps.previous)
+        .can_seek(caps.seek)
+        .can_control(caps.control)
         .build()
         .await?;
 

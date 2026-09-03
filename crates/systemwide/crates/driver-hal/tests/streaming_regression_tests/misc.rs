@@ -110,65 +110,34 @@ fn daemon_reconfiguration_uses_negotiated_hal_format() {
 }
 
 #[test]
-fn swift_encrypted_ioproc_uses_preallocated_buffers_and_atomic_counter() {
-    let source =
+fn swift_encrypted_transport_is_disabled_on_realtime_paths() {
+    let shared_memory =
         read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SharedMemory.swift");
-    let encryption =
-        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/Encryption.swift");
-    let bridge =
-        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/BridgingHeader.h");
-    let write_audio = function_body(&source, "func writeAudio(");
-    let read_audio = function_body(&source, "func readAudio(");
-    let encrypt_to_buffer = function_body(&encryption, "func encryptToBuffer(");
-    let decrypt_from_buffer = function_body(&encryption, "func decryptFromBuffer(");
+    let driver =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");
+    let daemon = read_repo_file("crates/systemwide/crates/daemon/bin/sotf_daemon/audio_daemon.rs");
+    let write_audio = function_body(&shared_memory, "func writeAudio(");
+    let read_audio = function_body(&shared_memory, "func readAudio(");
+    let cipher_match = function_body(&shared_memory, "private func cipherMatchingHeader");
+    let maintenance = function_body(&driver, "private func runMaintenanceTick");
+    let io_body = function_body(&driver, "private func driverDoIOOperation");
 
     assert!(
-        bridge.contains("sotf_atomic_fetch_add_u64"),
-        "frame counter increments should use the C11 atomic bridge"
+        write_audio.contains("#if SOTF_ENABLE_ALLOCATING_REALTIME_ENCRYPTION")
+            && read_audio.contains("#if SOTF_ENABLE_ALLOCATING_REALTIME_ENCRYPTION"),
+        "allocating CryptoKit transport must be compiled out of default realtime paths"
     );
     assert!(
-        write_audio.contains("sotf_atomic_fetch_add_u64"),
-        "encrypted writes must not use deprecated OSAtomicAdd64"
-    );
-    assert!(!write_audio.contains("OSAtomicAdd64"));
-    assert!(
-        source.contains("encryptedPayloadScratch") && source.contains("encryptedHeaderScratch"),
-        "encrypted IO should reuse preallocated scratch buffers"
+        !cipher_match.contains("checkAndReload") && !io_body.contains("checkAndReload"),
+        "CoreAudio callbacks must never observe key files or reload ciphers"
     );
     assert!(
-        source.contains(
-            "let mappedAudioBytes = max(audioSize, max(0, memorySize - alignedHeaderSize))"
-        ) && source
-            .contains("encryptedPayloadScratch = [UInt8](repeating: 0, count: mappedAudioBytes)"),
-        "encrypted scratch must be sized from the mapped daemon capacity, not only the startup stream size"
+        maintenance.contains("EncryptionKeyManager.shared.checkAndReload()"),
+        "key-file observation belongs on the HAL maintenance queue"
     );
     assert!(
-        !write_audio.contains("[UInt8](repeating: 0"),
-        "encrypted write path must not allocate byte arrays in the IOProc"
-    );
-    assert!(
-        !read_audio.contains("[UInt8](repeating: 0"),
-        "encrypted read path must not allocate byte arrays in the IOProc"
-    );
-    assert!(
-        !read_audio.contains("Array(payload["),
-        "encrypted read path must decrypt from preallocated storage without slicing allocation"
-    );
-    assert!(
-        !encrypt_to_buffer.contains("var plaintext = [UInt8]")
-            && !encrypt_to_buffer.contains("Array(sealedBox.ciphertext)")
-            && !encrypt_to_buffer.contains("Array(sealedBox.tag)"),
-        "encryptToBuffer is called from the IOProc and must use caller-provided scratch buffers"
-    );
-    assert!(
-        !decrypt_from_buffer.contains("Array(UnsafeBufferPointer"),
-        "decryptFromBuffer is called from the IOProc and must avoid array materialization"
-    );
-    assert!(
-        read_audio.contains("record.totalBytes <= encryptedPayloadScratch.count")
-            && read_audio.contains("readPos + UInt64(record.floatCount)")
-            && read_audio.contains("atomicStore("),
-        "oversized encrypted records should be consumed so the daemon does not retry the same bad record forever"
+        daemon.contains("Encrypted realtime transport is unavailable"),
+        "the daemon must reject encryption instead of silently enabling a transport that drops frames"
     );
 }
 
@@ -182,6 +151,33 @@ fn swift_hal_callback_does_not_retry_shared_memory_initialization() {
     assert!(
         !write_mix.contains("attemptInitRetryIfNeeded"),
         "WriteMix runs on the CoreAudio IO path and must not open, mmap, or chmod files"
+    );
+}
+
+#[test]
+fn swift_hal_callback_reads_channel_geometry_without_locking() {
+    let source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");
+    let io_body = function_body(&source, "private func driverDoIOOperation");
+    let snapshot = function_body(&source, "func callbackChannelCountSnapshot");
+    let commit = function_body(&source, "private func commitActiveConfiguration");
+
+    assert!(
+        io_body.contains("state.callbackChannelCountSnapshot()"),
+        "CoreAudio IO must read its channel geometry from the atomic callback snapshot"
+    );
+    assert!(
+        !io_body.contains("activeConfiguration()") && !io_body.contains("configurationLock"),
+        "CoreAudio IO must not acquire the control-plane configuration lock"
+    );
+    assert!(
+        snapshot.contains("sotf_atomic_load_u32(&callbackChannelCount)")
+            && !snapshot.contains(".lock()"),
+        "the callback channel snapshot must be a direct C11 atomic load"
+    );
+    assert!(
+        commit.contains("sotf_atomic_store_u32(&callbackChannelCount, configuration.channelCount)"),
+        "committing active configuration must publish channel geometry atomically"
     );
 }
 
@@ -357,7 +353,7 @@ fn swift_reports_legal_zero_time_stamp_period() {
 }
 
 #[test]
-fn swift_ioproc_logging_state_is_not_backed_by_mutable_statics() {
+fn swift_ioproc_logging_is_absent_by_default() {
     let source =
         read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");
     let get_zero = function_body(&source, "private func driverGetZeroTimeStamp");
@@ -380,10 +376,12 @@ fn swift_ioproc_logging_state_is_not_backed_by_mutable_statics() {
         get_zero.contains("sotf_atomic_fetch_add_u64"),
         "GetZeroTimeStamp logging counters must use atomic state"
     );
+    assert!(!io_body.contains("FIRST CALL"));
     assert!(
-        io_body.contains("sotf_atomic_fetch_add_u64")
-            && io_body.contains("sotf_atomic_compare_exchange_u32"),
-        "DoIOOperation diagnostics must use atomic state for callback-shared counters and flags"
+        source.contains("#if SOTF_AUDIO_TRACE")
+            && !source.contains("let shouldLogDiag = false")
+            && io_body.matches("#if SOTF_AUDIO_TRACE").count() >= 2,
+        "callback diagnostics must only exist in SOTF_AUDIO_TRACE sections"
     );
 }
 
@@ -640,7 +638,7 @@ fn swift_write_mix_falls_back_to_secondary_buffer() {
         "WriteMix should select between main and secondary CoreAudio buffers"
     );
     assert!(
-        write_mix.contains("state.sharedAudio.writeAudio(selectedFloatBuffer")
+        write_mix.contains("sharedAudio.writeAudio(selectedFloatBuffer")
             && write_mix.contains("outputBuffer.writeInterleaved(selectedFloatBuffer"),
         "HAL should forward the selected CoreAudio buffer to loopback and shared memory"
     );
@@ -653,13 +651,89 @@ fn swift_interleaved_loopback_publishes_once_per_channel_block() {
     let write = function_body(&source, "func writeInterleaved");
     let read = function_body(&source, "func readInterleaved");
 
-    assert!(
-        write.contains("writeStrided") && read.contains("readStrided"),
-        "interleaved loopback must batch ring position publication per channel block"
-    );
+    assert!(!write.contains("writeStrided") && !read.contains("readStrided"));
+    assert!(write.contains("memcpy(") && read.contains("memcpy("));
+    assert!(write.contains("sotf_atomic_store_u64(&writePosition"));
+    assert!(read.contains("sotf_atomic_store_u64(&readPosition"));
     assert!(
         !write.contains("count: 1") && !read.contains("count: 1"),
         "interleaved loopback must not perform one ring operation per sample"
+    );
+}
+
+#[test]
+fn swift_loopback_ring_uses_c11_atomic_cursors() {
+    let source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/RingBuffer.swift");
+    let ring = function_body(&source, "final class AudioRingBuffer");
+
+    assert!(ring.contains("sotf_atomic_load_u64(&writePosition)"));
+    assert!(ring.contains("sotf_atomic_load_u64(&readPosition)"));
+    assert!(ring.contains("sotf_atomic_store_u64(&writePosition"));
+    assert!(ring.contains("sotf_atomic_store_u64(&readPosition"));
+    assert!(!ring.contains("OSMemoryBarrier()"));
+    assert!(!ring.contains("writePosition +=") && !ring.contains("readPosition +="));
+}
+
+#[test]
+fn swift_maintenance_uses_mapping_generation_handoff_for_active_clients() {
+    let source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");
+    let state = function_body(&source, "final class DriverState");
+    let handoff = function_body(&source, "func handoffStaleSharedAudioMappingIfNeeded");
+    let io_body = function_body(&source, "private func driverDoIOOperation");
+
+    assert!(
+        state.contains("private let sharedAudioSlots = [SharedAudioBuffer(), SharedAudioBuffer()]")
+            && handoff.contains("sotf_atomic_store_u32(&activeSharedAudioSlot")
+            && handoff.contains("sharedAudioReaderCount(slot: replacementSlot) == 0"),
+        "maintenance must prepare and atomically publish an inactive mmap generation"
+    );
+    assert!(
+        !handoff.contains("activeIOClients") && !handoff.contains("isEmpty"),
+        "long-lived CoreAudio clients must not block stale-mmap replacement"
+    );
+    assert!(
+        io_body.contains("state.acquireSharedAudioForCallback()")
+            && io_body.contains("state.finishSharedAudioCallback"),
+        "callbacks must pin their mmap generation until the IO operation finishes"
+    );
+    let swift_tests =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/Tests.swift");
+    let restart_test = function_body(
+        &swift_tests,
+        "static func testGeometryCacheSurvivesDaemonRestart",
+    );
+    assert!(restart_test.contains("state.startIOClient(activeClientID)"));
+    assert!(restart_test.contains("state.ioClientCount == 1"));
+    assert!(restart_test.contains("state.ioClientCount == 0"));
+    assert!(
+        restart_test
+            .matches("handoffStaleSharedAudioMappingIfNeeded")
+            .count()
+            >= 2
+    );
+}
+
+#[test]
+fn configbar_runs_launchctl_on_serial_lifecycle_queue() {
+    let source = read_repo_file("crates/systemwide/crates/daemon/configbar/src/ConfigBar.swift");
+    let manager = function_body(&source, "class DaemonManager");
+    let kickstart = function_body(&source, "private func kickstartAgent");
+    let launch = function_body(&source, "private func launchDaemonInBackground");
+    let launchctl = function_body(&source, "private func runLaunchctl");
+    let restart = function_body(&source, "func restartDaemon");
+
+    assert!(manager.contains("org.spinorama.sotf.configbar.daemon-lifecycle"));
+    assert!(kickstart.contains("lifecycleQueue.async"));
+    assert!(kickstart.contains("DispatchQueue.main.async"));
+    assert!(launch.contains("lifecycleQueue.async"));
+    assert!(restart.contains("lifecycleQueue.async"));
+    assert!(restart.contains("lifecycleQueue.asyncAfter"));
+    assert!(launchctl.contains("process.waitUntilExit()"));
+    assert!(
+        !kickstart.contains("DispatchQueue.main.sync"),
+        "launchctl completion may return to AppKit, but AppKit must never wait on lifecycle work"
     );
 }
 

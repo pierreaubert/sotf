@@ -32,8 +32,8 @@ mod backend;
 mod types;
 
 pub use types::{
-    MediaControlEvent, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig, SeekDirection,
-    WindowHandle,
+    MediaControlEvent, MediaMetadata, MediaPlayback, MediaPosition, MprisCapabilities,
+    PlatformConfig, SeekDirection, WindowHandle,
 };
 
 /// Errors produced by media-control operations.
@@ -50,6 +50,13 @@ pub enum Error {
 }
 
 /// Cross-platform OS media-controls handle.
+///
+/// Dropping the handle joins the backend callback thread, so `Drop` may block
+/// briefly (for example while a D-Bus call drains). On macOS the
+/// command-center detach is additionally queued on the main queue on a
+/// best-effort basis: if the process is tearing down before the queue drains,
+/// stale targets may survive until process exit (see
+/// `PLATFORM_LIMITATIONS.md`).
 pub struct MediaControls {
     inner: backend::Backend,
 }
@@ -94,11 +101,23 @@ impl MediaControls {
     }
 
     /// Update the Now-Playing metadata.
+    ///
+    /// Delivery is fire-and-forget: the call queues the update on the
+    /// platform backend and returns `Ok(())` once queued. On macOS the update
+    /// is applied asynchronously on the main queue and may be dropped if the
+    /// process is tearing down; callers cannot distinguish an applied update
+    /// from a dropped one. An `Err` is returned only when the backend itself
+    /// is already gone.
     pub fn set_metadata(&mut self, metadata: MediaMetadata<'_>) -> Result<(), Error> {
         self.inner.set_metadata(metadata)
     }
 
     /// Update the playback state (playing/paused/stopped + optional progress).
+    ///
+    /// Same fire-and-forget delivery contract as [`Self::set_metadata`].
+    /// Calling this before any [`Self::set_metadata`] is safe: the macOS
+    /// backend lazily initialises an empty info dictionary so the elapsed
+    /// time is still shown.
     pub fn set_playback(&mut self, playback: MediaPlayback) -> Result<(), Error> {
         self.inner.set_playback(playback)
     }

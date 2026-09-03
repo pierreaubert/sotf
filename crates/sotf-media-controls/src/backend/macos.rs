@@ -392,6 +392,30 @@ fn put_number(dict: &InfoDict, key: &NSString, value: f64) {
     dict.insert(key, any);
 }
 
+/// Return the cached now-playing dictionary, lazy-initialising it when
+/// `set_playback` arrives before any `set_metadata`.
+///
+/// Factored out of [`update_elapsed_playback_time`] so the lazy-init branch
+/// is unit-testable: creating/mutating the `NSMutableDictionary` works on any
+/// thread, only the `MPNowPlayingInfoCenter` publish step is main-thread-affine.
+fn ensure_cached_dict() -> Retained<InfoDict> {
+    CACHED_DICT.with(|slot| {
+        let mut borrow = slot.borrow_mut();
+        if borrow.is_none() {
+            // First playback update before metadata: lazy-init an empty
+            // dict so the elapsed time still shows on the lock screen.
+            *borrow = Some(NSMutableDictionary::new());
+        }
+        borrow
+            .as_ref()
+            .cloned()
+            // `borrow` was populated just above; fall back to a fresh
+            // ephemeral dict rather than panicking if that ever changes. No
+            // realtime path in this crate may panic.
+            .unwrap_or_else(NSMutableDictionary::new)
+    })
+}
+
 /// Update only the elapsed-playback-time entry without rebuilding metadata.
 ///
 /// Uses the thread-local main-queue cache so we mutate the **same** dict
@@ -403,26 +427,18 @@ fn put_number(dict: &InfoDict, key: &NSString, value: f64) {
 ///
 /// Must be called on the main thread.
 unsafe fn update_elapsed_playback_time(progress: Duration) {
-    CACHED_DICT.with(|slot| {
-        let mut borrow = slot.borrow_mut();
-        if borrow.is_none() {
-            // First playback update before metadata: lazy-init an empty
-            // dict so the elapsed time still shows on the lock screen.
-            *borrow = Some(NSMutableDictionary::new());
-        }
-        let dict = borrow.as_ref().expect("CACHED_DICT just initialised");
-        // SAFETY: `MPNowPlayingInfoPropertyElapsedPlaybackTime` is a
-        // static `NSString*` constant.
-        put_number(
-            dict,
-            unsafe { MPNowPlayingInfoPropertyElapsedPlaybackTime },
-            progress.as_secs_f64(),
-        );
-        // SAFETY: main thread.
-        unsafe {
-            MPNowPlayingInfoCenter::defaultCenter().setNowPlayingInfo(Some(dict));
-        }
-    });
+    let dict = ensure_cached_dict();
+    // SAFETY: `MPNowPlayingInfoPropertyElapsedPlaybackTime` is a
+    // static `NSString*` constant.
+    put_number(
+        &dict,
+        unsafe { MPNowPlayingInfoPropertyElapsedPlaybackTime },
+        progress.as_secs_f64(),
+    );
+    // SAFETY: main thread.
+    unsafe {
+        MPNowPlayingInfoCenter::defaultCenter().setNowPlayingInfo(Some(&dict));
+    }
 }
 
 #[cfg(test)]
@@ -436,6 +452,7 @@ mod tests {
                 dbus_name: "test",
                 display_name: "Test",
                 hwnd: None,
+                mpris_capabilities: crate::MprisCapabilities::default(),
             };
             MacosBackend::new(&cfg)
         });
@@ -498,6 +515,39 @@ mod tests {
         assert_eq!(owned.album, Some("Album".to_string()));
         assert_eq!(owned.duration, Some(Duration::from_mins(3)));
         // Cover artwork is intentionally omitted on macOS.
+    }
+
+    /// Regression guard: `set_playback(Playing { progress })` arriving
+    /// before any `set_metadata` must not panic. The elapsed-time path
+    /// lazy-inits the thread-local cache; this exercises that branch
+    /// directly (the `MPNowPlayingInfoCenter` publish step stays
+    /// main-thread-only and is not covered here).
+    ///
+    /// This module is only compiled on macOS (`backend.rs` gates
+    /// `mod macos` on `target_os = "macos"`), so no per-test `cfg` is
+    /// needed — same as the other tests in this module.
+    #[test]
+    fn playback_before_metadata_lazy_inits_cache_without_panic() {
+        // Simulate "no set_metadata yet".
+        CACHED_DICT.with(|slot| *slot.borrow_mut() = None);
+
+        let dict = ensure_cached_dict();
+        assert_eq!(dict.count(), 0);
+
+        // Elapsed-time stamping works on the lazily-created dict.
+        put_number(
+            &dict,
+            unsafe { MPNowPlayingInfoPropertyElapsedPlaybackTime },
+            42.0,
+        );
+        assert_eq!(dict.count(), 1);
+
+        // A second call reuses the same dict rather than replacing it.
+        let again = ensure_cached_dict();
+        assert_eq!(again.count(), 1);
+
+        // Leave the thread-local cache clean for other tests sharing this thread.
+        CACHED_DICT.with(|slot| *slot.borrow_mut() = None);
     }
 
     /// Lifetime regression guard: the handler thread must drop the user

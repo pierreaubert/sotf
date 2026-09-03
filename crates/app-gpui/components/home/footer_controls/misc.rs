@@ -240,7 +240,7 @@ impl PlayerView {
                                             cx.notify();
                                         }),
                                     )
-                            .child(text.cast),
+                                    .child(text.cast),
                             )
                             .child(
                                 div()
@@ -260,7 +260,7 @@ impl PlayerView {
                                     )
                                     .child(
                                         div()
-                                            .text_size(d.text_lg)
+                                            .text_size(d.text_sm)
                                             .text_color(theme_header.text_muted)
                                             .child("⟳"),
                                     ),
@@ -356,13 +356,13 @@ impl PlayerView {
                             .px(d.pad_x)
                             .py(d.pad_y_half)
                             .text_size(d.text_xs)
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(theme_cast.text_muted)
-                    .child(if cast_running {
-                        format!("{} ({})", text.devices, text.scanning)
-                    } else {
-                        text.devices.to_string()
-                    }),
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme_cast.text_muted)
+                            .child(if cast_running {
+                                format!("{} ({})", text.devices, text.scanning)
+                            } else {
+                                text.devices.to_string()
+                            }),
                     );
 
                 if cast_devices.is_empty() && !cast_running {

@@ -638,3 +638,46 @@ fn test_multichannel_independent() {
         num_frames
     );
 }
+
+#[test]
+fn short_host_buffer_returns_err_instead_of_panicking() {
+    let mut plugin = DitherPlugin::new(2);
+    plugin.initialize(48_000).unwrap();
+    let frames = 64;
+    // One sample short of the required frames * channels: without the
+    // length check this indexes past the buffer on the audio thread.
+    let mut short = vec![0.1_f32; frames * 2 - 1];
+    let result = plugin.process_in_place(&mut short, &make_context(frames));
+    assert!(
+        result.is_err(),
+        "short buffer must return Err, got {result:?}"
+    );
+
+    // Exact-size buffers still process normally.
+    let mut exact = vec![0.1_f32; frames * 2];
+    assert!(
+        plugin
+            .process_in_place(&mut exact, &make_context(frames))
+            .is_ok()
+    );
+    assert!(exact.iter().all(|sample| sample.is_finite()));
+}
+
+#[test]
+#[should_panic(expected = "at least one channel")]
+fn zero_channels_rejected_in_new() {
+    let _ = DitherPlugin::new(0);
+}
+
+#[test]
+#[should_panic(expected = "at least one channel")]
+fn zero_channels_rejected_in_from_params() {
+    let _ = DitherPlugin::from_params(
+        0,
+        DitherPluginParams {
+            bit_depth: 0,
+            noise_shaping: false,
+            dither_type: 0,
+        },
+    );
+}

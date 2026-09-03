@@ -787,7 +787,7 @@ impl PlayerView {
                                         .items_center()
                                         .justify_center()
                                         .text_color(theme.text_muted)
-                                        .text_size(d.text_lg)
+                                    .text_size(d.text_sm)
                                         .child("♪")
                                 }
                             })
@@ -803,7 +803,7 @@ impl PlayerView {
                                 // Album title
                                 .child(
                                     div()
-                                        .text_size(d.text_lg)
+                                .text_size(d.text_sm)
                                         .font_weight(FontWeight::BOLD)
                                         .text_color(theme.text_primary)
                                         .overflow_hidden()

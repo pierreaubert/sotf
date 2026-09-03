@@ -247,18 +247,31 @@ mod tests {
     }
 }
 
-pub(super) fn validate_gapless_source_compatible(
+pub(crate) fn validate_gapless_source_compatible(
     source: &crate::decoder::AudioSource,
     expected_channels: usize,
 ) -> Result<(), String> {
-    if !matches!(source, crate::decoder::AudioSource::File(_)) {
-        log::debug!(
-            "[Manager Thread] Skipping queued source channel validation for non-file source: {}",
-            source.display_name()
-        );
-        return Ok(());
+    use crate::decoder::AudioSource;
+    use crate::decoder::service_resolver::check_service_pcm_conformance;
+
+    // Only file and service-stream sources expose an inspectable spec here;
+    // URLs and driver sources keep the previous skip behavior.
+    match source {
+        AudioSource::File(_) | AudioSource::ServiceStream { .. } => {}
+        _ => {
+            log::debug!(
+                "[Manager Thread] Skipping queued source channel validation for non-file source: {}",
+                source.display_name()
+            );
+            return Ok(());
+        }
     }
 
+    // For service streams this resolves through the installed resolver, so
+    // validation performs network I/O on the manager thread — and the
+    // decoder thread resolves *again* at the actual transition. That
+    // double-resolution cost is accepted so a channel mismatch fails fast
+    // here instead of feeding N-channel frames into the built plugin chain.
     let decoder = crate::decoder::create_decoder_from_source(source).map_err(|e| {
         format!(
             "Failed to inspect queued source '{}': {:?}",
@@ -266,8 +279,18 @@ pub(super) fn validate_gapless_source_compatible(
             e
         )
     })?;
-    let channels = decoder.spec().channels as usize;
+    let channels = decoder.spec().channels;
 
+    if matches!(source, AudioSource::ServiceStream { .. }) {
+        return check_service_pcm_conformance(channels, expected_channels).map_err(|reason| {
+            format!(
+                "Queued source channel mismatch for '{}': {reason}",
+                source.display_name(),
+            )
+        });
+    }
+
+    let channels = channels as usize;
     if channels != expected_channels {
         return Err(format!(
             "Queued source channel mismatch for '{}': expected {} channels, got {}",

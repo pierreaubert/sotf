@@ -13,7 +13,7 @@
 // The VBAP gains are computed once per `set_position()` call and cached.
 // The `render()` hot path contains no heap allocations.
 
-use crate::error::IamfResult;
+use crate::error::{IamfError, IamfResult};
 use crate::renderer::ElementRenderer;
 use sotf_host::speaker_config::SpeakerConfig;
 use sotf_host::vbap::VbapPanner;
@@ -113,6 +113,12 @@ impl ElementRenderer for ObjectRenderer {
         num_frames: usize,
     ) -> IamfResult<()> {
         let out_len = num_frames * self.output_channels;
+        if output.len() < out_len {
+            return Err(IamfError::ParseError(format!(
+                "Output buffer too small: need {out_len} samples, got {}",
+                output.len()
+            )));
+        }
         output[..out_len].fill(0.0);
 
         if substream_pcm.is_empty() {
@@ -434,6 +440,23 @@ mod tests {
         assert!(
             output[2 + 6].abs() < 1e-6,
             "Second frame should be zero-padded"
+        );
+    }
+
+    #[test]
+    fn test_render_rejects_short_output_buffer() {
+        // A short caller buffer must be a ParseError, not a slicing panic in
+        // `output[..out_len].fill(0.0)`.
+        let config = get_speaker_config("5.1").unwrap();
+        let mut renderer = ObjectRenderer::new(config, 1);
+
+        let substream_pcm = vec![vec![1.0_f32]];
+        // One 5.1 frame needs 6 samples; provide only 3.
+        let mut output = vec![0.0_f32; 3];
+        let err = renderer.render(&substream_pcm, &mut output, 1).unwrap_err();
+        assert!(
+            matches!(err, IamfError::ParseError(_)),
+            "short output buffer must be a ParseError, got {err:?}"
         );
     }
 }

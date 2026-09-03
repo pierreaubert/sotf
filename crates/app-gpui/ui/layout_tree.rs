@@ -181,3 +181,20 @@ pub fn solved_hide_queue_meters(solved: &AppSolvedLayout) -> bool {
         crate::app::RackDisplayMode::Full | crate::app::RackDisplayMode::Mini
     )
 }
+
+/// Shared `PaneDivider` theme for every app shell (horizontal/vertical
+/// 3-panel, split view). The three shells previously constructed this
+/// struct inline with byte-identical values; keep it in one place so divider
+/// chrome stays consistent as the shells converge on `gpui-builder`.
+pub fn pane_divider_theme(theme: &crate::theme::Theme) -> gpui_ui_kit::PaneDividerTheme {
+    gpui_ui_kit::PaneDividerTheme {
+        background: theme.background,
+        background_hover: theme.surface_hover,
+        background_collapsed: theme.surface,
+        foreground: theme.text_muted,
+        foreground_hover: theme.text_secondary,
+        border: theme.border,
+        tint: crate::theme::Theme::with_opacity(theme.accent, 0.42),
+        tint_hover: theme.accent,
+    }
+}

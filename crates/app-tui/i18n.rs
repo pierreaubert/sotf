@@ -196,7 +196,13 @@ impl TuiTranslations {
         translations
             .iter()
             .find_map(|(source, translation)| (*source == action).then_some(*translation))
-            .unwrap_or_else(|| panic!("missing localized TUI action: {action}"))
+            .unwrap_or_else(|| {
+                log::warn!(
+                    "missing {:?} TUI action translation for {action:?}; falling back to English",
+                    self.language,
+                );
+                action
+            })
     }
 
     /// Translate first-party static copy used by terminal screens.
@@ -215,7 +221,13 @@ impl TuiTranslations {
         translations
             .iter()
             .find_map(|(key, translation)| (*key == source).then_some(*translation))
-            .unwrap_or_else(|| panic!("missing localized TUI copy: {source}"))
+            .unwrap_or_else(|| {
+                log::warn!(
+                    "missing {:?} TUI copy for {source:?}; falling back to English",
+                    self.language,
+                );
+                source
+            })
     }
 
     /// Translate a formatted first-party status while preserving dynamic
@@ -229,7 +241,11 @@ impl TuiTranslations {
             return localized;
         }
 
-        panic!("missing localized TUI dynamic copy: {message}")
+        log::warn!(
+            "missing {:?} TUI dynamic copy for {message:?}; falling back to English",
+            self.language,
+        );
+        message
     }
 
     /// Translate known first-party framing while retaining unknown external
@@ -5465,6 +5481,29 @@ mod tests {
         assert_eq!(Language::from_locale("es"), Language::Spanish);
         assert_eq!(Language::from_locale("C"), Language::English);
         assert_eq!(Language::Spanish.next(), Language::English);
+    }
+
+    #[test]
+    fn missing_copy_falls_back_to_english_instead_of_panicking() {
+        // Regression test: an untranslated key must degrade to the English
+        // source text (plus a log) rather than panicking the whole TUI when
+        // the user runs under FR/DE/ES.
+        const MISSING_STATIC: &str = "zzz-tui-missing-copy-probe-12345";
+        const MISSING_ACTION: &str = "zzz-tui-missing-action-probe-12345";
+        let missing_dynamic = MISSING_STATIC.to_string();
+        for language in [Language::French, Language::German, Language::Spanish] {
+            let i18n = TuiTranslations::for_language(language);
+            assert_eq!(i18n.ui(MISSING_STATIC), MISSING_STATIC);
+            assert_eq!(i18n.action_description(MISSING_ACTION), MISSING_ACTION);
+            assert_eq!(i18n.dynamic(missing_dynamic.clone()), missing_dynamic);
+            // Known keys still translate (fallback didn't swallow the catalog).
+            assert_ne!(i18n.ui("Levels"), "Levels");
+        }
+        // English is the identity fallback.
+        let english = TuiTranslations::for_language(Language::English);
+        assert_eq!(english.ui(MISSING_STATIC), MISSING_STATIC);
+        assert_eq!(english.action_description(MISSING_ACTION), MISSING_ACTION);
+        assert_eq!(english.dynamic(missing_dynamic.clone()), missing_dynamic);
     }
 
     #[test]

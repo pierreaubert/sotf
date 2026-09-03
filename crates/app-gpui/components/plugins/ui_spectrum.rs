@@ -639,7 +639,7 @@ impl PlayerView {
                     .mb(d.section)
                     .child(
                         div()
-                            .text_size(d.text_lg)
+                            .text_size(d.text_base)
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(text.analyzer),
                     )

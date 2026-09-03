@@ -722,6 +722,38 @@ fn test_set_parameter_unknown_returns_error() {
     assert!(res.unwrap_err().contains("Unknown parameter"));
 }
 
+/// Regression: legacy single-band sidechain controls have no DSP
+/// implementation and must be rejected with a message — never silently
+/// ignored — both before and after initialization.
+#[test]
+fn test_legacy_sidechain_keys_rejected_with_message() {
+    let stubs: &[(&str, ParameterValue)] = &[
+        ("sidechain_hpf_hz", ParameterValue::Float(80.0)),
+        ("sidechain_hpf_order", ParameterValue::Int(0)),
+        ("detection_mode", ParameterValue::Int(0)),
+        ("program_dependent_release", ParameterValue::Bool(false)),
+        ("sidechain_external", ParameterValue::Bool(false)),
+    ];
+    for phase in ["pre_init", "post_init"] {
+        let mut p = MultibandCompressorPlugin::new(2);
+        if phase == "post_init" {
+            p.initialize(48000).unwrap();
+        }
+        for (key, value) in stubs {
+            let res = p.set_parameter(ParameterId::from(*key), value.clone());
+            let err = res.unwrap_err();
+            assert!(
+                err.contains("unsupported legacy sidechain control"),
+                "phase {phase}: '{key}' must be rejected with a message, got: {err}"
+            );
+            assert!(
+                p.get_parameter(&ParameterId::from(*key)).is_none(),
+                "phase {phase}: '{key}' must not be readable via get_parameter"
+            );
+        }
+    }
+}
+
 #[test]
 fn test_rebuild_cached_parameters_includes_aliases() {
     let mut p = MultibandCompressorPlugin::new(1);

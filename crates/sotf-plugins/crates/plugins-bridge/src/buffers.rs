@@ -8,20 +8,33 @@
 ///
 /// `channels[c][f]` → `output[f * num_channels + c]`
 ///
-/// # Panics
-/// Panics if output is too small or channels have different lengths.
-pub fn interleave(channels: &[&[f32]], output: &mut [f32]) {
+/// Returns an error (instead of panicking) when the channel slices are ragged
+/// or `output` is too small, so release-mode realtime paths fail gracefully.
+///
+/// # Errors
+/// Errors if the channel slices have different lengths, if the required sample
+/// count overflows `usize`, or if `output` is smaller than
+/// `num_frames * num_channels`.
+pub fn interleave(channels: &[&[f32]], output: &mut [f32]) -> Result<(), String> {
     if channels.is_empty() {
-        return;
+        return Ok(());
     }
     let num_channels = channels.len();
     let num_frames = channels[0].len();
-    debug_assert!(
-        output.len() >= num_frames * num_channels,
-        "Output buffer too small: {} < {}",
-        output.len(),
-        num_frames * num_channels
-    );
+    if channels[1..].iter().any(|c| c.len() != num_frames) {
+        return Err(format!(
+            "Ragged channel buffers: expected {num_frames} frames per channel"
+        ));
+    }
+    let needed = num_frames
+        .checked_mul(num_channels)
+        .ok_or_else(|| "Interleave sample count overflows usize".to_string())?;
+    if output.len() < needed {
+        return Err(format!(
+            "Output buffer too small: {} < {needed}",
+            output.len()
+        ));
+    }
 
     for frame in 0..num_frames {
         let base = frame * num_channels;
@@ -29,25 +42,50 @@ pub fn interleave(channels: &[&[f32]], output: &mut [f32]) {
             output[base + ch] = channel[frame];
         }
     }
+    Ok(())
 }
 
 /// Deinterleave an interleaved buffer into separate channel buffers.
 ///
 /// `input[f * num_channels + c]` → `channels[c][f]`
 ///
-/// # Panics
-/// Panics if input is too small for the given frame count and channel count.
-pub fn deinterleave(input: &[f32], num_channels: usize, channels: &mut [&mut [f32]]) {
+/// Returns an error (instead of panicking) when the destinations are ragged,
+/// their count disagrees with `num_channels`, or `input` is too small, so
+/// release-mode realtime paths fail gracefully.
+///
+/// # Errors
+/// Errors if `channels.len() != num_channels`, if the destination slices have
+/// different lengths, if the required sample count overflows `usize`, or if
+/// `input` is smaller than `num_frames * num_channels`.
+pub fn deinterleave(
+    input: &[f32],
+    num_channels: usize,
+    channels: &mut [&mut [f32]],
+) -> Result<(), String> {
     if num_channels == 0 || channels.is_empty() {
-        return;
+        return Ok(());
+    }
+    if channels.len() != num_channels {
+        return Err(format!(
+            "Channel count mismatch: {num_channels} declared but {} buffers provided",
+            channels.len()
+        ));
     }
     let num_frames = channels[0].len();
-    debug_assert!(
-        input.len() >= num_frames * num_channels,
-        "Input buffer too small: {} < {}",
-        input.len(),
-        num_frames * num_channels
-    );
+    if channels[1..].iter().any(|c| c.len() != num_frames) {
+        return Err(format!(
+            "Ragged channel buffers: expected {num_frames} frames per channel"
+        ));
+    }
+    let needed = num_frames
+        .checked_mul(num_channels)
+        .ok_or_else(|| "Deinterleave sample count overflows usize".to_string())?;
+    if input.len() < needed {
+        return Err(format!(
+            "Input buffer too small: {} < {needed}",
+            input.len()
+        ));
+    }
 
     for frame in 0..num_frames {
         let base = frame * num_channels;
@@ -55,6 +93,7 @@ pub fn deinterleave(input: &[f32], num_channels: usize, channels: &mut [&mut [f3
             channel[frame] = input[base + ch];
         }
     }
+    Ok(())
 }
 
 /// Pre-allocated scratch buffers for interleave/deinterleave operations.
@@ -114,7 +153,7 @@ mod tests {
         let channels: &[&[f32]] = &[&left, &right];
         let mut output = vec![0.0f32; 8];
 
-        interleave(channels, &mut output);
+        interleave(channels, &mut output).unwrap();
 
         assert_eq!(output, [1.0, 5.0, 2.0, 6.0, 3.0, 7.0, 4.0, 8.0]);
     }
@@ -127,7 +166,7 @@ mod tests {
 
         {
             let channels: &mut [&mut [f32]] = &mut [&mut left, &mut right];
-            deinterleave(&input, 2, channels);
+            deinterleave(&input, 2, channels).unwrap();
         }
 
         assert_eq!(left, [1.0, 2.0, 3.0, 4.0]);
@@ -142,18 +181,73 @@ mod tests {
 
         // Interleave
         let mut interleaved = vec![0.0f32; 6];
-        interleave(channels, &mut interleaved);
+        interleave(channels, &mut interleaved).unwrap();
 
         // Deinterleave
         let mut recovered_l = vec![0.0f32; 3];
         let mut recovered_r = vec![0.0f32; 3];
         {
             let out_channels: &mut [&mut [f32]] = &mut [&mut recovered_l, &mut recovered_r];
-            deinterleave(&interleaved, 2, out_channels);
+            deinterleave(&interleaved, 2, out_channels).unwrap();
         }
 
         assert_eq!(recovered_l, original_l);
         assert_eq!(recovered_r, original_r);
+    }
+
+    #[test]
+    fn test_interleave_rejects_short_output() {
+        let left = [1.0f32, 2.0, 3.0, 4.0];
+        let right = [5.0f32, 6.0, 7.0, 8.0];
+        let channels: &[&[f32]] = &[&left, &right];
+        let mut output = vec![0.0f32; 7];
+
+        let err = interleave(channels, &mut output).expect_err("short output must fail");
+        assert!(err.contains("too small"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_interleave_rejects_ragged_channels() {
+        let left = [1.0f32, 2.0, 3.0, 4.0];
+        let right = [5.0f32, 6.0];
+        let channels: &[&[f32]] = &[&left, &right];
+        let mut output = vec![0.0f32; 8];
+
+        let err = interleave(channels, &mut output).expect_err("ragged channels must fail");
+        assert!(err.contains("Ragged"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_deinterleave_rejects_short_input() {
+        let input = [1.0f32, 5.0, 2.0];
+        let mut left = vec![0.0f32; 4];
+        let mut right = vec![0.0f32; 4];
+        let channels: &mut [&mut [f32]] = &mut [&mut left, &mut right];
+
+        let err = deinterleave(&input, 2, channels).expect_err("short input must fail");
+        assert!(err.contains("too small"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_deinterleave_rejects_ragged_destinations() {
+        let input = [1.0f32, 5.0, 2.0, 6.0, 3.0, 7.0, 4.0, 8.0];
+        let mut left = vec![0.0f32; 4];
+        let mut right = vec![0.0f32; 2];
+        let channels: &mut [&mut [f32]] = &mut [&mut left, &mut right];
+
+        let err = deinterleave(&input, 2, channels).expect_err("ragged destinations must fail");
+        assert!(err.contains("Ragged"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_deinterleave_rejects_channel_count_mismatch() {
+        let input = [1.0f32, 5.0, 2.0, 6.0, 3.0, 7.0, 4.0, 8.0];
+        let mut left = vec![0.0f32; 4];
+        let mut right = vec![0.0f32; 4];
+        let channels: &mut [&mut [f32]] = &mut [&mut left, &mut right];
+
+        let err = deinterleave(&input, 3, channels).expect_err("channel count mismatch must fail");
+        assert!(err.contains("mismatch"), "unexpected error: {err}");
     }
 
     #[test]

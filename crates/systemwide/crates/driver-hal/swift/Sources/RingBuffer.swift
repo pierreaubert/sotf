@@ -22,30 +22,25 @@ final class AudioRingBuffer {
 
     /// Reset the buffer to empty state
     func reset() {
-        writePosition = 0
-        readPosition = 0
+        sotf_atomic_store_u64(&writePosition, 0)
+        sotf_atomic_store_u64(&readPosition, 0)
         buffer.initialize(repeating: 0, count: capacity)
     }
 
     /// Number of samples available to read
     ///
-    /// Note: This reads two positions non-atomically, which is safe for SPSC
-    /// (single-producer single-consumer) usage where this is called from
-    /// the consumer side. For MPMC usage, atomic snapshot would be required.
+    /// Positions use C11 acquire/release atomics for SPSC publication.
     var availableToRead: Int {
-        // Memory barrier to ensure we see the latest writePosition
-        OSMemoryBarrier()
-        let write = writePosition
-        let read = readPosition
-        return Int(write - read)
+        let write = sotf_atomic_load_u64(&writePosition)
+        let read = sotf_atomic_load_u64(&readPosition)
+        guard write >= read else { return 0 }
+        return Int(min(UInt64(capacity), write - read))
     }
 
     /// Number of samples available to write
     ///
-    /// Note: This reads two positions non-atomically, which is safe for SPSC
-    /// usage where this is called from the producer side.
+    /// Called from the producer side of the SPSC ring.
     var availableToWrite: Int {
-        OSMemoryBarrier()
         return capacity - availableToRead
     }
 
@@ -58,7 +53,8 @@ final class AudioRingBuffer {
 
         if toWrite == 0 { return 0 }
 
-        let writeIndex = Int(writePosition % UInt64(capacity))
+        let write = sotf_atomic_load_u64(&writePosition)
+        let writeIndex = Int(write % UInt64(capacity))
         let firstPart = min(toWrite, capacity - writeIndex)
         let secondPart = toWrite - firstPart
 
@@ -71,8 +67,7 @@ final class AudioRingBuffer {
         }
 
         // Memory barrier before updating position
-        OSMemoryBarrier()
-        writePosition += UInt64(toWrite)
+        sotf_atomic_store_u64(&writePosition, write + UInt64(toWrite))
 
         return toWrite
     }
@@ -89,7 +84,8 @@ final class AudioRingBuffer {
         let toWrite = min(count, available)
         guard toWrite > 0 else { return 0 }
 
-        let writeIndex = Int(writePosition % UInt64(capacity))
+        let write = sotf_atomic_load_u64(&writePosition)
+        let writeIndex = Int(write % UInt64(capacity))
         let firstPart = min(toWrite, capacity - writeIndex)
         for index in 0..<firstPart {
             buffer[writeIndex + index] = samples[index * stride]
@@ -99,8 +95,7 @@ final class AudioRingBuffer {
             buffer[index] = samples[(firstPart + index) * stride]
         }
 
-        OSMemoryBarrier()
-        writePosition += UInt64(toWrite)
+        sotf_atomic_store_u64(&writePosition, write + UInt64(toWrite))
         return toWrite
     }
 
@@ -117,7 +112,8 @@ final class AudioRingBuffer {
             return 0
         }
 
-        let readIndex = Int(readPosition % UInt64(capacity))
+        let read = sotf_atomic_load_u64(&readPosition)
+        let readIndex = Int(read % UInt64(capacity))
         let firstPart = min(toRead, capacity - readIndex)
         let secondPart = toRead - firstPart
 
@@ -130,8 +126,7 @@ final class AudioRingBuffer {
         }
 
         // Memory barrier before updating position
-        OSMemoryBarrier()
-        readPosition += UInt64(toRead)
+        sotf_atomic_store_u64(&readPosition, read + UInt64(toRead))
 
         // Fill remaining with silence if we didn't read enough
         if toRead < count {
@@ -153,7 +148,8 @@ final class AudioRingBuffer {
         let toRead = min(count, available)
         guard toRead > 0 else { return 0 }
 
-        let readIndex = Int(readPosition % UInt64(capacity))
+        let read = sotf_atomic_load_u64(&readPosition)
+        let readIndex = Int(read % UInt64(capacity))
         let firstPart = min(toRead, capacity - readIndex)
         for index in 0..<firstPart {
             samples[index * stride] = buffer[readIndex + index]
@@ -163,8 +159,7 @@ final class AudioRingBuffer {
             samples[(firstPart + index) * stride] = buffer[index]
         }
 
-        OSMemoryBarrier()
-        readPosition += UInt64(toRead)
+        sotf_atomic_store_u64(&readPosition, read + UInt64(toRead))
         return toRead
     }
 
@@ -175,7 +170,8 @@ final class AudioRingBuffer {
 
         if toPeek == 0 { return 0 }
 
-        let readIndex = Int(readPosition % UInt64(capacity))
+        let read = sotf_atomic_load_u64(&readPosition)
+        let readIndex = Int(read % UInt64(capacity))
         let firstPart = min(toPeek, capacity - readIndex)
         let secondPart = toPeek - firstPart
 
@@ -191,33 +187,47 @@ final class AudioRingBuffer {
     func skip(_ count: Int) {
         let available = availableToRead
         let toSkip = min(count, available)
-        OSMemoryBarrier()
-        readPosition += UInt64(toSkip)
+        let read = sotf_atomic_load_u64(&readPosition)
+        sotf_atomic_store_u64(&readPosition, read + UInt64(toSkip))
     }
 }
 
 /// Multi-channel audio ring buffer
 final class MultiChannelRingBuffer {
-    private let channelBuffers: [AudioRingBuffer]
+    private let buffer: UnsafeMutablePointer<Float>
+    private let framesCapacity: Int
+    private var writePosition: UInt64 = 0
+    private var readPosition: UInt64 = 0
     let channelCount: Int
 
     init(channelCount: Int, framesCapacity: Int) {
         self.channelCount = channelCount
-        self.channelBuffers = (0..<channelCount).map { _ in
-            AudioRingBuffer(capacity: framesCapacity)
-        }
+        self.framesCapacity = framesCapacity
+        self.buffer = UnsafeMutablePointer<Float>.allocate(
+            capacity: framesCapacity * channelCount
+        )
+        self.buffer.initialize(repeating: 0, count: framesCapacity * channelCount)
+    }
+
+    deinit {
+        buffer.deallocate()
     }
 
     func reset() {
-        channelBuffers.forEach { $0.reset() }
+        sotf_atomic_store_u64(&writePosition, 0)
+        sotf_atomic_store_u64(&readPosition, 0)
+        buffer.initialize(repeating: 0, count: framesCapacity * channelCount)
     }
 
     var availableFramesToRead: Int {
-        channelBuffers.first?.availableToRead ?? 0
+        let write = sotf_atomic_load_u64(&writePosition)
+        let read = sotf_atomic_load_u64(&readPosition)
+        guard write >= read else { return 0 }
+        return Int(min(UInt64(framesCapacity), write - read))
     }
 
     var availableFramesToWrite: Int {
-        channelBuffers.first?.availableToWrite ?? 0
+        framesCapacity - availableFramesToRead
     }
 
     /// Write interleaved audio data
@@ -236,14 +246,26 @@ final class MultiChannelRingBuffer {
 
         if toWrite == 0 { return 0 }
 
-        for channel in 0..<channelCount {
-            channelBuffers[channel].writeStrided(
-                samples.advanced(by: channel),
-                count: toWrite,
-                stride: channelCount
+        let write = sotf_atomic_load_u64(&writePosition)
+        let writeIndex = Int(write % UInt64(framesCapacity))
+        let firstFrames = min(toWrite, framesCapacity - writeIndex)
+        let secondFrames = toWrite - firstFrames
+
+        memcpy(
+            buffer.advanced(by: writeIndex * channelCount),
+            samples,
+            firstFrames * channelCount * MemoryLayout<Float>.size
+        )
+        if secondFrames > 0 {
+            memcpy(
+                buffer,
+                samples.advanced(by: firstFrames * channelCount),
+                secondFrames * channelCount * MemoryLayout<Float>.size
             )
         }
 
+        // Publish every channel in the block with one release store.
+        sotf_atomic_store_u64(&writePosition, write + UInt64(toWrite))
         return toWrite
     }
 
@@ -266,13 +288,25 @@ final class MultiChannelRingBuffer {
             return 0
         }
 
-        for channel in 0..<channelCount {
-            channelBuffers[channel].readStrided(
-                samples.advanced(by: channel),
-                count: toRead,
-                stride: channelCount
+        let read = sotf_atomic_load_u64(&readPosition)
+        let readIndex = Int(read % UInt64(framesCapacity))
+        let firstFrames = min(toRead, framesCapacity - readIndex)
+        let secondFrames = toRead - firstFrames
+
+        memcpy(
+            samples,
+            buffer.advanced(by: readIndex * channelCount),
+            firstFrames * channelCount * MemoryLayout<Float>.size
+        )
+        if secondFrames > 0 {
+            memcpy(
+                samples.advanced(by: firstFrames * channelCount),
+                buffer,
+                secondFrames * channelCount * MemoryLayout<Float>.size
             )
         }
+
+        sotf_atomic_store_u64(&readPosition, read + UInt64(toRead))
 
         // Fill remaining with silence
         if toRead < frameCount {
@@ -296,10 +330,17 @@ final class MultiChannelRingBuffer {
 
         if toWrite == 0 { return 0 }
 
-        for (channel, buffer) in buffers.enumerated() {
-            channelBuffers[channel].write(buffer, count: toWrite)
+        let write = sotf_atomic_load_u64(&writePosition)
+        let writeIndex = Int(write % UInt64(framesCapacity))
+        for frame in 0..<toWrite {
+            let destinationFrame = (writeIndex + frame) % framesCapacity
+            let destination = buffer.advanced(by: destinationFrame * channelCount)
+            for channel in 0..<channelCount {
+                destination[channel] = buffers[channel][frame]
+            }
         }
 
+        sotf_atomic_store_u64(&writePosition, write + UInt64(toWrite))
         return toWrite
     }
 
@@ -310,13 +351,27 @@ final class MultiChannelRingBuffer {
         let available = availableFramesToRead
         let toRead = min(frameCount, available)
 
-        for (channel, buffer) in buffers.enumerated() {
-            if toRead > 0 {
-                channelBuffers[channel].read(buffer, count: toRead)
+        if toRead > 0 {
+            let read = sotf_atomic_load_u64(&readPosition)
+            let readIndex = Int(read % UInt64(framesCapacity))
+            for frame in 0..<toRead {
+                let sourceFrame = (readIndex + frame) % framesCapacity
+                let source = buffer.advanced(by: sourceFrame * channelCount)
+                for channel in 0..<channelCount {
+                    buffers[channel][frame] = source[channel]
+                }
             }
+            sotf_atomic_store_u64(&readPosition, read + UInt64(toRead))
+        }
+
+        for channel in 0..<channelCount {
             // Fill remaining with silence
             if toRead < frameCount {
-                memset(buffer.advanced(by: toRead), 0, (frameCount - toRead) * MemoryLayout<Float>.size)
+                memset(
+                    buffers[channel].advanced(by: toRead),
+                    0,
+                    (frameCount - toRead) * MemoryLayout<Float>.size
+                )
             }
         }
 

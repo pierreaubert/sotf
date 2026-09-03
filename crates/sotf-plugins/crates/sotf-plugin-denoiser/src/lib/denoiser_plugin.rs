@@ -951,6 +951,9 @@ impl ParametricInPlacePlugin for DenoiserPlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        if sample_rate == 0 {
+            return Err("Denoiser sample rate must be greater than zero".to_string());
+        }
         self.config.sample_rate = sample_rate;
         self.noise_profile.learning_frames_target =
             (sample_rate as usize).div_ceil(self.config.hop_size).max(1);
@@ -1046,6 +1049,17 @@ impl ParametricInPlacePlugin for DenoiserPlugin {
                 "Block too large for in-place denoiser: {} frames exceeds prepared safe maximum {}",
                 num_frames, max_in_place_frames
             ));
+        }
+
+        // Finite-input guard (samples): NaN/inf input would poison the MCRA PSD
+        // trackers (`noise_psd`, `min_psd`, `min_psd_b`), speech-presence
+        // estimates, and captured-profile accumulators — all IIR/min-statistics
+        // with long memory. Sanitize to silence before any DSP state is touched.
+        // Allocation-free; mirrors the de-esser input guard.
+        for sample in buffer.iter_mut() {
+            if !sample.is_finite() {
+                *sample = 0.0;
+            }
         }
 
         let block_samples = self.config.fft_size * self.config.channels;

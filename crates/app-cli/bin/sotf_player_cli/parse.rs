@@ -60,7 +60,16 @@ pub(super) fn parse_filter_type(type_str: &str) -> Result<BiquadFilterType, Stri
     }
 }
 
-pub(super) fn parse_filters(filter_strings: &[String]) -> Result<Vec<Biquad>, String> {
+pub(super) fn parse_filters(
+    filter_strings: &[String],
+    sample_rate: f64,
+) -> Result<Vec<Biquad>, String> {
+    if !sample_rate.is_finite() || sample_rate <= 0.0 {
+        return Err(format!(
+            "Invalid sample rate for filter construction: {}",
+            sample_rate
+        ));
+    }
     filter_strings
         .iter()
         .map(|filter_str| {
@@ -112,17 +121,34 @@ pub(super) fn parse_filters(filter_strings: &[String]) -> Result<Vec<Biquad>, St
             if gain.abs() > 30.0 {
                 return Err(format!("Gain must be between -30 and +30 dB, got {}", gain));
             }
+            // Frequencies are in Hz; the design rate must satisfy Nyquist.
+            let nyquist_hz = sample_rate / 2.0;
+            if frequency >= nyquist_hz {
+                return Err(format!(
+                    "Frequency {} Hz must be below the Nyquist rate ({:.1} Hz at {:.0} Hz sample rate)",
+                    frequency, nyquist_hz, sample_rate
+                ));
+            }
 
-            Ok(Biquad::new(filter_type, frequency, 48000.0, q, gain))
+            Ok(Biquad::new(filter_type, frequency, sample_rate, q, gain))
         })
         .collect()
 }
 
-/// Parse channel mapping specification and create matrix plugin config
+/// Parse channel mapping specification and create matrix plugin config.
+///
+/// `"_"` output positions are gaps: they consume no input and stay silent.
+/// Gaps are encoded sparsely — the returned `output_channel_map` lists only
+/// the physical (0-indexed) hardware channels that are driven, so a skipped
+/// physical index IS the gap.
+///
+/// `physical_output_channels` (max hardware index + 1, gaps included) sizes
+/// the device buffer; it must be used instead of `output_channel_map.len()`
+/// whenever a physical width is needed.
 #[allow(clippy::type_complexity)]
 pub(super) fn parse_channel_mapping(
     mapping_str: &str,
-) -> Result<(Vec<usize>, Vec<usize>, Vec<f32>), String> {
+) -> Result<(Vec<usize>, Vec<usize>, Vec<f32>, usize), String> {
     let parts: Vec<&str> = mapping_str.split("->").collect();
     if parts.len() != 2 {
         return Err(format!(
@@ -160,7 +186,7 @@ pub(super) fn parse_channel_mapping(
     }
 
     let mut channel_map: Vec<Option<usize>> = Vec::new();
-    let mut max_hw_channel = 0;
+    let mut physical_output_channels = 0;
 
     for spec in output_spec.iter() {
         if *spec == "_" {
@@ -173,7 +199,7 @@ pub(super) fn parse_channel_mapping(
                 return Err("Channel indices must be >= 1 (1-indexed)".to_string());
             }
             channel_map.push(Some(hw_ch - 1));
-            max_hw_channel = max_hw_channel.max(hw_ch);
+            physical_output_channels = physical_output_channels.max(hw_ch);
         }
     }
 
@@ -197,5 +223,10 @@ pub(super) fn parse_channel_mapping(
         matrix[i * input_count + i] = 1.0;
     }
 
-    Ok((input_channel_map, output_channel_map, matrix))
+    Ok((
+        input_channel_map,
+        output_channel_map,
+        matrix,
+        physical_output_channels,
+    ))
 }

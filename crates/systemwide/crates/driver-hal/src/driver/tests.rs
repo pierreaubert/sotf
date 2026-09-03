@@ -1,12 +1,12 @@
 use super::consts::DAEMON_HEARTBEAT_INTERVAL;
-use super::hal_driver::HalDriver;
+use super::hal_driver::{HalDriver, reset_new_daemon_mapping};
 use crate::shared_memory::SharedAudioBuffer;
 use driver_common::{AudioDriver, ConfigResult, DriverConfig};
 use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use tempfile::NamedTempFile;
+use tempfile::{NamedTempFile, tempdir};
 
 fn spawn_config_ack(path: std::path::PathBuf, status: u32) -> thread::JoinHandle<()> {
     thread::spawn(move || {
@@ -45,6 +45,48 @@ fn test_hal_driver_status_before_init() {
     assert!(status.platform_supported);
     assert!(!status.driver_installed);
     assert!(!status.capture_active);
+}
+
+#[test]
+fn test_new_daemon_mapping_reset_clears_daemon_state_before_adoption() {
+    let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    let mut buffer = SharedAudioBuffer::create_or_open(temp_file.path(), 48_000, 512, 2)
+        .expect("Failed to create shared memory");
+    buffer.set_engine_ready(true);
+    buffer.header().driver_ready.store(1, Ordering::Release);
+    buffer.header().write_position.store(64, Ordering::Release);
+    buffer.header().read_position.store(32, Ordering::Release);
+
+    reset_new_daemon_mapping(&mut buffer).expect("fresh daemon mapping reset");
+
+    assert_eq!(buffer.header().engine_ready.load(Ordering::Acquire), 0);
+    assert!(buffer.driver_ready());
+    assert_eq!(buffer.header().write_position.load(Ordering::Acquire), 0);
+    assert_eq!(buffer.header().read_position.load(Ordering::Acquire), 0);
+}
+
+#[test]
+fn test_hal_driver_status_rejects_orphaned_mapping() {
+    let dir = tempdir().expect("Failed to create temp dir");
+    let path = dir.path().join("audio.shm");
+    let buffer = SharedAudioBuffer::create_or_open(&path, 48_000, 512, 2)
+        .expect("Failed to create shared memory");
+    buffer.header().active.store(1, Ordering::Release);
+    buffer.header().driver_ready.store(1, Ordering::Release);
+
+    let mut driver = HalDriver::new();
+    driver.driver_installed = true;
+    driver.config_buffer = Some(buffer);
+    let live = driver.status();
+    assert!(live.capture_active);
+    assert!(live.driver_ready);
+
+    std::fs::remove_file(&path).expect("unlink shared memory");
+    let orphaned = driver.status();
+    assert!(!orphaned.capture_active);
+    assert!(!orphaned.driver_ready);
+    assert_eq!(orphaned.sample_rate, 48_000);
+    assert_eq!(orphaned.channel_count, 2);
 }
 
 #[test]

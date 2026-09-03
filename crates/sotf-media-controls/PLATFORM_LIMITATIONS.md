@@ -49,6 +49,44 @@ capabilities.
   runtime thread, so the handler is dropped before app/player state can be
   destroyed.
 
+## Delivery semantics
+
+- **Fire-and-forget updates.** `set_metadata` / `set_playback` queue the
+  update on the platform backend and return `Ok(())` once queued. On macOS
+  the update is applied asynchronously on the main queue and may be dropped
+  while the process is tearing down; callers cannot distinguish an applied
+  update from a dropped one. An `Err` is returned only when the backend
+  itself is already gone.
+- **Best-effort macOS detach.** `Drop` removes command-center targets via an
+  async main-queue block. If the process exits before the queue drains,
+  `removeTarget:` never runs and stale targets may double-dispatch into the
+  next `MediaControls` in the same process. Restart the process to recover.
+- **`Drop` may block.** Both backends join their callback/runtime thread on
+  drop (macOS handler thread, MPRIS tokio thread), so dropping the handle
+  can block briefly, e.g. while a D-Bus call drains.
+
+## Incoming event coverage
+
+Which `MediaControlEvent`s each backend can produce:
+
+| Event | macOS | MPRIS (Linux / FreeBSD) |
+|-------|-------|-------------------------|
+| Play / Pause / Toggle / Stop / Next / Previous | wired | wired |
+| SetPosition | wired (`changePlaybackPositionCommand`) | wired; clients offer it only when `MprisCapabilities::seek` is advertised |
+| SetVolume | not forwarded by the OS | wired |
+| SeekBy | no skip-interval command wired | wired |
+| Seek | produced by neither backend (MPRIS skips arrive as `SeekBy`); API completeness only | same |
+| Raise / Quit / OpenUri | n/a | wired; the app must handle them (see `types.rs`) |
+
+## MPRIS capability advertisement
+
+`PlatformConfig::mpris_capabilities` gates the `can_play` / `can_pause` /
+`can_go_next` / `can_go_previous` / `can_seek` / `can_control` flags
+advertised over D-Bus. The default (`MprisCapabilities::all`) preserves the
+previous always-on behavior. macOS ignores this field and always wires its
+fixed command set. Cover art (`cover_url`) is honored on MPRIS but
+intentionally omitted on macOS (see below).
+
 ## General lifetime requirements
 
 - The closure passed to `MediaControls::attach` must be `Send + 'static`.
@@ -64,5 +102,6 @@ capabilities.
 - macOS backend tests exercise off-main rejection, handler-thread routing, and
   position sanitization; they do not send actual media-key events.
 - MPRIS backend tests exercise time conversion and metadata copying; they do
-  not require a running D-Bus session.
+  not require a running D-Bus session. Capability gating is covered through
+  `MprisCapabilities` / `PlatformConfig` unit tests, not a live bus.
 - Windows SMTC behavior is untested because the backend is a stub.

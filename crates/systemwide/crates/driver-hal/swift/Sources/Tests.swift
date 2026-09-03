@@ -70,6 +70,7 @@ final class HALDriverTests {
         if testRingBufferBasicOperations() { passed += 1 } else { failed += 1 }
         if testRingBufferWrapAround() { passed += 1 } else { failed += 1 }
         if testRingBufferMultiChannel() { passed += 1 } else { failed += 1 }
+        if testRingBufferConcurrentSPSC() { passed += 1 } else { failed += 1 }
 
         // Cross-language shared-memory ABI
         if testSharedAudioHeaderLayout() { passed += 1 } else { failed += 1 }
@@ -82,7 +83,7 @@ final class HALDriverTests {
         if testEncryptionWithDifferentKeys() { passed += 1 } else { failed += 1 }
         if testEncryptionFrameCounterNonceUniqueness() { passed += 1 } else { failed += 1 }
         if testKeyManagerFingerprint() { passed += 1 } else { failed += 1 }
-        if testSharedMemoryEncryptedPassthrough() { passed += 1 } else { failed += 1 }
+        if testSharedMemoryEncryptedRealtimeIsRejected() { passed += 1 } else { failed += 1 }
 
         halLog("Tests complete: \(passed) passed, \(failed) failed")
         return failed == 0
@@ -614,7 +615,11 @@ final class HALDriverTests {
         }
         firstConnection.closeSharedMemory()
 
-        let restartedConnection = SharedAudioBuffer()
+        let state = DriverState.shared
+        state.sampleRate = Float64(sampleRate)
+        state.bufferFrameSize = bufferFrames
+        state.channelCount = activeChannels
+        let restartedConnection = state.sharedAudio
         guard restartedConnection.initialize(
             sampleRate: sampleRate,
             bufferFrames: bufferFrames,
@@ -630,6 +635,69 @@ final class HALDriverTests {
               restartedConnection.configChanged(),
               restartedConnection.configSource() == 1 else {
             halLog("    FAIL: restart rewrote active geometry or lost pending request")
+            return false
+        }
+
+        guard restartedConnection.backingFileIsCurrent() else {
+            halLog("    FAIL: live mapping did not match its backing file")
+            return false
+        }
+        do {
+            try fileManager.removeItem(atPath: shmPath)
+        } catch {
+            halLog("    FAIL: could not unlink mapped fixture: \(error)")
+            return false
+        }
+        guard !restartedConnection.backingFileIsCurrent() else {
+            halLog("    FAIL: orphaned mapping still matched the removed path")
+            return false
+        }
+
+        func restoreBackingFile() -> Bool {
+            guard fileManager.createFile(
+                atPath: shmPath,
+                contents: Data(count: totalSize)
+            ) else {
+                return false
+            }
+            let replacementFD = Darwin.open(shmPath, O_RDWR)
+            guard replacementFD >= 0 else { return false }
+            defer { Darwin.close(replacementFD) }
+            let replacementWritten = withUnsafeBytes(of: &header) { bytes in
+                Darwin.pwrite(replacementFD, bytes.baseAddress, bytes.count, 0)
+            }
+            return replacementWritten == MemoryLayout<SharedAudioHeader>.size
+        }
+
+        let activeClientID: UInt32 = 77
+        _ = state.startIOClient(activeClientID)
+        let pinnedGeneration = state.acquireSharedAudioForCallback()
+        guard restoreBackingFile(),
+              state.handoffStaleSharedAudioMappingIfNeeded(),
+              state.ioClientCount == 1,
+              state.sharedAudio !== pinnedGeneration.buffer,
+              state.sharedAudio.backingFileIsCurrent(),
+              pinnedGeneration.buffer.isConnected else {
+            state.finishSharedAudioCallback(slot: pinnedGeneration.slot)
+            halLog("    FAIL: active-client mapping generation handoff failed")
+            return false
+        }
+        state.finishSharedAudioCallback(slot: pinnedGeneration.slot)
+        _ = state.stopIOClient(activeClientID)
+
+        do {
+            try fileManager.removeItem(atPath: shmPath)
+        } catch {
+            halLog("    FAIL: could not replace idle-client fixture: \(error)")
+            return false
+        }
+        let previousGeneration = state.sharedAudio
+        guard restoreBackingFile(),
+              state.handoffStaleSharedAudioMappingIfNeeded(),
+              state.ioClientCount == 0,
+              state.sharedAudio !== previousGeneration,
+              state.sharedAudio.backingFileIsCurrent() else {
+            halLog("    FAIL: idle-client mapping generation handoff failed")
             return false
         }
 
@@ -732,6 +800,69 @@ final class HALDriverTests {
     }
 
     /// Test multi-channel ring buffer operations
+    static func testRingBufferConcurrentSPSC() -> Bool {
+        halLog("  Test: RingBuffer concurrent SPSC")
+
+        let channels = 2
+        let totalFrames = 10_000
+        let ring = MultiChannelRingBuffer(channelCount: channels, framesCapacity: 257)
+        let input = UnsafeMutablePointer<Float>.allocate(capacity: totalFrames * channels)
+        let output = UnsafeMutablePointer<Float>.allocate(capacity: totalFrames * channels)
+        defer {
+            input.deallocate()
+            output.deallocate()
+        }
+        for sample in 0..<(totalFrames * channels) {
+            input[sample] = Float(sample)
+            output[sample] = -1
+        }
+
+        let group = DispatchGroup()
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            var frameOffset = 0
+            while frameOffset < totalFrames {
+                let requested = min(31, totalFrames - frameOffset)
+                let written = ring.writeInterleaved(
+                    input.advanced(by: frameOffset * channels),
+                    frameCount: requested
+                )
+                frameOffset += written
+                if written == 0 { usleep(10) }
+            }
+            group.leave()
+        }
+
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            var frameOffset = 0
+            while frameOffset < totalFrames {
+                let requested = min(29, totalFrames - frameOffset)
+                let read = ring.readInterleaved(
+                    output.advanced(by: frameOffset * channels),
+                    frameCount: requested
+                )
+                frameOffset += read
+                if read == 0 { usleep(10) }
+            }
+            group.leave()
+        }
+
+        guard group.wait(timeout: .now() + 10) == .success else {
+            halLog("    FAIL: concurrent SPSC transfer timed out")
+            return false
+        }
+        for sample in 0..<(totalFrames * channels) {
+            guard input[sample].bitPattern == output[sample].bitPattern else {
+                halLog("    FAIL: concurrent sample \(sample) mismatch")
+                return false
+            }
+        }
+
+        halLog("    PASS")
+        return true
+    }
+
     static func testRingBufferMultiChannel() -> Bool {
         halLog("  Test: RingBuffer multi-channel")
 
@@ -926,10 +1057,10 @@ final class HALDriverTests {
         return true
     }
 
-    /// Test encrypted shared-memory write/read using the same Swift HAL path
-    /// that Rust consumes. The daemon-shaped memory file and key are temporary.
-    static func testSharedMemoryEncryptedPassthrough() -> Bool {
-        halLog("  Test: SharedMemory encrypted passthrough")
+    /// The production Swift HAL must reject encrypted callback transport until
+    /// a caller-buffer AEAD implementation replaces the allocating CryptoKit path.
+    static func testSharedMemoryEncryptedRealtimeIsRejected() -> Bool {
+        halLog("  Test: SharedMemory encrypted realtime transport is rejected")
 
         let fileManager = FileManager.default
         let tempDir = (NSTemporaryDirectory() as NSString)
@@ -1043,25 +1174,23 @@ final class HALDriverTests {
         let written = input.withUnsafeBufferPointer { ptr in
             sharedMemory.writeAudio(ptr.baseAddress!, frameCount: frames, channelCount: channels)
         }
-        guard written == frames else {
-            halLog("    FAIL: encrypted write returned \(written), expected \(frames)")
+        guard written == 0 else {
+            halLog("    FAIL: encrypted write returned \(written), expected rejection")
             return false
         }
 
-        var output = [Float](repeating: 0, count: input.count)
+        var output = [Float](repeating: 1, count: input.count)
         let read = output.withUnsafeMutableBufferPointer { ptr in
             sharedMemory.readAudio(ptr.baseAddress!, frameCount: frames, channelCount: channels)
         }
-        guard read == frames else {
-            halLog("    FAIL: encrypted read returned \(read), expected \(frames)")
+        guard read == 0 else {
+            halLog("    FAIL: encrypted read returned \(read), expected rejection")
             return false
         }
 
-        for i in 0..<input.count {
-            if input[i].bitPattern != output[i].bitPattern {
-                halLog("    FAIL: sample \(i) mismatch \(input[i]) vs \(output[i])")
-                return false
-            }
+        guard output.allSatisfy({ $0 == 0 }) else {
+            halLog("    FAIL: rejected encrypted read did not clear output")
+            return false
         }
 
         halLog("    PASS")

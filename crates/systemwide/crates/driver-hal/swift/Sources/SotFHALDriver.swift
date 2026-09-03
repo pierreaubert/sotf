@@ -10,13 +10,11 @@ import os.log
 
 private let logger = OSLog(subsystem: "org.spinorama.sotf-hal", category: "HALDriver")
 private let kEnableVerboseHALProbeLogging = false
+#if SOTF_AUDIO_TRACE
 private var gZeroTimeLogCount: UInt64 = 0
-private var gDoIOLoggedCycle: UInt32 = 0
-private var gDoIOLoggedReadInput: UInt32 = 0
-private var gDoIOLoggedWriteMix: UInt32 = 0
 private var gWriteMixDiagCount: UInt64 = 0
-private var gWriteMixFirstCallLogged: UInt32 = 0
 private var gEngineReadyTrackerState: UInt32 = 0
+#endif
 
 func halLog(_ message: String) {
     os_log("%{public}@", log: logger, type: .default, message)
@@ -27,22 +25,11 @@ func halDebugLog(_ message: @autoclosure () -> String) {
     os_log("%{public}@", log: logger, type: .debug, message())
 }
 
-private func markDoIOOperationLogged(_ operationID: UInt32) -> Bool {
-    switch operationID {
-    case kIOOperation_Cycle:
-        return sotf_atomic_compare_exchange_u32(&gDoIOLoggedCycle, 0, 1)
-    case kIOOperation_ReadInput:
-        return sotf_atomic_compare_exchange_u32(&gDoIOLoggedReadInput, 0, 1)
-    case kIOOperation_WriteMix:
-        return sotf_atomic_compare_exchange_u32(&gDoIOLoggedWriteMix, 0, 1)
-    default:
-        return false
-    }
-}
-
+#if SOTF_AUDIO_TRACE
 private func engineReadyTrackerValue(_ engineReady: Bool) -> UInt32 {
     return engineReady ? 2 : 1
 }
+#endif
 
 private func fourCC(_ value: UInt32) -> String {
     let chars = [
@@ -208,6 +195,12 @@ final class DriverState {
     var sampleRate: Float64 = 48000.0
     var bufferFrameSize: UInt32 = 512
     var channelCount: UInt32 = kDefaultChannelCount
+    private var callbackChannelCount: UInt32 = kDefaultChannelCount
+
+    @inline(__always)
+    fileprivate func callbackChannelCountSnapshot() -> UInt32 {
+        sotf_atomic_load_u32(&callbackChannelCount)
+    }
 
     // Active IO clients. CoreAudio may overlap clients or deliver duplicate
     // StartIO/StopIO transitions while switching apps, so key this by clientID
@@ -247,8 +240,50 @@ final class DriverState {
     var inputRingBuffer: MultiChannelRingBuffer?
     var outputRingBuffer: MultiChannelRingBuffer?
 
-    // Shared memory for Rust engine
-    let sharedAudio = SharedAudioBuffer()
+    // Shared-memory mappings are double-buffered. CoreAudio callbacks pin one
+    // generation with an atomic reader count while maintenance prepares and
+    // publishes the other generation.
+    private let sharedAudioSlots = [SharedAudioBuffer(), SharedAudioBuffer()]
+    private var activeSharedAudioSlot: UInt32 = 0
+    private var sharedAudioSlot0Readers: UInt64 = 0
+    private var sharedAudioSlot1Readers: UInt64 = 0
+
+    var sharedAudio: SharedAudioBuffer {
+        sharedAudioSlots[Int(sotf_atomic_load_u32(&activeSharedAudioSlot))]
+    }
+
+    @inline(__always)
+    func acquireSharedAudioForCallback() -> (buffer: SharedAudioBuffer, slot: UInt32) {
+        while true {
+            let slot = sotf_atomic_load_u32(&activeSharedAudioSlot)
+            if slot == 0 {
+                _ = sotf_atomic_fetch_add_u64_previous(&sharedAudioSlot0Readers, 1)
+            } else {
+                _ = sotf_atomic_fetch_add_u64_previous(&sharedAudioSlot1Readers, 1)
+            }
+
+            if slot == sotf_atomic_load_u32(&activeSharedAudioSlot) {
+                return (sharedAudioSlots[Int(slot)], slot)
+            }
+            finishSharedAudioCallback(slot: slot)
+        }
+    }
+
+    @inline(__always)
+    func finishSharedAudioCallback(slot: UInt32) {
+        if slot == 0 {
+            _ = sotf_atomic_fetch_add_u64_previous(&sharedAudioSlot0Readers, UInt64.max)
+        } else {
+            _ = sotf_atomic_fetch_add_u64_previous(&sharedAudioSlot1Readers, UInt64.max)
+        }
+    }
+
+    private func sharedAudioReaderCount(slot: UInt32) -> UInt64 {
+        if slot == 0 {
+            return sotf_atomic_load_u64(&sharedAudioSlot0Readers)
+        }
+        return sotf_atomic_load_u64(&sharedAudioSlot1Readers)
+    }
 
     // Loopback mode (when Rust engine not connected)
     var loopbackEnabled: Bool = true
@@ -279,6 +314,10 @@ final class DriverState {
     /// Attempt to re-initialise shared memory if we're not connected.
     /// Throttled to one call per second. Safe to call from any thread.
     func attemptInitRetryIfNeeded() {
+        let lease = acquireSharedAudioForCallback()
+        let sharedAudio = lease.buffer
+        defer { finishSharedAudioCallback(slot: lease.slot) }
+
         if sharedAudio.isConnected {
             return
         }
@@ -319,6 +358,37 @@ final class DriverState {
         }
     }
 
+    /// Replace an orphaned mmap without waiting for long-lived CoreAudio
+    /// clients to stop. The inactive slot is prepared first, then published;
+    /// it is never reused until callbacks pinned to that generation drain.
+    func handoffStaleSharedAudioMappingIfNeeded() -> Bool {
+        let activeSlot = sotf_atomic_load_u32(&activeSharedAudioSlot)
+        let activeAudio = sharedAudioSlots[Int(activeSlot)]
+        guard activeAudio.isConnected && !activeAudio.backingFileIsCurrent() else {
+            return false
+        }
+
+        let replacementSlot: UInt32 = activeSlot == 0 ? 1 : 0
+        guard sharedAudioReaderCount(slot: replacementSlot) == 0 else {
+            return true
+        }
+
+        let replacement = sharedAudioSlots[Int(replacementSlot)]
+        replacement.closeSharedMemory()
+        let configuration = activeConfiguration()
+        guard replacement.initialize(
+            sampleRate: UInt32(configuration.sampleRate),
+            bufferFrames: configuration.bufferFrames,
+            channelCount: configuration.channelCount
+        ) else {
+            return true
+        }
+
+        sotf_atomic_store_u32(&activeSharedAudioSlot, replacementSlot)
+        halLog("[MAINT] published shared-memory mapping generation \(replacementSlot)")
+        return true
+    }
+
     private func runMaintenanceTick() {
         if isDisposed {
             maintenanceTimer?.cancel()
@@ -326,6 +396,17 @@ final class DriverState {
             return
         }
 
+        // Key discovery and reload perform filesystem I/O and must stay off the
+        // CoreAudio callback. The encrypted realtime transport remains disabled
+        // until the HAL can publish and consume an allocation-free cipher snapshot.
+        _ = EncryptionKeyManager.shared.checkAndReload()
+
+        if handoffStaleSharedAudioMappingIfNeeded() {
+            return
+        }
+        let lease = acquireSharedAudioForCallback()
+        let sharedAudio = lease.buffer
+        defer { finishSharedAudioCallback(slot: lease.slot) }
         attemptInitRetryIfNeeded()
 
         if sharedAudio.isConnected {
@@ -361,6 +442,10 @@ final class DriverState {
     }
 
     private func publishPendingHostConfigurationIfNeeded() {
+        let lease = acquireSharedAudioForCallback()
+        let sharedAudio = lease.buffer
+        defer { finishSharedAudioCallback(slot: lease.slot) }
+
         guard let (pending, requestSent) = pendingHostConfiguration(), !requestSent else {
             return
         }
@@ -388,6 +473,10 @@ final class DriverState {
     }
 
     private func handleHostConfigAcknowledgementIfNeeded() {
+        let lease = acquireSharedAudioForCallback()
+        let sharedAudio = lease.buffer
+        defer { finishSharedAudioCallback(slot: lease.slot) }
+
         guard let (pending, requestSent) = pendingHostConfiguration(), requestSent else {
             return
         }
@@ -487,6 +576,7 @@ final class DriverState {
 
         clock.setSampleRate(configuration.sampleRate)
         resetBuffers(for: configuration)
+        sotf_atomic_store_u32(&callbackChannelCount, configuration.channelCount)
     }
 
     private func notifyConfigurationPropertiesChanged() {
@@ -501,6 +591,10 @@ final class DriverState {
     }
 
     private func handleDaemonConfigRequestIfNeeded() {
+        let lease = acquireSharedAudioForCallback()
+        let sharedAudio = lease.buffer
+        defer { finishSharedAudioCallback(slot: lease.slot) }
+
         guard sharedAudio.configChanged(), sharedAudio.configSource() == 2 else {
             return
         }
@@ -526,6 +620,10 @@ final class DriverState {
     }
 
     private func requestDaemonConfigChange(sampleRate requestedRate: UInt32, bufferFrames requestedFrames: UInt32, channelCount requestedChannels: UInt32) {
+        let lease = acquireSharedAudioForCallback()
+        let sharedAudio = lease.buffer
+        defer { finishSharedAudioCallback(slot: lease.slot) }
+
         pendingDaemonConfigLock.lock()
         if let pending = pendingDaemonConfig {
             let sameRequest = pending.sampleRate == requestedRate && pending.bufferFrames == requestedFrames && pending.channelCount == requestedChannels
@@ -578,6 +676,10 @@ final class DriverState {
     }
 
     func performPendingDaemonConfigChange() -> Bool {
+        let lease = acquireSharedAudioForCallback()
+        let sharedAudio = lease.buffer
+        defer { finishSharedAudioCallback(slot: lease.slot) }
+
         pendingDaemonConfigLock.lock()
         guard let pending = pendingDaemonConfig else {
             pendingDaemonConfigLock.unlock()
@@ -673,6 +775,10 @@ final class DriverState {
     }
 
     func abortPendingDaemonConfigChange() {
+        let lease = acquireSharedAudioForCallback()
+        let sharedAudio = lease.buffer
+        defer { finishSharedAudioCallback(slot: lease.slot) }
+
         clearPendingDaemonConfig()
         sharedAudio.acknowledgeConfigChange(
             actualSampleRate: UInt32(sampleRate),
@@ -797,12 +903,15 @@ private func driverAddDeviceClient(_ driver: AudioServerPlugInDriverRef, _ devic
 private func driverRemoveDeviceClient(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID: AudioObjectID, _ clientInfo: UnsafePointer<AudioServerPlugInClientInfo>) -> OSStatus {
     let info = clientInfo.pointee
     let state = DriverState.shared
+    let lease = state.acquireSharedAudioForCallback()
+    let sharedAudio = lease.buffer
+    defer { state.finishSharedAudioCallback(slot: lease.slot) }
     let result = state.removeIOClient(info.mClientID)
     halLog("RemoveDeviceClient: device=\(deviceObjectID) client=\(info.mClientID) pid=\(info.mProcessID) wasActive=\(result.wasActive) activeClients=\(result.count)")
 
     if result.wasActive && result.isIdle {
         state.clock.stop()
-        state.sharedAudio.setActive(false)
+        sharedAudio.setActive(false)
         halLog("IO stopped after client removal")
     }
 
@@ -1421,6 +1530,9 @@ private func driverStartIO(_ driver: AudioServerPlugInDriverRef, _ deviceObjectI
     halLog("StartIO: device=\(deviceObjectID) client=\(clientID)")
 
     let state = DriverState.shared
+    let lease = state.acquireSharedAudioForCallback()
+    let sharedAudio = lease.buffer
+    defer { state.finishSharedAudioCallback(slot: lease.slot) }
 
     // Check if driver is being disposed to prevent race conditions
     if state.isDisposed {
@@ -1437,11 +1549,11 @@ private func driverStartIO(_ driver: AudioServerPlugInDriverRef, _ deviceObjectI
         state.inputRingBuffer?.reset()
         state.outputRingBuffer?.reset()
         state.startMaintenanceTasks()
-        state.sharedAudio.setActive(true)
+        sharedAudio.setActive(true)
         halLog("IO started, clock running (activeClients=\(clientState.count))")
 
         // Log SharedMemory state for debugging
-        halLog("SharedMemory state: \(state.sharedAudio.connectionStateDebug)")
+        halLog("SharedMemory state: \(sharedAudio.connectionStateDebug)")
 
         // Log device configuration
         halLog("Device config: sampleRate=\(configuration.sampleRate), bufferFrameSize=\(configuration.bufferFrames), channels=\(configuration.channelCount)")
@@ -1458,11 +1570,14 @@ private func driverStopIO(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID
     halLog("StopIO: device=\(deviceObjectID) client=\(clientID)")
 
     let state = DriverState.shared
+    let lease = state.acquireSharedAudioForCallback()
+    let sharedAudio = lease.buffer
+    defer { state.finishSharedAudioCallback(slot: lease.slot) }
     let clientState = state.stopIOClient(clientID)
 
     if clientState.isIdle {
         state.clock.stop()
-        state.sharedAudio.setActive(false)
+        sharedAudio.setActive(false)
         halLog("IO stopped (activeClients=0)")
     } else if !clientState.wasActive {
         halLog("StopIO ignored for inactive client=\(clientID) activeClients=\(clientState.count)")
@@ -1481,14 +1596,17 @@ private func driverGetZeroTimeStamp(_ driver: AudioServerPlugInDriverRef, _ devi
     outHostTime.pointee = hostTime
     outSeed.pointee = seed
 
+#if SOTF_AUDIO_TRACE
     let callCount = sotf_atomic_fetch_add_u64(&gZeroTimeLogCount, 1)
     if callCount == 1 || callCount % 1000 == 0 {
         halDebugLog("GetZeroTimeStamp[#\(callCount)]: sampleTime=\(sampleTime), hostTime=\(hostTime), seed=\(seed)")
     }
+#endif
 
     return noErr
 }
 
+#if SOTF_AUDIO_TRACE
 private func ioOperationName(_ operationID: UInt32) -> String {
     switch operationID {
     case kIOOperation_Thread: return "Thread"
@@ -1504,6 +1622,7 @@ private func ioOperationName(_ operationID: UInt32) -> String {
     default: return "Unknown"
     }
 }
+#endif
 
 private func driverWillDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID: AudioObjectID, _ clientID: UInt32, _ operationID: UInt32, _ outWillDo: UnsafeMutablePointer<DarwinBoolean>, _ outWillDoInPlace: UnsafeMutablePointer<DarwinBoolean>) -> OSStatus {
     // We support:
@@ -1516,8 +1635,10 @@ private func driverWillDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ dev
     outWillDo.pointee = DarwinBoolean(willDo)
     outWillDoInPlace.pointee = DarwinBoolean(true)
 
+#if SOTF_AUDIO_TRACE
     let opName = ioOperationName(operationID)
     halDebugLog("WillDoIOOperation: op=\(opName) (0x\(String(format: "%08X", operationID)) '\(fourCC(operationID))'), willDo=\(willDo)")
+#endif
 
     return noErr
 }
@@ -1539,11 +1660,6 @@ private func peakMagnitude(_ buffer: UnsafePointer<Float>, sampleCount: Int) -> 
 
 private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID: AudioObjectID, _ streamObjectID: AudioObjectID, _ clientID: UInt32, _ operationID: UInt32, _ ioBufferFrameSize: UInt32, _ ioCycleInfo: UnsafePointer<AudioServerPlugInIOCycleInfo>, _ ioMainBuffer: UnsafeMutableRawPointer?, _ ioSecondaryBuffer: UnsafeMutableRawPointer?) -> OSStatus {
 
-    // Log first call for each supported operation type.
-    if markDoIOOperationLogged(operationID) {
-        halLog("DoIOOperation: FIRST CALL for op=\(ioOperationName(operationID)), stream=\(streamObjectID), frames=\(ioBufferFrameSize)")
-    }
-
     // Handle Cycle operation (no buffer needed)
     if operationID == kIOOperation_Cycle {
         // Cycle operations notify us about IO timing - no action needed
@@ -1553,8 +1669,11 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
     guard let buffer = ioMainBuffer else { return noErr }
 
     let state = DriverState.shared
+    let sharedAudioLease = state.acquireSharedAudioForCallback()
+    let sharedAudio = sharedAudioLease.buffer
+    defer { state.finishSharedAudioCallback(slot: sharedAudioLease.slot) }
     let frameCount = Int(ioBufferFrameSize)
-    let channelCount = Int(state.activeConfiguration().channelCount)
+    let channelCount = Int(state.callbackChannelCountSnapshot())
     let sampleCount = frameCount * channelCount
     let floatBuffer = buffer.assumingMemoryBound(to: Float.self)
 
@@ -1596,18 +1715,12 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
             _ = outputBuffer.writeInterleaved(selectedFloatBuffer, frameCount: frameCount)
         }
 
-        // Periodic diagnostic logging (every ~2 seconds at 48kHz with 512 frame buffers)
+        let isConnected = sharedAudio.isConnected
+        let engineReady = sharedAudio.engineReady
+
+#if SOTF_AUDIO_TRACE
         let diagCount = sotf_atomic_fetch_add_u64(&gWriteMixDiagCount, 1)
-
-        // Log on very first call to confirm WriteMix is being invoked
-        if sotf_atomic_compare_exchange_u32(&gWriteMixFirstCallLogged, 0, 1) {
-            halLog("WriteMix: FIRST CALL - frameCount=\(frameCount), channels=\(channelCount), sampleCount=\(sampleCount)")
-        }
-
         let shouldLogDiag = kEnableVerboseHALProbeLogging && (diagCount % 200) == 0
-
-        let isConnected = state.sharedAudio.isConnected
-        let engineReady = state.sharedAudio.engineReady
 
         if kEnableVerboseHALProbeLogging {
             let newReadyState = engineReadyTrackerValue(engineReady)
@@ -1660,11 +1773,17 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
                    ioSecondaryBuffer != nil ? 1 : 0,
                    selectedSecondaryBuffer ? 1 : 0)
         }
+#endif
 
         // Also send to Rust engine if connected and ready
         if isConnected && engineReady {
-            let framesWritten = state.sharedAudio.writeAudio(selectedFloatBuffer, frameCount: frameCount, channelCount: channelCount)
+#if SOTF_AUDIO_TRACE
+            let framesWritten = sharedAudio.writeAudio(selectedFloatBuffer, frameCount: frameCount, channelCount: channelCount)
+#else
+            _ = sharedAudio.writeAudio(selectedFloatBuffer, frameCount: frameCount, channelCount: channelCount)
+#endif
             // TRACE: Log frames received from macOS apps and written to shared memory
+#if SOTF_AUDIO_TRACE
             if framesWritten > 0 {
                 if shouldLogDiag {
                     os_log("[AUDIO FLOW] HAL WriteMix: %d frames from app -> shm", log: logger, type: .debug, framesWritten)
@@ -1672,13 +1791,17 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
             } else if framesWritten == 0 && shouldLogDiag {
                 os_log("[AUDIO FLOW] HAL WriteMix: shared-memory write returned 0 for %d frames", log: logger, type: .debug, frameCount)
             }
-        } else if shouldLogDiag {
+#endif
+        }
+#if SOTF_AUDIO_TRACE
+        if (!isConnected || !engineReady) && shouldLogDiag {
             // Log why we're not sending to daemon
             os_log("[AUDIO FLOW] HAL WriteMix: NOT sending to daemon (isConnected=%{public}d, engineReady=%{public}d)",
                    log: logger, type: .debug,
                    isConnected ? 1 : 0,
                    engineReady ? 1 : 0)
         }
+#endif
 
     default:
         break

@@ -390,7 +390,7 @@ impl RuntimeTelemetry {
             | "remove_plugin"
             | "update_plugin"
             | "reorder_plugins"
-            | "reorder_graph_nodes"
+            | "reorder_graph"
             | "set_input_channels"
             | "set_output_channels"
             | "set_pipeline_channels" => self.pipeline_reload.record(
@@ -499,11 +499,54 @@ pub(super) fn try_acquire_client_slot(active: &AtomicUsize) -> bool {
     }
 }
 
-struct ClientSlot(Arc<AtomicUsize>);
+pub(super) struct ClientSlot(pub(super) Arc<AtomicUsize>);
 
 impl Drop for ClientSlot {
     fn drop(&mut self) {
         self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// Keep the admission guard alive only when cloning the shutdown handle
+/// succeeds.  In particular, an error must release the slot before the
+/// accept loop proceeds to the next client.
+pub(super) fn clone_client_shutdown_stream<T>(
+    client_slot: ClientSlot,
+    clone_stream: impl FnOnce() -> std::io::Result<T>,
+) -> std::io::Result<(ClientSlot, T)> {
+    clone_stream().map(|stream| (client_slot, stream))
+}
+
+pub(super) fn join_initial_playback_thread(thread: std::thread::JoinHandle<()>) {
+    if thread.join().is_err() {
+        log::warn!("Initial playback worker panicked during shutdown");
+    }
+}
+
+pub(super) fn wait_for_playback_observation(
+    running: &Arc<Mutex<bool>>,
+    timeout: Duration,
+    shutdown_context: &str,
+    mut observe: impl FnMut() -> Result<bool, String>,
+) -> Result<(), String> {
+    const POLL_INTERVAL: Duration = Duration::from_millis(20);
+    let deadline = Instant::now() + timeout;
+    loop {
+        if !*running.lock() {
+            return Err(format!(
+                "Daemon shutdown requested during {shutdown_context}"
+            ));
+        }
+        if observe()? {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "Playback did not reach a hardware callback within {}ms",
+                timeout.as_millis()
+            ));
+        }
+        std::thread::sleep(POLL_INTERVAL);
     }
 }
 
@@ -534,26 +577,11 @@ impl SystemwideController {
     }
 
     fn wait_for_playback_ready(&self) -> Result<(), String> {
-        const READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(12);
-        const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(20);
-
-        let deadline = std::time::Instant::now() + READY_TIMEOUT;
-        loop {
-            if !*self.running.lock() {
-                return Err("Daemon shutdown requested during playback startup".to_string());
-            }
+        const READY_TIMEOUT: Duration = Duration::from_secs(12);
+        wait_for_playback_observation(&self.running, READY_TIMEOUT, "playback startup", || {
             let state = self.manager.lock().get_engine_state();
-            if Self::playback_startup_observation(&state)? {
-                return Ok(());
-            }
-            if std::time::Instant::now() >= deadline {
-                return Err(format!(
-                    "Playback did not reach a hardware callback within {}s",
-                    READY_TIMEOUT.as_secs()
-                ));
-            }
-            std::thread::sleep(POLL_INTERVAL);
-        }
+            Self::playback_startup_observation(&state)
+        })
     }
 
     pub(super) fn new() -> Self {
@@ -569,7 +597,7 @@ impl SystemwideController {
         }
     }
 
-    pub(super) fn spawn_initial_driver_playback(&self) {
+    pub(super) fn spawn_initial_driver_playback(&self) -> std::thread::JoinHandle<()> {
         let daemon = self.clone();
         std::thread::spawn(move || {
             // Startup is a pipeline mutation just like an IPC request or a
@@ -602,7 +630,7 @@ impl SystemwideController {
             } else {
                 println!("   Driver playback failed: {:?}", result.error);
             }
-        });
+        })
     }
 
     fn spawn_driver_config_watcher(&self) -> std::thread::JoinHandle<()> {
@@ -632,6 +660,7 @@ impl SystemwideController {
                         &daemon.manager,
                         config,
                         &daemon.system_state,
+                        &daemon.running,
                     );
                 }
 
@@ -1003,12 +1032,13 @@ impl SystemwideController {
     }
 
     pub(super) fn handle_dump_state(&self) -> Response {
+        let _mutation = self.pipeline_mutation.lock();
         let state = self.system_state.lock();
         let user_graph = state.user_graph();
         let user_plugins = state.user_plugins();
         drop(state);
         Response::ok(serde_json::json!({
-            "snapshot": self.snapshot_json(),
+            "snapshot": self.snapshot_json_while_pipeline_stable(),
             "topology": if user_graph.is_some() { "graph" } else { "rack" },
             "plugins": user_plugins,
             "graph": user_graph,
@@ -1066,9 +1096,6 @@ impl SystemwideController {
         if key_status.enabled && key_status.fingerprint.len() < 16 {
             recovery_actions.push("rotate_encryption_key".to_string());
         }
-        if engine_state.underruns > 0 {
-            recovery_actions.push("reset_shared_memory".to_string());
-        }
         if let Some(recovery) = &pipeline_recovery {
             for action in &recovery.actions {
                 if !recovery_actions.iter().any(|existing| existing == action) {
@@ -1078,6 +1105,7 @@ impl SystemwideController {
         }
 
         Response::ok(serde_json::json!({
+            "consistency": "best_effort",
             "state": format!("{:?}", state),
             "volume": volume,
             "muted": muted,
@@ -1906,6 +1934,7 @@ impl SystemwideController {
         }
         let input_channels = state.input_channels().max(1);
         let plugins = state.user_plugins();
+        let generation = state.generation();
         drop(state);
         let result: Vec<Value> = plugins
             .iter()
@@ -1926,7 +1955,7 @@ impl SystemwideController {
         Response::ok(serde_json::json!({
             "topology": "rack",
             "plugins": result,
-            "generation": self.system_state.lock().generation(),
+            "generation": generation,
         }))
     }
 
@@ -2241,6 +2270,12 @@ impl SystemwideController {
     }
 
     pub(super) fn handle_set_encryption(&self, enabled: bool) -> Response {
+        if enabled {
+            return Response::err(
+                "Encrypted realtime transport is unavailable: the Swift HAL CryptoKit path allocates; encryption remains disabled until a caller-buffer AEAD implementation is available",
+            );
+        }
+
         let mut key_manager = self.key_manager.lock();
         key_manager.set_enabled(enabled);
 
@@ -2692,7 +2727,7 @@ impl SystemwideController {
 
         // Accept connections (non-blocking so Ctrl-C can interrupt)
         listener.set_nonblocking(true)?;
-        self.spawn_initial_driver_playback();
+        let initial_playback_thread = self.spawn_initial_driver_playback();
         let active_clients = Arc::new(AtomicUsize::new(0));
         let mut client_threads: Vec<(std::thread::JoinHandle<()>, UnixStream)> = Vec::new();
 
@@ -2744,16 +2779,17 @@ impl SystemwideController {
                         );
                         continue;
                     }
-
-                    let shutdown_stream = match stream.try_clone() {
-                        Ok(stream) => stream,
-                        Err(error) => {
-                            log::warn!("Failed to clone IPC client for shutdown: {error}");
-                            continue;
-                        }
-                    };
-                    let daemon = self.clone();
                     let client_slot = ClientSlot(Arc::clone(&active_clients));
+
+                    let (client_slot, shutdown_stream) =
+                        match clone_client_shutdown_stream(client_slot, || stream.try_clone()) {
+                            Ok(parts) => parts,
+                            Err(error) => {
+                                log::warn!("Failed to clone IPC client for shutdown: {error}");
+                                continue;
+                            }
+                        };
+                    let daemon = self.clone();
 
                     let thread = std::thread::spawn(move || {
                         let _client_slot = client_slot;
@@ -2785,6 +2821,7 @@ impl SystemwideController {
                 log::warn!("IPC client handler panicked during shutdown");
             }
         }
+        join_initial_playback_thread(initial_playback_thread);
 
         // Cleanup -- only remove our own socket entry, after re-verifying
         // it is still a socket. We deliberately do NOT unlink the legacy

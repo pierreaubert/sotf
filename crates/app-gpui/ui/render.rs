@@ -60,8 +60,8 @@ fn focus_interactive_relative(window: &mut Window, cx: &mut App, backwards: bool
     let Some(target_index) = target_index else {
         return false;
     };
-    let target =
-        INTERACTIVE_FOCUS_HANDLES.with(|handles| handles.borrow().get(&order[target_index]).cloned());
+    let target = INTERACTIVE_FOCUS_HANDLES
+        .with(|handles| handles.borrow().get(&order[target_index]).cloned());
     let Some(target) = target else {
         return false;
     };
@@ -938,6 +938,11 @@ impl PlayerView {
         } else {
             IconName::ChevronLeft
         };
+        let toggle_label = if collapsed {
+            sidebar_text.expand
+        } else {
+            sidebar_text.collapse
+        };
         let state_for_toggle = self.state.clone();
         let toggle_action = std::rc::Rc::new(move |cx: &mut App| {
             state_for_toggle.update(cx, |state, _cx| {
@@ -945,18 +950,6 @@ impl PlayerView {
                     !state.app.ui_state.primary_nav_collapsed;
             });
         });
-        let toggle_mouse_action = toggle_action.clone();
-        let toggle_focus_handle = interactive_focus_handle(&ElementId::from("app-sidebar-toggle"), cx);
-        cx.register_accessible(AccessibilityNode {
-            element_id: "app-sidebar-toggle".into(),
-            label: if collapsed {
-                sidebar_text.expand.into()
-            } else {
-                sidebar_text.collapse.into()
-            },
-            props: AriaProps::with_role(AriaRole::Button),
-        });
-
         div()
             .id("app-sidebar")
             .on_key_down(|event: &KeyDownEvent, window, cx| {
@@ -979,39 +972,17 @@ impl PlayerView {
             .p(d.pad_y_half)
             .gap(d.grid)
             .child(
-                div()
-                    .id("app-sidebar-toggle")
-                    .track_focus(&toggle_focus_handle)
-                    .track_focus_element(&toggle_focus_handle)
-                    .h(rems(2.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(d.r_md)
-                    .cursor_pointer()
-                    .focus_visible({
-                        let theme = theme.clone();
-                        move |style| style.border_2().border_color(theme.accent)
-                    })
-                    .hover({
-                        let theme = theme.clone();
-                        move |s| s.bg(theme.surface_hover)
-                    })
-                    .child(
-                        Icon::new(toggle_icon)
-                            .size(IconSize::Sm)
-                            .color(theme.text_muted),
-                    )
-                    .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                        toggle_mouse_action(cx);
-                    })
-                    .on_key_down(move |event: &KeyDownEvent, _window, cx| {
-                        let key = event.keystroke.key.as_str();
-                        if key == "enter" || key == "space" {
-                            toggle_action(cx);
-                            cx.stop_propagation();
-                        }
-                    }),
+                gpui_ui_kit::IconButton::with_child(
+                    "app-sidebar-toggle",
+                    Icon::new(toggle_icon)
+                        .size(IconSize::Sm)
+                        .color(theme.text_muted),
+                )
+                .size(gpui_ui_kit::IconButtonSize::Custom(32))
+                .variant(gpui_ui_kit::IconButtonVariant::Ghost)
+                .theme(theme.to_icon_button_theme())
+                .aria_label(toggle_label)
+                .on_click(move |_window, cx| toggle_action(cx))
             )
             .child(self.render_sidebar_mode_item(
                 "nav-player",
@@ -1371,9 +1342,7 @@ impl PlayerView {
                         div()
                             .px(d.pad_y)
                             .py(d.grid)
-                            .text_size(d.text_xs)
-                            .text_color(theme.text_muted)
-                            .child(cast_text.no_devices),
+                            .child(Text::caption(cast_text.no_devices)),
                     )
                 })
                 .children(
@@ -1610,6 +1579,8 @@ impl PlayerView {
         div()
             .id("nav-device-actions")
             .flex()
+            .min_w_0()
+            .flex_wrap()
             .items_center()
             .gap(d.grid)
             .px(d.pad_y)
@@ -1653,72 +1624,25 @@ impl PlayerView {
         label: String,
         text_color: Rgba,
         theme: &crate::theme::Theme,
-        d: &Ds,
-        cx: &mut Context<Self>,
+        _d: &Ds,
+        _cx: &mut Context<Self>,
         on_activate: impl Fn(&mut App) + 'static,
     ) -> AnyElement {
-        let element_id: ElementId = id.into();
-        let focus_handle = interactive_focus_handle(&element_id, cx);
-        let accessibility_props = AriaProps::with_role(AriaRole::Button);
-        cx.register_accessible(AccessibilityNode {
-            element_id: element_id.clone(),
-            label: label.clone().into(),
-            props: accessibility_props.clone(),
-        });
-        let on_activate = std::rc::Rc::new(on_activate);
-        let mouse_activate = on_activate.clone();
-        let key_activate = on_activate;
-        let element = div()
-            .id(element_id)
-            .track_focus(&focus_handle)
-            .track_focus_element(&focus_handle)
-            .flex_1()
-            .h(rems(1.75))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(d.r_sm)
-            .border_1()
-            .border_color(theme.border)
-            .text_size(d.text_xs)
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(text_color)
-            .cursor_pointer()
-            .focus_visible({
-                let theme = theme.clone();
-                move |style| style.border_2().border_color(theme.accent)
-            })
-            .hover({
-                let theme = theme.clone();
-                move |style| style.bg(theme.surface_hover).text_color(theme.text_primary)
-            })
-            .child(label.clone())
-            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                mouse_activate(cx)
-            })
-            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
-                let key = event.keystroke.key.as_str();
-                if key == "enter" || key == "space" {
-                    key_activate(cx);
-                    cx.stop_propagation();
-                }
-            });
-        let element = gpui_ui_kit::accessibility::apply_native_accessibility(
-            element,
-            &label,
-            &accessibility_props,
-        );
-
+        let mut button_theme = theme.to_button_theme();
+        button_theme.text_secondary = text_color;
+        let button = gpui_ui_kit::Button::new(id, label)
+            .variant(gpui_ui_kit::ButtonVariant::Outline)
+            .size(gpui_ui_kit::ButtonSize::Xs)
+            .theme(button_theme)
+            .on_click(move |_window, cx| on_activate(cx));
         #[cfg(feature = "dev-api")]
         {
             use crate::app::dev_api::DevTrackExt;
-            element
-                .dev_track(format!("sidebar.{id}"))
-                .into_any_element()
+            button.dev_track(format!("sidebar.{id}")).into_any_element()
         }
         #[cfg(not(feature = "dev-api"))]
         {
-            element.into_any_element()
+            button.into_any_element()
         }
     }
 
@@ -1842,6 +1766,8 @@ impl PlayerView {
             )
             .child(
                 div()
+                    .flex_1()
+                    .min_w_0()
                     .overflow_hidden()
                     .text_ellipsis()
                     .whitespace_nowrap()
@@ -1968,6 +1894,8 @@ impl PlayerView {
             )
             .child(
                 div()
+                    .flex_none()
+                    .max_w(rems(4.0))
                     .text_size(d.text_xs)
                     .text_color(theme.text_muted)
                     .overflow_hidden()

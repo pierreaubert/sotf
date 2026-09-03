@@ -270,6 +270,8 @@ final class SharedAudioBuffer {
 
     /// The path to the shared memory file (stored for cleanup)
     private var currentPath: String = ""
+    private var backingDevice: dev_t = 0
+    private var backingInode: ino_t = 0
 
     /// Number of audio buffers in the ring (power of 2 recommended)
     private let numBuffers = 8
@@ -388,6 +390,8 @@ final class SharedAudioBuffer {
             fileDescriptor = -1
             return false
         }
+        backingDevice = statBuf.st_dev
+        backingInode = statBuf.st_ino
 
         if statBuf.st_size < requiredMemorySize {
             halLog("SharedMemory: file too small: \(statBuf.st_size), need \(requiredMemorySize)")
@@ -538,7 +542,27 @@ final class SharedAudioBuffer {
             fileDescriptor = -1
         }
 
+        backingDevice = 0
+        backingInode = 0
+
         halLog("SharedMemory: closed")
+    }
+
+    /// Check from the maintenance queue that the mapped inode is still the
+    /// file published at `currentPath`. This must never run on a CoreAudio IO
+    /// callback because it performs filesystem metadata calls.
+    func backingFileIsCurrent() -> Bool {
+        guard fileDescriptor >= 0, !currentPath.isEmpty else { return false }
+
+        var descriptorStat = stat()
+        guard fstat(fileDescriptor, &descriptorStat) == 0 else { return false }
+
+        var pathStat = stat()
+        guard lstat(currentPath, &pathStat) == 0 else { return false }
+        return descriptorStat.st_dev == pathStat.st_dev
+            && descriptorStat.st_ino == pathStat.st_ino
+            && descriptorStat.st_dev == backingDevice
+            && descriptorStat.st_ino == backingInode
     }
 
     /// Set active state
@@ -596,13 +620,6 @@ final class SharedAudioBuffer {
 
     private func cipherMatchingHeader(_ header: UnsafeMutablePointer<SharedAudioHeader>) -> AudioCipher? {
         let headerFingerprint = atomicLoad(&header.pointee.keyFingerprint)
-
-        if let cipher = EncryptionKeyManager.shared.getCipher(),
-           fingerprintMatches(headerFingerprint, cipher.getFingerprint()) {
-            return cipher
-        }
-
-        _ = EncryptionKeyManager.shared.checkAndReload()
 
         if let cipher = EncryptionKeyManager.shared.getCipher(),
            fingerprintMatches(headerFingerprint, cipher.getFingerprint()) {
@@ -708,6 +725,7 @@ final class SharedAudioBuffer {
 
         // Check for encryption
         if atomicLoad(&header.pointee.encrypted) != 0 {
+#if SOTF_ENABLE_ALLOCATING_REALTIME_ENCRYPTION
             if let cipher = cipherMatchingHeader(header) {
                 let sampleCount = frameCount * channelCount
                 let ciphertextLen = sampleCount * MemoryLayout<Float>.size + 16
@@ -751,6 +769,7 @@ final class SharedAudioBuffer {
                     )
                 }
             }
+#endif
             // If encryption enabled but failed, write silence or return 0
             return 0
         }
@@ -902,6 +921,7 @@ final class SharedAudioBuffer {
 
         // Check for encryption
         if atomicLoad(&header.pointee.encrypted) != 0 {
+#if SOTF_ENABLE_ALLOCATING_REALTIME_ENCRYPTION
             if let cipher = cipherMatchingHeader(header) {
                 let requestedSampleCount = frameCount * channelCount
                 let writePos = atomicLoad(&header.pointee.writePosition)
@@ -968,6 +988,7 @@ final class SharedAudioBuffer {
                     }
                 }
             }
+#endif
             // Decryption failed or no key
             memset(buffer, 0, frameCount * channelCount * MemoryLayout<Float>.size)
             return 0

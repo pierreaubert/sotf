@@ -15,10 +15,16 @@ use types::Cli;
 
 fn main() {
     let cli = Cli::parse();
+    error_output::set_show_urls(cli.show_urls);
 
     // Handle --list-devices flag
     if cli.list_devices {
-        list_audio_devices();
+        if let Err(e) = list_audio_devices() {
+            let e = redact_secrets(&e.to_string());
+            log::error!("Error: {}", e);
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
         return;
     }
 

@@ -1649,6 +1649,12 @@ pub(super) struct PluginArgs {
 #[command(name = "sotf_player")]
 #[command(about = "Audio player with EQ, upmixing, and LUFS monitoring", long_about = None)]
 pub(super) struct Cli {
+    /// Show full URLs (including any embedded secrets) in error output.
+    /// Debug escape hatch for diagnosing stream failures; off by default so
+    /// tokens and API keys stay redacted on stderr and in log files.
+    #[arg(long, global = true, default_value_t = false)]
+    pub(super) show_urls: bool,
+
     #[command(subcommand)]
     pub(super) command: Commands,
 }

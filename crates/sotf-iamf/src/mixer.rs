@@ -6,7 +6,7 @@
 // applying element gains and output mix gain.
 // Uses SIMD-accelerated accumulation via sotf-host when available.
 
-use crate::error::IamfResult;
+use crate::error::{IamfError, IamfResult};
 use crate::types::*;
 
 use sotf_host::simd::{apply_gain_simd, scale_add_simd};
@@ -74,6 +74,12 @@ impl MixState {
         num_frames: usize,
     ) -> IamfResult<()> {
         let out_len = num_frames * self.output_channels;
+        if output.len() < out_len {
+            return Err(IamfError::ParseError(format!(
+                "Output buffer too small: need {out_len} samples, got {}",
+                output.len()
+            )));
+        }
         output[..out_len].fill(0.0);
 
         // SIMD-accelerated element accumulation: output += elem * gain
@@ -392,5 +398,42 @@ mod tests {
         // elem_a at unity + elem_b at default unity.
         assert!((output[0] - 0.75).abs() < 1e-6);
         assert!((output[1] - 0.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_mix_from_bufs_rejects_short_output_buffer() {
+        // A crafted/shorted caller buffer must be a ParseError, not a
+        // slicing panic in `output[..out_len].fill(0.0)`.
+        let sub_mix = SubMix {
+            num_audio_elements: 1,
+            element_mix_configs: vec![ElementMixConfig {
+                audio_element_id: 0,
+                mix_gain: MixGainConfig {
+                    parameter_id: 0,
+                    default_mix_gain_db: 0.0,
+                },
+            }],
+            output_mix_gain: MixGainConfig {
+                parameter_id: 1,
+                default_mix_gain_db: 0.0,
+            },
+            output_layout: IamfChannelLayout::Stereo,
+            loudness: LoudnessInfo {
+                info_type: 0,
+                integrated_loudness: -23.0,
+                digital_peak: -1.0,
+                true_peak: None,
+            },
+        };
+
+        let state = MixState::from_sub_mix(&sub_mix);
+        let elem = vec![0.5_f32, -0.5];
+        // One stereo frame needs 2 samples; provide only 1.
+        let mut output = vec![0.0_f32; 1];
+        let err = state.mix_from_bufs(&[elem], &mut output, 1).unwrap_err();
+        assert!(
+            matches!(err, IamfError::ParseError(_)),
+            "short output buffer must be a ParseError, got {err:?}"
+        );
     }
 }

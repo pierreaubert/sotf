@@ -5,6 +5,7 @@ use super::PluginNoteExpressionKind;
 use super::consts::MAX_PRESET_JSON_IMPORT_BYTES;
 use super::consts::MAX_PRESET_STATE_BYTES;
 use super::consts::SOTF_PLUGIN_FFI_ABI_VERSION;
+use super::copy::copy_bytes_to_ffi_buffer;
 use super::plugin::plugin_available_types;
 use super::plugin::plugin_create;
 use super::plugin::plugin_destroy;
@@ -545,6 +546,119 @@ fn test_free_functions_accept_null_ownership_invariant() {
     plugin_free_string(ptr::null_mut());
     plugin_free_state(ptr::null_mut(), 0);
     plugin_free_state(ptr::null_mut(), 100);
+}
+
+#[test]
+fn test_copy_bytes_to_ffi_buffer_rejects_null_out_len() {
+    // A NULL out_len must not be dereferenced; the allocation is freed and
+    // NULL is returned instead of leaking.
+    let bytes = [1u8, 2, 3, 4];
+    assert!(copy_bytes_to_ffi_buffer(&bytes, ptr::null_mut()).is_null());
+
+    let mut out_len = 0usize;
+    let buf = copy_bytes_to_ffi_buffer(&bytes, &mut out_len);
+    assert!(!buf.is_null());
+    assert_eq!(out_len, bytes.len());
+    let copied = unsafe { std::slice::from_raw_parts(buf, out_len) };
+    assert_eq!(copied, &bytes);
+    plugin_free_state(buf, out_len);
+}
+
+#[test]
+fn test_output_event_count_is_zero_on_error_paths() {
+    let plugin_type = CString::new("EQ").unwrap();
+    let config = CString::new(r#"{"filters": []}"#).unwrap();
+    let handle = plugin_create(plugin_type.as_ptr(), config.as_ptr(), 48000, 2, 2);
+    assert!(!handle.is_null());
+
+    let queued_midi = PluginMidiEvent {
+        sample_offset: 0,
+        data: [0x90, 60, 100],
+        len: 3,
+    };
+    assert_eq!(plugin_enqueue_midi_output_event(handle, queued_midi), 0);
+    let queued_note = PluginNoteExpressionEvent {
+        sample_offset: 0,
+        note_id: 1,
+        channel: 0,
+        note: 60,
+        expression: PluginNoteExpressionKind::PitchBend,
+        value: 0.5,
+    };
+    assert_eq!(
+        plugin_enqueue_note_expression_output_event(handle, queued_note),
+        0
+    );
+
+    let mut midi_output = [PluginMidiEvent {
+        sample_offset: 0,
+        data: [0; 3],
+        len: 0,
+    }];
+    let mut note_output = [PluginNoteExpressionEvent {
+        sample_offset: 0,
+        note_id: 0,
+        channel: 0,
+        note: 0,
+        expression: PluginNoteExpressionKind::PitchBend,
+        value: 0.0,
+    }];
+
+    // NULL destination with queued events: error, and the count stays 0
+    // instead of speculatively reporting the pending queue length.
+    let mut midi_count = usize::MAX;
+    assert_eq!(
+        plugin_get_midi_output_events(handle, ptr::null_mut(), 0, &mut midi_count),
+        PluginError::NullPointer as c_int
+    );
+    assert_eq!(midi_count, 0);
+    let mut note_count = usize::MAX;
+    assert_eq!(
+        plugin_get_note_expression_output_events(handle, ptr::null_mut(), 0, &mut note_count),
+        PluginError::NullPointer as c_int
+    );
+    assert_eq!(note_count, 0);
+
+    // Undersized destination: error with a zeroed count.
+    assert_eq!(
+        plugin_get_midi_output_events(handle, midi_output.as_mut_ptr(), 0, &mut midi_count),
+        PluginError::BufferTooSmall as c_int
+    );
+    assert_eq!(midi_count, 0);
+    assert_eq!(
+        plugin_get_note_expression_output_events(
+            handle,
+            note_output.as_mut_ptr(),
+            0,
+            &mut note_count
+        ),
+        PluginError::BufferTooSmall as c_int
+    );
+    assert_eq!(note_count, 0);
+
+    // Success still reports the copied count, and NULL out_count is tolerated.
+    assert_eq!(
+        plugin_get_midi_output_events(
+            handle,
+            midi_output.as_mut_ptr(),
+            midi_output.len(),
+            &mut midi_count
+        ),
+        PluginError::Success as c_int
+    );
+    assert_eq!(midi_count, 1);
+    assert_eq!(midi_output[0], queued_midi);
+    assert_eq!(
+        plugin_get_note_expression_output_events(
+            handle,
+            note_output.as_mut_ptr(),
+            note_output.len(),
+            ptr::null_mut(),
+        ),
+        PluginError::Success as c_int
+    );
+
+    plugin_destroy(handle);
 }
 
 #[test]

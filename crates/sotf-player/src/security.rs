@@ -41,6 +41,16 @@ fn safe_canonicalize(path: &Path) -> Option<PathBuf> {
         return Some(canonical);
     }
 
+    // Fail closed when the final component is a symlink that could not be
+    // resolved (dangling, loop, ...). Without this, `canonical_parent.join(file_name)`
+    // below would report an in-dir path while `fs::write` follows the link
+    // outside of it (symlink escape: `config_dir/evil -> /outside`).
+    if let Ok(meta) = std::fs::symlink_metadata(path) {
+        if meta.file_type().is_symlink() {
+            return None;
+        }
+    }
+
     // If that fails (e.g., file doesn't exist yet), canonicalize the parent
     // and append the file name
     if let Some(parent) = path.parent() {
@@ -386,5 +396,89 @@ mod tests {
 
         std::fs::remove_file(&path).ok();
         std::fs::remove_dir(&temp_dir).ok();
+    }
+
+    /// Regression guard: a dangling symlink at the final component must not
+    /// pass containment. `path.canonicalize()` fails for dangling links, so
+    /// without the `symlink_metadata` fail-closed check the parent-join
+    /// fallback would report an in-dir path while `fs::write` follows the
+    /// link outside of it.
+    #[test]
+    fn test_safe_canonicalize_rejects_dangling_symlink_escape() {
+        let base = env::temp_dir().join(format!("sotf_symlink_escape_{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let link = base.join("evil");
+        // Dangling target outside `base`.
+        let outside =
+            env::temp_dir().join(format!("sotf_symlink_escape_target_{}", std::process::id()));
+        let _ = std::fs::remove_file(&outside);
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+
+        assert!(
+            !is_path_within_dir(&link, &base),
+            "dangling symlink pointing outside must fail containment"
+        );
+
+        std::fs::remove_file(&link).ok();
+        std::fs::remove_dir(&base).ok();
+    }
+
+    /// A live symlink at the final component pointing outside must fail
+    /// validation end-to-end through `validate_write_path`.
+    #[test]
+    fn test_validate_write_path_rejects_final_component_symlink_escape() {
+        let config_dir = crate::config::test_config_dir();
+        let outside_dir =
+            env::temp_dir().join(format!("sotf_symlink_outside_{}", std::process::id()));
+        std::fs::create_dir_all(&outside_dir).unwrap();
+        let outside_file = outside_dir.join("secret.txt");
+        std::fs::write(&outside_file, b"secret").unwrap();
+
+        let link = config_dir.join(format!("evil_{}", std::process::id()));
+        let _ = std::fs::remove_file(&link);
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside_file, &link).unwrap();
+
+        let result = validate_write_path(&link);
+        assert!(
+            result.is_err(),
+            "symlink inside config dir pointing outside must fail validation"
+        );
+
+        std::fs::remove_file(&link).ok();
+        std::fs::remove_file(&outside_file).ok();
+        std::fs::remove_dir(&outside_dir).ok();
+    }
+
+    /// A dangling symlink inside the config dir must also fail `validate_write_path`
+    /// (this is the fallback-path hole: `canonicalize` fails, parent-join succeeds).
+    #[test]
+    fn test_validate_write_path_rejects_dangling_symlink() {
+        let config_dir = crate::config::test_config_dir();
+        let link = config_dir.join(format!("dangling_{}", std::process::id()));
+        let _ = std::fs::remove_file(&link);
+        let missing = config_dir
+            .join(format!("missing_{}", std::process::id()))
+            .join("target.txt");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&missing, &link).unwrap();
+
+        assert!(
+            validate_write_path(&link).is_err(),
+            "dangling symlink must fail validation"
+        );
+
+        std::fs::remove_file(&link).ok();
+    }
+
+    /// Guard against over-blocking: a not-yet-existing regular path inside
+    /// the config dir must still validate (fallback path for new files).
+    #[test]
+    fn test_validate_write_path_accepts_new_regular_file() {
+        let config_dir = crate::config::test_config_dir();
+        let path = config_dir.join(format!("new_file_{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        assert!(validate_write_path(&path).is_ok());
     }
 }

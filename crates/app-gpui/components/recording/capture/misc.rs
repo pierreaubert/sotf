@@ -2912,19 +2912,13 @@ impl PlayerView {
                             .py(d.pad_x)
                             .border_t_1()
                             .border_color(theme.border)
-                            // Cancel button - simple div
+                            // Cancel button
                             .child(
-                                div()
-                                    .id("migration-cancel-btn")
-                                    .px(d.pad_x)
-                                    .py(d.pad_y)
-                                    .rounded(d.r_md)
-                                    .bg(theme.surface_hover)
-                                    .text_color(theme.text_secondary)
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(theme.border))
-                                    .child(translations.general_cancel)
-                                    .on_click({
+                                Button::new("migration-cancel-btn", translations.general_cancel)
+                                    .variant(ButtonVariant::Secondary)
+                                    .size(ButtonSize::Sm)
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event({
                                         let view = view.clone();
                                         move |_event, _window, cx| {
                                             log::info!("Cancel button clicked!");
@@ -2942,26 +2936,23 @@ impl PlayerView {
                                         }
                                     }),
                             )
-                            // Convert button - simple div
+                            // Convert button
                             .child(
-                                div()
-                                    .id("migration-convert-btn")
-                                    .px(d.pad_x)
-                                    .py(d.pad_y)
-                                    .rounded(d.r_md)
-                                    .bg(theme.accent)
-                                    .text_color(theme.text_on_accent)
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(theme.accent_muted))
-                                    .child(translations.recording_convert_button)
-                                    .on_click({
-                                        move |_event, _window, cx| {
-                                            log::info!("Convert button clicked!");
-                                            view2.update(cx, |this, cx| {
-                                                this.perform_migration(cx);
-                                            });
-                                        }
-                                    }),
+                                Button::new(
+                                    "migration-convert-btn",
+                                    translations.recording_convert_button,
+                                )
+                                .variant(ButtonVariant::Primary)
+                                .size(ButtonSize::Sm)
+                                .theme(theme.to_button_theme())
+                                .on_click_event({
+                                    move |_event, _window, cx| {
+                                        log::info!("Convert button clicked!");
+                                        view2.update(cx, |this, cx| {
+                                            this.perform_migration(cx);
+                                        });
+                                    }
+                                }),
                             ),
                     ),
             )
@@ -3079,34 +3070,22 @@ impl PlayerView {
                             .border_t_1()
                             .border_color(theme.border)
                             .child(
-                                div()
-                                    .id("move-position-cancel-btn")
-                                    .px(d.pad_x)
-                                    .py(d.pad_y)
-                                    .rounded(d.r_md)
-                                    .bg(theme.surface_hover)
-                                    .text_color(theme.text_secondary)
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(theme.border))
-                                    .child(text.cancel_session)
-                                    .on_click(move |_event, _window, cx| {
+                                Button::new("move-position-cancel-btn", text.cancel_session)
+                                    .variant(ButtonVariant::Secondary)
+                                    .size(ButtonSize::Sm)
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event(move |_event, _window, cx| {
                                         view_cancel.update(cx, |this, cx| {
                                             this.cancel_position_modal(cx);
                                         });
                                     }),
                             )
                             .child(
-                                div()
-                                    .id("move-position-continue-btn")
-                                    .px(d.pad_x)
-                                    .py(d.pad_y)
-                                    .rounded(d.r_md)
-                                    .bg(theme.accent)
-                                    .text_color(theme.text_on_accent)
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(theme.accent_muted))
-                                    .child(text.continue_action)
-                                    .on_click(move |_event, _window, cx| {
+                                Button::new("move-position-continue-btn", text.continue_action)
+                                    .variant(ButtonVariant::Primary)
+                                    .size(ButtonSize::Sm)
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event(move |_event, _window, cx| {
                                         view.update(cx, |this, cx| {
                                             this.continue_position_modal(cx);
                                         });

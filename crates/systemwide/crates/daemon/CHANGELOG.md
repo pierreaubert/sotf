@@ -1,5 +1,26 @@
 # 0.1.38 (unreleased)
 
+## Shared-memory resurrection diagnostics
+
+- Detect when the live Rust or Swift mmap no longer matches the published
+  `audio.shm` inode. Daemon status stops reporting stale HAL readiness, and the
+  HAL maintenance queue publishes a replacement mapping generation while
+  active CoreAudio clients continue running.
+- Stop recommending the nonexistent `reset_shared_memory` recovery action for
+  every historical underrun; an unavailable transport now uses the supported
+  daemon-restart recovery path.
+- Reject attempts to enable encrypted realtime transport until the Swift HAL
+  has an allocation-free, caller-buffer AEAD implementation.
+- Run Configbar launchctl, fallback spawn, terminate, and restart work on one
+  serial utility queue so `Process.waitUntilExit()` cannot block AppKit.
+- Keep driver-initiated reconfiguration unready until the restarted physical
+  output produces its first callback, and retain/join the initial playback
+  worker during shutdown.
+- Make plugin and diagnostic responses generation-coherent, classify graph
+  reorder telemetry by its wire name, and release IPC admission slots on every
+  setup failure.
+- Mark legacy `status` as `best_effort`; diagnostics and UI use `get_snapshot`.
+
 ## Atomic live configuration
 
 - Add a generation-checked `apply_configuration` transaction for Configbar
@@ -117,9 +138,9 @@
   - `encryption`: `enabled` and `fingerprint`.
   - `active_route`: `desired_output_device`, `applied_output_device`,
     `playback_output_device`, and `capture_active`.
-  - `recovery_actions`: deterministic list of suggested recovery steps such as
-    `reinstall_driver`, `restart_daemon`, `select_output_device`,
-    `rotate_encryption_key`, and `reset_shared_memory`.
+- `recovery_actions`: deterministic list of suggested recovery steps such as
+  `reinstall_driver`, `restart_daemon`, `select_output_device`,
+  and `rotate_encryption_key`.
 - Updated unit tests and the `snapshot_status_response_shape` snapshot to cover
   the new fields.
 

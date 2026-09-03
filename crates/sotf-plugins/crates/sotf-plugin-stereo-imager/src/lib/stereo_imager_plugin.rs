@@ -3,7 +3,7 @@ use super::stereo_imager_plugin_params::StereoImagerPluginParams;
 use crate::params::PARAMS as SI;
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::param_specs::find_by_key as pk;
-use sotf_host::parameters::Parameter;
+use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::plugin::{
@@ -135,6 +135,26 @@ impl StereoImagerPlugin {
         Self::try_new(channels, params)
     }
 
+    /// Validate one automation value as a finite float inside `[min, max]`.
+    /// Ranges mirror `try_new` so hostile automation can never poison a
+    /// smoother target with NaN/inf/out-of-range data.
+    fn check_finite_range(
+        id: &ParameterId,
+        value: &ParameterValue,
+        min: f32,
+        max: f32,
+    ) -> PluginResult<f32> {
+        let v = value
+            .as_float()
+            .ok_or_else(|| format!("{id} must be a float"))?;
+        if !v.is_finite() || !(min..=max).contains(&v) {
+            return Err(format!(
+                "{id} must be finite and in [{min}, {max}], got {v}"
+            ));
+        }
+        Ok(v)
+    }
+
     pub(super) fn rebuild_cached_parameters(&mut self) {
         self.cached_parameters = vec![
             Parameter::new_float(
@@ -222,66 +242,85 @@ impl ParametricInPlacePlugin for StereoImagerPlugin {
     }
 
     fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
-        for (id, value) in values {
+        // Phase 1: validate the whole set before touching any DSP state, so
+        // a rejected automation event leaves fields, smoother targets, and
+        // the cached schema exactly as they were. Prospective crossover
+        // frequencies are checked jointly to preserve low < mid ordering
+        // even when both arrive in one set.
+        let mut width: Option<f32> = None;
+        let mut low_mid_freq: Option<f32> = None;
+        let mut mid_high_freq: Option<f32> = None;
+        let mut low_width: Option<f32> = None;
+        let mut mid_width: Option<f32> = None;
+        let mut high_width: Option<f32> = None;
+        let mut mono_bass: Option<bool> = None;
+        let mut mix: Option<f32> = None;
+        for (id, value) in &values {
             match id.as_str() {
-                "width" => {
-                    if let Some(v) = value.as_float() {
-                        self.width = v;
-                        self.width_smoother.set_target(v);
-                    }
-                }
+                "width" => width = Some(Self::check_finite_range(id, value, 0.0, 2.0)?),
                 "low_mid_freq" => {
-                    if let Some(v) = value.as_float() {
-                        if v >= self.mid_high_freq {
-                            return Err("low_mid_freq must be lower than mid_high_freq".into());
-                        }
-                        self.low_mid_freq = v;
-                        self.low_mid_freq_smoother.set_target(v);
-                    }
+                    low_mid_freq = Some(Self::check_finite_range(id, value, 20.0, 1000.0)?);
                 }
                 "mid_high_freq" => {
-                    if let Some(v) = value.as_float() {
-                        if v <= self.low_mid_freq {
-                            return Err("mid_high_freq must be higher than low_mid_freq".into());
-                        }
-                        self.mid_high_freq = v;
-                        self.mid_high_freq_smoother.set_target(v);
-                    }
+                    mid_high_freq = Some(Self::check_finite_range(id, value, 1000.0, 10000.0)?);
                 }
-                "low_width" => {
-                    if let Some(v) = value.as_float() {
-                        self.low_width = v;
-                        self.low_width_smoother.set_target(v);
-                    }
-                }
-                "mid_width" => {
-                    if let Some(v) = value.as_float() {
-                        self.mid_width = v;
-                        self.mid_width_smoother.set_target(v);
-                    }
-                }
+                "low_width" => low_width = Some(Self::check_finite_range(id, value, 0.0, 2.0)?),
+                "mid_width" => mid_width = Some(Self::check_finite_range(id, value, 0.0, 2.0)?),
                 "high_width" => {
-                    if let Some(v) = value.as_float() {
-                        self.high_width = v;
-                        self.high_width_smoother.set_target(v);
-                    }
+                    high_width = Some(Self::check_finite_range(id, value, 0.0, 2.0)?);
                 }
                 "mono_bass" => {
-                    if let Some(v) = value.as_bool() {
-                        self.mono_bass = v;
-                        self.mono_bass_smoother
-                            .set_target(if v { 0.0 } else { 1.0 });
-                    }
+                    mono_bass = Some(
+                        value
+                            .as_bool()
+                            .ok_or_else(|| format!("{id} must be a bool"))?,
+                    );
                 }
-                "mix" => {
-                    if let Some(v) = value.as_float() {
-                        self.mix = v;
-                        self.mix_smoother.set_target(v);
-                    }
-                }
+                "mix" => mix = Some(Self::check_finite_range(id, value, 0.0, 1.0)?),
                 _ => return Err(format!("Unknown parameter: {}", id)),
             }
-            // Keep the cached parameter list in sync with the live state.
+        }
+        if low_mid_freq.unwrap_or(self.low_mid_freq) >= mid_high_freq.unwrap_or(self.mid_high_freq)
+        {
+            return Err("low_mid_freq must be lower than mid_high_freq".into());
+        }
+
+        // Phase 2: commit. Every value above already passed validation.
+        if let Some(v) = width {
+            self.width = v;
+            self.width_smoother.set_target(v);
+        }
+        if let Some(v) = low_mid_freq {
+            self.low_mid_freq = v;
+            self.low_mid_freq_smoother.set_target(v);
+        }
+        if let Some(v) = mid_high_freq {
+            self.mid_high_freq = v;
+            self.mid_high_freq_smoother.set_target(v);
+        }
+        if let Some(v) = low_width {
+            self.low_width = v;
+            self.low_width_smoother.set_target(v);
+        }
+        if let Some(v) = mid_width {
+            self.mid_width = v;
+            self.mid_width_smoother.set_target(v);
+        }
+        if let Some(v) = high_width {
+            self.high_width = v;
+            self.high_width_smoother.set_target(v);
+        }
+        if let Some(v) = mono_bass {
+            self.mono_bass = v;
+            self.mono_bass_smoother
+                .set_target(if v { 0.0 } else { 1.0 });
+        }
+        if let Some(v) = mix {
+            self.mix = v;
+            self.mix_smoother.set_target(v);
+        }
+        // Keep the cached parameter list in sync with the live state.
+        for (id, value) in values {
             if let Some(p) = self.cached_parameters.iter_mut().find(|p| p.id == id) {
                 p.default_value = value;
             }

@@ -3,8 +3,8 @@
 //! Provides play/pause/next/previous from the desktop environment's media controls.
 
 use sotf_media_controls::{
-    MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig,
-    WindowHandle,
+    MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition,
+    MprisCapabilities, PlatformConfig, WindowHandle,
 };
 use std::sync::mpsc;
 use std::time::Duration;
@@ -22,6 +22,7 @@ impl GpuiMediaControls {
             dbus_name: "sotf_player",
             display_name: "SotF Player",
             hwnd: get_hwnd(),
+            mpris_capabilities: MprisCapabilities::default(),
         };
         let mut controls = MediaControls::new(config)
             .map_err(|e| anyhow::anyhow!("media controls init failed: {e}"))?;

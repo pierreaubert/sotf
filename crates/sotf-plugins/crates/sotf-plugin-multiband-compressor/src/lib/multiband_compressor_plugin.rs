@@ -1001,11 +1001,20 @@ impl MultibandCompressorPlugin {
                 self.refresh_schema_before_initialization();
                 return Ok(());
             }
-            // NOTE: sidechain_hpf_hz, sidechain_hpf_order, detection_mode,
-            // program_dependent_release, and sidechain_external are no longer
-            // exposed in parameters() because their DSP implementation is
-            // stubbed out.  They are silently ignored here so that old presets
-            // still load without error.
+            // Legacy single-band sidechain controls have no DSP implementation
+            // in the multiband engine and are absent from parameters().
+            // Reject explicitly (never silently ignore) so old presets fail
+            // loudly instead of loading inaudible settings. Mirrors the
+            // `validate_params` rejection at construction.
+            "sidechain_hpf_hz"
+            | "sidechain_hpf_order"
+            | "detection_mode"
+            | "program_dependent_release"
+            | "sidechain_external" => {
+                return Err(format!(
+                    "{name} is an unsupported legacy sidechain control; remove it instead of loading inaudible settings"
+                ));
+            }
             "lookahead_ms" => {
                 let v = value
                     .as_float()
@@ -1157,11 +1166,11 @@ impl MultibandCompressorPlugin {
                         .is_some_and(|bp| bp.measured_auto_makeup),
                 ));
             }
-            // NOTE: sidechain_hpf_hz, sidechain_hpf_order, detection_mode,
-            // program_dependent_release, and sidechain_external are no longer
-            // exposed in parameters() because their DSP implementation is
-            // stubbed out.  get_parameter returns None for them so that hosts
-            // querying unknown IDs fall back gracefully.
+            // Legacy single-band sidechain controls (sidechain_hpf_hz,
+            // sidechain_hpf_order, detection_mode, program_dependent_release,
+            // sidechain_external) have no DSP implementation and are absent
+            // from parameters(). Like any other unknown ID, get_parameter
+            // returns None for them; set_parameter rejects them with a message.
             "lookahead_ms" => {
                 return Some(ParameterValue::Float(self.per_band_lookahead_ms));
             }

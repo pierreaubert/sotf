@@ -900,14 +900,19 @@ impl MultibandExpanderPlugin {
         let mut input_pos = 0; // frame index into the caller's buffer
         let mut output_pos = 0; // frame index into the caller's output
 
-        // Safety: spectral must be Some when this path is called
-        let fft_size = self.spectral.as_ref().unwrap().fft_size;
-        let hop_size = self.spectral.as_ref().unwrap().hop_size;
+        // Spectral state must be Some in this mode. A processing_mode/spectral
+        // desync is a structural error surfaced as Err, never a realtime panic.
+        let (fft_size, hop_size) = match self.spectral.as_ref() {
+            Some(ss) => (ss.fft_size, ss.hop_size),
+            None => return Err("spectral expander state missing for spectral mode".into()),
+        };
 
         while output_pos < nf {
             // --- Step 1: Fill input ring from caller's buffer ---
             if input_pos < nf {
-                let ss = self.spectral.as_mut().unwrap();
+                let ss = self.spectral.as_mut().ok_or_else(|| {
+                    "spectral expander state missing for spectral mode".to_string()
+                })?;
                 let overlap = fft_size - hop_size;
                 let space_in_tail = fft_size - ss.input_fill;
                 let available = nf - input_pos;
@@ -928,12 +933,16 @@ impl MultibandExpanderPlugin {
 
             // --- Step 2: Process STFT frames while we have a full window ---
             {
-                let input_fill = self.spectral.as_ref().unwrap().input_fill;
-                let hop = self.spectral.as_ref().unwrap().hop_size;
+                let (input_fill, hop) = match self.spectral.as_ref() {
+                    Some(ss) => (ss.input_fill, ss.hop_size),
+                    None => return Err("spectral expander state missing for spectral mode".into()),
+                };
                 if input_fill >= fft_size {
                     self.process_spectral_hop(any_solo);
                     // Shift input ring: keep overlap = fft_size - hop_size samples
-                    let ss = self.spectral.as_mut().unwrap();
+                    let ss = self.spectral.as_mut().ok_or_else(|| {
+                        "spectral expander state missing for spectral mode".to_string()
+                    })?;
                     let overlap = fft_size - hop;
                     for ch in 0..channels {
                         ss.input_buffers[ch].copy_within(hop..fft_size, 0);
@@ -945,7 +954,9 @@ impl MultibandExpanderPlugin {
 
             // --- Step 3: Drain available OLA frames into output ---
             {
-                let ss = self.spectral.as_mut().unwrap();
+                let ss = self.spectral.as_mut().ok_or_else(|| {
+                    "spectral expander state missing for spectral mode".to_string()
+                })?;
                 if ss.startup_padding_remaining > 0 && output_pos < nf {
                     let frames_to_pad = ss.startup_padding_remaining.min(nf - output_pos);
                     ss.startup_padding_remaining -= frames_to_pad;
@@ -985,7 +996,10 @@ impl MultibandExpanderPlugin {
         // We delay the dry path by the same amount so dry and wet stay time-aligned,
         // preventing comb-filter notches when mix < 1.0.
         {
-            let ss = self.spectral.as_mut().unwrap();
+            let ss = self
+                .spectral
+                .as_mut()
+                .ok_or_else(|| "spectral expander state missing for spectral mode".to_string())?;
             for i in 0..nf {
                 let g_mix = self.mix_smoother.advance();
                 for ch in 0..channels {

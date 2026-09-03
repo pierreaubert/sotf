@@ -399,8 +399,11 @@ impl Plugin for MonoToStereoPlugin {
 
         let settled = (self.stereo_width.current() - self.stereo_width.target()).abs() < 1.0e-5;
         let settled_width = self.stereo_width.target();
+        // Explicit realtime policy: non-finite input is replaced by silence
+        // before it can poison the allpass/delay state (mirrors the AEC guard).
         if settled && settled_width == 0.0 && self.haas_delay_samples == 0 {
             for (frame, sample) in input[..frames].iter().copied().enumerate() {
+                let sample = if sample.is_finite() { sample } else { 0.0 };
                 output[frame * 2] = sample;
                 output[frame * 2 + 1] = sample;
             }
@@ -420,7 +423,12 @@ impl Plugin for MonoToStereoPlugin {
             self.was_duplicate_fast_path = false;
         }
         for frame in 0..frames {
-            let input_sample = input[frame];
+            let raw_sample = input[frame];
+            let input_sample = if raw_sample.is_finite() {
+                raw_sample
+            } else {
+                0.0
+            };
             let width = if settled {
                 settled_width
             } else {

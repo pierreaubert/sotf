@@ -74,7 +74,8 @@ impl PlayerView {
                             if is_compact_height {
                                 // In 4-col mode, Divider 2 controls total right width (LUFS + Meters)
                                 // lufs_ratio = total - meters_ratio
-                                let new_lufs = (right_edge_ratio - layout.meters_panel_ratio).max(0.05);
+                                let new_lufs =
+                                    (right_edge_ratio - layout.meters_panel_ratio).max(0.05);
                                 layout.lufs_panel_ratio = new_lufs;
                             } else {
                                 // Standard mode: controls combined panel width
@@ -98,19 +99,19 @@ impl PlayerView {
 
                 // Handle volume dragging (drag up = increase, drag down = decrease)
                 if let Some(vd) = volume_drag {
-                        let mouse_y: f32 = mouse_pos.y.into();
-                        let delta_y = vd.start_y - mouse_y; // Inverted: up = positive
-                        // Scale: 100px drag = full volume range
-                        let volume_delta = delta_y / 100.0;
-                        let new_volume: f32 = (vd.start_value + volume_delta).clamp(0.0, 1.0);
-                        view.state.update(cx, |state, _cx| {
-                            state.app.playback.volume = new_volume;
-            if let Err(e) = state.player.set_volume(new_volume) {
-                                log::warn!("Player set_volume failed: {e}");
-                            }
-                        });
-                        cx.notify();
-                    }
+                    let mouse_y: f32 = mouse_pos.y.into();
+                    let delta_y = vd.start_y - mouse_y; // Inverted: up = positive
+                    // Scale: 100px drag = full volume range
+                    let volume_delta = delta_y / 100.0;
+                    let new_volume: f32 = (vd.start_value + volume_delta).clamp(0.0, 1.0);
+                    view.state.update(cx, |state, _cx| {
+                        state.app.playback.volume = new_volume;
+                        if let Err(e) = state.player.set_volume(new_volume) {
+                            log::warn!("Player set_volume failed: {e}");
+                        }
+                    });
+                    cx.notify();
+                }
             }))
             // Global mouse up handler to stop dragging even if mouse is outside divider
             .on_mouse_up(
@@ -127,7 +128,8 @@ impl PlayerView {
                                 // Check for click vs drag
                                 let was_click = state
                                     .app
-                                    .layout.divider_click_start
+                                    .layout
+                                    .divider_click_start
                                     .map(|start| start.elapsed().as_millis() < 200)
                                     .unwrap_or(false);
 
@@ -146,7 +148,8 @@ impl PlayerView {
                                 // Check for click vs drag
                                 let was_click = state
                                     .app
-                                    .layout.divider_click_start
+                                    .layout
+                                    .divider_click_start
                                     .map(|start| start.elapsed().as_millis() < 200)
                                     .unwrap_or(false);
 
@@ -184,24 +187,17 @@ impl PlayerView {
             .child(
                 div()
                     .flex_1()
+                    .min_w_0()
+                    .min_h_0()
                     .overflow_hidden()
                     .child(self.render_library_screen(cx)),
             )
             // Resize handle
             .child({
                 let library_collapsed = queue_ratio > 0.9;
-                let divider_theme = PaneDividerTheme {
-                    background: theme.background,
-                    background_hover: theme.surface_hover,
-                    background_collapsed: theme.surface,
-                    foreground: theme.text_muted,
-                    foreground_hover: theme.text_secondary,
-                    border: theme.border,
-                    tint: crate::theme::Theme::with_opacity(theme.accent, 0.42),
-                    tint_hover: theme.accent,
-                };
+                let divider_theme = crate::ui::layout_tree::pane_divider_theme(&theme);
                 PaneDivider::horizontal("library-queue-divider", CollapseDirection::Up)
-                            .label(library_label)
+                    .label(library_label)
                     .collapsed(library_collapsed)
                     .theme(divider_theme)
                     .on_toggle({
@@ -236,10 +232,9 @@ impl PlayerView {
                     )))
                     .border_t_1()
                     .border_color(theme.border)
+                    .min_h_0()
                     .overflow_hidden()
-            .child(self.render_queue_screen(None, cx)),
+                    .child(self.render_queue_screen(None, cx)),
             )
     }
-
-
 }

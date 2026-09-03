@@ -34,6 +34,7 @@ macro_rules! sotf_nih_plugin {
             bridge: $crate::PluginBridgeWrapper,
             interleaved_in: Vec<f32>,
             interleaved_out: Vec<f32>,
+            max_frames: usize,
             sample_rate: u32,
             #[cfg(feature = "linear-phase-eq")]
             structural_fingerprint: u64,
@@ -86,6 +87,7 @@ macro_rules! sotf_nih_plugin {
                     bridge: $crate::PluginBridgeWrapper::new(bridge_inner),
                     interleaved_in: Vec::new(),
                     interleaved_out: Vec::new(),
+                    max_frames: 0,
                     sample_rate: 48000,
                     #[cfg(feature = "linear-phase-eq")]
                     structural_fingerprint: 0,
@@ -191,6 +193,7 @@ macro_rules! sotf_nih_plugin {
 
                         self.interleaved_in = vec![0.0; max_frames * channels];
                         self.interleaved_out = vec![0.0; max_frames * channels];
+                        self.max_frames = max_frames;
                         #[cfg(feature = "linear-phase-eq")]
                         if matches!($plugin_type, "LinearPhaseEQ") {
                             self.structural_fingerprint = self.params.structural_fingerprint();
@@ -218,6 +221,37 @@ macro_rules! sotf_nih_plugin {
 
                 let num_frames = buffer.samples();
                 let num_channels = buffer.channels();
+                let expected_channels: usize = $channels;
+
+                // A misbehaving host may hand us a block larger than the
+                // negotiated `max_buffer_size` or with an unexpected channel
+                // count. The scratch vectors are sized from `initialize()`,
+                // so reject the block with silence instead of indexing them
+                // out of bounds (mirrors the FFI crate's BufferTooSmall path).
+                let needed = match $crate::wrapper::check_host_block(
+                    num_frames,
+                    num_channels,
+                    self.max_frames,
+                    expected_channels,
+                ) {
+                    Some(needed) => needed,
+                    None => {
+                        for channel in buffer.as_slice() {
+                            channel.fill(0.0);
+                        }
+                        return nih_plug::prelude::ProcessStatus::Error(
+                            "Host block exceeds the negotiated maximum",
+                        );
+                    }
+                };
+                if needed > self.interleaved_in.len() || needed > self.interleaved_out.len() {
+                    for channel in buffer.as_slice() {
+                        channel.fill(0.0);
+                    }
+                    return nih_plug::prelude::ProcessStatus::Error(
+                        "Host block exceeds the negotiated maximum",
+                    );
+                }
 
                 #[cfg(feature = "linear-phase-eq")]
                 if matches!($plugin_type, "LinearPhaseEQ") {
@@ -343,6 +377,26 @@ pub fn bridged_info_from_parameter(
     })
 }
 
+/// Validate a host-supplied block against the bounds negotiated in `initialize()`.
+///
+/// Returns the required interleaved sample count when `num_frames` fits within
+/// `max_frames` and `num_channels` matches the plugin's declared layout;
+/// returns `None` otherwise (oversized block, channel mismatch, or sample
+/// count overflow). Callers must fill the host buffer with silence and return
+/// `ProcessStatus::Error` on `None`, mirroring the FFI crate's
+/// `BufferTooSmall` behavior.
+pub fn check_host_block(
+    num_frames: usize,
+    num_channels: usize,
+    max_frames: usize,
+    expected_channels: usize,
+) -> Option<usize> {
+    if num_channels != expected_channels || num_frames > max_frames {
+        return None;
+    }
+    num_frames.checked_mul(num_channels)
+}
+
 /// Get ParamSpec array for a plugin type.
 pub fn get_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::ParamSpec] {
     use sotf_plugins::param_specs::*;
@@ -376,5 +430,37 @@ pub fn get_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::P
         "SpectralCompressor" => spectral_compressor::PARAMS,
         "AmbisonicsDecoder" => ambisonics::PARAMS,
         _ => &[],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_host_block;
+
+    #[test]
+    fn fitting_block_returns_interleaved_sample_count() {
+        assert_eq!(check_host_block(64, 2, 128, 2), Some(128));
+        assert_eq!(check_host_block(128, 2, 128, 2), Some(256));
+        assert_eq!(check_host_block(0, 2, 128, 2), Some(0));
+    }
+
+    #[test]
+    fn oversized_block_is_rejected() {
+        assert_eq!(check_host_block(129, 2, 128, 2), None);
+        assert_eq!(check_host_block(1024, 2, 128, 2), None);
+    }
+
+    #[test]
+    fn channel_mismatch_is_rejected() {
+        assert_eq!(check_host_block(64, 1, 128, 2), None);
+        assert_eq!(check_host_block(64, 4, 128, 2), None);
+    }
+
+    #[test]
+    fn overflowing_sample_count_is_rejected() {
+        assert_eq!(
+            check_host_block(usize::MAX, usize::MAX, usize::MAX, usize::MAX),
+            None
+        );
     }
 }

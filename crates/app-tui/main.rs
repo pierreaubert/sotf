@@ -26,12 +26,7 @@ mod types;
 
 use backend::{RuntimeBackend, requested_dev_api_port, should_run_headless_dev_api};
 use misc::print_sotf_api_connection_qr;
-#[cfg(not(any(unix, windows)))]
-use try_::try_acquire_lock;
-#[cfg(unix)]
-use try_::try_acquire_lock;
-#[cfg(windows)]
-use try_::try_acquire_lock;
+use try_::acquire_startup_lock;
 use types::Args;
 #[cfg(not(feature = "dev-api"))]
 use types::DevApiRx;
@@ -122,10 +117,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let t_startup = std::time::Instant::now();
     let theme = sotf_audio_player_tui::theme::Theme::default();
 
-    // Try to acquire exclusive lock — second instance becomes read-only
-    let config_dir = sotf_audio_player::config::get_app_config_dir()
-        .expect("Could not determine config directory");
-    let (_lock_file, lock_acquired) = try_acquire_lock(&config_dir);
+    // Try to acquire exclusive lock — second instance becomes read-only.
+    // An undeterminable config dir (e.g. missing $HOME) or an unopenable
+    // lock file (e.g. read-only $HOME) degrades to read-only mode instead
+    // of crashing startup.
+    let config_dir = sotf_audio_player::config::get_app_config_dir();
+    let (_lock_file, lock_acquired) = acquire_startup_lock(config_dir.as_deref());
     let read_only = !lock_acquired;
     if read_only {
         log::info!("Another instance is running — starting in read-only mode");

@@ -40,9 +40,18 @@ class TVAudioManager: NSObject {
         case .began:
             sotf_tvos_audio_interrupted(true)
         case .ended:
-            sotf_tvos_audio_interrupted(false)
-            // Re-activate the audio session
-            try? AVAudioSession.sharedInstance().setActive(true)
+            // Only resume when the system indicates playback should continue.
+            // Without this gate every transient interruption (Siri, system
+            // sound) would restart playback the user had deliberately paused —
+            // same contract as iOS AudioManager.handleInterruption.
+            if let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt {
+                let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                if options.contains(.shouldResume) {
+                    // Re-activate the audio session before resuming
+                    try? AVAudioSession.sharedInstance().setActive(true)
+                    sotf_tvos_audio_interrupted(false)
+                }
+            }
         @unknown default:
             break
         }

@@ -2,6 +2,20 @@
 
 ## Cross-process atomic and real-time hardening
 
+- Publish active channel geometry to the CoreAudio IO callback through a C11
+  atomic snapshot, removing the callback's `configurationLock` acquisition.
+- Move key-file observation and reload to HAL maintenance, and reject encrypted
+  callback transport until a caller-buffer AEAD implementation can replace the
+  allocating CryptoKit path.
+- Gate every CoreAudio callback diagnostic behind `SOTF_AUDIO_TRACE`.
+- Replace per-channel loopback cursor publication with one coherent interleaved
+  SPSC ring using C11 acquire/release frame cursors.
+- Publish replacement mmap generations from maintenance without waiting for
+  active clients; callbacks pin their selected slot until the operation ends.
+- On fresh daemon initialization, withdraw daemon readiness/heartbeat and
+  quiesce/reset stale ring cursors while preserving HAL-owned readiness for
+  coreaudiod-only reopen behavior.
+
 - Add a real Swift-to-Rust concurrent reconfiguration stress test that
   alternates 2/8 channels and 48/96 kHz through the production quiesce/ack
   shared-memory protocol while Swift continuously reads frames.

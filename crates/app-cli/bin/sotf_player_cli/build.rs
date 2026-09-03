@@ -31,6 +31,7 @@ use super::misc::get_speaker_config_channels;
 use super::parse::parse_channel_mapping;
 use super::parse::parse_crossfeed_mode;
 use super::parse::parse_crossfeed_preset;
+use super::parse::parse_filters;
 use super::types::PluginArgs;
 use math_audio_iir_fir::Biquad;
 use sotf_audio::LoudnessCompensation;
@@ -49,7 +50,7 @@ use std::time::Duration;
 pub(super) fn play_stream(
     file: PathBuf,
     device: Option<String>,
-    filters: Vec<Biquad>,
+    filter_specs: Vec<String>,
     duration: u64,
     start_time: f64,
     hwaudio_play: Option<String>,
@@ -67,20 +68,8 @@ pub(super) fn play_stream(
     if start_time > 0.0 {
         log::info!("  Start time: {:.2}s", start_time);
     }
-    log::info!("  Filters: {}", filters.len());
 
-    if !filters.is_empty() {
-        log::info!("\nEQ Filters:");
-        for (idx, filter) in filters.iter().enumerate() {
-            log::info!(
-                "  [{}] {} Hz, Q={:.2}, Gain={:.1} dB",
-                idx + 1,
-                filter.freq,
-                filter.q,
-                filter.db_gain
-            );
-        }
-    }
+    log::info!("  Filter specs: {}", filter_specs.len());
     log::info!("");
 
     // Validate convolution IR file if convolution is enabled
@@ -126,6 +115,29 @@ pub(super) fn play_stream(
         println!("{}", dur_msg);
     }
     println!();
+
+    // Parse EQ filters against the negotiated device/file sample rate so the
+    // constructed biquad coefficients match the rate actually rendered at.
+    // (Previously filters were baked at a hard-coded 48 kHz in `main`,
+    // before the file was even loaded.)
+    let negotiated_rate =
+        sotf_audio::select_output_sample_rate(audio_info.spec.sample_rate, device.as_deref())
+            as f64;
+    let filters: Vec<Biquad> = parse_filters(&filter_specs, negotiated_rate)
+        .map_err(|e| format!("Error parsing filters: {e}"))?;
+
+    if !filters.is_empty() {
+        log::info!("\nEQ Filters (@ {:.0} Hz):", negotiated_rate);
+        for (idx, filter) in filters.iter().enumerate() {
+            log::info!(
+                "  [{}] {} Hz, Q={:.2}, Gain={:.1} dB",
+                idx + 1,
+                filter.freq,
+                filter.q,
+                filter.db_gain
+            );
+        }
+    }
 
     // Build plugin chain
     let loudness_auto_gain_params = (
@@ -1027,7 +1039,8 @@ pub(super) fn build_rack_mode_plugins(
     // was used; now it behaves the same as in traditional mode (see
     // `build_traditional_mode_plugins` for the original implementation).
     if let Some(mapping_str) = hwaudio_play {
-        let (input_channel_map, output_channel_map, matrix) = parse_channel_mapping(mapping_str)?;
+        let (input_channel_map, output_channel_map, matrix, max_hw_ch) =
+            parse_channel_mapping(mapping_str)?;
 
         if input_channel_map.len() != output_channels {
             return Err(format!(
@@ -1037,7 +1050,6 @@ pub(super) fn build_rack_mode_plugins(
             ));
         }
 
-        let max_hw_ch = output_channel_map.iter().max().map(|&v| v + 1).unwrap_or(0);
         let logical_output_channels = output_channel_map.len();
 
         log::info!("\nRack: Channel mapping enabled:");
@@ -1324,7 +1336,8 @@ pub(super) fn build_traditional_mode_plugins(
 
     // 22. Channel mapping to hardware (last processing plugin)
     let output_channels = if let Some(mapping_str) = hwaudio_play {
-        let (input_channel_map, output_channel_map, matrix) = parse_channel_mapping(mapping_str)?;
+        let (input_channel_map, output_channel_map, matrix, max_hw_ch) =
+            parse_channel_mapping(mapping_str)?;
 
         if input_channel_map.len() != output_channels {
             return Err(format!(
@@ -1334,7 +1347,6 @@ pub(super) fn build_traditional_mode_plugins(
             ));
         }
 
-        let max_hw_ch = output_channel_map.iter().max().map(|&v| v + 1).unwrap_or(0);
         let logical_output_channels = output_channel_map.len();
 
         log::info!("\nChannel mapping enabled:");

@@ -14,6 +14,16 @@ use std::sync::{
 use std::thread::JoinHandle;
 use std::time::Instant;
 
+pub(super) fn reset_new_daemon_mapping(buffer: &mut SharedAudioBuffer) -> Result<(), DriverError> {
+    if buffer.reset_daemon_runtime_state() {
+        Ok(())
+    } else {
+        Err(DriverError::io(
+            "failed to quiesce and reset stale HAL shared-memory runtime state",
+        ))
+    }
+}
+
 /// macOS CoreAudio HAL driver.
 ///
 /// Reads audio from the shared memory region created by the Swift HAL virtual device.
@@ -143,11 +153,12 @@ impl AudioDriver for HalDriver {
         // The daemon owns shared-memory creation. The HAL plugin runs inside
         // coreaudiod, so it should only have to open an already-sized file from
         // its realtime paths.
-        let buffer =
+        let mut buffer =
             SharedAudioBuffer::create_or_open_default(48_000, 512, DEFAULT_HAL_CHANNEL_COUNT)
                 .map_err(|error| {
                     DriverError::io(format!("failed to initialize HAL shared memory: {error}"))
                 })?;
+        reset_new_daemon_mapping(&mut buffer)?;
         log::info!(
             "[HalDriver] Prepared shared memory: {}Hz, {}ch, {} frames",
             buffer.sample_rate(),
@@ -185,12 +196,13 @@ impl AudioDriver for HalDriver {
     fn status(&self) -> DriverStatus {
         let (sample_rate, channel_count, buffer_frames, capture_active, driver_ready) =
             if let Some(ref buf) = self.config_buffer {
+                let backing_file_is_current = buf.backing_file_is_current();
                 (
                     buf.sample_rate(),
                     buf.channel_count(),
                     buf.buffer_frames(),
-                    buf.is_active(),
-                    buf.driver_ready(),
+                    backing_file_is_current && buf.is_active(),
+                    backing_file_is_current && buf.driver_ready(),
                 )
             } else {
                 (0, 0, 0, false, false)

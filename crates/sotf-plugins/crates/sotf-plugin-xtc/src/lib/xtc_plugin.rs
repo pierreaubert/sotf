@@ -286,6 +286,11 @@ pub struct XtcPlugin {
 
     /// Diagnostic and parameter caching state
     pub(super) diagnostics: XtcDiagnostics,
+
+    /// Set by `initialize()`. `process()` rejects blocks until it is set so
+    /// a pre-init call fails fast instead of running on staging buffers that
+    /// were never sized for the active sample rate.
+    pub(super) initialized: bool,
 }
 
 impl XtcPlugin {
@@ -538,6 +543,7 @@ impl XtcPlugin {
                 cache_update_counter: 0,
                 cached_parameters: Vec::new(),
             },
+            initialized: false,
         };
         p.rebuild_cached_parameters();
         Ok(p)
@@ -1559,6 +1565,7 @@ impl Plugin for XtcPlugin {
             ag.set_sample_rate(sample_rate).map_err(|e| e.to_string())?;
         }
 
+        self.initialized = true;
         Ok(())
     }
 
@@ -1591,6 +1598,11 @@ impl Plugin for XtcPlugin {
         context: &ProcessContext,
     ) -> Result<usize, String> {
         let num_frames = context.num_frames;
+        // Fail fast on pre-init calls: with unsized staging buffers the
+        // block loop below could otherwise make no progress.
+        if !self.initialized {
+            return Err("XTC process called before initialize".to_string());
+        }
         self.adopt_pending_filters();
         let output_channels = self.output_channels();
 
@@ -1662,6 +1674,9 @@ impl Plugin for XtcPlugin {
 
         while block_start < num_frames && output_pos < num_frames {
             let block_frames = self.input.temp_input_l.len().min(num_frames - block_start);
+            if block_frames == 0 {
+                return Err("XTC block size is zero; plugin may not be initialized".to_string());
+            }
             let input_start = block_start * 2;
             let input_end = input_start + block_frames * 2;
 

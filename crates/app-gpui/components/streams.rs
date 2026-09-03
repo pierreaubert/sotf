@@ -3,8 +3,8 @@
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, HStack, Input, InputSize, StackAlign, StackSpacing, Text,
-    TextSize, TextWeight, Toggle, ToggleSize, ToggleStyle, VStack,
+    Button, ButtonSize, ButtonVariant, HStack, Heading, Input, InputSize, StackAlign, StackSpacing,
+    Text, TextSize, TextWeight, Toggle, ToggleSize, ToggleStyle, VStack,
 };
 
 use crate::components::design::Ds;
@@ -67,12 +67,7 @@ impl PlayerView {
                     .child(
                         VStack::new()
                             .spacing(StackSpacing::Xs)
-                            .child(
-                                Text::new(translations.title)
-                                    .size(TextSize::Lg)
-                                    .weight(TextWeight::Bold)
-                                    .color(theme.text_primary),
-                            )
+                            .child(Heading::h3(translations.title))
                             .child(
                                 Text::new(translations.subtitle)
                                     .size(TextSize::Xs)

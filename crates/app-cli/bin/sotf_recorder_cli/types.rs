@@ -6,6 +6,11 @@ use std::path::PathBuf;
 #[command(name = "sotf_recorder")]
 #[command(about = "Generate and record test signals with analysis", long_about = None)]
 pub(super) struct Cli {
+    /// Show full URLs (including any embedded secrets) in error output.
+    /// Debug escape hatch; off by default so secrets stay redacted.
+    #[arg(long, default_value_t = false)]
+    pub(super) show_urls: bool,
+
     /// Signal type: tone, two-tone, sweep, white-noise, pink-noise, m-noise, mls, dirac
     #[arg(long)]
     pub(super) signal: Option<String>,

@@ -435,16 +435,7 @@ impl PlayerView {
                 el.hover(move |s| s.bg(theme.surface_hover))
             })
             .child(Icon::new(icon).size(IconSize::Md).color(fg))
-            .child(
-                div()
-                    .text_size(d.text_xs)
-                    .font_weight(if selected {
-                        FontWeight::SEMIBOLD
-                    } else {
-                        FontWeight::NORMAL
-                    })
-                    .child(label),
-            )
+            .child(Text::selectable(label, selected).color(fg))
             .on_mouse_up(MouseButton::Left, move |_event, window, cx| {
                 mouse_activate(cx);
                 window.focus(&mouse_focus, cx);
@@ -637,7 +628,7 @@ impl PlayerView {
                 div()
                     .flex_1()
                     .min_w_0()
-                    .text_size(d.text_lg)
+                    .text_size(d.text_sm)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_primary)
                     .overflow_hidden()
@@ -768,7 +759,12 @@ impl PlayerView {
                     .justify_between()
                     .child(
                         div()
-                            .text_size(d.text_lg)
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .whitespace_nowrap()
+                            .text_size(d.text_base)
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text_primary)
                             .child(title),
@@ -776,6 +772,7 @@ impl PlayerView {
                     .child(phone_dev_track!(
                         div()
                             .id(see_all_element_id)
+                            .flex_none()
                             .track_focus(&see_all_focus)
                             .track_focus_element(&see_all_focus)
                             .min_h(rems(2.75))
@@ -1073,12 +1070,10 @@ impl PlayerView {
                     .id("phone-library-primary-chips")
                     .flex()
                     .gap(d.grid)
-                        .overflow_x_scroll()
-                        .children(chips.into_iter().map(|(label, sort, filter, action)| {
-                            self.render_phone_library_chip(
-                                label, sort, filter, action, theme, d, cx,
-                            )
-                        })),
+                    .overflow_x_scroll()
+                    .children(chips.into_iter().map(|(label, sort, filter, action)| {
+                        self.render_phone_library_chip(label, sort, filter, action, theme, d, cx)
+                    })),
             )
             .when(filter_menu_open, |el| {
                 el.child(
@@ -1157,6 +1152,7 @@ impl PlayerView {
             .id(element_id)
             .track_focus(&focus_handle)
             .track_focus_element(&focus_handle)
+            .flex_none()
             .min_h(rems(2.75))
             .px(d.pad_x)
             .flex()
@@ -1203,20 +1199,21 @@ impl PlayerView {
             ContextMenuTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let (theme, rows, current_position, editing) = {
             let state = self.state.read(cx);
-            let rows = state
-                .app
-                .queue_state
-                .items
-                .iter()
-                .enumerate()
-                .flat_map(|(album_idx, item)| {
-                    item.album.tracks.iter().cloned().enumerate().map(
-                        move |(track_idx, track)| {
-                            (album_idx, track_idx, item.album.title.clone(), track)
-                        },
-                    )
-                })
-                .collect::<Vec<_>>();
+            let rows =
+                state
+                    .app
+                    .queue_state
+                    .items
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(album_idx, item)| {
+                        item.album.tracks.iter().cloned().enumerate().map(
+                            move |(track_idx, track)| {
+                                (album_idx, track_idx, item.album.title.clone(), track)
+                            },
+                        )
+                    })
+                    .collect::<Vec<_>>();
             let current_position = state.app.queue_state.current_index().and_then(|album_idx| {
                 state
                     .app
@@ -1236,8 +1233,7 @@ impl PlayerView {
         let edit_label = if editing { text.done() } else { text.edit };
         let edit_id: ElementId = "phone-queue-edit".into();
         let edit_focus = interactive_focus_handle(&edit_id, cx);
-        let edit_props =
-            AriaProps::with_role(AriaRole::Button).state(AriaState::Pressed(editing));
+        let edit_props = AriaProps::with_role(AriaRole::Button).state(AriaState::Pressed(editing));
         cx.register_accessible(AccessibilityNode {
             element_id: edit_id.clone(),
             label: edit_label.into(),
@@ -1247,8 +1243,7 @@ impl PlayerView {
         let view_for_edit = cx.entity().clone();
         let edit_activate = std::rc::Rc::new(move |cx: &mut App| {
             state_for_edit.update(cx, |state, _cx| {
-                state.app.ui_state.phone_queue_editing =
-                    !state.app.ui_state.phone_queue_editing;
+                state.app.ui_state.phone_queue_editing = !state.app.ui_state.phone_queue_editing;
             });
             view_for_edit.update(cx, |_view, cx| cx.notify());
         });
@@ -1404,8 +1399,7 @@ impl PlayerView {
         let source = track.audio_source();
 
         let play_label = format!("{title}, {artist}, {album_title}, {duration}");
-        let play_id: ElementId =
-            format!("phone-queue-row-{album_idx}-{track_idx}").into();
+        let play_id: ElementId = format!("phone-queue-row-{album_idx}-{track_idx}").into();
         let play_focus = interactive_focus_handle(&play_id, cx);
         let play_props = AriaProps::with_role(AriaRole::Button);
         cx.register_accessible(AccessibilityNode {
@@ -1418,8 +1412,7 @@ impl PlayerView {
         let play_activate = std::rc::Rc::new(move |cx: &mut App| {
             state_for_play.update(cx, |state, _cx| {
                 if album_idx < state.app.queue_state.items.len()
-                    && track_idx
-                        < state.app.queue_state.items[album_idx].album.tracks.len()
+                    && track_idx < state.app.queue_state.items[album_idx].album.tracks.len()
                 {
                     state.app.queue_state.selected_index = album_idx;
                     state.app.queue_state.current_index = Some(album_idx);
@@ -1523,8 +1516,7 @@ impl PlayerView {
 
         let remove_element = editing.then(|| {
             let remove_accessible_label = format!("{remove_label}: {title}");
-            let remove_id: ElementId =
-                format!("phone-queue-remove-{album_idx}-{track_idx}").into();
+            let remove_id: ElementId = format!("phone-queue-remove-{album_idx}-{track_idx}").into();
             let remove_focus = interactive_focus_handle(&remove_id, cx);
             let remove_props = AriaProps::with_role(AriaRole::Button);
             cx.register_accessible(AccessibilityNode {
@@ -1539,9 +1531,7 @@ impl PlayerView {
                     if album_idx >= state.app.queue_state.items.len() {
                         return;
                     }
-                    if track_idx
-                        < state.app.queue_state.items[album_idx].album.tracks.len()
-                    {
+                    if track_idx < state.app.queue_state.items[album_idx].album.tracks.len() {
                         state.app.queue_state.items[album_idx]
                             .album
                             .tracks
@@ -1698,8 +1688,7 @@ impl PlayerView {
                 match state.app.play_album_now() {
                     Ok(Some(source)) => PlayerView::play_track(state, source),
                     Err(e) => {
-                        state.app.ui_state.toast_message =
-                            Some(crate::app::ToastMessage::error(e));
+                        state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(e));
                     }
                     _ => {}
                 }
@@ -1918,12 +1907,7 @@ impl PlayerView {
                 &theme,
                 cx,
             ))
-            .child(self.render_phone_play_button(
-                "phone-mini-play",
-                is_playing,
-                &theme,
-                cx,
-            ))
+            .child(self.render_phone_play_button("phone-mini-play", is_playing, &theme, cx))
             .into_any_element()
     }
     fn render_phone_now_playing(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -1974,13 +1958,7 @@ impl PlayerView {
         };
         let language = self.state.read(cx).app.ui_state.language;
         let footer_text = crate::app::i18n::FooterTranslations::for_language(language);
-        let output_label = self
-            .state
-            .read(cx)
-            .app
-            .ui_state
-            .translations
-            .devices_title;
+        let output_label = self.state.read(cx).app.ui_state.translations.devices_title;
         let queue_element_id: ElementId = "phone-now-queue".into();
         let queue_focus = interactive_focus_handle(&queue_element_id, cx);
         let queue_mouse_focus = queue_focus.clone();
@@ -2019,10 +1997,11 @@ impl PlayerView {
                         div()
                             .flex()
                             .flex_col()
+                            .flex_1()
                             .min_w_0()
                             .child(
                                 div()
-                                    .text_size(d.text_lg)
+                                    .text_size(d.text_sm)
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(theme.text_primary)
                                     .overflow_hidden()
@@ -2050,9 +2029,11 @@ impl PlayerView {
                             ),
                     )
                     .child(
-                        Icon::new(IconName::Heart)
-                            .size(IconSize::Lg)
-                            .color(theme.text_muted),
+                        div().flex_none().child(
+                            Icon::new(IconName::Heart)
+                                .size(IconSize::Lg)
+                                .color(theme.text_muted),
+                        ),
                     ),
             )
             .child(
@@ -2157,33 +2138,33 @@ impl PlayerView {
                     .items_center()
                     .justify_center()
                     .gap(d.gap_md)
-                        .child(self.render_phone_icon_button(
-                            "phone-shuffle",
-                            footer_text.shuffle,
-                            IconName::Shuffle,
-                            &theme,
-                            None,
-                            Some(shuffle_enabled),
-                            cx,
-                        ))
-                        .child(self.render_phone_icon_button(
-                            "phone-repeat",
-                            footer_text.repeat,
-                            IconName::Repeat,
-                            &theme,
-                            None,
-                            Some(repeat_enabled),
-                            cx,
-                        ))
-                        .child(self.render_phone_icon_button(
-                            "phone-output",
-                            output_label,
-                            IconName::Speaker,
-                            &theme,
-                            Some(Screen::SettingsDetail),
-                            None,
-                            cx,
-                        ))
+                    .child(self.render_phone_icon_button(
+                        "phone-shuffle",
+                        footer_text.shuffle,
+                        IconName::Shuffle,
+                        &theme,
+                        None,
+                        Some(shuffle_enabled),
+                        cx,
+                    ))
+                    .child(self.render_phone_icon_button(
+                        "phone-repeat",
+                        footer_text.repeat,
+                        IconName::Repeat,
+                        &theme,
+                        None,
+                        Some(repeat_enabled),
+                        cx,
+                    ))
+                    .child(self.render_phone_icon_button(
+                        "phone-output",
+                        output_label,
+                        IconName::Speaker,
+                        &theme,
+                        Some(Screen::SettingsDetail),
+                        None,
+                        cx,
+                    ))
                     .child(phone_dev_track!(
                         div()
                             .id(queue_element_id)
@@ -2236,19 +2217,10 @@ impl PlayerView {
         theme: &crate::theme::Theme,
         target_screen: Option<Screen>,
         selected: Option<bool>,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) -> AnyElement {
         let state_entity = self.state.clone();
         let is_selected = selected.unwrap_or(false);
-        let element_id: ElementId = id.into();
-        let focus_handle = interactive_focus_handle(&element_id, cx);
-        let accessibility_props = AriaProps::with_role(AriaRole::Button)
-            .maybe_state(selected.is_some(), AriaState::Pressed(is_selected));
-        cx.register_accessible(AccessibilityNode {
-            element_id: element_id.clone(),
-            label: label.into(),
-            props: accessibility_props.clone(),
-        });
         let activate = std::rc::Rc::new(move |cx: &mut App| {
             state_entity.update(cx, |state, _cx| {
                 match id {
@@ -2271,49 +2243,15 @@ impl PlayerView {
                 }
             });
         });
-        let mouse_activate = activate.clone();
-        let key_activate = activate;
-
-        let element = div()
-            .id(element_id)
-            .track_focus(&focus_handle)
-            .track_focus_element(&focus_handle)
-            .size(rems(2.75))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(rems(0.5))
-            .when(is_selected, |el| el.bg(theme.surface_selected))
-            .cursor_pointer()
-            .focus_visible({
-                let theme = theme.clone();
-                move |style| style.border_2().border_color(theme.accent)
-            })
-            .hover({
-                let theme = theme.clone();
-                move |s| s.bg(theme.surface_hover)
-            })
-            .child(Icon::new(icon).size(IconSize::Lg).color(if is_selected {
-                theme.accent
-            } else {
-                theme.text_muted
-            }))
-            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                mouse_activate(cx);
-            })
-            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
-                let key = event.keystroke.key.as_str();
-                if key == "enter" || key == "space" {
-                    key_activate(cx);
-                    cx.stop_propagation();
-                }
-            });
-        let element = gpui_ui_kit::accessibility::apply_native_accessibility(
-            element,
-            label,
-            &accessibility_props,
-        );
-        phone_dev_track!(element, format!("phone.icon.{id}"))
+        let icon_theme = theme.to_icon_button_theme();
+        let button = gpui_ui_kit::IconButton::with_child(id, Icon::new(icon).size(IconSize::Lg))
+            .size(gpui_ui_kit::IconButtonSize::Xl)
+            .variant(gpui_ui_kit::IconButtonVariant::Ghost)
+            .selected(is_selected)
+            .theme(icon_theme)
+            .aria_label(label)
+            .on_click(move |_window, cx| activate(cx));
+        phone_dev_track!(button, format!("phone.icon.{id}"))
     }
 
     fn render_phone_now_playing_drawer(
@@ -2804,6 +2742,9 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .gap(d.grid)
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
                             .child(back_element)
                             .child(
                                 div()
@@ -2817,6 +2758,7 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .gap(d.grid)
+                            .flex_none()
                             .child(edit_element)
                             .child(add_element),
                     ),
@@ -2838,14 +2780,14 @@ impl PlayerView {
                         self.render_phone_plugin_card(
                             idx,
                             plugin,
-                                rack_editing,
-                                &theme,
-                                &d,
-                                tool_text,
-                                menu_text,
-                                plugin_count,
-                                cx,
-                            )
+                            rack_editing,
+                            &theme,
+                            &d,
+                            tool_text,
+                            menu_text,
+                            plugin_count,
+                            cx,
+                        )
                     })),
             )
             .into_any_element()
@@ -2873,31 +2815,31 @@ impl PlayerView {
                     .flex()
                     .gap(d.grid)
                     .overflow_x_scroll()
-                        .children(choices.into_iter().map(|plugin_type| {
-                            let state_entity = self.state.clone();
-                            let label = plugin_type.name();
-                            let element_id: ElementId =
-                                format!("phone-plugin-picker-{label}").into();
-                            let focus_handle = interactive_focus_handle(&element_id, cx);
-                            let accessibility_props = AriaProps::with_role(AriaRole::Button);
-                            cx.register_accessible(AccessibilityNode {
-                                element_id: element_id.clone(),
-                                label: label.into(),
-                                props: accessibility_props.clone(),
+                    .children(choices.into_iter().map(|plugin_type| {
+                        let state_entity = self.state.clone();
+                        let label = plugin_type.name();
+                        let element_id: ElementId = format!("phone-plugin-picker-{label}").into();
+                        let focus_handle = interactive_focus_handle(&element_id, cx);
+                        let accessibility_props = AriaProps::with_role(AriaRole::Button);
+                        cx.register_accessible(AccessibilityNode {
+                            element_id: element_id.clone(),
+                            label: label.into(),
+                            props: accessibility_props.clone(),
+                        });
+                        let activate = std::rc::Rc::new(move |cx: &mut App| {
+                            state_entity.update(cx, |state, _cx| {
+                                state.app.add_plugin(&plugin_type);
+                                state.app.ui_state.active_menu = crate::app::ActiveMenu::None;
                             });
-                            let activate = std::rc::Rc::new(move |cx: &mut App| {
-                                state_entity.update(cx, |state, _cx| {
-                                    state.app.add_plugin(&plugin_type);
-                                    state.app.ui_state.active_menu = crate::app::ActiveMenu::None;
-                                });
-                            });
-                            let mouse_activate = activate.clone();
-                            let key_activate = activate;
-                            let element = div()
-                                .id(element_id)
-                                .track_focus(&focus_handle)
-                                .track_focus_element(&focus_handle)
-                                .min_h(rems(2.75))
+                        });
+                        let mouse_activate = activate.clone();
+                        let key_activate = activate;
+                        let element = div()
+                            .id(element_id)
+                            .track_focus(&focus_handle)
+                            .track_focus_element(&focus_handle)
+                            .flex_none()
+                            .min_h(rems(2.75))
                             .px(d.pad_x)
                             .flex()
                             .items_center()
@@ -2906,31 +2848,31 @@ impl PlayerView {
                             .border_1()
                             .border_color(theme.border)
                             .text_size(d.text_sm)
-                                .text_color(theme.text_primary)
-                                .whitespace_nowrap()
-                                .cursor_pointer()
-                                .focus_visible({
-                                    let theme = theme.clone();
-                                    move |style| style.border_2().border_color(theme.accent)
-                                })
-                                .child(label)
-                                .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                                    mouse_activate(cx);
-                                })
-                                .on_key_down(move |event: &KeyDownEvent, _window, cx| {
-                                    let key = event.keystroke.key.as_str();
-                                    if key == "enter" || key == "space" {
-                                        key_activate(cx);
-                                        cx.stop_propagation();
-                                    }
-                                });
-                            let element = gpui_ui_kit::accessibility::apply_native_accessibility(
-                                element,
-                                label,
-                                &accessibility_props,
-                            );
-                            phone_dev_track!(element, format!("phone.plugin-picker.{label}"))
-                        })),
+                            .text_color(theme.text_primary)
+                            .whitespace_nowrap()
+                            .cursor_pointer()
+                            .focus_visible({
+                                let theme = theme.clone();
+                                move |style| style.border_2().border_color(theme.accent)
+                            })
+                            .child(label)
+                            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                                mouse_activate(cx);
+                            })
+                            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
+                                let key = event.keystroke.key.as_str();
+                                if key == "enter" || key == "space" {
+                                    key_activate(cx);
+                                    cx.stop_propagation();
+                                }
+                            });
+                        let element = gpui_ui_kit::accessibility::apply_native_accessibility(
+                            element,
+                            label,
+                            &accessibility_props,
+                        );
+                        phone_dev_track!(element, format!("phone.plugin-picker.{label}"))
+                    })),
             )
             .into_any_element()
     }
@@ -3047,8 +2989,7 @@ impl PlayerView {
             bypass_label,
             &bypass_props,
         );
-        let bypass_element =
-            phone_dev_track!(bypass_element, format!("phone.plugin.{idx}.bypass"));
+        let bypass_element = phone_dev_track!(bypass_element, format!("phone.plugin.{idx}.bypass"));
         let move_controls = rack_editing.then(|| {
             let move_up = self.render_phone_plugin_move_button(
                 idx,
@@ -3162,11 +3103,8 @@ impl PlayerView {
                     cx.stop_propagation();
                 }
             });
-        let card = gpui_ui_kit::accessibility::apply_native_accessibility(
-            card,
-            card_label,
-            &card_props,
-        );
+        let card =
+            gpui_ui_kit::accessibility::apply_native_accessibility(card, card_label, &card_props);
         phone_dev_track!(card, format!("phone.plugin.{idx}"))
     }
 
@@ -3177,19 +3115,11 @@ impl PlayerView {
         enabled: bool,
         label: String,
         theme: &crate::theme::Theme,
-        d: &Ds,
-        cx: &mut Context<Self>,
+        _d: &Ds,
+        _cx: &mut Context<Self>,
     ) -> AnyElement {
-        let suffix = if move_up { "move-up" } else { "move-down" };
-        let element_id: ElementId = format!("phone-plugin-{idx}-{suffix}").into();
-        let focus_handle = interactive_focus_handle(&element_id, cx);
-        let accessibility_props = AriaProps::with_role(AriaRole::Button);
-        cx.register_accessible(AccessibilityNode {
-            element_id: element_id.clone(),
-            label: label.clone().into(),
-            props: accessibility_props.clone(),
-        });
         let state_entity = self.state.clone();
+        let suffix = if move_up { "move-up" } else { "move-down" };
         let activate = std::rc::Rc::new(move |cx: &mut App| {
             if !enabled {
                 return;
@@ -3202,51 +3132,22 @@ impl PlayerView {
                 }
             });
         });
-        let mouse_activate = activate.clone();
-        let key_activate = activate;
-        let element = div()
-            .id(element_id)
-            .track_focus(&focus_handle)
-            .track_focus_element(&focus_handle)
-            .size(rems(2.5))
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(d.r_md)
-            .bg(theme.background_secondary)
-            .when(enabled, |element| element.cursor_pointer())
-            .when(!enabled, |element| element.opacity(0.45))
-            .focus_visible({
-                let theme = theme.clone();
-                move |style| style.border_2().border_color(theme.accent)
-            })
-            .child(
-                Icon::new(if move_up {
-                    IconName::ChevronUp
-                } else {
-                    IconName::ChevronDown
-                })
-                .size(IconSize::Sm)
-                .color(theme.text_primary),
-            )
-            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                cx.stop_propagation();
-                mouse_activate(cx);
-            })
-            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
-                let key = event.keystroke.key.as_str();
-                if key == "enter" || key == "space" {
-                    key_activate(cx);
-                    cx.stop_propagation();
-                }
-            });
-        let element = gpui_ui_kit::accessibility::apply_native_accessibility(
-            element,
-            label,
-            &accessibility_props,
-        );
-        phone_dev_track!(element, format!("phone.plugin.{idx}.{suffix}"))
+        let icon = if move_up {
+            IconName::ChevronUp
+        } else {
+            IconName::ChevronDown
+        };
+        let button = gpui_ui_kit::IconButton::with_child(
+            format!("phone-plugin-{idx}-{suffix}"),
+            Icon::new(icon).size(IconSize::Sm),
+        )
+        .size(gpui_ui_kit::IconButtonSize::Lg)
+        .variant(gpui_ui_kit::IconButtonVariant::Filled)
+        .disabled(!enabled)
+        .theme(theme.to_icon_button_theme())
+        .aria_label(label)
+        .on_click(move |_window, cx| activate(cx));
+        phone_dev_track!(button, format!("phone.plugin.{idx}.{suffix}"))
     }
 
     fn render_phone_plugin_parameter_sheet(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -3308,7 +3209,9 @@ impl PlayerView {
                     .size(IconSize::Md)
                     .color(theme.text_primary),
             )
-            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| close_mouse(cx))
+            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                close_mouse(cx)
+            })
             .on_key_down(move |event: &KeyDownEvent, _window, cx| {
                 let key = event.keystroke.key.as_str();
                 if key == "enter" || key == "space" {
@@ -3325,7 +3228,11 @@ impl PlayerView {
 
         let bypass_label = format!(
             "{title}: {}",
-            if enabled { tool_text.on } else { tool_text.bypass }
+            if enabled {
+                tool_text.on
+            } else {
+                tool_text.bypass
+            }
         );
         let bypass_id: ElementId = "phone-plugin-sheet-bypass".into();
         let bypass_focus = interactive_focus_handle(&bypass_id, cx);
@@ -3356,17 +3263,31 @@ impl PlayerView {
             .items_center()
             .justify_center()
             .rounded_full()
-            .bg(if enabled { theme.surface_selected } else { theme.background_secondary })
+            .bg(if enabled {
+                theme.surface_selected
+            } else {
+                theme.background_secondary
+            })
             .text_size(d.text_xs)
             .font_weight(FontWeight::SEMIBOLD)
-            .text_color(if enabled { theme.accent } else { theme.text_muted })
+            .text_color(if enabled {
+                theme.accent
+            } else {
+                theme.text_muted
+            })
             .cursor_pointer()
             .focus_visible({
                 let theme = theme.clone();
                 move |style| style.border_2().border_color(theme.accent)
             })
-            .child(if enabled { tool_text.on } else { tool_text.bypass })
-            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| bypass_mouse(cx))
+            .child(if enabled {
+                tool_text.on
+            } else {
+                tool_text.bypass
+            })
+            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                bypass_mouse(cx)
+            })
             .on_key_down(move |event: &KeyDownEvent, _window, cx| {
                 let key = event.keystroke.key.as_str();
                 if key == "enter" || key == "space" {
@@ -3526,58 +3447,21 @@ impl PlayerView {
         danger: bool,
         activate: std::rc::Rc<dyn Fn(&mut App)>,
         theme: &crate::theme::Theme,
-        d: &Ds,
-        cx: &mut Context<Self>,
+        _d: &Ds,
+        _cx: &mut Context<Self>,
     ) -> AnyElement {
-        let element_id: ElementId = selector.replace('.', "-").into();
-        let focus_handle = interactive_focus_handle(&element_id, cx);
-        let accessibility_props = AriaProps::with_role(AriaRole::Button);
-        cx.register_accessible(AccessibilityNode {
-            element_id: element_id.clone(),
-            label: label.clone().into(),
-            props: accessibility_props.clone(),
-        });
-        let mouse_activate = activate.clone();
-        let key_activate = activate;
-        let mouse_focus = focus_handle.clone();
-        let element = div()
-            .id(element_id)
-            .track_focus(&focus_handle)
-            .track_focus_element(&focus_handle)
-            .flex_1()
-            .min_h(rems(2.75))
-            .px(d.pad_x)
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(d.r_md)
-            .bg(theme.background_secondary)
-            .text_size(d.text_sm)
-            .font_weight(FontWeight::SEMIBOLD)
-            .text_color(if danger { theme.error } else { theme.text_primary })
-            .cursor_pointer()
-            .focus_visible({
-                let theme = theme.clone();
-                move |style| style.border_2().border_color(theme.accent)
-            })
-            .child(label.clone())
-            .on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                mouse_activate(cx);
-                window.focus(&mouse_focus, cx);
-            })
-            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
-                let key = event.keystroke.key.as_str();
-                if key == "enter" || key == "space" {
-                    key_activate(cx);
-                    cx.stop_propagation();
-                }
-            });
-        let element = gpui_ui_kit::accessibility::apply_native_accessibility(
-            element,
-            label,
-            &accessibility_props,
-        );
-        phone_dev_track!(element, selector)
+        let variant = if danger {
+            gpui_ui_kit::ButtonVariant::Destructive
+        } else {
+            gpui_ui_kit::ButtonVariant::Secondary
+        };
+        let button = gpui_ui_kit::Button::new(selector.replace('.', "-"), label)
+            .variant(variant)
+            .size(gpui_ui_kit::ButtonSize::Sm)
+            .full_width(true)
+            .theme(theme.to_button_theme())
+            .on_click(move |_window, cx| activate(cx));
+        phone_dev_track!(div().flex_1().child(button), selector)
     }
 
     fn render_phone_eq_parameter_sheet(
@@ -3589,16 +3473,17 @@ impl PlayerView {
         d: &Ds,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let linear_phase =
-            matches!(settings, sotf_audio_player::PluginSettings::LinearPhaseEq { .. });
+        let linear_phase = matches!(
+            settings,
+            sotf_audio_player::PluginSettings::LinearPhaseEq { .. }
+        );
         let filters = settings.eq_global_filters().cloned().unwrap_or_default();
         let state_for_add = self.state.clone();
         let view_for_add = cx.entity().clone();
         let add_filter = std::rc::Rc::new(move |cx: &mut App| {
             state_for_add.update(cx, |state, _cx| {
                 if let Err(err) = state.app.add_eq_band() {
-                    state.app.ui_state.toast_message =
-                        Some(crate::app::ToastMessage::error(err));
+                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(err));
                 }
             });
             view_for_add.update(cx, |_view, cx| cx.notify());
@@ -3671,8 +3556,7 @@ impl PlayerView {
         let delete = std::rc::Rc::new(move |cx: &mut App| {
             state_for_delete.update(cx, |state, _cx| {
                 if let Err(err) = state.app.remove_eq_band(band_idx) {
-                    state.app.ui_state.toast_message =
-                        Some(crate::app::ToastMessage::error(err));
+                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(err));
                 }
             });
             view_for_delete.update(cx, |_view, cx| cx.notify());
@@ -3735,11 +3619,11 @@ impl PlayerView {
                             } else {
                                 theme.accent
                             })
-                    .child(if filter.muted {
-                        text.muted()
-                    } else {
-                        text.active()
-                    }),
+                            .child(if filter.muted {
+                                text.muted()
+                            } else {
+                                text.active()
+                            }),
                     ),
             )
             .child(self.render_phone_param_slider(
@@ -3951,11 +3835,9 @@ impl PlayerView {
         let view_for_minus = cx.entity().clone();
         let decrease_activate = std::rc::Rc::new(move |cx: &mut App| {
             state_for_minus.update(cx, |state, _cx| {
-                state.app.set_plugin_param(
-                    plugin_idx,
-                    param_idx,
-                    (value - step).clamp(min, max),
-                );
+                state
+                    .app
+                    .set_plugin_param(plugin_idx, param_idx, (value - step).clamp(min, max));
             });
             view_for_minus.update(cx, |_view, cx| cx.notify());
         });
@@ -4015,11 +3897,9 @@ impl PlayerView {
         let view_for_plus = cx.entity().clone();
         let increase_activate = std::rc::Rc::new(move |cx: &mut App| {
             state_for_plus.update(cx, |state, _cx| {
-                state.app.set_plugin_param(
-                    plugin_idx,
-                    param_idx,
-                    (value + step).clamp(min, max),
-                );
+                state
+                    .app
+                    .set_plugin_param(plugin_idx, param_idx, (value + step).clamp(min, max));
             });
             view_for_plus.update(cx, |_view, cx| cx.notify());
         });
@@ -4211,17 +4091,11 @@ impl PlayerView {
                             .child(format!("{filter_count} filters")),
                     )
                     .child(
-                        div()
-                            .min_h(rems(2.75))
-                            .px(d.pad_x)
-                            .flex()
-                            .items_center()
-                            .rounded(d.r_md)
-                            .bg(theme.accent)
-                            .text_color(theme.text_on_accent)
-                            .cursor_pointer()
-                            .child(text.edit)
-                            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                        gpui_ui_kit::Button::new("phone-eq-curve-edit", text.edit)
+                            .variant(gpui_ui_kit::ButtonVariant::Primary)
+                            .size(gpui_ui_kit::ButtonSize::Sm)
+                            .theme(theme.to_button_theme())
+                            .on_click(move |_window, cx| {
                                 state_for_edit.update(cx, |state, _cx| {
                                     if let Some(idx) = eq_index {
                                         state.app.plugin_state.selected_plugin_index = idx;
@@ -4274,7 +4148,9 @@ impl PlayerView {
                                 div()
                                     .flex()
                                     .flex_col()
+                                    .flex_1()
                                     .min_w_0()
+                                    .overflow_hidden()
                                     .child(
                                         div()
                                             .text_size(d.text_sm)
@@ -4333,19 +4209,10 @@ impl PlayerView {
         plugin_name: String,
         remove_label: &str,
         theme: &crate::theme::Theme,
-        d: &Ds,
-        cx: &mut Context<Self>,
+        _d: &Ds,
+        _cx: &mut Context<Self>,
     ) -> AnyElement {
         let label = format!("{remove_label} {plugin_name}");
-        let element_id: ElementId = format!("phone-plugin-graph-remove-{idx}").into();
-        let focus_handle = interactive_focus_handle(&element_id, cx);
-        let accessibility_props = AriaProps::with_role(AriaRole::Button);
-        cx.register_accessible(AccessibilityNode {
-            element_id: element_id.clone(),
-            label: label.clone().into(),
-            props: accessibility_props.clone(),
-        });
-
         let state_entity = self.state.clone();
         let activate = std::rc::Rc::new(move |cx: &mut App| {
             state_entity.update(cx, |state, _cx| {
@@ -4353,47 +4220,16 @@ impl PlayerView {
                 state.app.ui_state.phone_plugin_graph_actions_open = false;
             });
         });
-        let mouse_activate = activate.clone();
-        let key_activate = activate;
-
-        let element = div()
-            .id(element_id)
-            .track_focus(&focus_handle)
-            .track_focus_element(&focus_handle)
-            .min_h(rems(2.75))
-            .px(d.pad_x)
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_center()
-            .rounded(d.r_md)
-            .bg(theme.error)
-            .text_size(d.text_xs)
-            .font_weight(FontWeight::SEMIBOLD)
-            .text_color(theme.text_on_accent)
-            .cursor_pointer()
-            .focus_visible({
-                let theme = theme.clone();
-                move |style| style.border_2().border_color(theme.text_primary)
-            })
-            .child(remove_label.to_string())
-            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                cx.stop_propagation();
-                mouse_activate(cx);
-            })
-            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
-                let key = event.keystroke.key.as_str();
-                if key == "enter" || key == "space" {
-                    key_activate(cx);
-                    cx.stop_propagation();
-                }
-            });
-        let element = gpui_ui_kit::accessibility::apply_native_accessibility(
-            element,
-            label,
-            &accessibility_props,
-        );
-        phone_dev_track!(element, format!("phone.plugin-graph.remove.{idx}"))
+        let button = gpui_ui_kit::Button::new(
+            format!("phone-plugin-graph-remove-{idx}"),
+            remove_label,
+        )
+        .variant(gpui_ui_kit::ButtonVariant::Destructive)
+        .size(gpui_ui_kit::ButtonSize::Sm)
+        .theme(theme.to_button_theme())
+        .aria_label(label)
+        .on_click(move |_window, cx| activate(cx));
+        phone_dev_track!(button, format!("phone.plugin-graph.remove.{idx}"))
     }
 
     fn render_phone_plugin_graph_node(
@@ -4788,12 +4624,10 @@ impl PlayerView {
         });
         let play_activate = std::rc::Rc::new(move |cx: &mut App| {
             let stream = play_stream.clone();
-            state_for_play.update(cx, |state, _cx| {
-                match state.app.play_stream_now(stream) {
-                    Ok(Some(source)) => PlayerView::play_track(state, source),
-                    Ok(None) => {}
-                    Err(err) => state.app.record_stream_error(err),
-                }
+            state_for_play.update(cx, |state, _cx| match state.app.play_stream_now(stream) {
+                Ok(Some(source)) => PlayerView::play_track(state, source),
+                Ok(None) => {}
+                Err(err) => state.app.record_stream_error(err),
             });
         });
         let play_mouse_activate = play_activate.clone();
@@ -4909,64 +4743,20 @@ impl PlayerView {
         primary: bool,
         activate: std::rc::Rc<dyn Fn(&mut App)>,
         theme: &crate::theme::Theme,
-        d: &Ds,
-        cx: &mut Context<Self>,
+        _d: &Ds,
+        _cx: &mut Context<Self>,
     ) -> AnyElement {
-        let element_id: ElementId = selector.replace('.', "-").into();
-        let focus_handle = interactive_focus_handle(&element_id, cx);
-        let accessibility_props = AriaProps::with_role(AriaRole::Button);
-        cx.register_accessible(AccessibilityNode {
-            element_id: element_id.clone(),
-            label: label.clone().into(),
-            props: accessibility_props.clone(),
-        });
-        let mouse_activate = activate.clone();
-        let key_activate = activate;
-        let mouse_focus = focus_handle.clone();
-        let element = div()
-            .id(element_id)
-            .track_focus(&focus_handle)
-            .track_focus_element(&focus_handle)
-            .min_h(rems(2.25))
-            .px(d.grid)
-            .flex()
-            .items_center()
-            .rounded(d.r_md)
-            .bg(if primary {
-                theme.accent
-            } else {
-                theme.background_secondary
-            })
-            .text_size(d.text_xs)
-            .font_weight(FontWeight::SEMIBOLD)
-            .text_color(if primary {
-                theme.text_on_accent
-            } else {
-                theme.text_primary
-            })
-            .cursor_pointer()
-            .focus_visible({
-                let theme = theme.clone();
-                move |style| style.border_2().border_color(theme.accent)
-            })
-            .child(label.clone())
-            .on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                mouse_activate(cx);
-                window.focus(&mouse_focus, cx);
-            })
-            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
-                let key = event.keystroke.key.as_str();
-                if key == "enter" || key == "space" {
-                    key_activate(cx);
-                    cx.stop_propagation();
-                }
-            });
-        let element = gpui_ui_kit::accessibility::apply_native_accessibility(
-            element,
-            label,
-            &accessibility_props,
-        );
-        phone_dev_track!(element, selector)
+        let variant = if primary {
+            gpui_ui_kit::ButtonVariant::Primary
+        } else {
+            gpui_ui_kit::ButtonVariant::Secondary
+        };
+        let button = gpui_ui_kit::Button::new(selector.replace('.', "-"), label)
+            .variant(variant)
+            .size(gpui_ui_kit::ButtonSize::Sm)
+            .theme(theme.to_button_theme())
+            .on_click(move |_window, cx| activate(cx));
+        phone_dev_track!(button, selector)
     }
 
     fn render_phone_tool_wrapper(
@@ -5121,19 +4911,27 @@ impl PlayerView {
                                 div()
                                     .flex()
                                     .flex_col()
+                                    .flex_1()
                                     .min_w_0()
+                                    .overflow_hidden()
                                     .child(
                                         div()
                                             .text_size(d.text_xs)
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(theme.accent)
+                                            .overflow_hidden()
+                                            .text_ellipsis()
+                                            .whitespace_nowrap()
                                             .child(subtitle_text),
                                     )
                                     .child(
                                         div()
-                                            .text_size(d.text_lg)
+                                            .text_size(d.text_base)
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(theme.text_primary)
+                                            .overflow_hidden()
+                                            .text_ellipsis()
+                                            .whitespace_nowrap()
                                             .child(title),
                                     ),
                             )
@@ -5142,6 +4940,8 @@ impl PlayerView {
                                     .flex()
                                     .items_center()
                                     .gap(d.grid)
+                                    .flex_none()
+                                    .flex_wrap()
                                     .when_some(wizard_kind, |el, kind| {
                                         let state_for_wizard_back = wizard_back.clone();
                                         let view_for_wizard_back = cx.entity().clone();
@@ -5149,7 +4949,8 @@ impl PlayerView {
                                             state_for_wizard_back.update(cx, |state, _cx| {
                                                 Self::move_phone_wizard_step(state, kind, false);
                                             });
-                                            view_for_wizard_back.update(cx, |_view, cx| cx.notify());
+                                            view_for_wizard_back
+                                                .update(cx, |_view, cx| cx.notify());
                                         });
                                         let state_for_wizard_next = wizard_next.clone();
                                         let view_for_wizard_next = cx.entity().clone();
@@ -5157,7 +4958,8 @@ impl PlayerView {
                                             state_for_wizard_next.update(cx, |state, _cx| {
                                                 Self::move_phone_wizard_step(state, kind, true);
                                             });
-                                            view_for_wizard_next.update(cx, |_view, cx| cx.notify());
+                                            view_for_wizard_next
+                                                .update(cx, |_view, cx| cx.notify());
                                         });
                                         el.child(self.render_phone_wizard_button(
                                             text.back.to_string(),
@@ -5168,15 +4970,17 @@ impl PlayerView {
                                             &d,
                                             cx,
                                         ))
-                                        .child(self.render_phone_wizard_button(
-                                            text.next.to_string(),
-                                            "phone.wizard.next",
-                                            true,
-                                            next,
-                                            &theme,
-                                            &d,
-                                            cx,
-                                        ))
+                                        .child(
+                                            self.render_phone_wizard_button(
+                                                text.next.to_string(),
+                                                "phone.wizard.next",
+                                                true,
+                                                next,
+                                                &theme,
+                                                &d,
+                                                cx,
+                                            ),
+                                        )
                                     })
                                     .when(tool == PhoneTool::Spectrum, |el| {
                                         el.child(self.render_phone_tool_toggle(
@@ -5285,32 +5089,32 @@ impl PlayerView {
         let view_for_toggle = cx.entity().clone();
         let activate = std::rc::Rc::new(move |cx: &mut App| {
             state_entity.update(cx, |state, _cx| match action {
-                                "spectrum_hold" => {
-                                    let next_hold = !state.app.ui_state.phone_spectrum_hold;
-                                    state.app.ui_state.phone_spectrum_hold = next_hold;
-                                    state.app.ui_state.phone_spectrum_hold_magnitudes = if next_hold {
-                                        state
-                                            .app
-                                            .playback
-                                            .spectrum_info
-                                            .as_ref()
-                                            .map(|info| info.magnitudes.as_ref().to_vec())
-                                    } else {
-                                        None
-                                    };
-                                }
-                                "spectrum_smoothed" => {
-                                    state.app.ui_state.phone_spectrum_smoothed =
-                                        !state.app.ui_state.phone_spectrum_smoothed;
-                                }
-                                "plugin_graph_list" => {
-                                    state.app.ui_state.phone_plugin_graph_list =
-                                        !state.app.ui_state.phone_plugin_graph_list;
-                                }
-                                "plugin_graph_actions" => {
-                                    state.app.ui_state.phone_plugin_graph_actions_open =
-                                        !state.app.ui_state.phone_plugin_graph_actions_open;
-                                }
+                "spectrum_hold" => {
+                    let next_hold = !state.app.ui_state.phone_spectrum_hold;
+                    state.app.ui_state.phone_spectrum_hold = next_hold;
+                    state.app.ui_state.phone_spectrum_hold_magnitudes = if next_hold {
+                        state
+                            .app
+                            .playback
+                            .spectrum_info
+                            .as_ref()
+                            .map(|info| info.magnitudes.as_ref().to_vec())
+                    } else {
+                        None
+                    };
+                }
+                "spectrum_smoothed" => {
+                    state.app.ui_state.phone_spectrum_smoothed =
+                        !state.app.ui_state.phone_spectrum_smoothed;
+                }
+                "plugin_graph_list" => {
+                    state.app.ui_state.phone_plugin_graph_list =
+                        !state.app.ui_state.phone_plugin_graph_list;
+                }
+                "plugin_graph_actions" => {
+                    state.app.ui_state.phone_plugin_graph_actions_open =
+                        !state.app.ui_state.phone_plugin_graph_actions_open;
+                }
                 "stream_sources" => {
                     state.app.ui_state.phone_stream_sources_open =
                         !state.app.ui_state.phone_stream_sources_open;
@@ -5326,6 +5130,7 @@ impl PlayerView {
             .id(element_id)
             .track_focus(&focus_handle)
             .track_focus_element(&focus_handle)
+            .flex_none()
             .min_h(rems(2.25))
             .px(d.grid)
             .flex()
@@ -5354,7 +5159,14 @@ impl PlayerView {
                 move |style| style.bg(theme.surface_hover)
             })
             .child(Icon::new(icon).size(IconSize::Sm))
-            .child(label)
+            .child(
+                div()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .whitespace_nowrap()
+                    .child(label),
+            )
             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                 mouse_activate(cx);
             })
@@ -5677,15 +5489,6 @@ impl PlayerView {
             "PhoneNowForward" => footer.seek_forward_30s,
             _ => trigger,
         };
-        let element_id: ElementId = id.into();
-        let focus_handle = interactive_focus_handle(&element_id, cx);
-        let accessibility_props = AriaProps::with_role(AriaRole::Button);
-        cx.register_accessible(AccessibilityNode {
-            element_id: element_id.clone(),
-            label: label.into(),
-            props: accessibility_props.clone(),
-        });
-
         let activate = std::rc::Rc::new(move |cx: &mut App| {
             state_entity.update(cx, |state, _cx| match trigger {
                 "PhoneMiniNext" | "PhoneNowNext" => {
@@ -5716,44 +5519,17 @@ impl PlayerView {
                 _ => {}
             });
         });
-        let mouse_activate = activate.clone();
-        let key_activate = activate;
-
-        let element = div()
-            .id(element_id)
-            .track_focus(&focus_handle)
-            .track_focus_element(&focus_handle)
-            .size(rems(2.75))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_full()
-            .cursor_pointer()
-            .focus_visible({
-                let theme = theme.clone();
-                move |style| style.border_2().border_color(theme.accent)
-            })
-            .hover({
-                let theme = theme.clone();
-                move |s| s.bg(theme.surface_hover)
-            })
-            .child(Icon::new(icon).size(IconSize::Md).color(theme.text_primary))
-            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                mouse_activate(cx);
-            })
-            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
-                let key = event.keystroke.key.as_str();
-                if key == "enter" || key == "space" {
-                    key_activate(cx);
-                    cx.stop_propagation();
-                }
-            });
-        let element = gpui_ui_kit::accessibility::apply_native_accessibility(
-            element,
-            label,
-            &accessibility_props,
-        );
-        phone_dev_track!(element, format!("phone.transport.{id}"))
+        let button = gpui_ui_kit::IconButton::with_child(
+            id,
+            Icon::new(icon).size(IconSize::Md).color(theme.text_primary),
+        )
+        .size(gpui_ui_kit::IconButtonSize::Custom(44))
+        .variant(gpui_ui_kit::IconButtonVariant::Ghost)
+        .rounded_full()
+        .theme(theme.to_icon_button_theme())
+        .aria_label(label)
+        .on_click(move |_window, cx| activate(cx));
+        phone_dev_track!(button, format!("phone.transport.{id}"))
     }
 
     fn render_phone_play_button(
@@ -5765,22 +5541,16 @@ impl PlayerView {
     ) -> AnyElement {
         let state_entity = self.state.clone();
         let footer = FooterTranslations::for_language(self.state.read(cx).app.ui_state.language);
-        let label = if is_playing { footer.pause } else { footer.play };
+        let label = if is_playing {
+            footer.pause
+        } else {
+            footer.play
+        };
         let icon = if is_playing {
             IconName::Pause
         } else {
             IconName::Play
         };
-        let element_id: ElementId = id.into();
-        let focus_handle = interactive_focus_handle(&element_id, cx);
-        let accessibility_props =
-            AriaProps::with_role(AriaRole::Button).state(AriaState::Pressed(is_playing));
-        cx.register_accessible(AccessibilityNode {
-            element_id: element_id.clone(),
-            label: label.into(),
-            props: accessibility_props.clone(),
-        });
-
         let activate = std::rc::Rc::new(move |cx: &mut App| {
             state_entity.update(cx, |state, _cx| {
                 if state.app.playback.current_queue_index.is_none() {
@@ -5800,45 +5570,24 @@ impl PlayerView {
                 }
             });
         });
-        let mouse_activate = activate.clone();
-        let key_activate = activate;
-
-        let element = div()
-            .id(element_id)
-            .track_focus(&focus_handle)
-            .track_focus_element(&focus_handle)
-            .size(rems(3.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_full()
-            .bg(theme.accent)
-            .cursor_pointer()
-            .focus_visible({
-                let theme = theme.clone();
-                move |style| style.border_2().border_color(theme.text_on_accent)
-            })
-            .child(
-                Icon::new(icon)
-                    .size(IconSize::Md)
-                    .color(theme.text_on_accent),
-            )
-            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                mouse_activate(cx);
-            })
-            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
-                let key = event.keystroke.key.as_str();
-                if key == "enter" || key == "space" {
-                    key_activate(cx);
-                    cx.stop_propagation();
-                }
-            });
-        let element = gpui_ui_kit::accessibility::apply_native_accessibility(
-            element,
-            label,
-            &accessibility_props,
-        );
-        phone_dev_track!(element, format!("phone.transport.{id}"))
+        let mut button_theme = theme.to_icon_button_theme();
+        button_theme.filled_bg = theme.accent;
+        button_theme.filled_hover_bg = theme.accent_hover;
+        button_theme.text = theme.text_on_accent;
+        let button = gpui_ui_kit::IconButton::with_child(
+            id,
+            Icon::new(icon)
+                .size(IconSize::Md)
+                .color(theme.text_on_accent),
+        )
+        .size(gpui_ui_kit::IconButtonSize::Xl)
+        .variant(gpui_ui_kit::IconButtonVariant::Filled)
+        .selected(is_playing)
+        .rounded_full()
+        .theme(button_theme)
+        .aria_label(label)
+        .on_click(move |_window, cx| activate(cx));
+        phone_dev_track!(button, format!("phone.transport.{id}"))
     }
 
     fn format_phone_time(seconds: f64) -> String {

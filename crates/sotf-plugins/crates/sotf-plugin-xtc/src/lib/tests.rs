@@ -31,6 +31,27 @@ fn test_xtc_creation() {
 }
 
 #[test]
+fn process_before_initialize_returns_err_instead_of_hanging() {
+    let params = XtcPluginParams::default();
+    let mut plugin = XtcPlugin::new(params, 48000).unwrap();
+    // Keep the block tiny: if the pre-init guard ever regresses, this call
+    // must still return promptly instead of stalling the whole suite.
+    let num_frames = 64;
+    let input = vec![0.0_f32; num_frames * 2];
+    let mut output = vec![0.0_f32; num_frames * 2];
+    let ctx = ProcessContext::new(48000, num_frames);
+    let pre_init = plugin.process(&input, &mut output, &ctx);
+    assert!(
+        pre_init.is_err(),
+        "process before initialize must return Err, got {pre_init:?}"
+    );
+
+    // After initialize the same call processes normally.
+    plugin.initialize(48000).unwrap();
+    assert!(plugin.process(&input, &mut output, &ctx).is_ok());
+}
+
+#[test]
 fn wrapped_ola_accumulation_matches_scalar_ring_reference() {
     let ring_frames = 8;
     let channels = 3;
@@ -2201,6 +2222,7 @@ fn test_xtc_process_disabled() {
     let mut params = XtcPluginParams::default();
     params.enabled = false;
     let mut plugin = XtcPlugin::new(params, 48000).unwrap();
+    plugin.initialize(48000).unwrap();
     let input = vec![0.5; 1024 * 2];
     let mut output = vec![0.0; 1024 * 2];
     let context = ProcessContext::new(48000, 1024);
@@ -2212,6 +2234,7 @@ fn test_xtc_process_disabled() {
 fn test_xtc_process_loud_input_triggers_limiter() {
     let params = XtcPluginParams::default();
     let mut plugin = XtcPlugin::new(params, 48000).unwrap();
+    plugin.initialize(48000).unwrap();
     let input = vec![0.99; 2048 * 2];
     let mut output = vec![0.0; 2048 * 2];
     let context = ProcessContext::new(48000, 2048);
@@ -2226,6 +2249,7 @@ fn test_xtc_process_auto_gain_measures() {
     let mut params = XtcPluginParams::default();
     params.auto_gain_enabled = true;
     let mut plugin = XtcPlugin::new(params, 48000).unwrap();
+    plugin.initialize(48000).unwrap();
     let input = vec![0.1; 1024 * 2];
     let mut output = vec![0.0; 1024 * 2];
     let context = ProcessContext::new(48000, 1024);

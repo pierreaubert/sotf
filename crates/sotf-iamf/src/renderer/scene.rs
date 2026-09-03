@@ -174,6 +174,12 @@ impl ElementRenderer for SceneRenderer {
         num_frames: usize,
     ) -> IamfResult<()> {
         let out_len = num_frames * self.output_channels;
+        if output.len() < out_len {
+            return Err(IamfError::ParseError(format!(
+                "Output buffer too small: need {out_len} samples, got {}",
+                output.len()
+            )));
+        }
         output[..out_len].fill(0.0);
 
         // Reassemble ACN-ordered Ambisonics channels (uses pre-allocated buffer)
@@ -397,5 +403,31 @@ mod tests {
         for &level in &non_lfe {
             assert!(level.abs() > 0.01, "Expected non-zero output, got {level}");
         }
+    }
+
+    #[test]
+    fn test_scene_renderer_rejects_short_output_buffer() {
+        // Same short-buffer contract as the other renderers: ParseError,
+        // not a slicing panic.
+        let config = AmbisonicsConfig {
+            ambisonics_mode: AmbisonicsMode::Mono,
+            output_channel_count: 4,
+            substream_count: 4,
+            coupled_substream_count: 0,
+            channel_mapping: vec![0, 1, 2, 3],
+            demixing_matrix: Vec::new(),
+        };
+
+        let target = get_speaker_config("5.1").unwrap();
+        let mut renderer = SceneRenderer::new(&config, target).unwrap();
+
+        let substream_pcm: Vec<Vec<f32>> = vec![vec![1.0], vec![0.0], vec![0.0], vec![0.0]];
+        // One 5.1 frame needs 6 samples; provide only 3.
+        let mut output = vec![0.0_f32; 3];
+        let err = renderer.render(&substream_pcm, &mut output, 1).unwrap_err();
+        assert!(
+            matches!(err, IamfError::ParseError(_)),
+            "short output buffer must be a ParseError, got {err:?}"
+        );
     }
 }

@@ -993,11 +993,29 @@ class DaemonManager {
     private var daemonProcess: Process?
     private var watchdogTimer: Timer?
     private let daemonPath: String
-    private var isShuttingDown = false
+    private let shutdownLock = NSLock()
+    private var shutdownRequested = false
+    private var isShuttingDown: Bool {
+        get {
+            shutdownLock.lock()
+            defer { shutdownLock.unlock() }
+            return shutdownRequested
+        }
+        set {
+            shutdownLock.lock()
+            shutdownRequested = newValue
+            shutdownLock.unlock()
+        }
+    }
     private var startupProbeInFlight = false
     private var restartRequested = false
     private var watchdogProbeInFlight = false
     private var consecutiveProbeFailures = 0
+    private let lifecycleQueue = DispatchQueue(
+        label: "org.spinorama.sotf.configbar.daemon-lifecycle",
+        qos: .utility
+    )
+    private let launchctlRunner: (([String]) -> Bool)?
 
     /// Callback when daemon status changes
     var onStatusChange: ((Bool) -> Void)?
@@ -1018,7 +1036,8 @@ class DaemonManager {
         logDirectoryURL.appendingPathComponent("sotf-systemwide.log")
     }
 
-    init() {
+    init(launchctlRunner: (([String]) -> Bool)? = nil) {
+        self.launchctlRunner = launchctlRunner
         if let overridePath = ProcessInfo.processInfo.environment["SOTF_DAEMON_PATH"],
            FileManager.default.isExecutableFile(atPath: overridePath) {
             daemonPath = overridePath
@@ -1060,7 +1079,7 @@ class DaemonManager {
         // The probe is a bounded IPC operation. Keep it off the main thread
         // so startup and reconnect remain responsive while the daemon is
         // down or a stale socket is present.
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        lifecycleQueue.async { [weak self] in
             let reachable = AudioEngineClient().isDaemonReachable()
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -1088,14 +1107,16 @@ class DaemonManager {
                 // org.spinorama.sotf-daemon LaunchAgent. Bounce through
                 // launchd first; spawning a child is a development/lab
                 // fallback for when the agent is not registered.
-                if self.kickstartAgent() {
-                    print("DaemonManager: Requested launchd kickstart for \(self.agentLabel)")
-                    self.onStatusChange?(true)
-                    self.startWatchdog()
-                    return
+                self.kickstartAgent { [weak self] started in
+                    guard let self, !self.isShuttingDown else { return }
+                    if started {
+                        print("DaemonManager: Requested launchd kickstart for \(self.agentLabel)")
+                        self.onStatusChange?(true)
+                        self.startWatchdog()
+                    } else {
+                        self.launchDaemonInBackground()
+                    }
                 }
-
-                self.launchDaemon()
             }
         }
     }
@@ -1105,12 +1126,34 @@ class DaemonManager {
     /// Ask launchd to (re)start the daemon agent. Returns false when the
     /// agent is not registered in this gui session, so callers can fall back
     /// to managing a child process themselves.
-    @discardableResult
-    private func kickstartAgent() -> Bool {
-        runLaunchctl(["kickstart", "-k", "gui/\(getuid())/\(agentLabel)"])
+    #if DEBUG
+    func kickstartAgentForTesting(completion: @escaping (Bool) -> Void) {
+        kickstartAgent(completion: completion)
+    }
+    #endif
+
+    private func kickstartAgent(completion: @escaping (Bool) -> Void) {
+        lifecycleQueue.async { [weak self] in
+            guard let self else { return }
+            let started = self.runLaunchctl([
+                "kickstart", "-k", "gui/\(getuid())/\(self.agentLabel)"
+            ])
+            DispatchQueue.main.async {
+                completion(started)
+            }
+        }
+    }
+
+    private func launchDaemonInBackground() {
+        lifecycleQueue.async { [weak self] in
+            self?.launchDaemon()
+        }
     }
 
     private func runLaunchctl(_ arguments: [String]) -> Bool {
+        if let launchctlRunner {
+            return launchctlRunner(arguments)
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         process.arguments = arguments
@@ -1134,7 +1177,9 @@ class DaemonManager {
         // Check if daemon exists
         guard FileManager.default.isExecutableFile(atPath: daemonPath) else {
             print("DaemonManager: Daemon not found at \(daemonPath)")
-            onStatusChange?(false)
+            DispatchQueue.main.async { [weak self] in
+                self?.onStatusChange?(false)
+            }
             return
         }
 
@@ -1179,15 +1224,18 @@ class DaemonManager {
 
         do {
             try process.run()
-            daemonProcess = process
             print("DaemonManager: Daemon started (PID: \(process.processIdentifier))")
-            onStatusChange?(true)
-
-            // Start watchdog
-            startWatchdog()
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isShuttingDown else { return }
+                self.daemonProcess = process
+                self.onStatusChange?(true)
+                self.startWatchdog()
+            }
         } catch {
             print("DaemonManager: Failed to start daemon: \(error)")
-            onStatusChange?(false)
+            DispatchQueue.main.async { [weak self] in
+                self?.onStatusChange?(false)
+            }
         }
     }
 
@@ -1199,9 +1247,16 @@ class DaemonManager {
         isShuttingDown = false
         stopWatchdog()
 
-        if daemonProcess?.isRunning != true && kickstartAgent() {
-            print("DaemonManager: Restart via launchd kickstart for \(agentLabel)")
-            startWatchdog()
+        if daemonProcess?.isRunning != true {
+            kickstartAgent { [weak self] started in
+                guard let self, !self.isShuttingDown else { return }
+                if started {
+                    print("DaemonManager: Restart via launchd kickstart for \(self.agentLabel)")
+                    self.startWatchdog()
+                } else {
+                    self.launchDaemonInBackground()
+                }
+            }
             return
         }
 
@@ -1213,8 +1268,10 @@ class DaemonManager {
             return
         }
 
-        process.terminate()
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
+        lifecycleQueue.async {
+            process.terminate()
+        }
+        lifecycleQueue.asyncAfter(deadline: .now() + 1.0) {
             if process.isRunning {
                 print("DaemonManager: Restart did not exit after SIGTERM; sending SIGINT fallback...")
                 process.interrupt()

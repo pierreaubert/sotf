@@ -1,4 +1,4 @@
-use super::audio_daemon::AudioDaemon;
+use super::audio_daemon::{AudioDaemon, wait_for_playback_observation};
 use super::consts::MAX_HAL_CHANNELS;
 use super::consts::SUPPORTED_SAMPLE_RATES;
 use super::driver_manager::DriverManager;
@@ -8,6 +8,27 @@ use driver_common::DriverConfig;
 use parking_lot::Mutex;
 use sotf_audio::manager::AudioEngineManager;
 use std::sync::Arc;
+use std::time::Duration;
+
+#[cfg(not(test))]
+const DRIVER_RECONFIGURE_READY_TIMEOUT: Duration = Duration::from_secs(12);
+#[cfg(test)]
+const DRIVER_RECONFIGURE_READY_TIMEOUT: Duration = Duration::from_millis(200);
+
+pub(super) fn wait_for_reconfigured_playback(
+    audio_manager: &Arc<Mutex<AudioEngineManager>>,
+    running: &Arc<Mutex<bool>>,
+) -> Result<(), String> {
+    wait_for_playback_observation(
+        running,
+        DRIVER_RECONFIGURE_READY_TIMEOUT,
+        "driver reconfiguration",
+        || {
+            let state = audio_manager.lock().get_engine_state();
+            AudioDaemon::playback_startup_observation(&state)
+        },
+    )
+}
 
 pub(super) fn acknowledged_config_for_outcome(
     requested_rate: u32,
@@ -31,12 +52,35 @@ pub(super) fn acknowledged_config_for_outcome(
     (actual, result)
 }
 
+/// Publish HAL readiness only after the configuration acknowledgement has
+/// completed. A failed callback observation records recovery and keeps HAL
+/// unready so the caller can acknowledge the failure instead.
+pub(super) fn publish_reconfigured_driver_readiness(
+    driver_manager: &Arc<Mutex<DriverManager>>,
+    system_state: &Arc<Mutex<SystemwideState>>,
+    active_config: DriverConfig,
+    readiness: Result<(), String>,
+) -> Result<(), String> {
+    if let Err(error) = readiness {
+        system_state.lock().mark_pipeline_recovery(error.clone());
+        driver_manager.lock().acknowledge_config_change(
+            active_config,
+            driver_common::ConfigResult::error(error.clone()),
+        );
+        return Err(error);
+    }
+
+    driver_manager.lock().set_engine_ready(true);
+    Ok(())
+}
+
 /// Handle a driver-initiated config change
 pub(super) fn handle_driver_config_change(
     driver_manager: &Arc<Mutex<DriverManager>>,
     audio_manager: &Arc<Mutex<AudioEngineManager>>,
     config: DriverConfig,
     system_state: &Arc<Mutex<SystemwideState>>,
+    running: &Arc<Mutex<bool>>,
 ) {
     let requested_rate = config.sample_rate;
     let requested_frames = config.buffer_frames;
@@ -114,7 +158,6 @@ pub(super) fn handle_driver_config_change(
         requested_channels as usize,
     ) {
         Ok(outcome) => {
-            system_state.lock().clear_pipeline_recovery();
             let (active_config, result) = acknowledged_config_for_outcome(
                 requested_rate,
                 requested_frames,
@@ -122,6 +165,21 @@ pub(super) fn handle_driver_config_change(
                 actual_rate,
                 outcome,
             );
+            if matches!(
+                outcome,
+                PipelineReconfigureOutcome::Restarted | PipelineReconfigureOutcome::Restored { .. }
+            ) && let Err(error) = wait_for_reconfigured_playback(audio_manager, running)
+            {
+                log::error!("Driver reconfiguration readiness failed: {error}");
+                let _ = publish_reconfigured_driver_readiness(
+                    driver_manager,
+                    system_state,
+                    active_config,
+                    Err(error.clone()),
+                );
+                return;
+            }
+            system_state.lock().clear_pipeline_recovery();
             if result != driver_common::ConfigResult::Accepted {
                 log::info!(
                     "Config negotiated: requested {}Hz/{}ch, using {}Hz/{}ch",
@@ -142,7 +200,12 @@ pub(super) fn handle_driver_config_change(
             ) {
                 // Publish readiness only after HAL has acknowledged the exact
                 // geometry consumed by the running engine.
-                driver_manager.lock().set_engine_ready(true);
+                let _ = publish_reconfigured_driver_readiness(
+                    driver_manager,
+                    system_state,
+                    active_config,
+                    Ok(()),
+                );
             }
             log::info!(
                 "Config accepted: {}Hz, {} frames, {} channels, outcome={:?}",

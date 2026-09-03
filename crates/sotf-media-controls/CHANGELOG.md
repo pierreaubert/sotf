@@ -1,3 +1,28 @@
+# Unreleased
+
+## Changes
+
+- Removed the last panic path on the macOS elapsed-time update:
+  `update_elapsed_playback_time` now returns early instead of `expect`ing the
+  cached now-playing dictionary, so `set_playback` before any `set_metadata`
+  is safe by construction (lazy init, no realtime-path panics).
+- Added `MprisCapabilities` (`PlatformConfig::mpris_capabilities` +
+  `with_mpris_capabilities` builder) gating the advertised MPRIS
+  `can_play` / `can_pause` / `can_go_next` / `can_go_previous` / `can_seek` /
+  `can_control` flags; default `all()` preserves previous behavior.
+- Documented the fire-and-forget delivery contract on `set_metadata` /
+  `set_playback`, the may-block `Drop` semantics, the best-effort macOS
+  detach, and the per-backend incoming-event coverage matrix (including that
+  `SetVolume` / `SeekBy` are MPRIS-only and plain `Seek` is produced by
+  neither backend).
+
+## Testing
+
+- Added unit tests for `MprisCapabilities::{all, none, default}` and the
+  `PlatformConfig::with_mpris_capabilities` builder.
+- Added a macOS-only regression test that playback-before-metadata
+  lazy-initialises the elapsed-time dictionary without panicking.
+
 # 0.1.3
 
 ## Changes

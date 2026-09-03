@@ -185,7 +185,7 @@ impl PlayerView {
                             )
                             .child(
                                 div()
-                                    .text_size(d.text_lg)
+                                    .text_size(d.text_sm)
                                     .font_weight(FontWeight::BOLD)
                                     .child(format!("{}", album_count)),
                             ),
@@ -202,7 +202,7 @@ impl PlayerView {
                             )
                             .child(
                                 div()
-                                    .text_size(d.text_lg)
+                                    .text_size(d.text_sm)
                                     .font_weight(FontWeight::BOLD)
                                     .child(format!("{}", track_count)),
                             ),
@@ -219,7 +219,7 @@ impl PlayerView {
                             )
                             .child(
                                 div()
-                                    .text_size(d.text_lg)
+                                    .text_size(d.text_sm)
                                     .font_weight(FontWeight::BOLD)
                                     .child(format!("{}", directories.len())),
                             ),

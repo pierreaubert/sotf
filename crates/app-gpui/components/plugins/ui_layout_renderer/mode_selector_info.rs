@@ -52,8 +52,15 @@ pub(super) fn solve_main_groups(
     layout_scale: f32,
 ) -> (Vec<&'static ControlGroup>, Vec<&'static ControlGroup>) {
     let groups = mode_visible_groups(layout, values, mode);
-    let solved = solve_control_groups_scaled(&groups, main_width, layout_scale)
-        .unwrap_or_else(|error| panic!("invalid generated plugin group layout: {error}"));
+    // Render-path hardening: a bad generated layout must never crash the
+    // desktop. Fall back to showing every mode-visible group inline.
+    let solved = match solve_control_groups_scaled(&groups, main_width, layout_scale) {
+        Ok(solved) => solved,
+        Err(error) => {
+            log::error!("invalid generated plugin group layout ({error}); showing all groups");
+            return (groups, Vec::new());
+        }
+    };
     let visible = groups
         .iter()
         .copied()
@@ -136,5 +143,31 @@ mod tests {
         let groups = mode_visible_groups(&LAYOUT, &[1.0, 0.0], Some(&info));
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].id, "a");
+    }
+
+    // Render-path hardening: a broken generated layout (here, duplicate
+    // group ids rejected by solver validation) must fall back to showing
+    // every mode-visible group instead of panicking.
+    static BROKEN_CONTROLS_A: [ControlSpec; 1] = [ControlSpec::knob(0)];
+    static BROKEN_CONTROLS_B: [ControlSpec; 1] = [ControlSpec::knob(1)];
+    static BROKEN_GROUPS: [ControlGroup; 2] = [
+        ControlGroup::new("dup", "First", &BROKEN_CONTROLS_A),
+        ControlGroup::new("dup", "Second", &BROKEN_CONTROLS_B),
+    ];
+    static BROKEN_LAYOUT: PluginLayout = PluginLayout {
+        config: &[],
+        main: &BROKEN_GROUPS,
+        output: &[],
+        tabs: &[],
+        visualizations: &[],
+        column_constraints: &[],
+        dynamic_sections: &[],
+    };
+
+    #[test]
+    fn broken_layout_falls_back_to_all_visible_without_panicking() {
+        let (visible, overflow) = solve_main_groups(&BROKEN_LAYOUT, &[0.0, 0.0], None, 800.0, 1.0);
+        assert_eq!(visible.len(), 2);
+        assert!(overflow.is_empty());
     }
 }

@@ -245,6 +245,30 @@ fn test_open_rejects_symlink_shared_memory_file() {
 
 #[cfg(unix)]
 #[test]
+fn test_backing_file_identity_detects_unlink_and_replacement() {
+    let dir = tempdir().expect("Failed to create temp dir");
+    let path = dir.path().join("audio.shm");
+    let original = SharedAudioBuffer::create_or_open(&path, 48_000, 512, 2)
+        .expect("create original shared memory");
+    assert!(original.backing_file_is_current());
+
+    std::fs::remove_file(&path).expect("unlink original shared memory");
+    assert!(
+        !original.backing_file_is_current(),
+        "an unlinked mmap must not remain authoritative"
+    );
+
+    let replacement = SharedAudioBuffer::create_or_open(&path, 48_000, 512, 2)
+        .expect("create replacement shared memory");
+    assert!(replacement.backing_file_is_current());
+    assert!(
+        !original.backing_file_is_current(),
+        "a replacement path must not validate the orphaned mmap"
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn test_create_or_open_clamps_file_mode_to_owner_only() {
     use std::os::unix::fs::PermissionsExt;
 
@@ -642,6 +666,28 @@ fn test_create_or_open_preserves_runtime_state_for_same_geometry() {
     assert_eq!(reopened.header().engine_ready.load(Ordering::Acquire), 1);
     assert_eq!(reopened.header().write_position.load(Ordering::Acquire), 64);
     assert_eq!(reopened.header().read_position.load(Ordering::Acquire), 32);
+}
+
+#[test]
+fn test_daemon_runtime_reset_preserves_hal_readiness_and_clears_stale_ring() {
+    let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    let mut buffer = SharedAudioBuffer::create_or_open(temp_file.path(), 48_000, 512, 2)
+        .expect("Failed to create shared memory");
+    buffer.set_engine_ready(true);
+    buffer.header().driver_ready.store(1, Ordering::Release);
+    buffer.header().write_position.store(64, Ordering::Release);
+    buffer.header().read_position.store(32, Ordering::Release);
+
+    assert!(buffer.reset_daemon_runtime_state());
+
+    assert!(buffer.driver_ready());
+    assert_eq!(buffer.header().engine_ready.load(Ordering::Acquire), 0);
+    assert_eq!(
+        buffer.header().daemon_heartbeat_ms.load(Ordering::Acquire),
+        0
+    );
+    assert_eq!(buffer.header().write_position.load(Ordering::Acquire), 0);
+    assert_eq!(buffer.header().read_position.load(Ordering::Acquire), 0);
 }
 
 #[test]

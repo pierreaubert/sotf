@@ -182,6 +182,12 @@ impl ElementRenderer for ChannelRenderer {
     ) -> IamfResult<()> {
         // Clear output
         let out_len = num_frames * self.output_channels;
+        if output.len() < out_len {
+            return Err(IamfError::ParseError(format!(
+                "Output buffer too small: need {out_len} samples, got {}",
+                output.len()
+            )));
+        }
         output[..out_len].fill(0.0);
 
         // Reassemble substreams into element channels
@@ -444,5 +450,34 @@ mod tests {
         let target = get_speaker_config("2.0").unwrap();
         let renderer = ChannelRenderer::new(&config, target).unwrap();
         assert_eq!(renderer.output_channels(), 2);
+    }
+
+    #[test]
+    fn channel_renderer_rejects_short_output_buffer() {
+        // Same short-buffer contract as the other renderers: ParseError,
+        // not a slicing panic.
+        let config = ScalableChannelConfig {
+            num_layers: 1,
+            layers: vec![ChannelLayer {
+                loudspeaker_layout: IamfChannelLayout::Stereo,
+                output_gain_is_present: false,
+                recon_gain_is_present: false,
+                substream_count: 1,
+                coupled_substream_count: 1,
+                output_gain_db: 0.0,
+            }],
+        };
+
+        let target = get_speaker_config("5.1").unwrap();
+        let mut renderer = ChannelRenderer::new(&config, target).unwrap();
+
+        let substream_pcm = vec![vec![0.5_f32, -0.5]];
+        // One 5.1 frame needs 6 samples; provide only 3.
+        let mut output = vec![0.0_f32; 3];
+        let err = renderer.render(&substream_pcm, &mut output, 1).unwrap_err();
+        assert!(
+            matches!(err, IamfError::ParseError(_)),
+            "short output buffer must be a ParseError, got {err:?}"
+        );
     }
 }

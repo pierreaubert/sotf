@@ -9,6 +9,8 @@ pub enum RemoteCommand {
     PrevTrack,
     /// File paths imported from the iOS document picker. The consumer should
     /// either add them to the library or push them onto the playback queue.
+    /// This command is the single source of the payload: the FFI pop function
+    /// stages these paths for the JSON accessor when the command is popped.
     ImportFiles(Vec<PathBuf>),
     /// A QR code payload was scanned by the native camera view.
     QrPayloadScanned,

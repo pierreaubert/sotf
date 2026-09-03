@@ -2598,3 +2598,80 @@ fn test_calculate_expansion_attenuation_knee() {
     assert!(att >= 0.0);
     assert!(att < range);
 }
+
+#[test]
+fn spectral_mode_missing_state_returns_error_not_panic() {
+    // A processing_mode/spectral-state desync must surface as Err on the
+    // realtime path, never as a panic from Option::unwrap.
+    let params = MultibandExpanderPluginParams {
+        num_bands: 3,
+        processing_mode: "spectral".to_string(),
+        ..Default::default()
+    };
+    let mut plugin = MultibandExpanderPlugin::with_params(1, params);
+    plugin.initialize(48_000).unwrap();
+    assert!(plugin.spectral.is_some());
+    plugin.spectral = None;
+    let mut buf = vec![0.1f32; 256];
+    let result = plugin.process_in_place(&mut buf, &ProcessContext::new(48_000, 256));
+    assert!(
+        result.is_err(),
+        "spectral mode with missing state must return Err, not panic"
+    );
+}
+
+#[test]
+fn spectral_mode_nan_input_yields_finite_output() {
+    let params = MultibandExpanderPluginParams {
+        num_bands: 3,
+        processing_mode: "spectral".to_string(),
+        ..Default::default()
+    };
+    let mut plugin = MultibandExpanderPlugin::with_params(2, params);
+    plugin.initialize(48_000).unwrap();
+    assert_eq!(plugin.latency_samples(), 1024);
+    let nf = 512usize;
+    let mut buf = vec![0.1f32; nf * 2];
+    buf[0] = f32::NAN;
+    buf[37] = f32::INFINITY;
+    buf[100] = f32::NEG_INFINITY;
+    let returned = plugin
+        .process_in_place(&mut buf, &ProcessContext::new(48_000, nf))
+        .unwrap();
+    assert_eq!(returned, nf);
+    assert!(
+        buf.iter().all(|s| s.is_finite()),
+        "spectral mode must map NaN/inf input to finite output"
+    );
+}
+
+#[test]
+fn spectral_mode_variable_and_zero_blocks_return_num_frames() {
+    let params = MultibandExpanderPluginParams {
+        num_bands: 2,
+        processing_mode: "spectral".to_string(),
+        ..Default::default()
+    };
+    let mut plugin = MultibandExpanderPlugin::with_params(1, params);
+    plugin.initialize(48_000).unwrap();
+    assert_eq!(plugin.latency_samples(), 1024);
+    // Zero-length block: returns 0 without error.
+    let mut empty: Vec<f32> = Vec::new();
+    let returned = plugin
+        .process_in_place(&mut empty, &ProcessContext::new(48_000, 0))
+        .unwrap();
+    assert_eq!(returned, 0);
+    // Variable block sizes including a non-hop-multiple tail: each call
+    // returns exactly the requested frame count with finite output.
+    for &nf in &[1usize, 63, 100, 256, 511, 1024] {
+        let mut buf = vec![0.2f32; nf];
+        let returned = plugin
+            .process_in_place(&mut buf, &ProcessContext::new(48_000, nf))
+            .unwrap();
+        assert_eq!(returned, nf, "variable block size {nf} must round-trip");
+        assert!(
+            buf.iter().all(|s| s.is_finite()),
+            "block size {nf} produced non-finite output"
+        );
+    }
+}

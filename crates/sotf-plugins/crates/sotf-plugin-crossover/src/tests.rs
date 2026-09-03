@@ -982,3 +982,140 @@ fn fir_multiway_does_not_retain_unused_two_way_or_lr_banks() {
     assert!(plugin.is_multiway());
     assert!(plugin.fir_memory_report().unwrap().total_bytes > 0);
 }
+
+#[test]
+fn test_missing_fir_and_lr_banks_return_errors_instead_of_panicking() {
+    // A state/parameter race that drops a filter bank must surface as a
+    // realtime-safe error, never as an audio-thread panic.
+
+    // FIR two-way with the two-way bank removed.
+    let mut fir2 = CrossoverPlugin::new(1, "LinearPhase", 1000.0, "low").unwrap();
+    fir2.initialize(48000).unwrap();
+    fir2.fir_crossover_2way = None;
+    let input = vec![0.5; 64];
+    let mut output = vec![0.0; 64];
+    let err = fir2
+        .process(&input, &mut output, &ProcessContext::new(48000, 64))
+        .expect_err("missing two-way FIR bank must return an error");
+    assert!(err.contains("two-way FIR bank"), "unexpected error: {err}");
+
+    // FIR multi-way with the multiband bank removed.
+    let mut firm =
+        CrossoverPlugin::new_multiway(1, "LinearPhase", 500.0, "both", &[5000.0]).unwrap();
+    firm.initialize(48000).unwrap();
+    firm.fir_multiband = None;
+    let input = vec![0.5; 64];
+    let mut output = vec![0.0; 64 * 3];
+    let err = firm
+        .process(&input, &mut output, &ProcessContext::new(48000, 64))
+        .expect_err("missing multiband FIR bank must return an error");
+    assert!(
+        err.contains("multiband FIR bank"),
+        "unexpected error: {err}"
+    );
+
+    // LR multi-way with the IIR bank removed.
+    let mut lr = CrossoverPlugin::new_multiway(1, "LR24", 500.0, "both", &[5000.0]).unwrap();
+    lr.initialize(48000).unwrap();
+    lr.multiband = None;
+    let input = vec![0.5; 64];
+    let mut output = vec![0.0; 64 * 3];
+    let err = lr
+        .process(&input, &mut output, &ProcessContext::new(48000, 64))
+        .expect_err("missing LR multiband bank must return an error");
+    assert!(err.contains("LR multiband bank"), "unexpected error: {err}");
+}
+
+#[test]
+fn test_latency_reports_survive_initialize() {
+    // LR topologies are zero-latency before and after initialize.
+    let mut lr2 = CrossoverPlugin::new(1, "LR24", 1000.0, "low").unwrap();
+    assert_eq!(lr2.latency_samples(), 0);
+    lr2.initialize(48000).unwrap();
+    assert_eq!(lr2.latency_samples(), 0);
+
+    let mut lr3 = CrossoverPlugin::new_multiway(1, "LR24", 500.0, "both", &[5000.0]).unwrap();
+    assert_eq!(lr3.latency_samples(), 0);
+    lr3.initialize(48000).unwrap();
+    assert_eq!(lr3.latency_samples(), 0);
+
+    // FIR group delay is (taps - 1) / 2 samples per split; the multiband
+    // bank cascades one split per crossover point.
+    let mut fir2 = CrossoverPlugin::new(1, "LinearPhase", 1000.0, "low").unwrap();
+    fir2.set_parameter(ParameterId::from("fir_taps"), ParameterValue::Int(127))
+        .unwrap();
+    let expected_two_way = (127 - 1) / 2;
+    assert_eq!(fir2.latency_samples(), expected_two_way);
+    fir2.initialize(48000).unwrap();
+    assert_eq!(fir2.latency_samples(), expected_two_way);
+
+    let mut fir3 =
+        CrossoverPlugin::new_multiway(1, "LinearPhase", 500.0, "both", &[5000.0]).unwrap();
+    fir3.set_parameter(ParameterId::from("fir_taps"), ParameterValue::Int(127))
+        .unwrap();
+    let expected_three_band = 2 * ((127 - 1) / 2);
+    assert_eq!(fir3.latency_samples(), expected_three_band);
+    fir3.initialize(48000).unwrap();
+    assert_eq!(fir3.latency_samples(), expected_three_band);
+}
+
+#[test]
+fn test_fir_taps_change_rejected_after_initialize() {
+    let mut p = CrossoverPlugin::new(1, "LinearPhase", 1000.0, "low").unwrap();
+    // Pre-init the tap count is configurable and latency follows it.
+    p.set_parameter(ParameterId::from("fir_taps"), ParameterValue::Int(127))
+        .unwrap();
+    assert_eq!(p.latency_samples(), (127 - 1) / 2);
+    p.initialize(48000).unwrap();
+    let latency = p.latency_samples();
+    // Post-init the tap count is structural: the write is rejected and the
+    // declared latency (and stored value) is unchanged.
+    assert!(
+        p.set_parameter(ParameterId::from("fir_taps"), ParameterValue::Int(255))
+            .is_err()
+    );
+    assert_eq!(p.latency_samples(), latency);
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("fir_taps")),
+        Some(ParameterValue::Int(127))
+    );
+}
+
+#[test]
+fn test_non_finite_input_never_panics_or_escalates_to_infinite() {
+    // Every topology must return Ok on non-finite input. NaN-only input
+    // must not escalate to infinite output samples.
+    let mut lr2 = CrossoverPlugin::new(1, "LR24", 1000.0, "low").unwrap();
+    lr2.initialize(48000).unwrap();
+    let input = vec![f32::NAN; 64];
+    let mut output = vec![0.0; 64];
+    lr2.process(&input, &mut output, &ProcessContext::new(48000, 64))
+        .unwrap();
+    assert!(!output.iter().any(|s| s.is_infinite()));
+
+    let mut fir2 = CrossoverPlugin::new(1, "LinearPhase", 1000.0, "low").unwrap();
+    fir2.initialize(48000).unwrap();
+    let input = vec![f32::NAN; 64];
+    let mut output = vec![0.0; 64];
+    fir2.process(&input, &mut output, &ProcessContext::new(48000, 64))
+        .unwrap();
+    assert!(!output.iter().any(|s| s.is_infinite()));
+
+    // Infinite input must also be processed without panicking or erroring.
+    let mut lr_multi = CrossoverPlugin::new_multiway(1, "LR24", 500.0, "both", &[5000.0]).unwrap();
+    lr_multi.initialize(48000).unwrap();
+    let input = vec![f32::INFINITY; 64];
+    let mut output = vec![0.0; 64 * 3];
+    lr_multi
+        .process(&input, &mut output, &ProcessContext::new(48000, 64))
+        .unwrap();
+
+    let mut fir_multi =
+        CrossoverPlugin::new_multiway(1, "LinearPhase", 500.0, "both", &[5000.0]).unwrap();
+    fir_multi.initialize(48000).unwrap();
+    let input = vec![f32::NEG_INFINITY; 64];
+    let mut output = vec![0.0; 64 * 3];
+    fir_multi
+        .process(&input, &mut output, &ProcessContext::new(48000, 64))
+        .unwrap();
+}

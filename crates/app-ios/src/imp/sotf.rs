@@ -33,6 +33,13 @@ use sotf_audio_player_gpui::ui;
 /// 0 = none, 1 = next track, 2 = previous track, 3 = imported files noticed,
 /// 4 = QR payload scanned, 5 = Dynamic Type changed, 6 = memory warning,
 /// 7 = Low Power Mode enabled, 8 = Low Power Mode disabled.
+///
+/// This is the sole drain of the remote-command queue: `app-gpui` observes one
+/// code per tick iteration and pulls the matching payload through the
+/// corresponding `take_*` accessor. For code 3 the payload carried by
+/// `RemoteCommand::ImportFiles` is staged into `pending_imports()` here, so
+/// each observed 3 corresponds to exactly one import batch and
+/// `sotf_ios_take_imported_files_json` never needs to guess batch boundaries.
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_pop_remote_command() -> i32 {
     ffi_guard(|| match pending_queue().pop() {
@@ -41,9 +48,12 @@ pub extern "C" fn sotf_ios_pop_remote_command() -> i32 {
         Some(RemoteCommand::PrevTrack) => 2,
         Some(RemoteCommand::ImportFiles(paths)) => {
             log::info!(
-                "[iOS] Imported files drain observed {} paths; full library import pending",
+                "[iOS] Imported files drain staging {} paths for GPUI import",
                 paths.len()
             );
+            for path in paths {
+                pending_imports().push(path);
+            }
             3
         }
         Some(RemoteCommand::QrPayloadScanned) => 4,
@@ -54,7 +64,12 @@ pub extern "C" fn sotf_ios_pop_remote_command() -> i32 {
     })
 }
 
-/// Return and clear imported file paths as a JSON string for GPUI to consume.
+/// Return and clear staged imported file paths as a JSON string for GPUI.
+///
+/// Paths reach this queue only via `sotf_ios_pop_remote_command` staging the
+/// `ImportFiles` payload when the GPUI tick observes code 3, so each call
+/// drains exactly the batch announced by the preceding pop — never a coalesced
+/// mix of several batches and never a duplicate.
 ///
 /// The returned pointer must be released with `sotf_ios_string_free`.
 #[unsafe(no_mangle)]
@@ -315,10 +330,11 @@ pub extern "C" fn sotf_ios_files_imported(paths_json: *const std::ffi::c_char) {
             );
         }
 
-        // Also enqueue for the GPUI library-import consumer.
-        for path in &path_bufs {
-            pending_imports().push(path.clone());
-        }
+        // Enqueue a single `ImportFiles` command carrying the full batch.
+        // `sotf_ios_pop_remote_command` stages the payload into the pending
+        // import queue when the command is popped, so the GPUI tick observes
+        // exactly one code 3 per batch and drains exactly that batch — the
+        // command (not a parallel queue push) is the single source of truth.
         push_remote_command(RemoteCommand::ImportFiles(path_bufs));
     }))
 }
@@ -493,6 +509,14 @@ mod tests {
         assert_eq!(sotf_ios_pop_remote_command(), 7);
         assert_eq!(sotf_ios_pop_remote_command(), 8);
         assert_eq!(sotf_ios_pop_remote_command(), 0);
+
+        // Popping the ImportFiles command stages its payload for the JSON
+        // accessor: the code-3 / take_json pair stays in lockstep.
+        let ptr = sotf_ios_take_imported_files_json();
+        assert!(!ptr.is_null());
+        let json = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap().to_owned();
+        sotf_ios_string_free(ptr);
+        assert_eq!(json, r#"["/tmp/x.mp3"]"#);
     }
 
     #[test]
@@ -548,6 +572,43 @@ mod tests {
         assert!(!empty2.is_null());
         assert_eq!(unsafe { CStr::from_ptr(empty2) }.to_str().unwrap(), "[]");
         sotf_ios_string_free(empty2);
+    }
+
+    #[test]
+    fn files_imported_delivers_each_batch_exactly_once() {
+        let _guard = QUEUE_TEST_LOCK.lock();
+        drain_all_queues();
+
+        fn import_json(paths: &[&str]) {
+            let json = serde_json::to_string(paths).unwrap();
+            let c_string = CString::new(json).unwrap();
+            sotf_ios_files_imported(c_string.as_ptr());
+        }
+
+        fn take_json() -> String {
+            let ptr = sotf_ios_take_imported_files_json();
+            assert!(!ptr.is_null());
+            let json = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap().to_owned();
+            sotf_ios_string_free(ptr);
+            json
+        }
+
+        import_json(&["/music/a.mp3", "/music/b.flac"]);
+        import_json(&["/music/c.ogg"]);
+
+        // Batch 1: exactly one code 3 carrying exactly batch 1, and a repeat
+        // take without an intervening pop must be empty (no doubling).
+        assert_eq!(sotf_ios_pop_remote_command(), 3);
+        assert_eq!(take_json(), r#"["/music/a.mp3","/music/b.flac"]"#);
+        assert_eq!(take_json(), "[]");
+
+        // Batch 2: the second code 3 still carries its own batch — the first
+        // drain must not have coalesced both batches (no loss, no reordering).
+        assert_eq!(sotf_ios_pop_remote_command(), 3);
+        assert_eq!(take_json(), r#"["/music/c.ogg"]"#);
+
+        assert_eq!(sotf_ios_pop_remote_command(), 0);
+        assert_eq!(take_json(), "[]");
     }
 
     #[test]

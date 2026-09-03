@@ -424,3 +424,54 @@ fn file_backed_dsd_decoders_match_in_memory_reference() {
     );
     assert_eq!(dff_file_audio.samples, dff_memory_audio.samples);
 }
+
+#[test]
+fn file_source_read_exact_at_serves_cache_and_returns_errors() {
+    use super::source::{DsdDataSource, FILE_CACHE_BYTES};
+
+    // Deterministic payload slightly larger than the cache so that refill,
+    // truncation, and oversized-read paths are all reachable.
+    let data_len = FILE_CACHE_BYTES + 64;
+    let payload: Vec<u8> = (0..data_len).map(|i| (i % 251) as u8).collect();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cache.bin");
+    std::fs::write(&path, &payload).unwrap();
+    let total = payload.len() as u64;
+
+    let mut source = DsdDataSource::file(std::fs::File::open(&path).unwrap(), 0, total);
+
+    // 1. Cold read fills the cache.
+    let mut first = vec![0u8; 32];
+    source.read_exact_at(0, &mut first).unwrap();
+    assert_eq!(first, &payload[..32]);
+
+    // 2. Repeat read hits the cache (no seek/read syscalls) — same bytes.
+    let mut second = vec![0u8; 32];
+    source.read_exact_at(0, &mut second).unwrap();
+    assert_eq!(second, &payload[..32]);
+
+    // 3. Uncached region refills the cache.
+    let offset = FILE_CACHE_BYTES as u64 - 8;
+    let mut third = vec![0u8; 32];
+    source.read_exact_at(offset, &mut third).unwrap();
+    assert_eq!(third, &payload[offset as usize..offset as usize + 32]);
+
+    // 4. Truncated read is a DecodingFailed error, not a panic.
+    let mut tail = vec![0u8; 32];
+    let err = source.read_exact_at(total - 16, &mut tail).unwrap_err();
+    assert!(
+        matches!(err, AudioDecoderError::DecodingFailed(_)),
+        "truncated DSD read must be DecodingFailed, got {err:?}"
+    );
+
+    // 5. Oversized read (larger than the whole cache) bypasses the cache
+    // instead of panicking on the cache slice.
+    let mut big = vec![0u8; FILE_CACHE_BYTES + 32];
+    source.read_exact_at(0, &mut big).unwrap();
+    assert_eq!(big, &payload[..FILE_CACHE_BYTES + 32]);
+
+    // 6. Small reads still work after the cache was bypassed/invalidated.
+    let mut after = vec![0u8; 16];
+    source.read_exact_at(16, &mut after).unwrap();
+    assert_eq!(after, &payload[16..32]);
+}

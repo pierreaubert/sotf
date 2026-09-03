@@ -98,9 +98,20 @@ capture drivers:
 - Ring capacity is derived from the current atomic geometry rather than a
   process-local cached geometry. Both Swift read and write paths re-check the
   `configuring` gate before publishing ring positions after copying.
-- Encrypted real-time paths preallocate for the maximum supported HAL frame and
-  channel geometry. They reject an oversized record or undersized staging
-  allocation instead of growing a vector in the audio callback.
+- The Swift HAL publishes active channel geometry to `driverDoIOOperation`
+  through a C11 atomic snapshot. The CoreAudio IO callback never acquires the
+  control-plane `configurationLock`; only successful configuration commits
+  update the snapshot, after local ring buffers have been rebuilt.
+- The Swift loopback uses one interleaved SPSC ring with C11 acquire/release
+  frame cursors. A block is published with one release store after every
+  channel has been copied, so consumers cannot observe a partially published
+  multichannel frame.
+- Encrypted realtime HAL transport is disabled until the Swift side has a
+  caller-buffer AEAD implementation. CryptoKit's ChaChaPoly API constructs
+  `Data`, nonce, and sealed-box values, so the daemon rejects attempts to enable
+  encryption and the default HAL callback build rejects encrypted frames rather
+  than violating the allocation-free callback contract. Key observation and
+  reload remain maintenance-queue work.
 - Both the daemon-private key and HAL-readable key copy are published through
   mode-0600, same-directory temporary files and atomically renamed into place.
   The destination is never removed before replacement, so a raced symlink
@@ -129,6 +140,9 @@ capture drivers:
 - Audio-path wall-clock heartbeat refresh and default debug tracing were
   removed. Swift IO tracing is available only when `SOTF_AUDIO_TRACE` is
   compiled in.
+- Configbar serializes launchd commands, fallback daemon spawning, termination,
+  and restart escalation on a utility queue. AppKit state and callbacks return
+  to the main queue; `Process.waitUntilExit()` never runs there.
 - The installer owns both per-user LaunchAgents: `org.spinorama.sotf-daemon`
   and `org.spinorama.sotf-systemwide`. It replaces both plists, starts the
   daemon immediately, then starts and verifies Configbar after the HAL package
@@ -577,6 +591,15 @@ private key before `AudioDaemon` construction or key rotation;
 need to kill unrelated daemons or race a second bind, and split-path lab
 configuration cannot create two owners for one transport.
 
+Both mapped endpoints validate the backing file outside realtime callbacks.
+Rust driver status clears observed capture/readiness when its mmap no longer
+matches the published `audio.shm` inode. The Swift HAL maintenance queue maps a
+replacement into an inactive slot and atomically publishes that generation
+without waiting for long-lived CoreAudio clients to stop. Each callback pins
+one slot for its complete operation; maintenance reuses an old slot only after
+its callback-reader count reaches zero. This prevents an unlinked mmap from
+reporting healthy transport while new readers attach to a different inode.
+
 SIGINT and SIGTERM clear the daemon running flag. The shutdown path clears HAL
 `engine_ready`, stops the engine, closes retained client sockets, joins every
 client handler and the config watcher, and removes the daemon-owned socket after
@@ -646,7 +669,11 @@ Key observations:
   idle-start deadlock where HAL accepts a later playback client but refuses to
   write frames because the daemon heartbeat expired before the first audio
   arrived.
-- The HAL output plugin treats readiness as the commit point of a transport
+- The following HAL-output plugin behavior describes a dormant alternative
+  transport, not the active systemwide runtime. The daemon currently strips
+  `hal_input` and `hal_output` nodes because capture uses `HalInputReader`
+  directly and playback uses cpal.
+- In that dormant HAL output plugin, readiness is the commit point of a transport
   transaction. Initialization and re-service quiesce once, discard stale
   pending output, flush the ring, and prime exactly the negotiated buffer-frame
   count before setting `engine_ready=true`. A short or otherwise invalid prime
@@ -1120,15 +1147,17 @@ Current branch coverage starts the lower middle of that pyramid:
   than replaying plugins, and whole-file plugin loading delegates artifact
   planning to the daemon.
 
-`just systemwide-lab` is now an executable macOS gate. Its real daemon
+`just systemwide-lab` is now an executable macOS gate. It creates and cleans a
+unique `/private/tmp` runtime directory for each invocation. Its real daemon
 subprocess scenarios use isolated Unix sockets and the lab driver to verify
 coherent snapshots, 2 → 10 → 2 channel reconfiguration, transactional artifact
 rejection with desired/applied state preservation, sample-rate and buffer-size
-configuration with invalid-request rollback, HAL encryption enablement and key
-rotation, diagnostic dumps, shutdown, and clean restart. The daemon returns an
+configuration with invalid-request rollback, encrypted-transport rejection and
+key rotation, diagnostic dumps, shutdown, and clean restart. The daemon returns an
 explicit capability error when a non-HAL build cannot provide a session cipher.
-The same gate runs daemon state, HAL protocol/streaming, and Configbar model
-tests. The Swift HAL suite also launches a test-only Rust transport worker while
+The same gate runs daemon state, Rust HAL protocol/streaming, and Configbar
+model tests. The separate `just test-hal-driver-swift` gate launches a test-only
+Rust transport worker while
 Swift continuously reads, alternating 2/8 channels and 48/96 kHz through the
 real cross-language quiesce/ack protocol.
 
@@ -1262,13 +1291,13 @@ enumeration or output-device selection.
    overrides, and output capture. The first runtime hooks are in place:
    isolated socket/shared-memory paths plus an in-process lab driver. A HAL
    simulator process and output capture still need to be added.
-7. Build `just systemwide-lab` around the scenario matrix and make it run in CI
-   on macOS without installing the HAL bundle.
-8. Move the toolbar to consume snapshots and send typed intents instead of
-   reconstructing state from multiple commands. Partially done: channel apply
-   and plugin artifact loading now use typed daemon commands; the remaining
-   work is to make the toolbar render `get_snapshot` directly instead of
-   composing status, metering, devices, and plugin polling.
+7. Run the existing `just systemwide-lab` gate in macOS CI without installing
+   the HAL bundle, and keep `just test-hal-driver-swift` as an explicit adjacent
+   cross-language gate.
+8. Finish removing residual toolbar polling. Configbar already renders the
+   coherent `get_snapshot` response and sends typed channel/plugin intents;
+   remaining compatibility probes must not reconstruct diagnostic state from
+   legacy `status`. That endpoint is explicitly a best-effort view.
 
 ## Invariants To Preserve
 

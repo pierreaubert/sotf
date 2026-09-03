@@ -90,12 +90,7 @@ impl PlayerView {
             .child(
                 HStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(
-                        Text::new(text.title)
-                            .size(TextSize::Lg)
-                            .weight(TextWeight::Bold)
-                            .color(theme.text_primary),
-                    )
+                    .child(Heading::h3(text.title))
                     .child(dev_track!(
                         Button::new("playlist-import", text.import_m3u8)
                             .variant(ButtonVariant::Secondary)

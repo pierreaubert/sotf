@@ -56,6 +56,55 @@ fn spinorama_step_round_trip() {
 }
 
 #[cfg(test)]
+mod spawn_tests {
+    use crate::app::App;
+    use crate::events::conf_spinoramaeq::spawn_spinorama_optimization;
+    use crate::theme::Theme;
+    use sotf_audio_player::room_eq_types::OptimizationStatus;
+
+    use super::super::spawn::parse_loss_function;
+
+    #[test]
+    fn parse_loss_function_accepts_known_values() {
+        assert!(parse_loss_function("flat").is_some());
+        assert!(parse_loss_function("flat-asymmetric").is_some());
+        assert!(parse_loss_function("score").is_some());
+    }
+
+    #[test]
+    fn parse_loss_function_rejects_unknown_values() {
+        for bad in ["", "mse", "FLAT", "flat ", " speaker-flat"] {
+            assert!(parse_loss_function(bad).is_none(), "should reject {bad:?}");
+        }
+    }
+
+    #[test]
+    fn unknown_loss_function_fails_fast_without_panicking() {
+        let mut app = App::new(Theme::default(), true);
+        app.spinorama_eq.model.selected_speaker = Some("Test Speaker".to_string());
+        app.spinorama_eq.model.optimizer_config.loss_function = "mse".to_string();
+
+        // Must not panic (the old code panicked inside the worker thread).
+        spawn_spinorama_optimization(&mut app);
+
+        assert_eq!(
+            app.spinorama_eq.model.optimization_status,
+            OptimizationStatus::Failed
+        );
+        let message = app
+            .spinorama_eq
+            .model
+            .error_message
+            .as_deref()
+            .unwrap_or_default();
+        assert!(
+            message.contains("Unknown loss function") && message.contains("mse"),
+            "unexpected error message: {message:?}"
+        );
+    }
+}
+
+#[cfg(test)]
 mod poll_tests {
     use std::sync::{Arc, Mutex};
 

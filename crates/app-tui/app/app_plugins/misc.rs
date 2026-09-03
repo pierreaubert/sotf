@@ -4,6 +4,16 @@ use sotf_audio_player::PluginType;
 use sotf_audio_player::controllers::plugin::set_plugin_param_value;
 use sotf_audio_player::ui_params::TuiEditablePlugin;
 
+/// Display label recorded as the last-loaded preset after a successful
+/// save/load. `path.file_name()` is `None` for paths like `/` or `..`, which
+/// previously panicked *after* the save/load had already succeeded. Fall back
+/// to the `<stem>.json` preset name so a weird path can never crash a success.
+fn preset_file_label(path: &std::path::Path, file_stem: &str) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| format!("{file_stem}.json"))
+}
+
 impl App {
     // Plugin management
 
@@ -527,8 +537,7 @@ impl App {
             .graph
             .save_to_file(dir, file)
             .map_err(|e| e.to_string())?;
-        self.plugin_rack.last_loaded_preset =
-            Some(path.file_name().unwrap().to_string_lossy().to_string());
+        self.plugin_rack.last_loaded_preset = Some(preset_file_label(path, file));
         Ok(())
     }
 
@@ -550,8 +559,7 @@ impl App {
             .map_err(|e| e.to_string())?;
         self.plugin_rack.graph.update_channel_dependent_plugins();
         self.request_plugin_update();
-        self.plugin_rack.last_loaded_preset =
-            Some(path.file_name().unwrap().to_string_lossy().to_string());
+        self.plugin_rack.last_loaded_preset = Some(preset_file_label(path, file));
         Ok(warnings)
     }
 
@@ -746,5 +754,40 @@ mod tests {
     fn load_plugins_from_path_rejects_empty_path() {
         let mut app = test_app();
         assert!(app.load_plugins_from_path(Path::new("")).is_err());
+    }
+
+    #[test]
+    fn preset_file_label_prefers_file_name_with_fallback() {
+        assert_eq!(
+            preset_file_label(Path::new("/tmp/chain.json"), "chain"),
+            "chain.json"
+        );
+        assert_eq!(preset_file_label(Path::new("/tmp/chain"), "chain"), "chain");
+        // Degenerate paths have no file name; the fallback must not panic.
+        assert_eq!(preset_file_label(Path::new("/"), ""), ".json");
+        assert_eq!(preset_file_label(Path::new(".."), ""), ".json");
+        assert_eq!(
+            preset_file_label(Path::new("/tmp/subdir/"), "subdir"),
+            "subdir"
+        );
+    }
+
+    #[test]
+    fn save_and_load_reject_degenerate_paths_without_panicking() {
+        // `/`, `..`, and similar paths must return `Err` (no file stem)
+        // rather than panicking after a successful save/load.
+        let mut app = test_app();
+        for bad in [Path::new("/"), Path::new(".."), Path::new("")] {
+            assert!(
+                app.save_plugins_to_path(bad).is_err(),
+                "save should reject {bad:?}"
+            );
+            assert!(
+                app.load_plugins_from_path(bad).is_err(),
+                "load should reject {bad:?}"
+            );
+        }
+        // Failed attempts leave no stale preset label behind.
+        assert_eq!(app.plugin_rack.last_loaded_preset, None);
     }
 }

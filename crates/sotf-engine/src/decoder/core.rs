@@ -710,6 +710,51 @@ mod tests {
             );
         }
 
+        // 3e. Channel conformance against the built plugin chain: a resolver
+        // handing back 6-channel PCM while the chain expects stereo must fail
+        // gapless validation instead of feeding 6-channel frames into a
+        // 2-channel host.
+        set_service_stream_resolver(Arc::new(|_, _| {
+            Ok(ResolvedServiceStream::Pcm {
+                sample_rate: 44100,
+                channels: 6,
+                bits_per_sample: 32,
+                total_frames: Some(1),
+                reader: Box::new(Cursor::new(Vec::<u8>::new())),
+            })
+        }));
+        let service_source = AudioSource::ServiceStream {
+            service: crate::ServiceId::Spotify,
+            track_id: "test-track".to_string(),
+        };
+        let err = crate::engine::manager_thread::validate::validate_gapless_source_compatible(
+            &service_source,
+            2,
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("channel mismatch"),
+            "unexpected result: {err:?}"
+        );
+
+        // Matching channels pass validation.
+        set_service_stream_resolver(Arc::new(|_, _| {
+            Ok(ResolvedServiceStream::Pcm {
+                sample_rate: 44100,
+                channels: 2,
+                bits_per_sample: 32,
+                total_frames: Some(2),
+                reader: Box::new(Cursor::new(vec![0u8; 16])),
+            })
+        }));
+        assert!(
+            crate::engine::manager_thread::validate::validate_gapless_source_compatible(
+                &service_source,
+                2
+            )
+            .is_ok()
+        );
+
         // 4. Resolver returning a URL goes through the URL path: without the
         // `streaming` feature that is an UnsupportedFormat error; with it, a
         // bogus loopback URL deterministically fails with a network error.

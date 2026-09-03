@@ -129,7 +129,15 @@ impl IamfDecoder {
                 // Use element-local index, not global substream ID
                 let ss_channels = match &element.element_config {
                     ElementConfig::Channel(config) => {
-                        let layer = config.layers.last().unwrap();
+                        // A crafted bitstream may declare zero layers; the
+                        // parser accepts that shape, so reject it here instead
+                        // of panicking on `last().unwrap()`.
+                        let layer = config.layers.last().ok_or_else(|| {
+                            IamfError::ParseError(format!(
+                                "Channel element {} declares no layers",
+                                element.audio_element_id
+                            ))
+                        })?;
                         let coupled_count = layer.coupled_substream_count as usize;
                         if local_idx < coupled_count { 2 } else { 1 }
                     }
@@ -323,11 +331,23 @@ impl IamfDecoder {
         // one element, so we can move the decoded data without copying.
         let num_elements = self.renderers.len();
         for elem_idx in 0..num_elements {
-            // Collect this element's substream PCM by taking ownership (zero-copy)
-            let elem_pcm: Vec<Vec<f32>> = self.element_substream_ids[elem_idx]
-                .iter()
-                .map(|&ss_id| self.decoded_bufs[ss_id as usize].take().unwrap_or_default())
-                .collect();
+            // Substream IDs come from the bitstream: validate each one against
+            // the decoder slots (positional IDs, mirroring the guarded store
+            // path above) instead of indexing blindly. A crafted element
+            // referencing an out-of-range ID is malformed input — error, not panic.
+            let num_slots = self.decoded_bufs.len();
+            let num_ss = self.element_substream_ids[elem_idx].len();
+            let mut elem_pcm: Vec<Vec<f32>> = Vec::with_capacity(num_ss);
+            for j in 0..num_ss {
+                let ss_id = self.element_substream_ids[elem_idx][j];
+                let slot = ss_id as usize;
+                if slot >= num_slots {
+                    return Err(IamfError::ParseError(format!(
+                        "Audio element references unknown substream ID {ss_id}"
+                    )));
+                }
+                elem_pcm.push(self.decoded_bufs[slot].take().unwrap_or_default());
+            }
 
             // Reuse pre-allocated output buffer
             let elem_out = &mut self.element_out_bufs[elem_idx];

@@ -14,8 +14,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, CommandItem, CommandPalette, Dialog,
-    DialogSize, HStack, Input, InputSize, StackAlign, StackJustify, StackSize, StackSpacing, Text,
-    TextSize, TextWeight, ToastVariant, VStack,
+    DialogSize, HStack, Heading, Input, InputSize, StackAlign, StackJustify, StackSize,
+    StackSpacing, Text, TextSize, TextWeight, ToastVariant, VStack,
 };
 use sotf_audio_player::QueuePlaybackEffect;
 
@@ -170,12 +170,7 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Xs)
                             .align(StackAlign::Center)
-                            .child(
-                            Text::new(text.about.app_name)
-                                    .size(TextSize::Lg)
-                                    .weight(TextWeight::Bold)
-                                    .color(theme.text_primary),
-                            )
+                            .child(Heading::h3(text.about.app_name))
                             .child(
                             Text::new(text.version(env!("CARGO_PKG_VERSION")))
                                     .size(TextSize::Xs)

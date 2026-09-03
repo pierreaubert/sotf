@@ -1174,7 +1174,7 @@ impl PlayerView {
                             .border_dashed()
                             .border_color(Theme::opacity_8pct(theme_add.text_muted))
                             .cursor_pointer()
-                            .text_size(d.text_lg)
+                .text_size(d.text_sm)
                             .text_color(theme_add.text_muted)
                             .hover(|s| s.border_color(theme_add.accent).text_color(theme_add.accent))
                             .on_mouse_up(

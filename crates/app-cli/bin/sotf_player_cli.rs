@@ -29,13 +29,13 @@ use error_output::redact_secrets;
 use library::run_library_command;
 use library::run_status_command;
 use misc::list_devices;
-use parse::parse_filters;
 use parse::parse_loudness_compensation;
 use types::Cli;
 use types::Commands;
 
 fn main() {
     let cli = Cli::parse();
+    error_output::set_show_urls(cli.show_urls);
 
     // Log to file when possible, but fall back to stderr if the current
     // directory is read-only (e.g. running from `/` or as a systemd unit).
@@ -120,17 +120,9 @@ fn main() {
                 eprintln!("{}", msg);
             }
 
-            // Parse filters
-            let filter_params = match parse_filters(&filters) {
-                Ok(params) => params,
-                Err(e) => {
-                    let e = redact_secrets(&e.to_string());
-                    log::error!("Error parsing filters: {}", e);
-                    eprintln!("Error parsing filters: {}", e);
-                    std::process::exit(1);
-                }
-            };
-
+            // Filter specs are parsed inside `play_stream`, after the audio
+            // source is loaded, so biquad coefficients use the negotiated
+            // device/file sample rate instead of a hard-coded rate.
             // Parse loudness compensation
             let loudness: Option<LoudnessCompensation> = match loudness_compensation {
                 Some(ref vals) => parse_loudness_compensation(vals).unwrap_or_else(|e| {
@@ -145,7 +137,7 @@ fn main() {
             if let Err(e) = play_stream(
                 file,
                 device,
-                filter_params,
+                filters,
                 duration,
                 start_time,
                 hwaudio_play,
@@ -172,9 +164,13 @@ fn main() {
                     std::process::exit(1);
                 }
             } else {
-                log::info!(
-                    "Status command not yet implemented (requires running manager instance)"
-                );
+                // Without `--db` there is nothing to query: say so on stdout
+                // (not just the log) and exit non-zero so scripts can detect
+                // the missing argument instead of mistaking silence for health.
+                let msg = "Status requires --db <PATH> (no running manager query yet implemented)";
+                log::error!("{}", msg);
+                println!("{}", msg);
+                std::process::exit(2);
             }
         }
         Commands::Library { db, action } => {

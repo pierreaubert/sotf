@@ -1666,7 +1666,7 @@ impl PlayerView {
                         )
                         .child(
                             div()
-                                .text_size(d.text_lg)
+                                .text_size(d.text_base)
                                 .font_weight(FontWeight::BOLD)
                                 .text_color(theme.text_primary)
                                 .child(label),
@@ -1764,7 +1764,7 @@ impl PlayerView {
             .p(d.card)
             .child(
                 div()
-                    .text_size(d.text_lg)
+                    .text_size(d.text_base)
                     .font_weight(FontWeight::BOLD)
                     .text_color(theme.text_primary)
                     .mb(d.section)
@@ -2081,7 +2081,7 @@ impl PlayerView {
             .gap(d.gap_md)
             .child(
                 div()
-                    .text_size(d.text_lg)
+                    .text_size(d.text_base)
                     .font_weight(FontWeight::BOLD)
                     .text_color(theme.text_primary)
                     .child(label.to_string()),

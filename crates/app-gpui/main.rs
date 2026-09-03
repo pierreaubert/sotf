@@ -153,10 +153,16 @@ fn main() {
         let shutdown_flag = Arc::new(AtomicBool::new(false));
         let flag_clone = Arc::clone(&shutdown_flag);
 
-        signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&shutdown_flag))
-            .expect("Failed to register SIGINT handler");
-        signal_hook::flag::register(signal_hook::consts::SIGTERM, flag_clone)
-            .expect("Failed to register SIGTERM handler");
+        // Startup hardening: signal-handler registration must not kill
+        // startup if the platform refuses it. Log and run without handlers.
+        if let Err(e) =
+            signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&shutdown_flag))
+        {
+            log::warn!("Failed to register SIGINT handler; continuing without it: {e}");
+        }
+        if let Err(e) = signal_hook::flag::register(signal_hook::consts::SIGTERM, flag_clone) {
+            log::warn!("Failed to register SIGTERM handler; continuing without it: {e}");
+        }
 
         std::thread::spawn(move || {
             while !shutdown_flag.load(Ordering::Relaxed) {
@@ -240,7 +246,11 @@ fn main() {
             }
 
             if !font_data.is_empty() {
-                cx.text_system().add_fonts(font_data).unwrap();
+                // Startup hardening: corrupt/missing embedded fonts must not
+                // kill startup. Log and continue with system fonts.
+                if let Err(e) = cx.text_system().add_fonts(font_data) {
+                    log::error!("Failed to load embedded fonts; continuing with system fonts: {e}");
+                }
             }
 
             // Load configuration to get language, keymap preset, and window geometry.

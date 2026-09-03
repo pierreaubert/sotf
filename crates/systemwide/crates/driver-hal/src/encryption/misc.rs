@@ -86,10 +86,49 @@ pub(crate) fn session_key_path_from_env(
         .join(".config/sotf/session.key")
 }
 
-/// Load the session encryption key from disk
+/// Load the session encryption key from disk.
+///
+/// Hardened like the daemon side (`KeyManager::load_key_from_file`): the key
+/// file must be a regular file (never a symlink), owned by the current user,
+/// and mode `0o600`. Anything else is refused so a swapped-in world-readable
+/// file or a symlink pointing at attacker-controlled bytes can never become
+/// the session key.
 pub fn load_session_key() -> std::io::Result<[u8; 32]> {
-    use std::io::Read;
     let path = get_session_key_path();
+    load_session_key_from_path(&path)
+}
+
+pub(crate) fn load_session_key_from_path(path: &std::path::Path) -> std::io::Result<[u8; 32]> {
+    use std::io::Read;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    // `symlink_metadata` (not `metadata`) so a symlink is observed as a
+    // symlink instead of being followed to its target.
+    let file_meta = std::fs::symlink_metadata(path)?;
+    if file_meta.file_type().is_symlink() || !file_meta.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!(
+                "session key {} must be a regular file, not a symlink",
+                path.display()
+            ),
+        ));
+    }
+    // SAFETY: getuid() has no preconditions and does not dereference memory.
+    let uid = unsafe { libc::getuid() };
+    if file_meta.uid() != uid {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("session key {} is not owned by this user", path.display()),
+        ));
+    }
+    if file_meta.permissions().mode() & 0o777 != 0o600 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("session key {} must have mode 0600", path.display()),
+        ));
+    }
+
     let mut file = std::fs::File::open(path)?;
     let mut key = [0u8; 32];
     file.read_exact(&mut key)?;

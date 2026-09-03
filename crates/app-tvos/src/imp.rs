@@ -65,11 +65,13 @@ pub extern "C" fn sotf_tvos_start() {
         }
 
         if !font_data.is_empty() {
-            cx.text_system().add_fonts(font_data).unwrap();
+            if let Err(e) = cx.text_system().add_fonts(font_data) {
+                log::error!("[tvOS] add_fonts failed: {e}");
+            }
         }
 
         // Open a fullscreen window with the player
-        cx.open_window(
+        let open_result = cx.open_window(
             WindowOptions {
                 window_bounds: None,
                 ..Default::default()
@@ -120,8 +122,12 @@ pub extern "C" fn sotf_tvos_start() {
 
                 cx.new(|cx| ui::PlayerView::new(app_state.clone(), cx))
             },
-        )
-        .expect("Failed to open player window");
+        );
+
+        if let Err(e) = open_result {
+            log::error!("[tvOS] Failed to open player window: {e}");
+            return;
+        }
 
         cx.activate(true);
     }));
@@ -149,6 +155,12 @@ fn get_tvos_music_directory() -> Option<PathBuf> {
 // ============================================================================
 
 /// Called when an audio interruption begins or ends.
+/// `began` = true means pause, false means resume.
+///
+/// The Swift `TVAudioManager` gates the resume call on the system's
+/// `.shouldResume` interruption option (mirroring iOS `AudioManager`), so a
+/// resume here means the OS expects playback to continue — no additional
+/// was-playing tracking is needed on this side of the FFI boundary.
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_tvos_audio_interrupted(began: bool) {
     let Some(player) = GLOBAL_PLAYER.get() else {

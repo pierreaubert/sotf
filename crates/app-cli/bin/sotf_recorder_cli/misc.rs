@@ -15,7 +15,11 @@ fn validated_amp(amp: Option<f32>, flag: &str) -> Result<f32, String> {
     Ok(amp)
 }
 
-pub(super) fn list_audio_devices() {
+/// List audio devices on stdout.
+///
+/// Returns `Err` when device enumeration fails so callers exit non-zero
+/// instead of reporting success with an empty device list.
+pub(super) fn list_audio_devices() -> Result<(), String> {
     println!("{}", "=".repeat(80));
     println!("Available Audio Devices");
     println!("{}", "=".repeat(80));
@@ -23,14 +27,11 @@ pub(super) fn list_audio_devices() {
     let devices = match sotf_audio::devices::get_audio_devices() {
         Ok(d) => d,
         Err(e) => {
-            eprintln!(
-                "{}",
-                sotf_audio::signal_recorder::actionable_capture_error(
-                    "Failed to enumerate audio devices",
-                    &e
-                )
-            );
-            return;
+            return Err(sotf_audio::signal_recorder::actionable_capture_error(
+                "Failed to enumerate audio devices",
+                &e,
+            )
+            .to_string());
         }
     };
 
@@ -89,6 +90,7 @@ pub(super) fn list_audio_devices() {
     println!("\n{}", "=".repeat(80));
     println!("💡 Usage: Use --device \"Device Name\" to select a device");
     println!("{}", "=".repeat(80));
+    Ok(())
 }
 
 pub(super) fn format_sample_rate_range(rates: &[u32]) -> String {
@@ -125,9 +127,11 @@ pub fn record_signal(
 ) -> Result<(), String> {
     use sotf_audio::signal_recorder::*;
 
-    let output_dir = output_dir.unwrap_or_else(|| {
-        std::env::current_dir().expect("current directory should be accessible")
-    });
+    let output_dir = match output_dir {
+        Some(dir) => dir,
+        None => std::env::current_dir()
+            .map_err(|e| format!("cannot determine current directory: {e}"))?,
+    };
     std::fs::create_dir_all(&output_dir)
         .map_err(|e| format!("failed to create output directory: {e}"))?;
 
@@ -427,6 +431,43 @@ mod tests {
                 err
             );
         }
+    }
+
+    #[test]
+    fn record_signal_rejects_uncreatable_output_dir() {
+        use std::collections::HashMap;
+
+        // Directory creation is the first fallible step, so this exercises
+        // the error path without touching any audio device.
+        let err = super::record_signal(
+            "sine".to_string(),
+            1.0,
+            48000,
+            1,
+            "1".to_string(),
+            "1".to_string(),
+            None,
+            Some(std::path::PathBuf::from(
+                "/dev/null/sotf-cli-test-unwritable",
+            )),
+            None,
+            None,
+            None,
+            None,
+            20.0,
+            20000.0,
+            None,
+            None,
+            None,
+            None,
+            None,
+            HashMap::new(),
+        )
+        .expect_err("uncreatable output dir must fail");
+        assert!(
+            err.contains("failed to create output directory"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
