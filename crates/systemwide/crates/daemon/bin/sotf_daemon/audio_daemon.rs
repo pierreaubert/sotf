@@ -18,6 +18,7 @@ use super::misc::socket_is_unix_socket;
 use super::misc::transport_snapshot_and_faults;
 use super::pipeline_reconfigure_outcome::handle_driver_config_change;
 use super::pipeline_spec::pipeline_spec_to_json;
+use super::pipeline_spec::pipeline_specs_match;
 use super::plugin::plugin_parameter_descriptors;
 use super::plugin::plugin_type_category;
 use super::plugin::plugin_type_to_engine_str;
@@ -314,6 +315,56 @@ pub(super) fn rack_plugins_to_linear_graph(
         .map_err(|error| format!("Rack state cannot be represented as a graph: {error}"))
 }
 
+/// Encode one plugin parameter JSON value in the string form the engine's
+/// `set_plugin_parameter` path expects: plain strings pass through raw,
+/// primitives render bare, and complex values travel as JSON.
+pub(super) fn encode_plugin_param_value(value: &Value) -> String {
+    match value {
+        Value::String(text) => text.clone(),
+        _ => value.to_string(),
+    }
+}
+
+/// Changed top-level parameter keys when both sides are JSON objects.
+/// Returns `None` when the shapes are not diffable key-by-key (non-object
+/// sides, or removed keys), in which case the caller must fall back to a
+/// full chain rebuild.
+pub(super) fn changed_plugin_parameters(old: &Value, new: &Value) -> Option<Vec<(String, Value)>> {
+    let (old_map, new_map) = match (old.as_object(), new.as_object()) {
+        (Some(old_map), Some(new_map)) => (old_map, new_map),
+        _ => return None,
+    };
+    if old_map.keys().any(|key| !new_map.contains_key(key)) {
+        return None;
+    }
+    let mut changed = Vec::new();
+    for (key, new_value) in new_map {
+        if old_map.get(key) != Some(new_value) {
+            changed.push((key.clone(), new_value.clone()));
+        }
+    }
+    Some(changed)
+}
+
+/// Cold-start channel geometry: capture at the HAL transport's actual channel
+/// count so startup does not force an immediate stop/start reconfigure cycle
+/// (audible gap plus a bounded callback wait) on every launch, while playback
+/// keeps the daemon's desired output channels. Unusable HAL values fall back
+/// to stereo in and clamped desired output.
+pub(super) fn startup_channel_geometry(
+    hal_channel_count: u32,
+    desired_output_channels: usize,
+) -> (usize, usize) {
+    let input_channels = usize::try_from(hal_channel_count)
+        .ok()
+        .filter(|channels| (1..=MAX_HAL_CHANNELS).contains(channels))
+        .unwrap_or(2);
+    (
+        input_channels,
+        desired_output_channels.clamp(1, MAX_HAL_CHANNELS),
+    )
+}
+
 pub(super) const METERING_LATENCY_BUDGET_MICROS: u64 = 5_000;
 pub(super) const PLAYBACK_IDLE_REBUILD_THRESHOLD: Duration = Duration::from_secs(30);
 const PIPELINE_LATENCY_BUDGET_MICROS: u64 = 1_000_000;
@@ -605,7 +656,7 @@ impl SystemwideController {
             // entire transition prevents startup from interleaving its
             // stop/configure/start/commit sequence with either of those paths.
             let _mutation = daemon.pipeline_mutation.lock();
-            println!("Auto-starting driver playback (2ch)...");
+            println!("Auto-starting driver playback...");
 
             let output_device = configured_output_device();
             println!("   Output device: {:?}", output_device);
@@ -624,7 +675,25 @@ impl SystemwideController {
 
             let plugins: Vec<PluginConfig> = vec![];
 
-            let result = daemon.handle_load_plugins_with_channels(plugins, 2, 2);
+            // Cold-start at the HAL transport's actual geometry. The timing
+            // path below already adopts the HAL sample rate and buffer size;
+            // starting capture at a different channel count than coreaudiod
+            // advertises would force an immediate stop/start reconfigure.
+            let driver_status = daemon.driver_manager.lock().status();
+            let (startup_input_channels, startup_output_channels) = startup_channel_geometry(
+                driver_status.channel_count,
+                daemon.system_state.lock().output_channels(),
+            );
+            println!(
+                "   Channels: {} in / {} out (HAL reports {}ch)",
+                startup_input_channels, startup_output_channels, driver_status.channel_count
+            );
+
+            let result = daemon.handle_load_plugins_with_channels(
+                plugins,
+                startup_input_channels,
+                startup_output_channels,
+            );
             if result.success {
                 println!("   Driver playback started successfully");
             } else {
@@ -1485,6 +1554,40 @@ impl SystemwideController {
         }
     }
 
+    /// Whether `plan` describes exactly the pipeline already running on a
+    /// healthy engine: same applied spec, HAL transport already at the
+    /// plan's input geometry, engine streaming without a recorded error and
+    /// with observed callbacks. Anything else (idle, errored, pre-callback,
+    /// diverged) needs the cold path below so recovery is never skipped.
+    fn pipeline_plan_already_applied(&self, plan: &PipelinePlan) -> bool {
+        let applied = {
+            let state = self.system_state.lock();
+            match state.applied_spec() {
+                Some(applied) => applied,
+                None => return false,
+            }
+        };
+        if !pipeline_specs_match(&applied, &plan.spec) {
+            return false;
+        }
+        if self.driver_manager.lock().status().channel_count != plan.spec.input_channels as u32 {
+            return false;
+        }
+        let manager = self.manager.lock();
+        if manager.get_state() == sotf_audio::manager::StreamingState::Idle {
+            return false;
+        }
+        let engine_state = manager.get_engine_state();
+        if engine_state
+            .last_error
+            .as_deref()
+            .is_some_and(|error| !error.is_empty())
+        {
+            return false;
+        }
+        engine_state.playback_callback_count > 0
+    }
+
     fn apply_pipeline_plan_once(
         &self,
         plan: PipelinePlan,
@@ -1492,6 +1595,18 @@ impl SystemwideController {
         driver_buffer_frames: u32,
         force_driver_config: bool,
     ) -> Response {
+        // Fast path: the requested plan is already running on a healthy
+        // engine. Acknowledge without teardown: no mute ramp, no stop/start,
+        // no callback wait, no audible gap, and no generation bump to
+        // invalidate other clients' base tokens. The parameter hot path
+        // (handle_update_plugin) and structural changes never reach here as
+        // no-ops; anything unhealthy falls through to the cold path.
+        if !force_driver_config && self.pipeline_plan_already_applied(&plan) {
+            let generation = self.system_state.lock().generation();
+            log::info!("Pipeline plan identical to applied pipeline; skipping restart");
+            return Response::ok(serde_json::json!({ "generation": generation }));
+        }
+
         self.driver_manager.lock().set_engine_ready(false);
 
         {
@@ -2054,23 +2169,81 @@ impl SystemwideController {
     }
 
     pub(super) fn handle_update_plugin(&self, index: usize, parameters: Value) -> Response {
-        let mut plugins = {
+        let (old_parameters, input_channels, output_channels) = {
             let state = self.system_state.lock();
             if state.user_graph().is_some() {
                 return Response::err(
                     "A graph pipeline is active; edit and reload the graph artifact instead of using rack mutation commands.",
                 );
             }
-            state.user_plugins()
+            let plugins = state.user_plugins();
+            if index >= plugins.len() {
+                return Response::err(format!(
+                    "Plugin index {} out of range (have {})",
+                    index,
+                    plugins.len()
+                ));
+            }
+            (
+                plugins[index].parameters.clone(),
+                state.input_channels(),
+                state.output_channels(),
+            )
         };
-        if index >= plugins.len() {
-            return Response::err(format!(
-                "Plugin index {} out of range (have {})",
-                index,
-                plugins.len()
-            ));
+        if old_parameters == parameters {
+            let generation = self.system_state.lock().generation();
+            return Response::ok(serde_json::json!({ "generation": generation }));
         }
-        plugins[index].parameters = parameters;
+
+        let mut plugins = self.system_state.lock().user_plugins();
+        plugins[index].parameters = parameters.clone();
+        let plan = match self.system_state.lock().prepare_plan(
+            plugins.clone(),
+            input_channels,
+            output_channels,
+            input_channels,
+        ) {
+            Ok(plan) => plan,
+            Err(error) => return Response::err(error),
+        };
+
+        // Fast path: zero-dropout per-parameter update while the engine runs.
+        // The runtime chain injects the input loudness monitor at position 0,
+        // so user plugin `index` runs at runtime position `index + 1`. Any
+        // failure (unknown parameter, engine busy, non-object shapes) falls
+        // back to the full chain rebuild below, which remains the path for
+        // structural changes and for starting an idle engine.
+        let engine_running =
+            self.manager.lock().get_state() != sotf_audio::manager::StreamingState::Idle;
+        if let Some(changed) = changed_plugin_parameters(&old_parameters, &parameters)
+            && engine_running
+        {
+            let runtime_index = index + 1;
+            let mut hot_error: Option<String> = None;
+            for (param_id, value) in &changed {
+                if let Err(error) = self.manager.lock().set_plugin_parameter(
+                    runtime_index,
+                    param_id.clone(),
+                    encode_plugin_param_value(value),
+                ) {
+                    hot_error = Some(error);
+                    break;
+                }
+            }
+            if hot_error.is_none() {
+                self.manager
+                    .lock()
+                    .set_loudness_plugin_index(plan.output_loudness_index);
+                self.system_state.lock().commit_applied(&plan);
+                let generation = self.system_state.lock().generation();
+                log::info!("Driver plugin parameters hot-updated successfully");
+                return Response::ok(serde_json::json!({ "generation": generation }));
+            }
+            log::warn!(
+                "Parameter hot-update failed ({}); falling back to chain rebuild",
+                hot_error.unwrap_or_else(|| "unknown error".to_string())
+            );
+        }
         self.reload_plugins_with_user_plugins(plugins)
     }
 

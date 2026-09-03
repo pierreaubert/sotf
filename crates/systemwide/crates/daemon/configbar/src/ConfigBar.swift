@@ -2299,15 +2299,11 @@ struct ConfigurationView: View {
                             deviceMutationGeneration &+= 1
                             let mutationGeneration = deviceMutationGeneration
                             deviceMutationInFlight = true
-                            var command: [String: Any] = [
-                                "command": "apply_configuration",
+                            let fields: [String: Any] = [
                                 "output_device": newDevice,
                                 "output_channels": requestedOutputChannels,
                             ]
-                            if let daemonPipelineGeneration {
-                                command["base_generation"] = daemonPipelineGeneration
-                            }
-                            client.sendCommandAsync(command) { response in
+                            sendApplyConfiguration(fields) { response in
                                 guard mutationGeneration == deviceMutationGeneration,
                                       acceptsStatusSnapshot(statusGeneration) else { return }
                                 deviceMutationInFlight = false
@@ -3326,6 +3322,42 @@ struct ConfigurationView: View {
         return nil
     }
 
+    /// Send an `apply_configuration` patch, retrying once after a generation
+    /// conflict. A conflict means the daemon committed a newer pipeline (cold
+    /// start, driver reconfigure, another client) after this UI read its
+    /// generation; the requested values stay valid against fresh state, so
+    /// refresh the generation and resend once instead of surfacing a
+    /// mismatch. All other failures complete immediately for rollback.
+    private func sendApplyConfiguration(
+        _ fields: [String: Any],
+        mayRetry: Bool = true,
+        completion: @escaping (AudioEngineClient.Response?) -> Void
+    ) {
+        var command = fields
+        command["command"] = "apply_configuration"
+        if let daemonPipelineGeneration {
+            command["base_generation"] = daemonPipelineGeneration
+        }
+        client.sendCommandAsync(command) { response in
+            if configBarShouldRetryApplyConfiguration(
+                success: response?.success == true,
+                daemonError: response?.error,
+                mayRetry: mayRetry
+            ) {
+                AudioEngineClient.pollStatus { status, reachable in
+                    guard reachable else {
+                        completion(response)
+                        return
+                    }
+                    daemonPipelineGeneration = status.generation
+                    sendApplyConfiguration(fields, mayRetry: false, completion: completion)
+                }
+                return
+            }
+            completion(response)
+        }
+    }
+
     private func applyHALConfiguration() {
         // Validate channel configuration
         guard halInputChannels >= 1 && halInputChannels <= 32 else {
@@ -3349,16 +3381,12 @@ struct ConfigurationView: View {
         let mutationGeneration = channelMutationGeneration
         channelMutationInFlight = true
 
-        var command: [String: Any] = [
-            "command": "apply_configuration",
+        let fields: [String: Any] = [
             "input_channels": requestedInputChannels,
             "output_channels": requestedOutputChannels
         ]
-        if let daemonPipelineGeneration {
-            command["base_generation"] = daemonPipelineGeneration
-        }
 
-        client.sendCommandAsync(command) { response in
+        sendApplyConfiguration(fields) { response in
             guard mutationGeneration == channelMutationGeneration,
                   acceptsStatusSnapshot(statusGeneration) else { return }
             channelMutationInFlight = false
@@ -3686,14 +3714,10 @@ struct ConfigurationView: View {
     private func setSampleRate(_ rate: UInt32) {
         halConfigError = nil
         let statusGeneration = beginDaemonMutation()
-        var command: [String: Any] = [
-            "command": "apply_configuration",
+        let fields: [String: Any] = [
             "sample_rate": rate,
         ]
-        if let daemonPipelineGeneration {
-            command["base_generation"] = daemonPipelineGeneration
-        }
-        client.sendCommandAsync(command) { response in
+        sendApplyConfiguration(fields) { response in
             guard acceptsStatusSnapshot(statusGeneration) else { return }
             adoptPipelineGeneration(from: response)
             if response?.success == true {
@@ -3712,14 +3736,10 @@ struct ConfigurationView: View {
     private func setBufferFrames(_ frames: UInt32) {
         halConfigError = nil
         let statusGeneration = beginDaemonMutation()
-        var command: [String: Any] = [
-            "command": "apply_configuration",
+        let fields: [String: Any] = [
             "buffer_frames": frames,
         ]
-        if let daemonPipelineGeneration {
-            command["base_generation"] = daemonPipelineGeneration
-        }
-        client.sendCommandAsync(command) { response in
+        sendApplyConfiguration(fields) { response in
             guard acceptsStatusSnapshot(statusGeneration) else { return }
             adoptPipelineGeneration(from: response)
             if response?.success == true {

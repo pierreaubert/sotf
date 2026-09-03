@@ -230,6 +230,20 @@ public func configBarMutationErrorMessage(
     return daemonError
 }
 
+/// Whether a failed `apply_configuration` reply warrants one resend against
+/// a refreshed pipeline generation. Only a generation conflict with retries
+/// remaining retries: the requested values are still valid against fresh
+/// state (cold start, driver reconfigure, another client committed first).
+/// Every other failure (validation, device, transport) must surface
+/// immediately so the UI can roll back optimistic state.
+public func configBarShouldRetryApplyConfiguration(
+    success: Bool,
+    daemonError: String?,
+    mayRetry: Bool
+) -> Bool {
+    mayRetry && !success && isConfigBarGenerationConflict(daemonError)
+}
+
 /// Pure window-dismissal policy used by the AppKit window subclass. Keeping
 /// the decision outside AppKit makes the accessory-app lifecycle behavior
 /// testable without creating a live NSWindow in a test process.

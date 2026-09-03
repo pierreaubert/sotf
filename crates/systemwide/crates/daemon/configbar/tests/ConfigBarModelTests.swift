@@ -409,6 +409,26 @@ final class ConfigBarModelTests: XCTestCase {
         )
     }
 
+    func testApplyConfigurationRetriesOnceOnGenerationConflict() {
+        let conflict = "Pipeline generation conflict: intent was based on generation 0, current generation is 1."
+        XCTAssertTrue(configBarShouldRetryApplyConfiguration(
+            success: false, daemonError: conflict, mayRetry: true
+        ))
+        XCTAssertFalse(
+            configBarShouldRetryApplyConfiguration(success: false, daemonError: conflict, mayRetry: false),
+            "the retry must not loop"
+        )
+        XCTAssertFalse(configBarShouldRetryApplyConfiguration(
+            success: true, daemonError: nil, mayRetry: true
+        ))
+        XCTAssertFalse(configBarShouldRetryApplyConfiguration(
+            success: false, daemonError: "Output device 'X' not found.", mayRetry: true
+        ), "validation failures must surface for rollback, not resend")
+        XCTAssertFalse(configBarShouldRetryApplyConfiguration(
+            success: false, daemonError: nil, mayRetry: true
+        ), "unreachable daemon must surface, not resend")
+    }
+
     // MARK: - Daemon watchdog policy
 
     func testWatchdogToleratesTransientProbeFailureButRestartsOnRepeatedOnes() {

@@ -28,6 +28,35 @@ pub(super) struct PipelineSpec {
     pub(super) output_channels: usize,
 }
 
+/// Whether two pipeline specs describe the same audio graph: same device,
+/// same channel geometry, and same user plugins/graph (compared by value, so
+/// key order and float formatting cannot cause a spurious restart).
+pub(super) fn pipeline_specs_match(first: &PipelineSpec, second: &PipelineSpec) -> bool {
+    if first.output_device != second.output_device
+        || first.input_channels != second.input_channels
+        || first.output_channels != second.output_channels
+    {
+        return false;
+    }
+    let plugins_match = match (
+        serde_json::to_value(&first.user_plugins),
+        serde_json::to_value(&second.user_plugins),
+    ) {
+        (Ok(first), Ok(second)) => first == second,
+        _ => false,
+    };
+    if !plugins_match {
+        return false;
+    }
+    match (
+        serde_json::to_value(&first.user_graph),
+        serde_json::to_value(&second.user_graph),
+    ) {
+        (Ok(first), Ok(second)) => first == second,
+        _ => false,
+    }
+}
+
 impl Default for PipelineSpec {
     fn default() -> Self {
         Self {

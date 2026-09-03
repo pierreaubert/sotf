@@ -2,8 +2,9 @@
 use super::audio_daemon::{
     AudioDaemon, CaptureResumeTracker, METERING_LATENCY_BUDGET_MICROS,
     PIPELINE_RESPONSE_BUDGET_BYTES, PLAYBACK_IDLE_REBUILD_THRESHOLD, RuntimeTelemetry,
-    join_initial_playback_thread, pipeline_timing_after_config_request,
-    rack_plugins_to_linear_graph, reorder_linear_graph, wait_for_playback_observation,
+    changed_plugin_parameters, encode_plugin_param_value, join_initial_playback_thread,
+    pipeline_timing_after_config_request, rack_plugins_to_linear_graph, reorder_linear_graph,
+    startup_channel_geometry, wait_for_playback_observation,
 };
 use super::audio_daemon::{ClientSlot, clone_client_shutdown_stream, try_acquire_client_slot};
 use super::command::Command;
@@ -24,7 +25,7 @@ use super::pipeline_reconfigure_outcome::handle_driver_config_change;
 use super::pipeline_reconfigure_outcome::publish_reconfigured_driver_readiness;
 use super::pipeline_reconfigure_outcome::reconfigure_audio_pipeline;
 use super::pipeline_reconfigure_outcome::wait_for_reconfigured_playback;
-use super::pipeline_spec::{PipelineSpec, pipeline_spec_to_json};
+use super::pipeline_spec::{PipelineSpec, pipeline_spec_to_json, pipeline_specs_match};
 use super::pipeline_supervisor::PipelineSupervisor;
 use super::plugin::{
     plugin_parameter_descriptors, plugin_type_category, plugin_type_to_engine_str,
@@ -1339,6 +1340,161 @@ mod ipc_safety_tests {
         let state = daemon.system_state.lock();
         assert_eq!(state.applied_generation(), Some(1));
         assert_eq!(state.output_channels(), 2);
+    }
+
+    #[test]
+    fn update_plugin_rejects_stale_generation_without_side_effects() {
+        let daemon = test_daemon_with_driver(fake_driver_state());
+        {
+            let mut state = daemon.system_state.lock();
+            let plan = state
+                .prepare_plan(vec![test_plugin("gain")], 2, 2, 2)
+                .expect("valid baseline plan");
+            state.commit_applied(&plan);
+        }
+
+        let response = daemon.handle_command_at_generation(
+            Command::UpdatePlugin {
+                index: 0,
+                parameters: serde_json::json!({"gain_db": 3.0}),
+            },
+            Some(0),
+        );
+
+        assert!(!response.success);
+        assert!(
+            response
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("generation conflict"))
+        );
+        let state = daemon.system_state.lock();
+        assert_eq!(state.user_plugins()[0].parameters, serde_json::json!({}));
+    }
+
+    #[test]
+    fn update_plugin_identical_parameters_is_noop_without_generation_bump() {
+        let daemon = test_daemon_with_driver(fake_driver_state());
+        {
+            let mut state = daemon.system_state.lock();
+            let plan = state
+                .prepare_plan(vec![test_plugin("gain")], 2, 2, 2)
+                .expect("valid baseline plan");
+            state.commit_applied(&plan);
+        }
+        let baseline_generation = daemon.system_state.lock().generation();
+
+        let response = daemon.handle_command(Command::UpdatePlugin {
+            index: 0,
+            parameters: serde_json::json!({}),
+        });
+
+        assert!(response.success);
+        assert_eq!(
+            response.data.as_ref().map(|data| &data["generation"]),
+            Some(&serde_json::json!(baseline_generation))
+        );
+        assert_eq!(daemon.system_state.lock().generation(), baseline_generation);
+    }
+
+    #[test]
+    fn plugin_param_value_encoding_matches_engine_string_contract() {
+        assert_eq!(encode_plugin_param_value(&serde_json::json!("raw")), "raw");
+        assert_eq!(encode_plugin_param_value(&serde_json::json!(1.5)), "1.5");
+        assert_eq!(encode_plugin_param_value(&serde_json::json!(true)), "true");
+        assert_eq!(
+            encode_plugin_param_value(&serde_json::json!({"a": [1, 2]})),
+            r#"{"a":[1,2]}"#
+        );
+    }
+
+    #[test]
+    fn changed_plugin_parameters_reports_only_changed_keys() {
+        let old = serde_json::json!({"gain_db": 0.0, "mute": false});
+        let new = serde_json::json!({"gain_db": 3.0, "mute": false});
+
+        let changed = changed_plugin_parameters(&old, &new).expect("diffable objects");
+        assert_eq!(
+            changed,
+            vec![("gain_db".to_string(), serde_json::json!(3.0))]
+        );
+
+        let unchanged =
+            changed_plugin_parameters(&old, &old).expect("identical objects diff cleanly");
+        assert!(unchanged.is_empty());
+
+        assert!(changed_plugin_parameters(&old, &serde_json::json!([1, 2])).is_none());
+        assert!(
+            changed_plugin_parameters(
+                &serde_json::json!({"gain_db": 0.0, "mute": false}),
+                &serde_json::json!({"gain_db": 0.0}),
+            )
+            .is_none(),
+            "removed keys must fall back to a full rebuild"
+        );
+    }
+
+    #[test]
+    fn pipeline_specs_match_ignores_key_order_but_catches_real_differences() {
+        let base = PipelineSpec {
+            output_device: Some("Speakers".to_string()),
+            user_plugins: vec![PluginConfig {
+                plugin_type: "gain".to_string(),
+                parameters: serde_json::json!({"b": 1, "a": 2.0}),
+            }],
+            user_graph: None,
+            input_channels: 2,
+            output_channels: 2,
+        };
+        let reordered_keys = PipelineSpec {
+            user_plugins: vec![PluginConfig {
+                plugin_type: "gain".to_string(),
+                parameters: serde_json::json!({"a": 2.0, "b": 1}),
+            }],
+            ..base.clone()
+        };
+        assert!(pipeline_specs_match(&base, &reordered_keys));
+
+        for different in [
+            PipelineSpec {
+                input_channels: 8,
+                ..base.clone()
+            },
+            PipelineSpec {
+                output_channels: 6,
+                ..base.clone()
+            },
+            PipelineSpec {
+                output_device: None,
+                ..base.clone()
+            },
+            PipelineSpec {
+                user_plugins: vec![PluginConfig {
+                    plugin_type: "gain".to_string(),
+                    parameters: serde_json::json!({"a": 3.0, "b": 1}),
+                }],
+                ..base.clone()
+            },
+            PipelineSpec {
+                user_plugins: Vec::new(),
+                ..base.clone()
+            },
+        ] {
+            assert!(
+                !pipeline_specs_match(&base, &different),
+                "diverged spec must take the cold restart path"
+            );
+        }
+    }
+
+    #[test]
+    fn startup_adopts_hal_input_geometry_with_safe_fallbacks() {
+        assert_eq!(startup_channel_geometry(8, 2), (8, 2));
+        assert_eq!(startup_channel_geometry(2, 6), (2, 6));
+        assert_eq!(startup_channel_geometry(0, 2), (2, 2));
+        assert_eq!(startup_channel_geometry(64, 2), (2, 2));
+        assert_eq!(startup_channel_geometry(2, 0), (2, 1));
+        assert_eq!(startup_channel_geometry(2, 99), (2, 32));
     }
 
     #[test]
