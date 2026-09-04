@@ -2425,8 +2425,9 @@ impl SystemwideController {
                     .lock()
                     .set_loudness_plugin_index(plan.output_loudness_index);
                 self.system_state.lock().commit_applied(&plan);
+                let generation = self.system_state.lock().generation();
                 log::info!("Driver plugin chain hot-updated successfully");
-                Response::ok_empty()
+                Response::ok(serde_json::json!({ "generation": generation }))
             }
             Err(e) => {
                 log::error!("Failed to hot-update plugin chain: {}", e);

@@ -412,7 +412,7 @@ struct DescriptorPluginEditor: View {
     private var crossfeedVisibleDescriptors: [PluginParameterDescriptor] {
         let modeIndex = crossfeedAlgorithmModeIndex()
         return descriptors.filter { descriptor in
-            if descriptor.key == "crossfeed_mode" {
+            if descriptor.key == "mode" || descriptor.key == "crossfeed_mode" {
                 return false
             }
 
@@ -594,16 +594,16 @@ struct DescriptorPluginEditor: View {
     private func updateValue(_ value: Any, for descriptor: PluginParameterDescriptor) {
         if pluginType == "crossfeed" {
             switch descriptor.key {
-            case "crossfeed_mode":
+            case "mode", "crossfeed_mode":
                 let index = crossfeedModeIndex(from: value) ?? 3
-                draftParameters["crossfeed_mode"] = index
                 draftParameters["mode"] = crossfeedModeValue(for: index)
+                draftParameters.removeValue(forKey: "crossfeed_mode")
                 onUpdate(draftParameters)
                 return
-            case "crossfeed_preset":
+            case "preset", "crossfeed_preset":
                 let index = crossfeedPresetIndex(from: value) ?? 0
-                draftParameters["crossfeed_preset"] = index
                 draftParameters["preset"] = crossfeedPresetValue(for: index)
+                draftParameters.removeValue(forKey: "crossfeed_preset")
                 onUpdate(draftParameters)
                 return
             default:
@@ -690,10 +690,10 @@ struct DescriptorPluginEditor: View {
     }
 
     private func choiceIndex(for descriptor: PluginParameterDescriptor) -> Int {
-        if pluginType == "crossfeed" && descriptor.key == "crossfeed_mode" {
+        if pluginType == "crossfeed" && (descriptor.key == "mode" || descriptor.key == "crossfeed_mode") {
             return crossfeedModeIndex()
         }
-        if pluginType == "crossfeed" && descriptor.key == "crossfeed_preset" {
+        if pluginType == "crossfeed" && (descriptor.key == "preset" || descriptor.key == "crossfeed_preset") {
             return crossfeedPresetIndex()
         }
 
@@ -703,16 +703,31 @@ struct DescriptorPluginEditor: View {
            let index = choices.firstIndex(of: string) {
             return index
         }
+        // Oversampling travels as a factor (1/2/4); map it onto the
+        // ["Off", "2x", "4x"] choice positions so the stored value displays
+        // correctly instead of shifting by one.
+        if descriptor.key == "oversampling", let factor = numberValue(raw) {
+            switch Int(factor.rounded()) {
+            case 2: return min(1, max(choices.count - 1, 0))
+            case 4: return min(2, max(choices.count - 1, 0))
+            default: return 0
+            }
+        }
         return Int((numberValue(raw) ?? descriptor.defaultDouble ?? 0.0).rounded())
             .clamped(to: 0...max(choices.count - 1, 0))
     }
 
     private func choiceValue(for descriptor: PluginParameterDescriptor, index: Int) -> Any {
         let choices = descriptor.choices ?? []
-        if pluginType == "crossfeed" && (descriptor.key == "crossfeed_mode" || descriptor.key == "crossfeed_preset") {
+        if pluginType == "crossfeed" && (descriptor.key == "mode" || descriptor.key == "crossfeed_mode" || descriptor.key == "preset" || descriptor.key == "crossfeed_preset") {
             return index
         }
-        if descriptor.key == "speaker_config", let selected = choices[safe: index] {
+        // These controls address the plugin by label: the factory maps the
+        // spec labels to factors/values, while integer factors stay valid
+        // for hand-written configs.
+        if descriptor.key == "speaker_config" || descriptor.key == "oversampling",
+           let selected = choices[safe: index]
+        {
             return selected
         }
         if let current = rawValue(for: descriptor) as? String,
@@ -749,17 +764,17 @@ struct DescriptorPluginEditor: View {
             normalized["enabled"] = false
         }
         let presetIndex = crossfeedPresetIndex(from: normalized["crossfeed_preset"] ?? normalized["preset"]) ?? 0
-        normalized["crossfeed_mode"] = modeIndex
         normalized["mode"] = crossfeedModeValue(for: modeIndex)
-        normalized["crossfeed_preset"] = presetIndex
+        normalized.removeValue(forKey: "crossfeed_mode")
         normalized["preset"] = crossfeedPresetValue(for: presetIndex)
+        normalized.removeValue(forKey: "crossfeed_preset")
         return normalized
     }
 
     private func updateCrossfeedMode(_ index: Int) {
         let modeIndex = index.clamped(to: 1...3)
-        draftParameters["crossfeed_mode"] = modeIndex
         draftParameters["mode"] = crossfeedModeValue(for: modeIndex)
+        draftParameters.removeValue(forKey: "crossfeed_mode")
         onUpdate(draftParameters)
     }
 

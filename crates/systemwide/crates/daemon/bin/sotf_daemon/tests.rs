@@ -1398,6 +1398,45 @@ mod ipc_safety_tests {
     }
 
     #[test]
+    fn update_plugin_adopted_generation_allows_successive_edits() {
+        // Toolbar contract: adopt the generation from each success response.
+        // The next edit with the adopted generation must not conflict, or
+        // every parameter tweak fails once and only succeeds on retry.
+        let daemon = test_daemon_with_driver(fake_driver_state());
+        {
+            let mut state = daemon.system_state.lock();
+            let plan = state
+                .prepare_plan(vec![test_plugin("gain")], 2, 2, 2)
+                .expect("valid baseline plan");
+            state.commit_applied(&plan);
+        }
+        let baseline = daemon.system_state.lock().generation();
+
+        let first = daemon.handle_command_at_generation(
+            Command::UpdatePlugin {
+                index: 0,
+                parameters: serde_json::json!({}),
+            },
+            Some(baseline),
+        );
+        assert!(first.success);
+        let adopted = first
+            .data
+            .as_ref()
+            .and_then(|data| data["generation"].as_u64())
+            .expect("success response carries the generation");
+
+        let second = daemon.handle_command_at_generation(
+            Command::UpdatePlugin {
+                index: 0,
+                parameters: serde_json::json!({}),
+            },
+            Some(adopted),
+        );
+        assert!(second.success);
+    }
+
+    #[test]
     fn plugin_param_value_encoding_matches_engine_string_contract() {
         assert_eq!(encode_plugin_param_value(&serde_json::json!("raw")), "raw");
         assert_eq!(encode_plugin_param_value(&serde_json::json!(1.5)), "1.5");

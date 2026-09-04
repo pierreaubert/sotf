@@ -484,6 +484,15 @@ struct PluginRackView: View {
         client.sendCommandAsync(command) { response in
             if response?.success != true {
                 handleMutationFailure(response, fallback: "Failed to update plugin")
+            } else if let generation = response?.data?["generation"]?.value as? Int {
+                // The daemon bumps the pipeline generation on every applied
+                // mutation and returns it. Adopt it directly: without this,
+                // the next edit reuses a stale generation and fails with a
+                // spurious "pipeline changed" conflict that only a retry
+                // clears.
+                graphGeneration = generation
+            } else {
+                refreshPlugins()
             }
         }
         return true
