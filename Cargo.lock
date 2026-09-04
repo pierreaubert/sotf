@@ -11017,6 +11017,7 @@ dependencies = [
 name = "sotf-plugin-multiband-compressor"
 version = "0.5.16"
 dependencies = [
+ "log",
  "math-dsp",
  "math-iir-fir",
  "serde",

@@ -95,6 +95,30 @@ fn loudness_data_json_includes_meter_fields() {
 }
 
 #[test]
+fn stale_readiness_heals_only_for_healthy_streaming_engine() {
+    let healthy: Result<bool, String> = Ok(true);
+    let idle: Result<bool, String> = Ok(false);
+    let failed: Result<bool, String> = Err("boom".to_string());
+    // Recorded failure + ready driver + healthy engine: heal.
+    assert!(AudioDaemon::should_heal_stale_readiness(
+        true, true, &healthy
+    ));
+    // No recorded failure: nothing to heal.
+    assert!(!AudioDaemon::should_heal_stale_readiness(
+        false, true, &healthy
+    ));
+    // Driver not ready: healing would lie to the HAL.
+    assert!(!AudioDaemon::should_heal_stale_readiness(
+        true, false, &healthy
+    ));
+    // Engine idle or errored: still genuinely down.
+    assert!(!AudioDaemon::should_heal_stale_readiness(true, true, &idle));
+    assert!(!AudioDaemon::should_heal_stale_readiness(
+        true, true, &failed
+    ));
+}
+
+#[test]
 fn available_plugin_descriptors_expose_engine_keys() {
     let settings = sotf_audio::PluginSettings::default_for(&PluginType::Gain).unwrap();
     let descriptors = plugin_parameter_descriptors(&settings);

@@ -615,6 +615,25 @@ impl SystemwideController {
         true
     }
 
+    /// Whether a recorded pipeline recovery may be healed without a restart.
+    ///
+    /// A driver-initiated reconfigure clears the HAL `engine_ready` flag and
+    /// only restores it after the readiness wait observes healthy playback.
+    /// When that wait fails on a transient fault (e.g. CoreAudio re-enumerates
+    /// the output device mid-restart) the engine typically recovers on its own
+    /// seconds later, but nothing re-publishes readiness: the HAL keeps
+    /// holding input, meters stay at zero, and only a manual daemon restart
+    /// clears it. Heal exactly when the recorded failure is stale, the driver
+    /// is ready, and the engine meets the same health bar as startup
+    /// readiness (no recorded error, callbacks flowing).
+    pub(super) fn should_heal_stale_readiness(
+        recovery_recorded: bool,
+        driver_ready: bool,
+        startup_observation: &Result<bool, String>,
+    ) -> bool {
+        recovery_recorded && driver_ready && matches!(startup_observation, Ok(true))
+    }
+
     pub(super) fn playback_startup_observation(
         state: &sotf_audio::engine::AudioEngineState,
     ) -> Result<bool, String> {
@@ -1206,6 +1225,25 @@ impl SystemwideController {
         };
         let driver_status = self.driver_manager.lock().status();
         let key_status = self.key_manager.lock().status();
+
+        // Self-heal a stale readiness failure (see should_heal_stale_readiness):
+        // re-publish readiness and report the healed state below instead of
+        // demanding a manual daemon restart for an engine that already
+        // recovered on its own. Scoped locks only; the manager lock from
+        // above is released by this point.
+        let mut pipeline_recovery = pipeline_recovery;
+        if Self::should_heal_stale_readiness(
+            pipeline_recovery.is_some(),
+            driver_status.driver_ready,
+            &Self::playback_startup_observation(&engine_state),
+        ) {
+            self.system_state.lock().clear_pipeline_recovery();
+            self.driver_manager.lock().set_engine_ready(true);
+            log::info!(
+                "Healed stale pipeline recovery: engine streaming, re-published HAL readiness"
+            );
+            pipeline_recovery = None;
+        }
 
         let mut recovery_actions = Vec::<String>::new();
         if !driver_status.platform_supported {
