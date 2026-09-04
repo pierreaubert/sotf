@@ -2,11 +2,11 @@ use super::consts::PARAMS;
 use sotf_host::param_specs::find_by_key as pk;
 
 pub(super) fn d_crossfeed_mode() -> usize {
-    pk(PARAMS, "crossfeed_mode").default_usize()
+    pk(PARAMS, "mode").default_usize()
 }
 
 pub(super) fn d_crossfeed_preset() -> usize {
-    pk(PARAMS, "crossfeed_preset").default_usize()
+    pk(PARAMS, "preset").default_usize()
 }
 
 pub(super) fn d_enabled() -> bool {

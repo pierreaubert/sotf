@@ -357,3 +357,22 @@ fn find_by_key_panics_when_missing() {
     )];
     let _ = find_by_key(PARAMS, "missing");
 }
+
+#[test]
+fn choice_label_from_index_maps_positions() {
+    use super::types::{choice_index_from_label, choice_label_from_index};
+    const LABELS: &[&str] = &["Disabled", "Pre", "Post"];
+    assert_eq!(choice_label_from_index(LABELS, 0), Some("Disabled"));
+    assert_eq!(choice_label_from_index(LABELS, 2), Some("Post"));
+    assert_eq!(choice_label_from_index(LABELS, 3), None);
+}
+
+#[test]
+fn choice_index_from_label_prefers_exact_then_case_insensitive() {
+    use super::types::{choice_index_from_label, choice_label_from_index};
+    const LABELS: &[&str] = &["Mb", "Hrtf"];
+    assert_eq!(choice_index_from_label(LABELS, "Mb"), Some(0));
+    assert_eq!(choice_index_from_label(LABELS, "HRTF"), Some(1));
+    assert_eq!(choice_index_from_label(LABELS, "Nope"), None);
+    assert_eq!(choice_label_from_index(LABELS, u64::MAX), None);
+}

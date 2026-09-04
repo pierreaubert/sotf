@@ -15,7 +15,7 @@ use sotf_host::param_specs::ParamSpec;
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
-mod consts;
+pub(crate) mod consts;
 mod d;
 #[cfg(test)]
 mod tests;

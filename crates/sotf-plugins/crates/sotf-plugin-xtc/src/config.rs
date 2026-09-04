@@ -1,6 +1,10 @@
 //! Configuration types and parameters for the XTC plugin.
 
+use crate::params::consts::HEAD_MODELS;
 use serde::{Deserialize, Serialize};
+use sotf_host::define_choice_index_deserializer;
+
+define_choice_index_deserializer!(deserialize_head_model, HEAD_MODELS);
 
 /// XTC plugin configuration parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,7 +60,7 @@ pub struct XtcPluginParams {
     pub head_shadow_slope_db_per_octave: f32,
 
     /// Head diffraction model: 0 = Woodworth (classic), 1 = Brown-Duda (rigid sphere)
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_head_model")]
     pub head_model: usize,
 
     /// Head tracking: lateral offset in meters (default: 0.0)

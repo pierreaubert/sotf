@@ -5,7 +5,11 @@
 //! that go beyond the user-editable PARAMS.
 
 use super::room::RoomModel;
+use crate::params::CROSSFADE_MODE_LABELS;
 use serde::{Deserialize, Serialize};
+use sotf_host::define_choice_index_deserializer;
+
+define_choice_index_deserializer!(deserialize_crossfade_mode, CROSSFADE_MODE_LABELS);
 
 /// Channel counts with an unambiguous shared `SpeakerConfig` mapping.
 pub const SUPPORTED_INPUT_CHANNELS: [usize; 10] = [1, 2, 3, 5, 6, 8, 10, 12, 14, 16];
@@ -110,7 +114,7 @@ pub struct BinauralDecoderParams {
     pub head_width_cm: f32,
     #[serde(default = "default_ear_height_cm")]
     pub ear_height_cm: f32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_crossfade_mode")]
     pub crossfade_mode: usize,
     #[serde(default = "default_crossfade_ms")]
     pub crossfade_ms: f32,

@@ -22,12 +22,21 @@ use super::default_safety_limit_db;
 use super::default_treble_ratio;
 use crate::early_reflections::RoomPreset;
 use serde::{Deserialize, Serialize};
+use sotf_host::define_choice_string_deserializer;
 use sotf_host::param_specs::UpdateMode;
 use sotf_host::parameters::Parameter;
 
+use super::consts::{ROOM_PRESETS, SPEAKER_CONFIGS};
+
+define_choice_string_deserializer!(deserialize_speaker_config, SPEAKER_CONFIGS);
+define_choice_string_deserializer!(deserialize_room_preset, ROOM_PRESETS);
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AaePluginParams {
-    #[serde(default = "default_speaker_config")]
+    #[serde(
+        default = "default_speaker_config",
+        deserialize_with = "deserialize_speaker_config"
+    )]
     pub speaker_config: String,
     #[serde(default = "default_room_size")]
     pub room_size: f32,
@@ -39,7 +48,10 @@ pub struct AaePluginParams {
     pub treble_ratio: f32,
     #[serde(default = "default_pre_delay_ms")]
     pub pre_delay_ms: f32,
-    #[serde(default = "default_room_preset")]
+    #[serde(
+        default = "default_room_preset",
+        deserialize_with = "deserialize_room_preset"
+    )]
     pub room_preset: String,
     #[serde(default = "default_dry_level")]
     pub dry_level: f32,

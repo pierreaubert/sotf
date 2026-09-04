@@ -26,7 +26,7 @@ pub const TARGET_MODES: &[&str] = &["All", "Tonal", "Transient"];
 // ============================================================================
 
 pub const PARAMS: &[ParamSpec] = &[
-    ParamSpec::choice("FFT Size", "fft_size", 1, FFT_SIZES, "Analysis")
+    ParamSpec::choice("FFT Size", "fft_size_index", 1, FFT_SIZES, "Analysis")
         .structural()
         .setup()
         .doc("FFT window size (higher = better frequency resolution, more latency)"),
@@ -195,7 +195,7 @@ fn d_target_mode() -> f64 {
     pk(PARAMS, "target_mode").default_f64()
 }
 fn d_fft_size() -> usize {
-    pk(PARAMS, "fft_size").default_f64() as usize
+    pk(PARAMS, "fft_size_index").default_f64() as usize
 }
 fn d_threshold() -> f64 {
     pk(PARAMS, "threshold").default_f64()
@@ -356,7 +356,10 @@ mod tests {
     #[test]
     fn deserialize_empty_json_uses_defaults() {
         let p: Params = serde_json::from_str("{}").unwrap();
-        assert_eq!(p.fft_size, pk(PARAMS, "fft_size").default_f64() as usize);
+        assert_eq!(
+            p.fft_size,
+            pk(PARAMS, "fft_size_index").default_f64() as usize
+        );
         assert_eq!(p.threshold, pk(PARAMS, "threshold").default_f64());
         assert_eq!(p.ratio, pk(PARAMS, "ratio").default_f64());
         assert_eq!(p.attack, pk(PARAMS, "attack").default_f64());

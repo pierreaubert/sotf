@@ -53,6 +53,39 @@ pub struct ParameterMap {
     /// Cached C-compatible info structs (leaked CStrings for FFI safety).
     /// Stored as `ParameterInfo` directly so we can return stable pointers via `get_info()`.
     cached_infos: Vec<ParameterInfo>,
+    plugin_type: String,
+}
+
+/// Translate a pre-migration external parameter id to its canonical key.
+///
+/// Enumeration always exposes canonical ids, but hosts with persisted
+/// sessions still address renamed choice parameters by their legacy ids.
+/// Scoped per plugin type so identically-named parameters of untouched
+/// plugins (e.g. the upmixer's own `fft_size`) are never hijacked.
+fn canonical_param_id<'a>(plugin_type: &str, param_id: &'a str) -> std::borrow::Cow<'a, str> {
+    // FFI callers use display names ("LinearPhaseEQ"), snake case, and
+    // hyphenated aliases ("Linear-Phase-EQ") interchangeably; normalize all
+    // three before matching so the legacy table cannot be bypassed by
+    // spelling.
+    let flat: String = plugin_type
+        .chars()
+        .filter(|c| *c != '-' && *c != '_')
+        .collect::<String>()
+        .to_lowercase();
+    let linear_phase_eq = flat == "linearphaseeq" || flat == "firdesigner";
+    let crossfeed = flat == "crossfeed";
+    let spectral = flat == "spectralcompressor";
+    let band_split = flat == "bandsplit";
+    use std::borrow::Cow;
+    match param_id {
+        "fir_length" if linear_phase_eq => Cow::Borrowed("fir_length_index"),
+        "phase_mode" if linear_phase_eq => Cow::Borrowed("phase_mode_index"),
+        "crossfeed_mode" if crossfeed => Cow::Borrowed("mode"),
+        "crossfeed_preset" if crossfeed => Cow::Borrowed("preset"),
+        "fft_size" if spectral => Cow::Borrowed("fft_size_index"),
+        "crossover_type" if band_split => Cow::Borrowed("type"),
+        _ => Cow::Borrowed(param_id),
+    }
 }
 
 impl ParameterMap {
@@ -127,6 +160,7 @@ impl ParameterMap {
         Self {
             bridge,
             cached_infos,
+            plugin_type: plugin_type.to_string(),
         }
     }
 
@@ -201,6 +235,7 @@ impl ParameterMap {
         param_id: &str,
         normalized_value: f64,
     ) -> Result<(), String> {
+        let param_id: &str = &canonical_param_id(&self.plugin_type, param_id);
         // Try ParamBridge first
         if let Some(index) = self.bridge.find_index(param_id) {
             return self.bridge.set_normalized(plugin, index, normalized_value);
@@ -230,6 +265,7 @@ impl ParameterMap {
 
     /// Get parameter value (normalized 0.0-1.0).
     pub fn get_normalized(&self, plugin: &dyn Plugin, param_id: &str) -> Option<f64> {
+        let param_id: &str = &canonical_param_id(&self.plugin_type, param_id);
         // Try ParamBridge first
         if let Some(index) = self.bridge.find_index(param_id) {
             return self.bridge.get_normalized(plugin, index);

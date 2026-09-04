@@ -7,8 +7,10 @@
 use sotf_host::param_specs::ParamSpec;
 use sotf_host::plugin_layout::*;
 
+pub const CROSSOVER_TYPES: &[&str] = &["LR24", "LinearPhase"];
+
 pub const PARAMS: &[ParamSpec] = &[
-    ParamSpec::choice("Type", "type", 0, &["LR24", "LinearPhase"], "General")
+    ParamSpec::choice("Type", "type", 0, CROSSOVER_TYPES, "General")
         .structural()
         .setup()
         .doc("Crossover filter family: LR24 (Linkwitz-Riley 24 dB/octave) or linear-phase FIR"),

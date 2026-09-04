@@ -1,8 +1,12 @@
+use crate::params::CROSSOVER_TYPES;
 use serde::{Deserialize, Serialize};
+use sotf_host::define_choice_string_deserializer;
+
+define_choice_string_deserializer!(deserialize_crossover_type, CROSSOVER_TYPES);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrossoverPluginParams {
-    #[serde(rename = "type")]
+    #[serde(rename = "type", deserialize_with = "deserialize_crossover_type")]
     pub crossover_type: String,
     pub frequency: f64,
     pub output: String,

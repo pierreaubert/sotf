@@ -32,7 +32,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "General",
     )
     .doc("Log-smoothed crossover frequency with bounded-rate coefficient updates"),
-    ParamSpec::choice("Type", "crossover_type", 0, CROSSOVER_TYPES, "General")
+    ParamSpec::choice("Type", "type", 0, CROSSOVER_TYPES, "General")
         .structural()
         .doc("Filter slope (24 or 48 dB/oct)"),
 ];
@@ -72,7 +72,11 @@ pub const LAYOUT: PluginLayout = PluginLayout {
 pub struct Params {
     #[serde(default = "d_frequency")]
     pub frequency: f64,
-    #[serde(rename = "type", default = "d_crossover_type")]
+    #[serde(
+        rename = "type",
+        alias = "crossover_type",
+        default = "d_crossover_type"
+    )]
     pub crossover_type: String,
 }
 

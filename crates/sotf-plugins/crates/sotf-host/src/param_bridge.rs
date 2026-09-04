@@ -178,6 +178,20 @@ fn param_value_to_f64(spec: &ParamSpec, value: &ParameterValue) -> Result<f64, S
             let clamped = clamped.min(labels.len().saturating_sub(1));
             Ok(clamped as f64)
         }
+        // The toolbar addresses some choices by label (e.g. crossfeed mode);
+        // resolve against the spec labels so these stay on the zero-dropout
+        // hot path instead of falling back to a chain rebuild.
+        (ParamType::Choice { labels, .. }, ParameterValue::String(label)) => {
+            crate::param_specs::choice_index_from_label(labels, label)
+                .map(|index| index as f64)
+                .ok_or_else(|| {
+                    format!(
+                        "{}: unknown choice label {label:?} (expected one of {})",
+                        spec.engine_key,
+                        labels.join(", ")
+                    )
+                })
+        }
         // Allow Float→Int coercion (ParameterValue::parse sometimes produces Float for ints)
         (ParamType::Int { min, max, .. }, ParameterValue::Float(v)) => {
             let clamped = (*v as i64).clamp(*min, *max);

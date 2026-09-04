@@ -6,11 +6,11 @@ pub const MODE_LABELS: &[&str] = &["Disable", "Bauer", "Meier", "Multiband", "HR
 pub const PRESET_LABELS: &[&str] = &["Default", "Cmoy", "Meier", "Mb", "Off", "HRTF"];
 
 pub const PARAMS: &[ParamSpec] = &[
-    ParamSpec::choice("Mode", "crossfeed_mode", 3, MODE_LABELS, "General")
+    ParamSpec::choice("Mode", "mode", 3, MODE_LABELS, "General")
         .structural()
         .setup()
         .doc("Crossfeed algorithm selection"),
-    ParamSpec::choice("Preset", "crossfeed_preset", 0, PRESET_LABELS, "General")
+    ParamSpec::choice("Preset", "preset", 0, PRESET_LABELS, "General")
         .structural()
         .setup()
         .doc("Load preset parameter values"),

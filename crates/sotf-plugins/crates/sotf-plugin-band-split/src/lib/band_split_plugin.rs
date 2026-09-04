@@ -338,7 +338,7 @@ impl Plugin for BandSplitPlugin {
         let name = &id.0;
         let previous_crossover_type = self.crossover_type_index;
 
-        if id.as_str() == "crossover_type" && self.initialized {
+        if (id.as_str() == "type" || id.as_str() == "crossover_type") && self.initialized {
             let requested = value
                 .as_int()
                 .ok_or_else(|| "crossover_type must be a choice index".to_string())?;
@@ -350,7 +350,7 @@ impl Plugin for BandSplitPlugin {
             }
             return Err("crossover_type is structural; rebuild the plugin".to_string());
         }
-        if id.as_str() == "crossover_type"
+        if (id.as_str() == "type" || id.as_str() == "crossover_type")
             && !matches!(value, ParameterValue::Int(index) if (0..CROSSOVER_TYPES.len() as i32).contains(&index))
         {
             return Err("crossover_type must be an LR24/LR48 choice index (0 or 1)".to_string());

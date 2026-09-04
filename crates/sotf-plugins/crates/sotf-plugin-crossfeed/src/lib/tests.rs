@@ -119,10 +119,7 @@ fn test_public_preset_selection_applies_complete_preset() {
     for (index, preset) in cases {
         let mut plugin = CrossfeedPlugin::new(CrossfeedPluginParams::default()).unwrap();
         plugin
-            .set_parameter(
-                ParameterId::from("crossfeed_preset"),
-                ParameterValue::Int(index),
-            )
+            .set_parameter(ParameterId::from("preset"), ParameterValue::Int(index))
             .unwrap();
         let expected = CrossfeedPluginParams::from_preset(preset);
         assert_eq!(plugin.params.preset, preset);
@@ -149,10 +146,7 @@ fn public_presets_converge_to_fresh_reference_audio() {
         let mut selected = CrossfeedPlugin::new(CrossfeedPluginParams::default()).unwrap();
         selected.initialize(SR).unwrap();
         selected
-            .set_parameter(
-                ParameterId::from("crossfeed_preset"),
-                ParameterValue::Int(index),
-            )
+            .set_parameter(ParameterId::from("preset"), ParameterValue::Int(index))
             .unwrap();
         let mut reference =
             CrossfeedPlugin::new(CrossfeedPluginParams::from_preset(preset)).unwrap();
@@ -1130,7 +1124,7 @@ fn mode_transition_resets_inactive_filter_state() {
     );
 
     plugin
-        .set_parameter(ParameterId::from("crossfeed_mode"), ParameterValue::Int(1))
+        .set_parameter(ParameterId::from("mode"), ParameterValue::Int(1))
         .unwrap();
     let mut bauer = vec![0.0; n * 2];
     plugin
@@ -1138,7 +1132,7 @@ fn mode_transition_resets_inactive_filter_state() {
         .unwrap();
 
     plugin
-        .set_parameter(ParameterId::from("crossfeed_mode"), ParameterValue::Int(2))
+        .set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
         .unwrap();
     let mut silent = vec![0.0; n * 2];
     plugin

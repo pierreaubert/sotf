@@ -399,7 +399,7 @@ fn test_parameter_roundtrip() {
         .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.8))
         .unwrap();
     plugin
-        .set_parameter(ParameterId::from("fft_size"), ParameterValue::Int(2))
+        .set_parameter(ParameterId::from("fft_size_index"), ParameterValue::Int(2))
         .unwrap();
 
     // Verify all parameters
@@ -432,7 +432,7 @@ fn test_parameter_roundtrip() {
         Some(ParameterValue::Float(0.8))
     );
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("fft_size")),
+        plugin.get_parameter(&ParameterId::from("fft_size_index")),
         Some(ParameterValue::Int(2))
     );
 }

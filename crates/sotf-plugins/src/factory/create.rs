@@ -108,13 +108,51 @@ pub fn create_plugin(
                     ParameterValue::Int(topology as i32),
                 )?;
             }
-            if let Some(oversampling) = parameters
-                .get("oversampling")
-                .and_then(serde_json::Value::as_f64)
-            {
+            // The toolbar sends the spec labels ("Off"/"2x"/"4x"); hand-written
+            // configs use factor values (1/2/4). Both are accepted; anything
+            // else is a loud error, never a silent remap.
+            if let Some(oversampling) = parameters.get("oversampling") {
+                let factor = match oversampling {
+                    // The daemon wire format carries integral floats (`1.0`);
+                    // accept them exactly, reject anything fractional. Index 0
+                    // (the spec's "Off" position) is also accepted since 0 is
+                    // never a valid factor; 1/2/4 keep their hand-written
+                    // config meaning as factors.
+                    serde_json::Value::Number(number) => match number.as_f64() {
+                        Some(0.0) => 1,
+                        Some(1.0) => 1,
+                        Some(2.0) => 2,
+                        Some(4.0) => 4,
+                        _ => {
+                            return Err(format!(
+                                "Invalid oversampling factor {oversampling}: must be 1, 2, or 4"
+                            ));
+                        }
+                    },
+                    serde_json::Value::String(label)
+                        if label.eq_ignore_ascii_case("off") || label == "1" =>
+                    {
+                        1
+                    }
+                    serde_json::Value::String(label)
+                        if label.eq_ignore_ascii_case("2x") || label == "2" =>
+                    {
+                        2
+                    }
+                    serde_json::Value::String(label)
+                        if label.eq_ignore_ascii_case("4x") || label == "4" =>
+                    {
+                        4
+                    }
+                    other => {
+                        return Err(format!(
+                            "Invalid oversampling {other}: expected \"Off\"/\"2x\"/\"4x\" or factor 1/2/4"
+                        ));
+                    }
+                };
                 plugin.parametric_set_parameter(
                     ParameterId::from("oversampling"),
-                    ParameterValue::Int(oversampling as i32),
+                    ParameterValue::Int(factor),
                 )?;
             }
             Ok(plugin.into_boxed_plugin())

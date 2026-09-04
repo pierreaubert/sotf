@@ -875,3 +875,14 @@ fn test_param_keys_are_cached_and_reused() {
             .any(|param| param.id == ParameterId::from("band_2_gain_db"))
     );
 }
+
+#[test]
+fn legacy_crossover_type_key_still_parses() {
+    // Old presets carry `crossover_type`; the canonical wire key is `type`.
+    let legacy: BandSplitPluginParams =
+        serde_json::from_value(serde_json::json!({"crossover_type": "LR48"})).unwrap();
+    assert_eq!(legacy.crossover_type, "LR48");
+    let canonical: BandSplitPluginParams =
+        serde_json::from_value(serde_json::json!({"type": 1})).unwrap();
+    assert_eq!(canonical.crossover_type, "LR48");
+}

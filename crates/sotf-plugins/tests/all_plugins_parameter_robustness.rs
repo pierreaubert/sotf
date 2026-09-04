@@ -290,11 +290,21 @@ fn rebuild_only_parameters_are_declared_structural_and_readable() {
         ("dynamic_eq", &["num_bands", "link_channels"]),
         (
             "linear_phase_eq",
-            &["num_filters", "fir_length", "phase_mode", "auto_gain"],
+            &[
+                "num_filters",
+                "fir_length_index",
+                "phase_mode_index",
+                "auto_gain",
+            ],
         ),
         (
             "fir_designer",
-            &["num_filters", "fir_length", "phase_mode", "auto_gain"],
+            &[
+                "num_filters",
+                "fir_length_index",
+                "phase_mode_index",
+                "auto_gain",
+            ],
         ),
         ("crossover", &["type"]),
         (
@@ -327,7 +337,7 @@ fn rebuild_only_parameters_are_declared_structural_and_readable() {
         ),
         ("saturation", &["exciter_freq", "dc_blocker", "use_adaa"]),
         ("matrix", &["preset"]),
-        ("spectral_compressor", &["fft_size"]),
+        ("spectral_compressor", &["fft_size_index"]),
         ("spectrum_analyzer", &["num_bins", "min_freq", "max_freq"]),
     ];
 

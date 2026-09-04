@@ -10,9 +10,13 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
+use sotf_host::define_choice_string_deserializer;
 use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
+
+define_choice_string_deserializer!(deserialize_target_layout, TARGET_LAYOUTS);
+define_choice_string_deserializer!(deserialize_algorithm, ALGORITHMS);
 
 // ============================================================================
 // Parameter Specifications
@@ -83,13 +87,16 @@ pub const LAYOUT: PluginLayout = PluginLayout {
 pub struct Params {
     #[serde(default = "d_order")]
     pub order: usize,
-    #[serde(default = "d_target_layout")]
+    #[serde(
+        default = "d_target_layout",
+        deserialize_with = "deserialize_target_layout"
+    )]
     pub target_layout: String,
     #[serde(default = "d_max_re_weighting")]
     pub max_re_weighting: bool,
     #[serde(default = "d_dual_band")]
     pub dual_band: bool,
-    #[serde(default = "d_algorithm")]
+    #[serde(default = "d_algorithm", deserialize_with = "deserialize_algorithm")]
     pub algorithm: String,
 }
 

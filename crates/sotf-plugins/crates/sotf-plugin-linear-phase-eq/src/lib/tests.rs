@@ -197,6 +197,8 @@ fn test_overlap_buffers_match_fir_tail_length() {
         assert_eq!(overlap.len(), expected_tail);
     }
 
+    // Pre-migration ids are rejected loudly on the realtime path; they are
+    // only accepted at serde boundaries (factory presets) and format edges.
     assert!(
         plugin
             .set_parameter(ParameterId::from("fir_length"), ParameterValue::Int(3))
@@ -450,8 +452,8 @@ fn test_fir_response_parameters_are_structural() {
     let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
     for (id, value) in [
         ("num_filters", ParameterValue::Int(8)),
-        ("fir_length", ParameterValue::Int(3)),
-        ("phase_mode", ParameterValue::Int(1)),
+        ("fir_length_index", ParameterValue::Int(3)),
+        ("phase_mode_index", ParameterValue::Int(1)),
         ("auto_gain", ParameterValue::Bool(true)),
         ("band_0_type", ParameterValue::Int(1)),
         ("band_0_freq", ParameterValue::Float(2_000.0)),
@@ -647,4 +649,25 @@ fn test_initialize_same_sample_rate_no_rebuild() {
     plugin.fir_dirty = false;
     plugin.initialize(48000).unwrap();
     assert!(!plugin.fir_dirty);
+}
+
+#[test]
+fn legacy_choice_keys_still_parse() {
+    // Old presets carry `fir_length`/`phase_mode`; the canonical wire keys
+    // are `fir_length_index`/`phase_mode_index`. Both must load.
+    let legacy: LinearPhaseEqPluginParams =
+        serde_json::from_value(serde_json::json!({"fir_length": 2, "phase_mode": 1})).unwrap();
+    assert_eq!(legacy.fir_length_index, 2);
+    assert_eq!(legacy.phase_mode_index, 1);
+
+    // Labels and integral floats from the toolbar wire format.
+    let labels: LinearPhaseEqPluginParams = serde_json::from_value(
+        serde_json::json!({"fir_length_index": "4096", "phase_mode_index": "Minimum"}),
+    )
+    .unwrap();
+    assert_eq!(labels.fir_length_index, 2);
+    assert_eq!(labels.phase_mode_index, 1);
+    let floats: LinearPhaseEqPluginParams =
+        serde_json::from_value(serde_json::json!({"fir_length_index": 2.0})).unwrap();
+    assert_eq!(floats.fir_length_index, 2);
 }

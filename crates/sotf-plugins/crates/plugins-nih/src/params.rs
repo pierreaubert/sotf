@@ -259,6 +259,12 @@ mod tests {
                 infos.push(info);
             }
         }
+        // DAW hosts address renamed choice parameters by their
+        // pre-migration ids; construction translates back to canonical keys.
+        for info in &mut infos {
+            info.id =
+                crate::wrapper::legacy_external_param_id("LinearPhaseEQ", &info.id).to_string();
+        }
         infos
     }
 
@@ -292,11 +298,11 @@ mod tests {
             inner_latency + expected_adapter_latency
         );
         assert_eq!(
-            adapter.get_parameter(&ParameterId::from("fir_length")),
+            adapter.get_parameter(&ParameterId::from("fir_length_index")),
             Some(ParameterValue::Int(3))
         );
         assert_eq!(
-            adapter.get_parameter(&ParameterId::from("phase_mode")),
+            adapter.get_parameter(&ParameterId::from("phase_mode_index")),
             Some(ParameterValue::Int(1))
         );
         assert_eq!(
@@ -317,7 +323,7 @@ mod tests {
         // rejected or diverge on the callback.
         params.sync_to_plugin(&mut adapter);
         assert_eq!(
-            adapter.get_parameter(&ParameterId::from("fir_length")),
+            adapter.get_parameter(&ParameterId::from("fir_length_index")),
             Some(ParameterValue::Int(3))
         );
     }

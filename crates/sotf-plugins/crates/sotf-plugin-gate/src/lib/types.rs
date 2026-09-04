@@ -1,10 +1,14 @@
 use crate::params::{
-    default_attack_ms, default_detection_mode, default_hold_ms, default_hysteresis_db,
-    default_knee_db, default_link_channels, default_lookahead_ms, default_mix, default_range_db,
-    default_ratio, default_release_ms, default_sidechain_external, default_sidechain_hpf_hz,
-    default_sidechain_hpf_order, default_threshold_db,
+    DETECTION_MODES, HPF_ORDERS, default_attack_ms, default_detection_mode, default_hold_ms,
+    default_hysteresis_db, default_knee_db, default_link_channels, default_lookahead_ms,
+    default_mix, default_range_db, default_ratio, default_release_ms, default_sidechain_external,
+    default_sidechain_hpf_hz, default_sidechain_hpf_order, default_threshold_db,
 };
 use serde::{Deserialize, Serialize};
+use sotf_host::define_choice_string_deserializer;
+
+define_choice_string_deserializer!(deserialize_hpf_order, HPF_ORDERS);
+define_choice_string_deserializer!(deserialize_detection_mode, DETECTION_MODES);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -25,9 +29,15 @@ pub struct GatePluginParams {
     pub link_channels: bool,
     #[serde(default = "default_sidechain_hpf_hz")]
     pub sidechain_hpf_hz: f32,
-    #[serde(default = "default_sidechain_hpf_order")]
+    #[serde(
+        default = "default_sidechain_hpf_order",
+        deserialize_with = "deserialize_hpf_order"
+    )]
     pub sidechain_hpf_order: String,
-    #[serde(default = "default_detection_mode")]
+    #[serde(
+        default = "default_detection_mode",
+        deserialize_with = "deserialize_detection_mode"
+    )]
     pub detection_mode: String,
     #[serde(default = "default_sidechain_external")]
     pub sidechain_external: bool,

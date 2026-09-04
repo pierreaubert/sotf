@@ -66,8 +66,8 @@ fn parameters_include_all_public_params() {
     let plugin = CrossfeedPlugin::new(CrossfeedPluginParams::default()).unwrap();
     let params = plugin.parameters();
     let ids: Vec<&str> = params.iter().map(|p| p.id.as_str()).collect();
-    assert!(ids.contains(&"crossfeed_mode"));
-    assert!(ids.contains(&"crossfeed_preset"));
+    assert!(ids.contains(&"mode"));
+    assert!(ids.contains(&"preset"));
     assert!(ids.contains(&"enabled"));
     assert!(ids.contains(&"mix"));
     assert!(ids.contains(&"bauer_fcut_hz"));
@@ -296,7 +296,7 @@ fn mode_off_passthrough() {
     let mut plugin = CrossfeedPlugin::new(CrossfeedPluginParams::default()).unwrap();
     plugin.initialize(SR).unwrap();
     plugin
-        .set_parameter(ParameterId::from("crossfeed_mode"), ParameterValue::Int(0))
+        .set_parameter(ParameterId::from("mode"), ParameterValue::Int(0))
         .unwrap();
 
     let dc_l = 0.3f32;
@@ -391,7 +391,7 @@ fn mode_transition_resets_and_continues() {
         .unwrap();
 
     plugin
-        .set_parameter(ParameterId::from("crossfeed_mode"), ParameterValue::Int(2))
+        .set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
         .unwrap();
     plugin.reset();
 

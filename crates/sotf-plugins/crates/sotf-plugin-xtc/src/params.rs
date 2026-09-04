@@ -6,7 +6,7 @@
 use sotf_host::plugin_layout::PluginLayout;
 use sotf_host::plugin_params::PluginParamDef;
 
-mod consts;
+pub(crate) mod consts;
 #[cfg(test)]
 mod tests;
 

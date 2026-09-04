@@ -6,11 +6,11 @@ pub(super) fn default_num_filters() -> usize {
 }
 
 pub(super) fn default_fir_length_index() -> usize {
-    pk(LP_PARAMS, "fir_length").default_f64() as usize
+    pk(LP_PARAMS, "fir_length_index").default_f64() as usize
 }
 
 pub(super) fn default_phase_mode_index() -> usize {
-    pk(LP_PARAMS, "phase_mode").default_f64() as usize
+    pk(LP_PARAMS, "phase_mode_index").default_f64() as usize
 }
 
 pub(super) fn default_mix() -> f32 {

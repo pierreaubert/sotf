@@ -1,8 +1,11 @@
 use crate::params::{
-    default_attack_ms, default_frequency, default_mix, default_mode, default_q, default_ratio,
-    default_release_ms, default_threshold,
+    MODES, default_attack_ms, default_frequency, default_mix, default_mode, default_q,
+    default_ratio, default_release_ms, default_threshold,
 };
 use serde::{Deserialize, Serialize};
+use sotf_host::define_choice_string_deserializer;
+
+define_choice_string_deserializer!(deserialize_mode, MODES);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -19,7 +22,7 @@ pub struct DeEsserPluginParams {
     pub attack_ms: f32,
     #[serde(default = "default_release_ms")]
     pub release_ms: f32,
-    #[serde(default = "default_mode")]
+    #[serde(default = "default_mode", deserialize_with = "deserialize_mode")]
     pub mode: String,
     #[serde(default = "default_mix")]
     pub mix: f32,

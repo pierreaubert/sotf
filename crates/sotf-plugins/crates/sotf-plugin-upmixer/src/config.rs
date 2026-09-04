@@ -2,7 +2,12 @@
 // Configuration
 // ============================================================================
 
+use crate::params::consts::{DECORRELATION_MODES, FREQUENCY_RESOLUTIONS};
 use serde::{Deserialize, Deserializer, Serialize};
+use sotf_host::{define_choice_index_deserializer, define_choice_string_deserializer};
+
+define_choice_string_deserializer!(deserialize_frequency_resolution, FREQUENCY_RESOLUTIONS);
+define_choice_index_deserializer!(deserialize_decorrelation_mode, DECORRELATION_MODES);
 
 /// Accept both a string (`"5.1"`) and a legacy integer index (`2` → `"5.1"`).
 fn deserialize_speaker_config<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -270,7 +275,10 @@ pub struct UpmixerPluginCoreParams {
     /// "erb" = standard ERB bands (~40-50 bands, default)
     /// "fine_erb" = half-ERB width bands (~100 bands, finer spatial resolution)
     /// "per_bin" = one band per FFT bin (~1025 bands at 2048-point FFT, maximum resolution)
-    #[serde(default = "default_frequency_resolution")]
+    #[serde(
+        default = "default_frequency_resolution",
+        deserialize_with = "deserialize_frequency_resolution"
+    )]
     pub frequency_resolution: String,
 
     /// Preview surround output as binaural stereo.
@@ -378,7 +386,7 @@ impl Default for UpmixerPluginSubharmonicParams {
 /// Decorrelation parameters for [`UpmixerPluginParams`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpmixerPluginDecorrelationParams {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_decorrelation_mode")]
     pub decorrelation_mode: usize,
 
     /// LFO rate for decorrelation in Hz (0.01-1.0 Hz, default 0.15 Hz)

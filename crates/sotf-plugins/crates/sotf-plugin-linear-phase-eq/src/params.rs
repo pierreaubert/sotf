@@ -40,14 +40,26 @@ pub const PARAMS: &[ParamSpec] = &[
     )
     .structural()
     .doc("Number of EQ bands"),
-    ParamSpec::choice("FIR Length", "fir_length", 1, FIR_LENGTH_OPTIONS, "Quality")
-        .setup()
-        .structural()
-        .doc("FIR length in taps (higher = better bass resolution, more latency)"),
-    ParamSpec::choice("Phase Mode", "phase_mode", 0, PHASE_MODE_OPTIONS, "Phase")
-        .setup()
-        .structural()
-        .doc("FIR phase design mode"),
+    ParamSpec::choice(
+        "FIR Length",
+        "fir_length_index",
+        1,
+        FIR_LENGTH_OPTIONS,
+        "Quality",
+    )
+    .setup()
+    .structural()
+    .doc("FIR length in taps (higher = better bass resolution, more latency)"),
+    ParamSpec::choice(
+        "Phase Mode",
+        "phase_mode_index",
+        0,
+        PHASE_MODE_OPTIONS,
+        "Phase",
+    )
+    .setup()
+    .structural()
+    .doc("FIR phase design mode"),
     ParamSpec::bool_param("Auto Gain", "auto_gain", false, "Output")
         .structural()
         .doc("Compensate output level"),
@@ -147,10 +159,10 @@ fn d_num_filters() -> f64 {
     pk(PARAMS, "num_filters").default_f64()
 }
 fn d_fir_length() -> f64 {
-    pk(PARAMS, "fir_length").default_f64()
+    pk(PARAMS, "fir_length_index").default_f64()
 }
 fn d_phase_mode() -> f64 {
-    pk(PARAMS, "phase_mode").default_f64()
+    pk(PARAMS, "phase_mode_index").default_f64()
 }
 fn d_auto_gain() -> f64 {
     pk(PARAMS, "auto_gain").default_f64()
@@ -244,8 +256,8 @@ mod tests {
     fn deserialize_empty_json_uses_defaults() {
         let p: Params = serde_json::from_str("{}").unwrap();
         assert_eq!(p.num_filters, pk(PARAMS, "num_filters").default_f64());
-        assert_eq!(p.fir_length, pk(PARAMS, "fir_length").default_f64());
-        assert_eq!(p.phase_mode, pk(PARAMS, "phase_mode").default_f64());
+        assert_eq!(p.fir_length, pk(PARAMS, "fir_length_index").default_f64());
+        assert_eq!(p.phase_mode, pk(PARAMS, "phase_mode_index").default_f64());
         assert_eq!(p.auto_gain, pk(PARAMS, "auto_gain").default_f64());
         assert_eq!(p.mix, pk(PARAMS, "mix").default_f64());
     }

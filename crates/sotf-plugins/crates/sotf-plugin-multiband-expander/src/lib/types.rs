@@ -1,12 +1,15 @@
 use super::band_expander_params::BandExpanderParams;
 use crate::params::{
-    default_attack_ms, default_auto_makeup, default_crossover_frequencies,
+    DETECTION_MODES, default_attack_ms, default_auto_makeup, default_crossover_frequencies,
     default_crossover_preset, default_detection_mode, default_hold_ms, default_hysteresis_db,
     default_knee_db, default_link_channels, default_lookahead_ms, default_measured_auto_makeup,
     default_mix, default_num_bands, default_processing_mode, default_range_db, default_ratio,
     default_release_ms, default_sidechain_hpf_hz, default_threshold_db,
 };
 use serde::{Deserialize, Serialize};
+use sotf_host::define_choice_string_deserializer;
+
+define_choice_string_deserializer!(deserialize_detection_mode, DETECTION_MODES);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultibandExpanderPluginParams {
@@ -36,7 +39,10 @@ pub struct MultibandExpanderPluginParams {
     pub link_channels: bool,
     #[serde(default = "default_mix")]
     pub mix: f32,
-    #[serde(default = "default_detection_mode")]
+    #[serde(
+        default = "default_detection_mode",
+        deserialize_with = "deserialize_detection_mode"
+    )]
     pub detection_mode: String,
     #[serde(default = "default_lookahead_ms")]
     pub lookahead_ms: f32,

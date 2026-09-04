@@ -1,13 +1,22 @@
+use crate::params::{FFT_SIZES, TARGET_MODES};
 use crate::params::{
     default_attack_ms, default_fft_size_index, default_knee_db, default_mix, default_ratio,
     default_release_ms, default_spectral_smoothing, default_threshold_db,
 };
 use serde::{Deserialize, Serialize};
+use sotf_host::define_choice_index_deserializer;
+
+define_choice_index_deserializer!(deserialize_fft_size_index, FFT_SIZES);
+define_choice_index_deserializer!(deserialize_target_mode, TARGET_MODES);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpectralCompressorPluginParams {
-    #[serde(default = "default_fft_size_index")]
+    #[serde(
+        default = "default_fft_size_index",
+        alias = "fft_size",
+        deserialize_with = "deserialize_fft_size_index"
+    )]
     pub fft_size_index: usize,
     #[serde(default = "default_threshold_db")]
     pub threshold_db: f32,
@@ -23,7 +32,7 @@ pub struct SpectralCompressorPluginParams {
     pub spectral_smoothing: f32,
     #[serde(default = "default_mix")]
     pub mix: f32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_target_mode")]
     pub target_mode: usize,
     #[serde(default)]
     pub delta_listen: bool,

@@ -18,8 +18,11 @@ use sotf_host::plugin_params::PluginParamDef;
 // Parameter Specifications
 // ============================================================================
 
+pub const BIT_DEPTH_LABELS: &[&str] = &["16", "20", "24"];
+pub const DITHER_TYPE_LABELS: &[&str] = &["TPDF", "None (round)", "Truncate"];
+
 pub const PARAMS: &[ParamSpec] = &[
-    ParamSpec::choice("Bit Depth", "bit_depth", 0, &["16", "20", "24"], "Dither")
+    ParamSpec::choice("Bit Depth", "bit_depth", 0, BIT_DEPTH_LABELS, "Dither")
         .doc("Target bit depth for quantization"),
     ParamSpec::bool_labeled(
         "Noise Shaping",
@@ -34,7 +37,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Dither Type",
         "dither_type",
         0,
-        &["TPDF", "None (round)", "Truncate"],
+        DITHER_TYPE_LABELS,
         "Dither",
     )
     .doc("TPDF with rounding, round-only passthrough, or truncated quantization"),

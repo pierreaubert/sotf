@@ -1,7 +1,147 @@
 //! Configuration types and parameters for the A/B Compare plugin.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use sotf_host::auto_gain::AutoGainLoudnessType;
+
+/// Deserialize `MixMode` from the toolbar's integer index (`0` = Pot, `1` =
+/// Binary) or from either UI spelling (`"Pot"`/`"Potentiometer"`, `"Binary"`).
+fn deserialize_mix_mode<'de, D>(deserializer: D) -> Result<MixMode, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct Visitor;
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+        type Value = MixMode;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("mix mode index (0/1) or label (\"Pot\"/\"Binary\")")
+        }
+        fn visit_u64<E>(self, v: u64) -> Result<MixMode, E>
+        where
+            E: serde::de::Error,
+        {
+            match v {
+                0 => Ok(MixMode::Potentiometer),
+                1 => Ok(MixMode::Binary),
+                _ => Err(E::custom(format!("invalid mix mode index {v}"))),
+            }
+        }
+        fn visit_i64<E>(self, v: i64) -> Result<MixMode, E>
+        where
+            E: serde::de::Error,
+        {
+            u64::try_from(v)
+                .map_err(|_| E::custom(format!("invalid mix mode index {v}")))
+                .and_then(|index| self.visit_u64(index))
+        }
+        fn visit_str<E>(self, v: &str) -> Result<MixMode, E>
+        where
+            E: serde::de::Error,
+        {
+            if v.eq_ignore_ascii_case("pot") || v.eq_ignore_ascii_case("potentiometer") {
+                Ok(MixMode::Potentiometer)
+            } else if v.eq_ignore_ascii_case("binary") {
+                Ok(MixMode::Binary)
+            } else {
+                Err(E::custom(format!("unknown mix mode {v:?}")))
+            }
+        }
+    }
+    deserializer.deserialize_any(Visitor)
+}
+
+/// Deserialize the selected path from `0`/`1` or `"A"`/`"B"`.
+fn deserialize_selected_path<'de, D>(deserializer: D) -> Result<i32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct Visitor;
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+        type Value = i32;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("selected path 0/1 or \"A\"/\"B\"")
+        }
+        fn visit_u64<E>(self, v: u64) -> Result<i32, E>
+        where
+            E: serde::de::Error,
+        {
+            match v {
+                0 => Ok(0),
+                1 => Ok(1),
+                _ => Err(E::custom(format!("invalid selected path {v}"))),
+            }
+        }
+        fn visit_i64<E>(self, v: i64) -> Result<i32, E>
+        where
+            E: serde::de::Error,
+        {
+            i32::try_from(v)
+                .ok()
+                .filter(|path| *path == 0 || *path == 1)
+                .ok_or_else(|| E::custom(format!("invalid selected path {v}")))
+        }
+        fn visit_str<E>(self, v: &str) -> Result<i32, E>
+        where
+            E: serde::de::Error,
+        {
+            if v.eq_ignore_ascii_case("a") {
+                Ok(0)
+            } else if v.eq_ignore_ascii_case("b") {
+                Ok(1)
+            } else {
+                Err(E::custom(format!("unknown selected path {v:?}")))
+            }
+        }
+    }
+    deserializer.deserialize_any(Visitor)
+}
+
+/// Deserialize `LoudnessType` from the toolbar's integer index (`0` =
+/// Momentary, `1` = ShortTerm) or the enum spelling.
+fn deserialize_loudness_type<'de, D>(deserializer: D) -> Result<LoudnessType, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct Visitor;
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+        type Value = LoudnessType;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("loudness type index (0/1) or label")
+        }
+        fn visit_u64<E>(self, v: u64) -> Result<LoudnessType, E>
+        where
+            E: serde::de::Error,
+        {
+            match v {
+                0 => Ok(LoudnessType::Momentary),
+                1 => Ok(LoudnessType::ShortTerm),
+                _ => Err(E::custom(format!("invalid loudness type index {v}"))),
+            }
+        }
+        fn visit_i64<E>(self, v: i64) -> Result<LoudnessType, E>
+        where
+            E: serde::de::Error,
+        {
+            u64::try_from(v)
+                .map_err(|_| E::custom(format!("invalid loudness type index {v}")))
+                .and_then(|index| self.visit_u64(index))
+        }
+        fn visit_str<E>(self, v: &str) -> Result<LoudnessType, E>
+        where
+            E: serde::de::Error,
+        {
+            if v.eq_ignore_ascii_case("momentary") {
+                Ok(LoudnessType::Momentary)
+            } else if v.eq_ignore_ascii_case("shortterm")
+                || v.eq_ignore_ascii_case("short_term")
+            {
+                Ok(LoudnessType::ShortTerm)
+            } else {
+                Err(E::custom(format!("unknown loudness type {v:?}")))
+            }
+        }
+    }
+    deserializer.deserialize_any(Visitor)
+}
 
 // ============================================================================
 // Configuration Types
@@ -85,7 +225,7 @@ pub struct ABComparePluginParams {
     pub path_b: PathConfig,
 
     /// Mix mode (potentiometer or binary switch)
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_mix_mode")]
     pub mix_mode: MixMode,
 
     /// Mix value: -1.0 = pure A, 0.0 = 50/50, +1.0 = pure B
@@ -93,7 +233,7 @@ pub struct ABComparePluginParams {
     pub mix: f32,
 
     /// Selected path for binary mode (0 = A, 1 = B)
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_selected_path")]
     pub selected_path: i32,
 
     /// Bypass both A and B, output original input
@@ -105,7 +245,7 @@ pub struct ABComparePluginParams {
     pub auto_gain_enabled: bool,
 
     /// Loudness measurement type for auto-gain
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_loudness_type")]
     pub loudness_type: LoudnessType,
 
     /// Gain smoothing time in ms

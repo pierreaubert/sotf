@@ -81,6 +81,13 @@ macro_rules! sotf_nih_plugin {
                     }
                 }
 
+                // Expose pre-migration ids to DAW hosts; internal sync and
+                // construction translate back to canonical keys.
+                for info in &mut infos {
+                    info.id = $crate::wrapper::legacy_external_param_id($plugin_type, &info.id)
+                        .to_string();
+                }
+
                 Self {
                     params: $crate::params::DynamicParams::from_infos(&infos),
                     inner: None,
@@ -395,6 +402,35 @@ pub fn check_host_block(
         return None;
     }
     num_frames.checked_mul(num_channels)
+}
+
+/// DAW-facing parameter id for a canonical spec key.
+///
+/// CLAP/VST3 hosts persist parameter ids across sessions, so the four
+/// choice parameters renamed to `*_index`/`mode`/`preset`/`type` keep their
+/// pre-migration ids on this boundary. The internal engine, toolbar, and
+/// factory all use the canonical keys; the NIH map translates back when
+/// building host-visible state (see `linear_phase_eq_config_json`).
+/// Scoped per plugin type so untouched plugins sharing a name (e.g. the
+/// upmixer's own `fft_size`) are unaffected.
+pub fn legacy_external_param_id<'a>(
+    plugin_type: &str,
+    canonical: &'a str,
+) -> std::borrow::Cow<'a, str> {
+    use std::borrow::Cow;
+    let linear_phase_eq = matches!(plugin_type, "LinearPhaseEQ" | "linear_phase_eq");
+    let crossfeed = matches!(plugin_type, "Crossfeed" | "crossfeed");
+    let spectral = matches!(plugin_type, "SpectralCompressor" | "spectral_compressor");
+    let band_split = matches!(plugin_type, "BandSplit" | "band_split");
+    match canonical {
+        "fir_length_index" if linear_phase_eq => Cow::Borrowed("fir_length"),
+        "phase_mode_index" if linear_phase_eq => Cow::Borrowed("phase_mode"),
+        "mode" if crossfeed => Cow::Borrowed("crossfeed_mode"),
+        "preset" if crossfeed => Cow::Borrowed("crossfeed_preset"),
+        "fft_size_index" if spectral => Cow::Borrowed("fft_size"),
+        "type" if band_split => Cow::Borrowed("crossover_type"),
+        _ => Cow::Borrowed(canonical),
+    }
 }
 
 /// Get ParamSpec array for a plugin type.

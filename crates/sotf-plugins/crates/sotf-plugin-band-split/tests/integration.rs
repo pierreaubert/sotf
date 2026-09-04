@@ -122,7 +122,7 @@ fn parameters_include_frequency_and_gains() {
     let params = plugin.parameters();
     let ids: Vec<&str> = params.iter().map(|p| p.id.as_str()).collect();
     assert!(ids.contains(&"frequency"));
-    assert!(ids.contains(&"crossover_type"));
+    assert!(ids.contains(&"type"));
     assert!(ids.contains(&"band_0_gain_db"));
     assert!(ids.contains(&"band_1_gain_db"));
 }
@@ -154,10 +154,10 @@ fn frequency_roundtrip() {
 fn crossover_type_roundtrip() {
     let mut plugin = BandSplitPlugin::new(1, 1000.0, "LR24").unwrap();
     plugin
-        .set_parameter(ParameterId::from("crossover_type"), ParameterValue::Int(1))
+        .set_parameter(ParameterId::from("type"), ParameterValue::Int(1))
         .unwrap();
     assert_eq!(
-        plugin.get_parameter(&ParameterId::from("crossover_type")),
+        plugin.get_parameter(&ParameterId::from("type")),
         Some(ParameterValue::Int(1))
     );
     plugin.initialize(SR).unwrap();

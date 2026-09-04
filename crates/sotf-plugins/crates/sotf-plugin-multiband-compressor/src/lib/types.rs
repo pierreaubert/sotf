@@ -1,14 +1,18 @@
 use super::band_compressor_params::BandCompressorParams;
 use crate::params::{
-    default_attack_ms, default_auto_makeup, default_crossover_frequencies,
-    default_crossover_preset, default_detection_mode, default_knee_db, default_link_amount,
-    default_link_channels, default_lookahead_ms, default_makeup_gain, default_measured_auto_makeup,
-    default_mix, default_ms_mode, default_num_bands, default_per_band_lookahead_ms,
-    default_program_dependent_release, default_ratio, default_release_ms,
-    default_sidechain_external, default_sidechain_hpf_hz, default_sidechain_hpf_order,
-    default_sidechain_tilt_db, default_threshold_db,
+    DETECTION_MODES, HPF_ORDERS, default_attack_ms, default_auto_makeup,
+    default_crossover_frequencies, default_crossover_preset, default_detection_mode,
+    default_knee_db, default_link_amount, default_link_channels, default_lookahead_ms,
+    default_makeup_gain, default_measured_auto_makeup, default_mix, default_ms_mode,
+    default_num_bands, default_per_band_lookahead_ms, default_program_dependent_release,
+    default_ratio, default_release_ms, default_sidechain_external, default_sidechain_hpf_hz,
+    default_sidechain_hpf_order, default_sidechain_tilt_db, default_threshold_db,
 };
 use serde::{Deserialize, Serialize};
+use sotf_host::define_choice_string_option_deserializer;
+
+define_choice_string_option_deserializer!(deserialize_hpf_order, HPF_ORDERS);
+define_choice_string_option_deserializer!(deserialize_detection_mode, DETECTION_MODES);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultibandCompressorPluginParams {
@@ -55,10 +59,16 @@ pub struct MultibandCompressorPluginParams {
     #[serde(default = "default_sidechain_hpf_hz")]
     pub sidechain_hpf_hz: Option<f32>,
     /// Sidechain HPF order (single-band compatibility): "2nd" or "4th"
-    #[serde(default = "default_sidechain_hpf_order")]
+    #[serde(
+        default = "default_sidechain_hpf_order",
+        deserialize_with = "deserialize_hpf_order"
+    )]
     pub sidechain_hpf_order: Option<String>,
     /// Detection mode (single-band compatibility): "peak" or "rms"
-    #[serde(default = "default_detection_mode")]
+    #[serde(
+        default = "default_detection_mode",
+        deserialize_with = "deserialize_detection_mode"
+    )]
     pub detection_mode: Option<String>,
     /// Lookahead alias (single-band uses "lookahead_ms", multiband uses "per_band_lookahead_ms")
     #[serde(default = "default_lookahead_ms")]

@@ -9,11 +9,16 @@ use super::default::default_output_gain;
 use super::default::default_oversampling;
 use super::default::default_tone;
 use super::default::default_use_adaa;
+use crate::params::{MODES, OVERSAMPLING_OPTIONS};
 use serde::{Deserialize, Serialize};
+use sotf_host::define_choice_string_deserializer;
+
+define_choice_string_deserializer!(deserialize_mode, MODES);
+define_choice_string_deserializer!(deserialize_oversampling, OVERSAMPLING_OPTIONS);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SaturationPluginParams {
-    #[serde(default = "default_mode")]
+    #[serde(default = "default_mode", deserialize_with = "deserialize_mode")]
     pub mode: String,
     #[serde(default = "default_drive")]
     pub drive: f32,
@@ -21,7 +26,10 @@ pub struct SaturationPluginParams {
     pub tone: f32,
     #[serde(default = "default_exciter_freq")]
     pub exciter_freq: f32,
-    #[serde(default = "default_oversampling")]
+    #[serde(
+        default = "default_oversampling",
+        deserialize_with = "deserialize_oversampling"
+    )]
     pub oversampling: String,
     #[serde(default = "default_output_gain")]
     pub output_gain_db: f32,

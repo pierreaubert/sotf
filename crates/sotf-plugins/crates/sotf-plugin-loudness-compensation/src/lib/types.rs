@@ -17,7 +17,11 @@ use super::default::default_playback_level_db;
 use super::default::default_playback_volume_db;
 use super::default::default_reference_level_db;
 use super::loudness_compensation_plugin::LoudnessCompensationPlugin;
+use crate::params::MODE_LABELS;
 use serde::{Deserialize, Deserializer, Serialize};
+use sotf_host::define_choice_index_deserializer;
+
+define_choice_index_deserializer!(deserialize_mode, MODE_LABELS);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoudnessCompensationPluginParams {
@@ -57,7 +61,7 @@ pub struct LoudnessCompensationPluginParams {
     )]
     pub auto_gain_position: String,
     /// 0 = Manual (default), 1 = ISO 226, 2 = Auto
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_mode")]
     pub mode: usize,
     #[serde(default = "default_playback_level_db")]
     pub playback_level_db: f32,

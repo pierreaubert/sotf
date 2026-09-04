@@ -375,7 +375,7 @@ impl SpectralCompressorPlugin {
     pub(super) fn rebuild_cached_parameters(&mut self) {
         self.cached_parameters = vec![
             Parameter::new_int(
-                "fft_size",
+                "fft_size_index",
                 "FFT Size",
                 self.fft_size_index as i32,
                 0,
@@ -493,7 +493,7 @@ impl SpectralCompressorPlugin {
 
     fn apply_parameter(&mut self, id: &ParameterId, value: ParameterValue) -> PluginResult<()> {
         match id.as_str() {
-            "fft_size" => {
+            "fft_size_index" => {
                 let idx = value
                     .as_int()
                     .ok_or_else(|| "FFT size must be an integer".to_string())?
@@ -602,9 +602,10 @@ impl ParametricInPlacePlugin for SpectralCompressorPlugin {
     fn current_values(&self) -> ParameterSet {
         let mut values = ParameterSet::new();
         values.insert(
-            ParameterId::from("fft_size"),
+            ParameterId::from("fft_size_index"),
             ParameterValue::Int(self.fft_size_index as i32),
         );
+        // NOTE: canonical-only; see linear-phase-eq current_values.
         values.insert(
             ParameterId::from("threshold"),
             ParameterValue::Float(self.threshold_db),

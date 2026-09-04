@@ -656,13 +656,10 @@ impl ParametricInPlacePlugin for CrossfeedPlugin {
 
         // Presets are complete states, not display-only selectors. Apply one first so any
         // additional values in the same host update intentionally override the preset.
-        if let Some((_, value)) = values
-            .iter()
-            .find(|(id, _)| id.as_str() == "crossfeed_preset")
-        {
+        if let Some((_, value)) = values.iter().find(|(id, _)| id.as_str() == "preset") {
             let index = value
                 .as_int()
-                .ok_or_else(|| "crossfeed_preset must be an integer".to_string())?;
+                .ok_or_else(|| "preset must be an integer".to_string())?;
             let preset = match index {
                 0 => CrossfeedPreset::Default,
                 1 => CrossfeedPreset::Cmoy,
@@ -685,7 +682,7 @@ impl ParametricInPlacePlugin for CrossfeedPlugin {
         }
 
         for (id, value) in values {
-            if id.as_str() == "crossfeed_preset" {
+            if id.as_str() == "preset" {
                 continue;
             }
             if id.as_str() == "head_yaw_deg" {
@@ -784,10 +781,10 @@ impl ParametricInPlacePlugin for CrossfeedPlugin {
         let mut mode_dirty = false;
         let mut yaw_dirty = false;
 
-        if id.as_str() == "crossfeed_preset" {
+        if id.as_str() == "preset" {
             let index = value
                 .as_int()
-                .ok_or_else(|| "crossfeed_preset must be an integer".to_string())?;
+                .ok_or_else(|| "preset must be an integer".to_string())?;
             let preset = match index {
                 0 => CrossfeedPreset::Default,
                 1 => CrossfeedPreset::Cmoy,

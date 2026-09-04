@@ -237,16 +237,31 @@ impl MultibandCompressorPlugin {
         {
             return Err(format!("detection_mode has unsupported value {mode:?}"));
         }
-        if params.sidechain_hpf_hz.is_some()
-            || params.sidechain_hpf_order.is_some()
-            || params.detection_mode.is_some()
-            || params.program_dependent_release.is_some()
-            || params.sidechain_external.is_some()
-        {
-            return Err(
-                "legacy sidechain controls are unsupported; remove them instead of loading inaudible settings"
-                    .to_string(),
-            );
+        // Legacy sidechain controls were removed from the DSP path: their
+        // keys are still accepted (positional ParamSpec indices are a
+        // compatibility surface, and the toolbar still exposes the
+        // controls), but values are validated and otherwise ignored with a
+        // warning instead of failing the whole load. Invalid values remain
+        // hard errors via the checks above.
+        for (key, present) in [
+            ("sidechain_hpf_hz", params.sidechain_hpf_hz.is_some()),
+            (
+                "sidechain_hpf_order",
+                params.sidechain_hpf_order.is_some(),
+            ),
+            ("detection_mode", params.detection_mode.is_some()),
+            (
+                "program_dependent_release",
+                params.program_dependent_release.is_some(),
+            ),
+            ("sidechain_external", params.sidechain_external.is_some()),
+        ] {
+            if present {
+                log::warn!(
+                    "multiband compressor: legacy sidechain control {key:?} is \
+                     deprecated and has no audible effect; remove it from presets"
+                );
+            }
         }
 
         let defaults = [200.0_f32, 2_000.0, 8_000.0, 12_000.0];

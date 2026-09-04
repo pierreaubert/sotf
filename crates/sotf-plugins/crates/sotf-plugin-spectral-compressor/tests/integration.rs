@@ -245,7 +245,7 @@ fn fft_size_change_requires_host_rebuild() {
     assert_eq!(default_latency, 2048);
 
     let error = plugin
-        .set_parameter(ParameterId::from("fft_size"), ParameterValue::Int(0))
+        .set_parameter(ParameterId::from("fft_size_index"), ParameterValue::Int(0))
         .unwrap_err();
     assert!(error.contains("host rebuild"));
     assert_eq!(plugin.latency_samples(), default_latency);

@@ -14,8 +14,141 @@ use super::default::default_mix;
 use super::types::CrossfeedMode;
 use super::types::CrossfeedPreset;
 use crate::params::PARAMS as CF;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use sotf_host::param_specs::find_by_key as pk;
+
+/// Deserialize `CrossfeedMode` from the toolbar's integer index (spec label
+/// order: Disable/Bauer/Meier/Multiband/HRTF) or from either UI spelling.
+fn deserialize_crossfeed_mode<'de, D>(deserializer: D) -> Result<CrossfeedMode, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct Visitor;
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+        type Value = CrossfeedMode;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("crossfeed mode index (0-4) or label")
+        }
+        fn visit_u64<E>(self, v: u64) -> Result<CrossfeedMode, E>
+        where
+            E: serde::de::Error,
+        {
+            match v {
+                0 => Ok(CrossfeedMode::Off),
+                1 => Ok(CrossfeedMode::Bauer),
+                2 => Ok(CrossfeedMode::Meier),
+                3 => Ok(CrossfeedMode::Mb),
+                4 => Ok(CrossfeedMode::Hrtf),
+                _ => Err(E::custom(format!("invalid crossfeed mode index {v}"))),
+            }
+        }
+        fn visit_i64<E>(self, v: i64) -> Result<CrossfeedMode, E>
+        where
+            E: serde::de::Error,
+        {
+            u64::try_from(v)
+                .map_err(|_| E::custom(format!("invalid crossfeed mode index {v}")))
+                .and_then(|index| self.visit_u64(index))
+        }
+        fn visit_str<E>(self, v: &str) -> Result<CrossfeedMode, E>
+        where
+            E: serde::de::Error,
+        {
+            if v.eq_ignore_ascii_case("disable") || v.eq_ignore_ascii_case("off") {
+                Ok(CrossfeedMode::Off)
+            } else if v.eq_ignore_ascii_case("bauer") {
+                Ok(CrossfeedMode::Bauer)
+            } else if v.eq_ignore_ascii_case("meier") {
+                Ok(CrossfeedMode::Meier)
+            } else if v.eq_ignore_ascii_case("multiband") || v.eq_ignore_ascii_case("mb") {
+                Ok(CrossfeedMode::Mb)
+            } else if v.eq_ignore_ascii_case("hrtf") {
+                Ok(CrossfeedMode::Hrtf)
+            } else {
+                Err(E::custom(format!("unknown crossfeed mode {v:?}")))
+            }
+        }
+        fn visit_f64<E>(self, v: f64) -> Result<CrossfeedMode, E>
+        where
+            E: serde::de::Error,
+        {
+            if v.is_finite() && v.fract() == 0.0 && v >= 0.0 {
+                self.visit_u64(v as u64)
+            } else {
+                Err(E::custom(format!("invalid crossfeed mode index {v}")))
+            }
+        }
+    }
+    deserializer.deserialize_any(Visitor)
+}
+
+/// Deserialize `CrossfeedPreset` from the toolbar's integer index (spec
+/// label order) or from either UI spelling.
+fn deserialize_crossfeed_preset<'de, D>(deserializer: D) -> Result<CrossfeedPreset, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct Visitor;
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+        type Value = CrossfeedPreset;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("crossfeed preset index (0-5) or label")
+        }
+        fn visit_u64<E>(self, v: u64) -> Result<CrossfeedPreset, E>
+        where
+            E: serde::de::Error,
+        {
+            match v {
+                0 => Ok(CrossfeedPreset::Default),
+                1 => Ok(CrossfeedPreset::Cmoy),
+                2 => Ok(CrossfeedPreset::Meier),
+                3 => Ok(CrossfeedPreset::Mb),
+                4 => Ok(CrossfeedPreset::Off),
+                5 => Ok(CrossfeedPreset::Hrtf),
+                _ => Err(E::custom(format!("invalid crossfeed preset index {v}"))),
+            }
+        }
+        fn visit_i64<E>(self, v: i64) -> Result<CrossfeedPreset, E>
+        where
+            E: serde::de::Error,
+        {
+            u64::try_from(v)
+                .map_err(|_| E::custom(format!("invalid crossfeed preset index {v}")))
+                .and_then(|index| self.visit_u64(index))
+        }
+        fn visit_str<E>(self, v: &str) -> Result<CrossfeedPreset, E>
+        where
+            E: serde::de::Error,
+        {
+            if v.eq_ignore_ascii_case("default") {
+                Ok(CrossfeedPreset::Default)
+            } else if v.eq_ignore_ascii_case("cmoy") {
+                Ok(CrossfeedPreset::Cmoy)
+            } else if v.eq_ignore_ascii_case("meier") {
+                Ok(CrossfeedPreset::Meier)
+            } else if v.eq_ignore_ascii_case("mb") {
+                Ok(CrossfeedPreset::Mb)
+            } else if v.eq_ignore_ascii_case("off") {
+                Ok(CrossfeedPreset::Off)
+            } else if v.eq_ignore_ascii_case("hrtf") {
+                Ok(CrossfeedPreset::Hrtf)
+            } else {
+                Err(E::custom(format!("unknown crossfeed preset {v:?}")))
+            }
+        }
+        fn visit_f64<E>(self, v: f64) -> Result<CrossfeedPreset, E>
+        where
+            E: serde::de::Error,
+        {
+            if v.is_finite() && v.fract() == 0.0 && v >= 0.0 {
+                self.visit_u64(v as u64)
+            } else {
+                Err(E::custom(format!("invalid crossfeed preset index {v}")))
+            }
+        }
+    }
+    deserializer.deserialize_any(Visitor)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -24,9 +157,17 @@ pub struct CrossfeedPluginParams {
     /// graph contract, not an automatable audio parameter.
     #[serde(default = "default_max_block_frames")]
     pub max_block_frames: usize,
-    #[serde(default)]
+    #[serde(
+        default,
+        alias = "crossfeed_mode",
+        deserialize_with = "deserialize_crossfeed_mode"
+    )]
     pub mode: CrossfeedMode,
-    #[serde(default)]
+    #[serde(
+        default,
+        alias = "crossfeed_preset",
+        deserialize_with = "deserialize_crossfeed_preset"
+    )]
     pub preset: CrossfeedPreset,
 
     #[serde(default = "default_enabled")]

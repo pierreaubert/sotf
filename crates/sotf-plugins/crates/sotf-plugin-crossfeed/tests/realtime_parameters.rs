@@ -11,8 +11,8 @@ fn realtime_parameter_updates_and_reset_do_not_allocate() {
     plugin.initialize(48_000).unwrap();
     let updates = [
         ("mix", ParameterValue::Float(0.5)),
-        ("crossfeed_preset", ParameterValue::Int(1)),
-        ("crossfeed_mode", ParameterValue::Int(3)),
+        ("preset", ParameterValue::Int(1)),
+        ("mode", ParameterValue::Int(3)),
         ("enabled", ParameterValue::Bool(true)),
         ("bauer_fcut_hz", ParameterValue::Float(750.0)),
         ("bauer_feed_db", ParameterValue::Float(6.0)),

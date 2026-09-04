@@ -1,7 +1,11 @@
 use super::default::default_crossover_type;
 use super::default::default_frequency;
 use super::default::default_num_bands;
+use crate::params::CROSSOVER_TYPES;
 use serde::{Deserialize, Serialize};
+use sotf_host::define_choice_string_deserializer;
+
+define_choice_string_deserializer!(deserialize_crossover_type, CROSSOVER_TYPES);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -19,6 +23,11 @@ pub struct BandSplitPluginParams {
     #[serde(default = "default_num_bands")]
     pub num_bands: usize,
 
-    #[serde(rename = "type", default = "default_crossover_type")]
+    #[serde(
+        rename = "type",
+        alias = "crossover_type",
+        default = "default_crossover_type",
+        deserialize_with = "deserialize_crossover_type"
+    )]
     pub crossover_type: String,
 }

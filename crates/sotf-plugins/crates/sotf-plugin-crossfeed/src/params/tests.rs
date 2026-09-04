@@ -50,14 +50,8 @@ fn roundtrip_serde() {
 #[test]
 fn deserialize_empty_json_uses_defaults() {
     let p: Params = serde_json::from_str("{}").unwrap();
-    assert_eq!(
-        p.crossfeed_mode,
-        pk(PARAMS, "crossfeed_mode").default_usize()
-    );
-    assert_eq!(
-        p.crossfeed_preset,
-        pk(PARAMS, "crossfeed_preset").default_usize()
-    );
+    assert_eq!(p.crossfeed_mode, pk(PARAMS, "mode").default_usize());
+    assert_eq!(p.crossfeed_preset, pk(PARAMS, "preset").default_usize());
     assert_eq!(p.enabled, pk(PARAMS, "enabled").default_bool());
     assert_eq!(p.mix, pk(PARAMS, "mix").default_f64());
     assert_eq!(p.bauer_fcut_hz, pk(PARAMS, "bauer_fcut_hz").default_f64());

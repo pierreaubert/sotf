@@ -18,6 +18,10 @@ use sotf_host::plugin_params::PluginParamDef;
 // Parameter Specifications
 // ============================================================================
 
+/// Crossfade-mode choice labels, shared with the factory config parser so the
+/// wire form (index, integral float, or label) resolves identically.
+pub const CROSSFADE_MODE_LABELS: &[&str] = &["Linear", "Spectral"];
+
 pub const PARAMS: &[ParamSpec] = &[
     // Index 0
     ParamSpec::file_path("SOFA File", "sofa_file", "General")
@@ -67,7 +71,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Crossfade Mode",
         "crossfade_mode",
         0,
-        &["Linear", "Spectral"],
+        CROSSFADE_MODE_LABELS,
         "Quality",
     )
     .doc("Linear: simple blend (may cause tonal shift). Spectral: magnitude interpolation + phase reconstruction (smoother)"),

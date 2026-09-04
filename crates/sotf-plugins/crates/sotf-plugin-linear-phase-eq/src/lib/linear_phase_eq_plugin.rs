@@ -432,7 +432,7 @@ impl LinearPhaseEqPlugin {
             .with_description("Number of EQ bands")
             .with_group("EQ"),
             Parameter::new_int(
-                "fir_length",
+                "fir_length_index",
                 "FIR Length",
                 self.fir_length_index as i32,
                 0,
@@ -441,7 +441,7 @@ impl LinearPhaseEqPlugin {
             .with_description("FIR length in taps")
             .with_group("Quality"),
             Parameter::new_int(
-                "phase_mode",
+                "phase_mode_index",
                 "Phase Mode",
                 self.phase_mode_index as i32,
                 0,
@@ -582,13 +582,17 @@ impl ParametricInPlacePlugin for LinearPhaseEqPlugin {
             ParameterValue::Int(self.num_filters as i32),
         );
         values.insert(
-            ParameterId::from("fir_length"),
+            ParameterId::from("fir_length_index"),
             ParameterValue::Int(self.fir_length_index as i32),
         );
         values.insert(
-            ParameterId::from("phase_mode"),
+            ParameterId::from("phase_mode_index"),
             ParameterValue::Int(self.phase_mode_index as i32),
         );
+        // NOTE: no legacy-id entries here. Reads and discovery are
+        // canonical-only; pre-migration ids are accepted at serde
+        // boundaries (factory presets) and translated at format edges
+        // (FFI/NIH), never in the realtime parameter set.
         values.insert(
             ParameterId::from("auto_gain"),
             ParameterValue::Bool(self.auto_gain),
@@ -627,7 +631,7 @@ impl ParametricInPlacePlugin for LinearPhaseEqPlugin {
             let id_str = id.as_str();
 
             match id_str {
-                "num_filters" | "fir_length" | "phase_mode" | "auto_gain" => {
+                "num_filters" | "fir_length_index" | "phase_mode_index" | "auto_gain" => {
                     return Err(format!(
                         "{id_str} is structural; rebuild the plugin to change it"
                     ));
