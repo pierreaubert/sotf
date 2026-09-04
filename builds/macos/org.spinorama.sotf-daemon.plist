@@ -15,7 +15,7 @@
 	<key>ThrottleInterval</key>
 	<integer>5</integer>
 	<key>ProcessType</key>
-	<string>Adaptive</string>
+	<string>Interactive</string>
 	<key>LimitLoadToSessionType</key>
 	<array>
 		<string>Aqua</string>

@@ -17,7 +17,7 @@ use super::default::default_playback_level_db;
 use super::default::default_playback_volume_db;
 use super::default::default_reference_level_db;
 use super::loudness_compensation_plugin::LoudnessCompensationPlugin;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoudnessCompensationPluginParams {
@@ -45,8 +45,16 @@ pub struct LoudnessCompensationPluginParams {
     pub auto_gain_max_db: f32,
     #[serde(default = "default_auto_gain_smoothing_ms")]
     pub auto_gain_smoothing_ms: f32,
-    /// Auto-gain position: "pre", "post" (default), or "disabled"
-    #[serde(default = "default_auto_gain_position")]
+    /// Auto-gain position: "pre", "post" (default), or "disabled".
+    ///
+    /// Accepts the canonical label or the UI choice index used on the wire
+    /// (`0` = disabled, `1` = pre, `2` = post), matching the engine's own
+    /// index-to-label mapping. Unknown values are a hard error, never a
+    /// silent default.
+    #[serde(
+        default = "default_auto_gain_position",
+        deserialize_with = "deserialize_auto_gain_position"
+    )]
     pub auto_gain_position: String,
     /// 0 = Manual (default), 1 = ISO 226, 2 = Auto
     #[serde(default)]
@@ -95,8 +103,123 @@ impl Default for LoudnessCompensationPluginParams {
     }
 }
 
+/// Deserialize `auto_gain_position` from either its canonical string label
+/// or the UI choice index (`0` = disabled, `1` = pre, `2` = post).
+fn deserialize_auto_gain_position<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+
+    struct PositionVisitor;
+
+    impl Visitor<'_> for PositionVisitor {
+        type Value = String;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter
+                .write_str("a position label (\"disabled\", \"pre\", \"post\") or index (0, 1, 2)")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<String, E>
+        where
+            E: de::Error,
+        {
+            Ok(value.to_owned())
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<String, E>
+        where
+            E: de::Error,
+        {
+            match value {
+                0 => Ok("disabled".to_owned()),
+                1 => Ok("pre".to_owned()),
+                2 => Ok("post".to_owned()),
+                other => Err(E::custom(format!(
+                    "invalid auto_gain_position index {other}; expected 0, 1, or 2"
+                ))),
+            }
+        }
+
+        fn visit_i64<E>(self, value: i64) -> Result<String, E>
+        where
+            E: de::Error,
+        {
+            u64::try_from(value)
+                .map_err(|_| {
+                    E::custom(format!(
+                        "invalid auto_gain_position index {value}; expected 0, 1, or 2"
+                    ))
+                })
+                .and_then(|index| self.visit_u64(index))
+        }
+    }
+
+    deserializer.deserialize_any(PositionVisitor)
+}
+
 /// Type alias for backward compatibility.
 pub type FletcherMunsonPlugin = LoudnessCompensationPlugin;
 
 /// Type alias for backward compatibility.
 pub type FletcherMunsonPluginParams = LoudnessCompensationPluginParams;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn position_of(parameters: serde_json::Value) -> Result<String, String> {
+        serde_json::from_value::<LoudnessCompensationPluginParams>(parameters)
+            .map(|params| params.auto_gain_position)
+            .map_err(|error| error.to_string())
+    }
+
+    #[test]
+    fn wire_indices_map_to_canonical_labels() {
+        assert_eq!(
+            position_of(json!({ "auto_gain_position": 0 })).unwrap(),
+            "disabled"
+        );
+        assert_eq!(
+            position_of(json!({ "auto_gain_position": 1 })).unwrap(),
+            "pre"
+        );
+        assert_eq!(
+            position_of(json!({ "auto_gain_position": 2 })).unwrap(),
+            "post"
+        );
+    }
+
+    #[test]
+    fn string_labels_still_accepted() {
+        assert_eq!(
+            position_of(json!({ "auto_gain_position": "pre" })).unwrap(),
+            "pre"
+        );
+        assert_eq!(
+            position_of(json!({ "auto_gain_position": "post" })).unwrap(),
+            "post"
+        );
+        assert_eq!(
+            position_of(json!({ "auto_gain_position": "disabled" })).unwrap(),
+            "disabled"
+        );
+    }
+
+    #[test]
+    fn missing_position_uses_default() {
+        assert_eq!(
+            position_of(json!({})).unwrap(),
+            default_auto_gain_position()
+        );
+    }
+
+    #[test]
+    fn unknown_values_are_hard_errors() {
+        assert!(position_of(json!({ "auto_gain_position": 7 })).is_err());
+        assert!(position_of(json!({ "auto_gain_position": -1 })).is_err());
+        assert!(position_of(json!({ "auto_gain_position": true })).is_err());
+    }
+}

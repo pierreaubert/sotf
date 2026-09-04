@@ -12,6 +12,7 @@ use super::loudness::loudness_data_to_json;
 use super::loudness::loudness_info_to_json;
 use super::misc::bind_unix_socket;
 use super::misc::build_driver_plugin_chain;
+use super::misc::elevate_daemon_thread_to_audio_work;
 use super::misc::is_safe_output_device_name;
 use super::misc::push_metering_faults;
 use super::misc::socket_is_unix_socket;
@@ -651,11 +652,7 @@ impl SystemwideController {
     pub(super) fn spawn_initial_driver_playback(&self) -> std::thread::JoinHandle<()> {
         let daemon = self.clone();
         std::thread::spawn(move || {
-            // Startup is a pipeline mutation just like an IPC request or a
-            // driver-initiated reconfiguration. Holding this guard for the
-            // entire transition prevents startup from interleaving its
-            // stop/configure/start/commit sequence with either of those paths.
-            let _mutation = daemon.pipeline_mutation.lock();
+            elevate_daemon_thread_to_audio_work("startup driver playback");
             println!("Auto-starting driver playback...");
 
             let output_device = configured_output_device();
@@ -689,15 +686,78 @@ impl SystemwideController {
                 startup_input_channels, startup_output_channels, driver_status.channel_count
             );
 
-            let result = daemon.handle_load_plugins_with_channels(
-                plugins,
-                startup_input_channels,
-                startup_output_channels,
-            );
-            if result.success {
-                println!("   Driver playback started successfully");
-            } else {
-                println!("   Driver playback failed: {:?}", result.error);
+            // USB devices can enumerate late (re-scan after reboot/reinstall,
+            // CoreAudio device-id churn). Retry a bounded number of times
+            // while the failure looks like a device-availability race instead
+            // of latching `restart_daemon` for a device that appears seconds
+            // later. The mutation guard is held per attempt only, so IPC
+            // mutations can proceed (and supersede this loop) while waiting.
+            for attempt in 1..=super::misc::COLD_START_MAX_ATTEMPTS {
+                let generation_before = daemon.system_state.lock().generation();
+                let result = {
+                    // Startup is a pipeline mutation just like an IPC
+                    // request or a driver-initiated reconfiguration.
+                    // Holding this guard for the entire transition
+                    // prevents startup from interleaving its
+                    // stop/configure/start/commit sequence with either of
+                    // those paths.
+                    let _mutation = daemon.pipeline_mutation.lock();
+                    daemon.handle_load_plugins_with_channels(
+                        plugins.clone(),
+                        startup_input_channels,
+                        startup_output_channels,
+                    )
+                };
+                if result.success {
+                    println!("   Driver playback started successfully");
+                    return;
+                }
+                println!(
+                    "   Driver playback attempt {attempt}/{} failed: {:?}",
+                    super::misc::COLD_START_MAX_ATTEMPTS,
+                    result.error
+                );
+                if attempt == super::misc::COLD_START_MAX_ATTEMPTS {
+                    println!("   Driver playback failed: {:?}", result.error);
+                    return;
+                }
+                if daemon.system_state.lock().generation() != generation_before {
+                    println!("   Startup superseded by a newer pipeline mutation; standing down");
+                    return;
+                }
+                if !super::misc::startup_error_is_device_availability(result.error.as_deref()) {
+                    println!("   Driver playback failed: {:?}", result.error);
+                    return;
+                }
+                // Wait for the desired device with the guard released. A
+                // concurrent IPC mutation changes the generation and aborts
+                // this loop on the next check above.
+                match daemon.system_state.lock().selected_output_device() {
+                    Some(device) => {
+                        println!("   Waiting for output device {device:?} to enumerate...");
+                        if !super::misc::wait_for_output_device(
+                            &device,
+                            super::misc::COLD_START_DEVICE_WAIT,
+                            &|| *daemon.running.lock(),
+                        ) {
+                            println!(
+                                "   Device {device:?} did not enumerate; giving up startup retry"
+                            );
+                            return;
+                        }
+                    }
+                    None => {
+                        println!("   No desired device; pausing before startup retry...");
+                        let deadline =
+                            std::time::Instant::now() + std::time::Duration::from_secs(2);
+                        while *daemon.running.lock() && std::time::Instant::now() < deadline {
+                            std::thread::sleep(std::time::Duration::from_millis(200));
+                        }
+                        if !*daemon.running.lock() {
+                            return;
+                        }
+                    }
+                }
             }
         })
     }
@@ -705,6 +765,7 @@ impl SystemwideController {
     fn spawn_driver_config_watcher(&self) -> std::thread::JoinHandle<()> {
         let daemon = self.clone();
         std::thread::spawn(move || {
+            elevate_daemon_thread_to_audio_work("driver config watcher");
             let poll_interval = Duration::from_millis(100);
             let initial_driver_status = daemon.driver_manager.lock().status();
             let initial_generation = daemon.system_state.lock().generation();
@@ -2966,6 +3027,7 @@ impl SystemwideController {
 
                     let thread = std::thread::spawn(move || {
                         let _client_slot = client_slot;
+                        elevate_daemon_thread_to_audio_work("IPC client handler");
                         daemon.handle_client(stream, peer_class);
                     });
                     client_threads.push((thread, shutdown_stream));

@@ -84,4 +84,4 @@ pub use gc_thread::{GcSender, GcThread};
 mod thread_join;
 pub(crate) use thread_join::join_timeout;
 
-mod rt_priority;
+pub mod rt_priority;

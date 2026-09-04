@@ -56,6 +56,7 @@ mod types;
 
 use audio_daemon::AudioDaemon;
 use misc::acquire_daemon_instance_lock;
+use misc::elevate_daemon_thread_to_audio_work;
 use security::{ensure_secure_socket_dir, get_secure_socket_path};
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use security::{get_hal_key_path, get_key_path};
@@ -64,6 +65,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();
+
+    // The accept loop runs on this thread; keep it at audio-work priority so
+    // IPC control and metering stay responsive under load. Engine audio
+    // threads elevate themselves separately.
+    elevate_daemon_thread_to_audio_work("main accept loop");
 
     // Serialize ownership before touching a session key, shared memory, or a
     // stale socket. The control socket is independently configurable, so it

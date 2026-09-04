@@ -1299,6 +1299,75 @@ installer_step "Starting the SotF background audio service"
 /bin/launchctl print "gui/$CONSOLE_UID/$DAEMON_AGENT_LABEL" >/dev/null
 echo "Registered $DAEMON_AGENT_LABEL LaunchAgent for $CONSOLE_USER (gui/$CONSOLE_UID)"
 
+installer_step "Smoke-testing the SotF background audio service"
+# The daemon prints the control-socket path it bound; only log lines written
+# after this point belong to the freshly started instance.
+DAEMON_LOG="$LOG_DIR/sotf-daemon.log"
+DAEMON_LOG_OFFSET="$(/usr/bin/stat -f '%z' "$DAEMON_LOG" 2>/dev/null || echo 0)"
+DAEMON_SOCKET=""
+for _ in $(/usr/bin/seq 1 60); do
+    DAEMON_SOCKET="$(/usr/bin/tail -c +$((DAEMON_LOG_OFFSET + 1)) "$DAEMON_LOG" 2>/dev/null | /usr/bin/grep 'Audio daemon listening on ' | /usr/bin/tail -n 1 | /usr/bin/sed 's/.*listening on //' || true)"
+    [ -n "$DAEMON_SOCKET" ] && [ -S "$DAEMON_SOCKET" ] && break
+    DAEMON_SOCKET=""
+    /bin/sleep 1
+done
+if [ -z "$DAEMON_SOCKET" ]; then
+    echo "Error: daemon did not bind its control socket within 60s; last log lines:"
+    /usr/bin/tail -n 30 "$DAEMON_LOG" 2>/dev/null || true
+    exit 1
+fi
+echo "Daemon control socket: $DAEMON_SOCKET"
+
+# Poll status until playback is applied without a recovery latch, or time out
+# with the observed status and recent logs for diagnosis. Cold start can take
+# a while when USB devices enumerate late (bounded daemon-side retries).
+SMOKE_STATUS="$(/usr/bin/python3 - "$DAEMON_SOCKET" << 'SMOKE_EOF' 2>/dev/null || true
+import json, socket, sys, time
+path = sys.argv[1]
+def query(command, timeout=15):
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(timeout)
+    s.connect(path)
+    s.sendall((json.dumps(command) + "\n").encode())
+    data = b""
+    while not data.endswith(b"\n"):
+        chunk = s.recv(65536)
+        if not chunk:
+            break
+        data += chunk
+    s.close()
+    return json.loads(data)
+try:
+    query({"command": "ping"}, timeout=10)
+except Exception as error:
+    print(json.dumps({"ok": False, "stage": "ping", "error": str(error)}))
+    sys.exit(0)
+deadline = time.time() + 150
+last = {}
+while time.time() < deadline:
+    try:
+        last = query({"command": "status"}, timeout=15).get("data", {})
+    except Exception as error:
+        last = {"error": str(error)}
+        time.sleep(5)
+        continue
+    route = last.get("active_route", {})
+    if route.get("applied_output_device") and not last.get("pipeline_recovery"):
+        print(json.dumps({"ok": True, "status": last}))
+        sys.exit(0)
+    time.sleep(5)
+print(json.dumps({"ok": False, "stage": "playback", "status": last}))
+SMOKE_EOF
+)"
+SMOKE_OK="$(/usr/bin/python3 -c 'import json, sys; print(json.loads(sys.argv[1]).get("ok", False))' "$SMOKE_STATUS" 2>/dev/null || echo False)"
+if [ "$SMOKE_OK" != "True" ]; then
+    echo "Error: daemon smoke test failed: $SMOKE_STATUS"
+    echo "Last daemon log lines:"
+    /usr/bin/tail -n 30 "$DAEMON_LOG" 2>/dev/null || true
+    exit 1
+fi
+echo "Daemon smoke test passed: playback applied with no recovery latch"
+
 exit 0
 POSTINSTALL
     chmod +x "$pkg_scripts/postinstall"

@@ -522,6 +522,82 @@ pub(super) fn socket_is_unix_socket(path: &std::path::Path) -> bool {
     }
 }
 
+/// Cold-start tuning for devices that enumerate late (USB re-scan after
+/// reboot/reinstall, CoreAudio device-id churn). Startup retries a bounded
+/// number of times while the failure looks like a device-availability race.
+pub(super) const COLD_START_MAX_ATTEMPTS: u32 = 4;
+/// Upper bound for waiting on one desired device to appear per attempt.
+pub(super) const COLD_START_DEVICE_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+/// Poll interval while waiting for a device to enumerate.
+const DEVICE_WAIT_POLL: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// True when a startup failure looks like a device-availability race rather
+/// than a permanent configuration error. Unknown failures are never
+/// retried: only the engine's device-absence markers qualify.
+pub(super) fn startup_error_is_device_availability(error: Option<&str>) -> bool {
+    let Some(message) = error else {
+        return false;
+    };
+    let folded = message.to_ascii_lowercase();
+    [
+        "not available",
+        "not found",
+        "needs playback stream recovery",
+        "stream error reported",
+        "device id changed",
+    ]
+    .iter()
+    .any(|marker| folded.contains(marker))
+}
+
+/// Poll device enumeration until `name` appears, the timeout expires, or
+/// `keep_going` reports shutdown. Returns true only when the device was
+/// observed. Enumeration errors count as "absent" and keep polling.
+pub(super) fn wait_for_output_device(
+    name: &str,
+    timeout: std::time::Duration,
+    keep_going: &dyn Fn() -> bool,
+) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if !keep_going() {
+            return false;
+        }
+        if let Ok(devices) = list_audio_devices()
+            && devices
+                .iter()
+                .any(|device| device.get("name").and_then(Value::as_str) == Some(name))
+        {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(DEVICE_WAIT_POLL.min(deadline - std::time::Instant::now()));
+    }
+}
+
+/// Elevate the calling daemon-owned thread to audio-work priority.
+///
+/// The engine's decoder/processing/playback threads already do this for
+/// themselves. The daemon's own threads (accept loop, IPC handlers, driver
+/// config watcher, startup playback) run at default priority otherwise, which
+/// leaves control-plane latency — and therefore pipeline-mutation and
+/// metering responsiveness — at the mercy of default scheduling. Uses the
+/// engine's existing elevation helper, so no new platform `unsafe` is
+/// introduced here. Best effort: logs and continues at default priority when
+/// elevation is unavailable.
+pub(super) fn elevate_daemon_thread_to_audio_work(context: &str) {
+    match sotf_audio::engine::rt_priority::set_realtime_priority(
+        sotf_audio::engine::rt_priority::RtPriority::Processing,
+        None,
+    ) {
+        Ok(true) => log::info!("[Daemon] Audio-work priority set for {context}"),
+        Ok(false) => log::debug!("[Daemon] Audio-work priority unavailable for {context}"),
+        Err(error) => log::debug!("[Daemon] Audio-work priority failed for {context}: {error}"),
+    }
+}
+
 pub(super) fn is_safe_output_device_name(name: &str) -> bool {
     let lowercase_name = name.to_ascii_lowercase();
     ![
@@ -601,7 +677,10 @@ pub(super) fn list_audio_devices() -> Result<Vec<serde_json::Value>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{acquire_daemon_instance_lock, bind_unix_socket, socket_is_unix_socket};
+    use super::{
+        acquire_daemon_instance_lock, bind_unix_socket, socket_is_unix_socket,
+        startup_error_is_device_availability, wait_for_output_device,
+    };
     use std::fs;
     use tempfile::tempdir;
 
@@ -711,5 +790,54 @@ mod tests {
         let replacement = bind_unix_socket(&path).expect("replace stale socket");
         assert!(socket_is_unix_socket(&path));
         drop(replacement);
+    }
+
+    #[test]
+    fn startup_retry_triggers_only_on_device_availability_errors() {
+        // Observed cold-start races: USB re-scan, CoreAudio id churn.
+        assert!(startup_error_is_device_availability(Some(
+            "Selected output device 'EVO8' is not available: Audio device 'EVO8' not found"
+        )));
+        assert!(startup_error_is_device_availability(Some(
+            "Audio device 'EVO8' needs playback stream recovery: stream error reported by CoreAudio (1 total)"
+        )));
+        assert!(startup_error_is_device_availability(Some(
+            "CoreAudio device id changed for 'EVO8' (Some(120) -> Some(286))"
+        )));
+        // Permanent failures must surface immediately, never burn retries.
+        assert!(!startup_error_is_device_availability(None));
+        assert!(!startup_error_is_device_availability(Some("")));
+        assert!(!startup_error_is_device_availability(Some(
+            "Failed to load plugin chain: Playback did not reach a hardware callback within 12000ms"
+        )));
+        assert!(!startup_error_is_device_availability(Some(
+            "Failed to parse loudness compensation params: invalid type"
+        )));
+    }
+
+    #[test]
+    fn wait_for_output_device_times_out_on_absent_device() {
+        let present = wait_for_output_device(
+            "definitely-not-a-real-device-xyz",
+            std::time::Duration::from_millis(600),
+            &|| true,
+        );
+        assert!(!present);
+    }
+
+    #[test]
+    fn wait_for_output_device_aborts_on_shutdown() {
+        let started = std::time::Instant::now();
+        let present = wait_for_output_device(
+            "definitely-not-a-real-device-xyz",
+            std::time::Duration::from_secs(30),
+            &|| false,
+        );
+        assert!(!present);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "shutdown must abort the wait, took {:?}",
+            started.elapsed()
+        );
     }
 }

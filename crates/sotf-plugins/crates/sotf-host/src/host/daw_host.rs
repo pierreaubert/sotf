@@ -497,6 +497,21 @@ impl DawHost {
         }
         self.compute_io_nodes();
         self.compute_stages()?;
+        // Graph topologies bypass the chain APIs, leaving `chain_nodes`
+        // empty. Chain-indexed contracts (analyzer discovery, plugin data
+        // lookup, plugin count, per-node rates) would then silently report
+        // nothing — daemon metering falls back to zeros in graph mode.
+        // Derive signal order from the computed stages so fresh linear
+        // graphs behave exactly like their chain equivalent. Hosts with
+        // chain-built nodes (including mixed chain/graph usage, where side
+        // nodes must stay out of `chain_nodes`) are deliberately untouched.
+        if self.chain_nodes.is_empty() {
+            self.chain_nodes = self
+                .stages
+                .iter()
+                .flat_map(|stage| stage.nodes.iter().copied())
+                .collect();
+        }
         let max_id = self.nodes.keys().copied().max().unwrap_or(0);
         let num_slots = if self.nodes.is_empty() { 0 } else { max_id + 1 };
         self.node_input_sample_rates = vec![self.config.sample_rate; num_slots];
