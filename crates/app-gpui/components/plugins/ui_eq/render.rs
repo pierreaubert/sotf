@@ -2405,8 +2405,8 @@ fn adjust_eq_global_control(
             }
             (PluginSettings::LinearPhaseEq { fir_length, .. }, EqGlobalControl::LpFirLength) => {
                 *fir_length = (*fir_length + delta).clamp(
-                    pk(LP_PARAMS, "fir_length").min_f64(),
-                    pk(LP_PARAMS, "fir_length").max_f64(),
+                    pk(LP_PARAMS, "fir_length_index").min_f64(),
+                    pk(LP_PARAMS, "fir_length_index").max_f64(),
                 );
             }
             (PluginSettings::LinearPhaseEq { phase_mode, .. }, EqGlobalControl::LpPhaseMode) => {
