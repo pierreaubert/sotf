@@ -1,7 +1,7 @@
 use sotf_plugins::param_specs::{self};
 
 pub(super) fn crossover_types() -> &'static [&'static str] {
-    param_specs::find_by_key(param_specs::band_split::PARAMS, "crossover_type").choice_labels()
+    param_specs::find_by_key(param_specs::band_split::PARAMS, "type").choice_labels()
 }
 
 pub(super) fn crossover_type_to_index(ct: &str) -> f64 {

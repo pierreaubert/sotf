@@ -316,7 +316,7 @@ sotf_plugins::serde_param_default! {
 }
 sotf_plugins::serde_param_default! {
     band_split_specs::PARAMS;
-    fn default_band_split_crossover_type() -> String = "crossover_type";
+    fn default_band_split_crossover_type() -> String = "type";
 }
 sotf_plugins::serde_param_default! {
     crossover_specs::PARAMS;
@@ -420,7 +420,7 @@ sotf_plugins::serde_param_default! {
     fn default_sc_knee() -> f64 = "knee";
     fn default_sc_spectral_smoothing() -> f64 = "spectral_smoothing";
     fn default_sc_mix() -> f64 = "mix";
-    fn default_sc_fft_size() -> usize = "fft_size";
+    fn default_sc_fft_size() -> usize = "fft_size_index";
 }
 sotf_plugins::serde_param_default! {
     transient_shaper_specs::PARAMS;
@@ -454,8 +454,8 @@ sotf_plugins::serde_param_default! {
 sotf_plugins::serde_param_default! {
     linear_phase_eq_specs::PARAMS;
     fn default_lpeq_num_filters() -> f64 = "num_filters";
-    fn default_lpeq_fir_length() -> f64 = "fir_length";
-    fn default_lpeq_phase_mode() -> f64 = "phase_mode";
+    fn default_lpeq_fir_length() -> f64 = "fir_length_index";
+    fn default_lpeq_phase_mode() -> f64 = "phase_mode_index";
     fn default_lpeq_mix() -> f64 = "mix";
 }
 pub mod chain;

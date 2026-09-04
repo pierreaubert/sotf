@@ -355,7 +355,7 @@ fn same_rate_latency_change_prepares_an_aligned_crossfade() {
     let current = PluginConfig::new("gain", serde_json::json!({ "gain_db": 0.0 }));
     let candidate = PluginConfig::new(
         "linear_phase_eq",
-        serde_json::json!({ "num_filters": 0, "fir_length": 64 }),
+        serde_json::json!({ "num_filters": 0, "fir_length_index": 2 }),
     );
     let (mut current_host, _) = build_plugin_host(&[current], 48_000, 1).unwrap();
     let (mut candidate_host, warnings) = build_plugin_host(&[candidate], 48_000, 1).unwrap();

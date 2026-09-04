@@ -2250,8 +2250,8 @@ impl PluginSettings {
                     .collect();
                 Self::LinearPhaseEq {
                     num_filters: p(lp, "num_filters").default_f64(),
-                    fir_length: p(lp, "fir_length").default_f64(),
-                    phase_mode: p(lp, "phase_mode").default_f64(),
+                    fir_length: p(lp, "fir_length_index").default_f64(),
+                    phase_mode: p(lp, "phase_mode_index").default_f64(),
                     auto_gain: p(lp, "auto_gain").default_bool(),
                     mix: p(lp, "mix").default_f64(),
                     filters,
@@ -2260,7 +2260,7 @@ impl PluginSettings {
             PluginType::SpectralCompressor => {
                 let sc = spectral_compressor_specs::PARAMS;
                 Self::SpectralCompressor {
-                    fft_size: p(sc, "fft_size").default_f64() as usize,
+                    fft_size: p(sc, "fft_size_index").default_f64() as usize,
                     threshold: p(sc, "threshold").default_f64(),
                     ratio: p(sc, "ratio").default_f64(),
                     attack: p(sc, "attack").default_f64(),

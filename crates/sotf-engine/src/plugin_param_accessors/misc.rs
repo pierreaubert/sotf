@@ -101,11 +101,11 @@ impl PluginSettings {
                 const AMBISONICS_TARGET_LAYOUT_IDX: usize =
                     param_specs::index_of(param_specs::ambisonics::PARAMS, "target_layout");
                 const BAND_SPLIT_CROSSOVER_TYPE_IDX: usize =
-                    param_specs::index_of(param_specs::band_split::PARAMS, "crossover_type");
+                    param_specs::index_of(param_specs::band_split::PARAMS, "type");
                 const CROSSFEED_MODE_IDX: usize =
-                    param_specs::index_of(param_specs::crossfeed::PARAMS, "crossfeed_mode");
+                    param_specs::index_of(param_specs::crossfeed::PARAMS, "mode");
                 const CROSSFEED_PRESET_IDX: usize =
-                    param_specs::index_of(param_specs::crossfeed::PARAMS, "crossfeed_preset");
+                    param_specs::index_of(param_specs::crossfeed::PARAMS, "preset");
                 const COMPRESSOR_SIDECHAIN_HPF_ORDER_IDX: usize =
                     param_specs::index_of(param_specs::compressor::PARAMS, "sidechain_hpf_order");
                 const COMPRESSOR_DETECTION_MODE_IDX: usize =
