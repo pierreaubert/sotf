@@ -1,0 +1,110 @@
+# Native acceptance queued behind the AutoEQ dependency integration.
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+size = "1440x900"
+
+[[scenario]]
+name = "choice-activation"
+path = "crates/sotf-dev-driver/scenarios/dither_keyboard_activation.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "choice-activation-narrow"
+path = "crates/sotf-dev-driver/scenarios/dither_keyboard_activation.scn"
+timeout = "60s"
+viewport = "600x1000"
+theme = "Light"
+font_scale = 1.5
+
+[[scenario]]
+name = "mono-primary"
+path = "crates/sotf-dev-driver/scenarios/plugins/MonoToStereo.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "mono-primary-narrow"
+path = "crates/sotf-dev-driver/scenarios/plugins/MonoToStereo.scn"
+timeout = "60s"
+viewport = "600x1000"
+theme = "Light"
+font_scale = 1.5
+
+[[scenario]]
+name = "downmix-primary"
+path = "crates/sotf-dev-driver/scenarios/plugins/Downmix.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "downmix-primary-narrow"
+path = "crates/sotf-dev-driver/scenarios/plugins/Downmix.scn"
+timeout = "60s"
+viewport = "600x1000"
+theme = "Light"
+font_scale = 1.5
+
+[[scenario]]
+name = "expander-primary"
+path = "crates/sotf-dev-driver/scenarios/plugins/Expander.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "expander-primary-narrow"
+path = "crates/sotf-dev-driver/scenarios/plugins/Expander.scn"
+timeout = "60s"
+viewport = "600x1000"
+theme = "Light"
+font_scale = 1.5
+
+[[scenario]]
+name = "pnd-reference"
+path = "crates/sotf-dev-driver/scenarios/plugins/Pnd.scn"
+timeout = "90s"
+
+[[scenario]]
+name = "pnd-reference-narrow"
+path = "crates/sotf-dev-driver/scenarios/plugins/Pnd.scn"
+timeout = "90s"
+viewport = "600x1000"
+theme = "Light"
+font_scale = 1.5
+
+[[scenario]]
+name = "loudness-modes"
+path = "crates/sotf-dev-driver/scenarios/plugins/LoudnessCompensation.scn"
+timeout = "90s"
+
+[[scenario]]
+name = "loudness-modes-narrow"
+path = "crates/sotf-dev-driver/scenarios/plugins/LoudnessCompensation.scn"
+timeout = "90s"
+viewport = "600x1000"
+theme = "Light"
+font_scale = 1.5
+
+[[scenario]]
+name = "fletcher-auto"
+path = "crates/sotf-dev-driver/scenarios/plugins/FletcherMunson.scn"
+timeout = "90s"
+
+[[scenario]]
+name = "fletcher-auto-narrow"
+path = "crates/sotf-dev-driver/scenarios/plugins/FletcherMunson.scn"
+timeout = "90s"
+viewport = "600x1000"
+theme = "Light"
+font_scale = 1.5
+
+[[scenario]]
+name = "denoiser-profile"
+path = "crates/sotf-dev-driver/scenarios/plugins/Denoiser.scn"
+timeout = "90s"
+
+[[scenario]]
+name = "denoiser-profile-narrow"
+path = "crates/sotf-dev-driver/scenarios/plugins/Denoiser.scn"
+timeout = "90s"
+viewport = "600x1000"
+theme = "Light"
+font_scale = 1.5

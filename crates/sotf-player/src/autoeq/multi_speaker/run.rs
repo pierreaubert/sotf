@@ -138,6 +138,7 @@ pub fn run_multi_speaker_optimization(
         crossovers: None,
         target_curve: None,
         optimizer: OptimizerConfig {
+            upper_band_acoustic_bounds: Default::default(),
             loss_type: format!("{:?}", config.args.loss).to_lowercase(),
             algorithm: config.args.algo.clone(),
             strategy: config.args.strategy.clone(),
@@ -175,6 +176,8 @@ pub fn run_multi_speaker_optimization(
             asymmetric_loss_config: None,
             perceptual_policy: None,
             audibility_deadband: None,
+            filter_audibility: None,
+            pruning_budget: None,
             high_frequency_correction: None,
             early_late_correction: None,
             validation_bundle: None,
@@ -206,6 +209,8 @@ pub fn run_multi_speaker_optimization(
             auto_optimizer: None,
             smoothness_penalty: None,
             from_measurement_slope_override: None,
+            // Keep evolving RoomEQ acceptance/protection settings at their defaults.
+            ..Default::default()
         },
         provenance: Default::default(),
         recording_config: None,

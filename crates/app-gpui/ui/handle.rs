@@ -182,7 +182,7 @@ impl PlayerView {
 
                     if state.app.ui_state.pending_studio_close {
                         state.app.ui_state.pending_studio_close = false;
-                        state.app.ui_state.current_screen = state.app.ui_state.last_screen;
+                        state.app.ui_state.current_screen = state.app.ui_state.navigation.last_screen;
                     }
                 });
                 cx.notify();
@@ -345,14 +345,13 @@ impl PlayerView {
                     crate::components::home::home_screen::activate_selected_home_album(state);
                 }
                 Screen::Library => {
-                    // Add selected album to queue
-                    match state.app.add_album_to_queue() {
-                        Ok(Some(path)) => Self::play_track(state, path),
-                        Err(e) => {
-                            state.app.ui_state.toast_message =
-                                Some(crate::app::ToastMessage::error(e));
-                        }
-                        _ => {}
+                    if state.app.library_state.album_detail.is_none() {
+                        let album = state
+                            .app
+                            .filtered_albums()
+                            .get(state.app.library_state.selected_index)
+                            .map(|album| std::sync::Arc::new((*album).clone()));
+                        state.app.library_state.album_detail = album;
                     }
                 }
                 Screen::NowPlaying | Screen::Queue => {

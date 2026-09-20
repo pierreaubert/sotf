@@ -41,6 +41,7 @@ if is_fir && eq_design_iir_before_fir {
 // --- dB Range ---
 {
     let mut min_db_input = NumberInput::new((base_id.clone(), "min-db"))
+        .scroll_requires_alt(true)
         .value(config.eq_design.min_db)
         .min(ParamLimits::DB.min)
         .max(ParamLimits::DB.max)
@@ -58,6 +59,7 @@ if is_fir && eq_design_iir_before_fir {
     }
 
     let mut max_db_input = NumberInput::new((base_id.clone(), "max-db"))
+        .scroll_requires_alt(true)
         .value(config.eq_design.max_db)
         .min(ParamLimits::DB.min)
         .max(ParamLimits::DB.max)
@@ -89,6 +91,7 @@ if is_fir && eq_design_iir_before_fir {
 // --- Q Range (IIR only) ---
 if is_iir {
     let mut min_q_input = NumberInput::new((base_id.clone(), "min-q"))
+        .scroll_requires_alt(true)
         .value(config.eq_design.min_q)
         .min(ParamLimits::Q.min)
         .max(ParamLimits::Q.max)
@@ -106,6 +109,7 @@ if is_iir {
     }
 
     let mut max_q_input = NumberInput::new((base_id.clone(), "max-q"))
+        .scroll_requires_alt(true)
         .value(config.eq_design.max_q)
         .min(ParamLimits::Q.min)
         .max(ParamLimits::Q.max)
@@ -137,6 +141,7 @@ if is_iir {
 // --- Frequency Range ---
 {
     let mut min_freq_input = NumberInput::new((base_id.clone(), "min-freq"))
+        .scroll_requires_alt(true)
         .value(config.eq_design.min_freq)
         .min(ParamLimits::FREQUENCY.min)
         .max(ParamLimits::FREQUENCY.max)
@@ -154,6 +159,7 @@ if is_iir {
     }
 
     let mut max_freq_input = NumberInput::new((base_id.clone(), "max-freq"))
+        .scroll_requires_alt(true)
         .value(config.eq_design.max_freq)
         .min(ParamLimits::FREQUENCY.min)
         .max(ParamLimits::FREQUENCY.max)
@@ -215,6 +221,7 @@ if is_iir {
     if !hide_spacing {
         let mut spacing_weight_input =
             NumberInput::new((base_id.clone(), "spacing-weight"))
+                .scroll_requires_alt(true)
                 .value(config.eq_design.spacing_weight)
                 .min(ParamLimits::SPACING_WEIGHT.min)
                 .max(ParamLimits::SPACING_WEIGHT.max)
@@ -233,6 +240,7 @@ if is_iir {
 
         let mut min_spacing_oct_input =
             NumberInput::new((base_id.clone(), "min-spacing-oct"))
+                .scroll_requires_alt(true)
                 .value(config.eq_design.min_spacing_oct)
                 .min(ParamLimits::MIN_SPACING_OCT.min)
                 .max(ParamLimits::MIN_SPACING_OCT.max)

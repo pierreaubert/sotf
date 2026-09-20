@@ -113,6 +113,35 @@ Tests are in `tests/`:
 - Uses `parking_lot` mutexes for shared state
 - Re-exports plugin types from `sotf-engine` and `sotf-plugins` for convenience
 
+## RoomEQ physical routing dependency boundary
+
+Native graph boundaries retain the declared logical input and physical output
+counts. A rectangular input matrix expands unpadded decoder frames before
+fan-out; a rectangular output matrix emits exactly the physical slots after
+summation and output processing. Internal routing width is not a requirement
+to pad decoder PCM. Tests cover expanding and contracting layouts, fan-in,
+fan-out, silent slots and partial blocks; OS/device assignment is separate.
+
+RoomEQ's physical routing contract belongs to AutoEQ (`roomeq-model`), and its
+legacy channel/driver resolver belongs to `roomeq-engine`. The player adapter in
+`room_eq_types/physical.rs` lowers this resolved contract to native plugin nodes:
+input processing precedes fan-out, each route retains its own transfer, and
+output processing follows summation. Do not recreate routing ownership by LFE
+name inference or collapse distinct delays into one source-wide delay.
+
+Native lowering uses signed matrices for static gain/polarity and explicit
+wet-only, zero-feedback, unmodulated alignment delays. Unsupported crossover
+families are errors, never substitutions with LR24. This adapter currently
+supports LR24/LR4 IIR crossovers; FIR/crossover-family and arbitrary fractional-
+delay fidelity need their own native conformance evidence.
+
+The shared-contract change requires the corresponding AutoEQ revision. During
+cross-repository development, AutoEQ's
+`reviews/probes/roomeq-native-integration-2026-09-09.py` tests the current player
+source snapshot through a disposable manifest and local AutoEQ dependency, without
+changing production pins. Passing that run is not proof of dependency rollout,
+physical-device routing, acoustic improvement, or realtime deadline performance.
+
 ## License
 
 See the root workspace `LICENSE` file.

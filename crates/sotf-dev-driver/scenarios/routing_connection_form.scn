@@ -1,0 +1,44 @@
+focus PluginGraph
+wait_idle 2s
+assert routing.dirty == false
+assert plugins.graph.connection_count == 10
+click routing-connections
+click routing.endpoint.0
+assert routing.form_open == 0
+key down
+key enter
+assert routing.form_open == null
+click routing.endpoint.1
+assert routing.form_open == 1
+key down
+key enter
+assert routing.form_open == null
+click routing-connect
+assert routing.draft_connection_count == 11
+assert plugins.graph.connection_count == 10
+assert routing.dirty == true
+assert toast.type == null
+click routing-connect
+assert routing.draft_connection_count == 11
+assert toast.type == "Error"
+click routing.endpoint.0
+key escape
+assert routing.form_open == null
+assert screen.focused == "PluginGraph"
+resize 600 800
+wait_idle 2s
+assert_in_viewport routing.endpoint.0
+assert_in_viewport routing.endpoint.1
+assert_in_viewport routing-connect
+screenshot routing-connection-form-narrow
+scroll routing-connections -2000
+wait_idle 2s
+assert_in_viewport routing.canvas
+screenshot routing-canvas-scrolled
+scroll routing.canvas 2000
+wait_idle 2s
+click routing-discard
+assert routing.draft_connection_count == 10
+assert plugins.graph.connection_count == 10
+assert routing.dirty == false
+assert playback.is_playing == false

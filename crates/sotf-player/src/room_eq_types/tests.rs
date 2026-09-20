@@ -3,12 +3,8 @@ use super::build::build_speakers_from_recordings;
 use super::ctc::ctc_system_config_for_speaker_names;
 use super::delay_detection_state::DelayDetectionState;
 use super::delay_detection_status::DelayDetectionStatus;
-use super::identity::identity_matrix_parameters;
 use super::misc::estimate_probe_sequence_ms;
 use super::misc::parse_eq_filters_from_json;
-use super::misc::routed_graph_channel_count;
-use super::misc::single_channel_matrix_parameters;
-use super::misc::sorted_channel_names;
 use super::multi_measurement_ui_config::MultiMeasurementUiConfig;
 use super::room_eq_measurements_file::RoomEqMeasurementsFile;
 use super::room_eq_optimization_mode::{
@@ -17,16 +13,9 @@ use super::room_eq_optimization_mode::{
 };
 use super::room_eq_optimizer_config::RoomEqOptimizerConfig;
 use super::target_response_ui_config::TargetResponseUiConfig;
-use super::types::append_channel_dsp_graph_branch;
-use super::types::is_route_replaced_global_plugin;
-#[cfg(test)]
-use super::types::post_route_plugins_for_channel;
-#[cfg(test)]
-use super::types::pre_route_plugins_for_route;
 use super::types::read_first_wav_channel_f32;
 use crate::recording_types::{ChannelRecording, ChannelRecordingState, RecordingResult};
 pub use autoeq::roomeq::SimplePresetConfig;
-pub use autoeq::roomeq::{ChannelDspChain, DspChainOutput};
 use math_audio_iir_fir::BiquadFilterType;
 
 mod bare;
@@ -37,257 +26,6 @@ use misc::assert_room_eq_matrix_nodes_have_width;
 use misc::collect_labels;
 use routed::routed_bass_output;
 use routed::routed_physical_sub_output;
-
-/// Legacy routed graph builder retained for regression comparisons against
-/// the current factored graph builder.
-#[cfg(test)]
-fn build_routed_room_eq_graph(
-    output: &DspChainOutput,
-    graph: &autoeq::roomeq::BassManagementRoutingGraph,
-) -> anyhow::Result<sotf_audio::engine::PluginGraphConfig> {
-    use sotf_audio::engine::{PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig};
-
-    let channel_count = routed_graph_channel_count(output, graph);
-    let mut nodes = Vec::new();
-    let mut edges = Vec::new();
-    let mut next_id = 0usize;
-
-    let mut add_node = |plugin_type: String, parameters: serde_json::Value| -> usize {
-        let id = next_id;
-        next_id += 1;
-        nodes.push(PluginGraphNodeConfig {
-            id,
-            plugin_type,
-            parameters,
-            input_channels: channel_count,
-            bypassed: false,
-        });
-        id
-    };
-
-    let mut global_tail = None;
-    for plugin in output
-        .global_plugins
-        .iter()
-        .filter(|plugin| !is_route_replaced_global_plugin(plugin))
-    {
-        let node = add_node(plugin.plugin_type.clone(), plugin.parameters.clone());
-        if let Some(prev) = global_tail {
-            edges.push(PluginGraphEdgeConfig {
-                from_node: prev,
-                to_node: node,
-            });
-        }
-        global_tail = Some(node);
-    }
-
-    let mut route_tails = Vec::new();
-    for route in &graph.routes {
-        let matrix_gain = route_matrix_gain(route);
-        let mut prev = add_node(
-            "matrix".to_string(),
-            single_channel_matrix_parameters(
-                channel_count,
-                route.source_index,
-                route.destination_index,
-                matrix_gain,
-                format!(
-                    "room_eq_route_{}_{}_to_{}",
-                    route.route_kind, route.source_channel, route.destination
-                ),
-                Some(serde_json::json!({
-                    "route_kind": route.route_kind,
-                    "group_id": route.group_id,
-                    "source": route.source_channel,
-                    "destination": route.destination,
-                })),
-            ),
-        );
-        if let Some(global_tail) = global_tail {
-            edges.push(PluginGraphEdgeConfig {
-                from_node: global_tail,
-                to_node: prev,
-            });
-        }
-
-        for plugin in pre_route_plugins_for_route(output, route, graph) {
-            let node = add_node(plugin.plugin_type.clone(), plugin.parameters.clone());
-            edges.push(PluginGraphEdgeConfig {
-                from_node: prev,
-                to_node: node,
-            });
-            prev = node;
-        }
-
-        if let Some(freq) = route.high_pass_hz {
-            let node = add_node(
-                "crossover".to_string(),
-                serde_json::json!({
-                    "type": route.crossover_type,
-                    "frequency": freq,
-                    "output": "high",
-                    "label": "room_eq_route_highpass",
-                }),
-            );
-            edges.push(PluginGraphEdgeConfig {
-                from_node: prev,
-                to_node: node,
-            });
-            prev = node;
-        }
-        if let Some(freq) = route.low_pass_hz {
-            let node = add_node(
-                "crossover".to_string(),
-                serde_json::json!({
-                    "type": route.crossover_type,
-                    "frequency": freq,
-                    "output": "low",
-                    "label": "room_eq_route_lowpass",
-                }),
-            );
-            edges.push(PluginGraphEdgeConfig {
-                from_node: prev,
-                to_node: node,
-            });
-            prev = node;
-        }
-
-        if route.polarity_inverted
-            || (route.gain_db.abs() > 0.01 && (matrix_gain - 1.0).abs() < 1e-6)
-        {
-            let node = add_node(
-                "gain".to_string(),
-                serde_json::json!({
-                    "gain_db": if (matrix_gain - 1.0).abs() < 1e-6 { route.gain_db } else { 0.0 },
-                    "invert": route.polarity_inverted,
-                    "label": "room_eq_route_gain_polarity",
-                }),
-            );
-            edges.push(PluginGraphEdgeConfig {
-                from_node: prev,
-                to_node: node,
-            });
-            prev = node;
-        }
-
-        if route.delay_ms.abs() > 0.001 {
-            let node = add_node(
-                "delay".to_string(),
-                serde_json::json!({
-                    "delay_ms": route.delay_ms,
-                    "label": "room_eq_route_delay",
-                }),
-            );
-            edges.push(PluginGraphEdgeConfig {
-                from_node: prev,
-                to_node: node,
-            });
-            prev = node;
-        }
-        route_tails.push(prev);
-    }
-
-    let sum_anchor = add_node(
-        "matrix".to_string(),
-        identity_matrix_parameters(channel_count, "room_eq_route_sum_anchor"),
-    );
-    for route_tail in route_tails {
-        edges.push(PluginGraphEdgeConfig {
-            from_node: route_tail,
-            to_node: sum_anchor,
-        });
-    }
-
-    let output_order = if graph.output_channels.is_empty() {
-        sorted_channel_names(output)
-    } else {
-        graph.output_channels.clone()
-    };
-    let mut correction_tails = Vec::new();
-    for (channel_index, channel_name) in output_order.iter().enumerate() {
-        let isolate = add_node(
-            "matrix".to_string(),
-            single_channel_matrix_parameters(
-                channel_count,
-                channel_index,
-                channel_index,
-                1.0,
-                format!("room_eq_output_isolate_{channel_name}"),
-                None,
-            ),
-        );
-        edges.push(PluginGraphEdgeConfig {
-            from_node: sum_anchor,
-            to_node: isolate,
-        });
-        let post_chain = post_route_chain_for_channel(output, channel_name, graph);
-        let post_plugins = post_route_plugins_for_channel(output, channel_name, graph);
-        let mut append_node =
-            |plugin_type: String, parameters: serde_json::Value, _input_channels: usize| {
-                add_node(plugin_type, parameters)
-            };
-        let prev = append_channel_dsp_graph_branch(
-            &mut append_node,
-            &mut edges,
-            isolate,
-            post_chain,
-            post_plugins,
-            channel_count,
-            channel_name,
-        );
-        correction_tails.push(prev);
-    }
-
-    if correction_tails.is_empty() {
-        correction_tails.push(sum_anchor);
-    }
-
-    Ok(PluginGraphConfig { nodes, edges })
-}
-
-#[cfg(test)]
-fn route_matrix_gain(route: &autoeq::roomeq::BassManagementRoute) -> f64 {
-    if route.matrix_gain.abs() <= f64::EPSILON && route.gain_linear.abs() > f64::EPSILON {
-        route.gain_linear
-    } else {
-        route.matrix_gain
-    }
-}
-
-#[cfg(test)]
-fn post_route_chain_for_channel<'a>(
-    output: &'a DspChainOutput,
-    channel_name: &str,
-    graph: &autoeq::roomeq::BassManagementRoutingGraph,
-) -> Option<&'a ChannelDspChain> {
-    let post_chain_name = graph
-        .routes
-        .iter()
-        .find(|route| route.destination == channel_name)
-        .and_then(|route| route.post_chain_channel.as_deref())
-        .unwrap_or(channel_name);
-    output.channels.get(post_chain_name).or_else(|| {
-        is_bass_output_channel(channel_name, graph)
-            .then(|| output.channels.get(&graph.physical_sub_output))
-            .flatten()
-    })
-}
-
-#[cfg(test)]
-pub(super) fn is_bass_route(route: &autoeq::roomeq::BassManagementRoute) -> bool {
-    route.route_kind == "redirected_bass_lowpass_to_sub" || route.route_kind == "lfe_lowpass_to_sub"
-}
-
-#[cfg(test)]
-pub(super) fn is_bass_output_channel(
-    channel_name: &str,
-    graph: &autoeq::roomeq::BassManagementRoutingGraph,
-) -> bool {
-    graph
-        .routes
-        .iter()
-        .any(|route| is_bass_route(route) && route.destination == channel_name)
-}
 
 #[test]
 fn ctc_system_config_maps_speaker_names_to_logical_roles() {
@@ -442,6 +180,49 @@ fn load_from_json_preserves_multi_position_measurements() {
     );
     assert_eq!(l.multi_mic_measurements[0].frequencies.len(), 3);
     assert_eq!(l.multi_mic_measurements[1].frequencies.len(), 3);
+    assert_eq!(l.provenance.len(), 3);
+    assert_eq!(l.provenance[0].name.as_deref(), Some("L (Pos 1)"));
+    assert_eq!(l.provenance[1].name.as_deref(), Some("L (Pos 2)"));
+    assert_eq!(l.provenance[2].name.as_deref(), Some("L (Pos 3)"));
+    // Display names are retained verbatim, not parsed into asserted seat identity.
+    assert!(
+        l.provenance
+            .iter()
+            .all(|source| source.mic_position_index.is_none())
+    );
+}
+
+#[test]
+fn load_from_json_rejects_incomplete_single_driver_positions() {
+    let json = r#"{
+        "version": "1.1.0",
+        "speakers": {
+            "L": { "measurements": [
+                { "frequencies": [100.0, 1000.0], "magnitude_db": [-3.0, 0.0] },
+                { "frequencies": [], "magnitude_db": [], "name": "Missing position" }
+            ] }
+        }
+    }"#;
+    let error = RoomEqMeasurementsFile::load_from_json(json, None).unwrap_err();
+    assert!(
+        error.contains("Speaker L: loaded 1 of 2 measurement positions"),
+        "{error}"
+    );
+}
+
+#[test]
+fn load_from_json_rejects_empty_single_measurement() {
+    let json = r#"{
+        "version": "1.1.0",
+        "speakers": {
+            "L": { "frequencies": [], "magnitude_db": [] }
+        }
+    }"#;
+    let error = RoomEqMeasurementsFile::load_from_json(json, None).unwrap_err();
+    assert!(
+        error.contains("Speaker L: loaded 0 of 1 measurement positions"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -460,6 +241,7 @@ fn build_speakers_from_recordings_groups_per_channel() {
             rec.state = ChannelRecordingState::Done;
             let safe = display.replace([' ', '(', ')'], "_");
             rec.result = Some(RecordingResult {
+                sample_rate_hz: None,
                 channel: channel_index,
                 wav_path: Some(format!("/tmp/recording/{}.wav", safe)),
                 csv_path: Some(format!("/tmp/recording/{}.csv", safe)),
@@ -933,118 +715,36 @@ fn test_parse_filters_biquad_default_when_topology_missing() {
 fn test_build_room_eq_graph_emits_route_dsp_and_output_correction() {
     let output = routed_bass_output();
     let graph = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
-    let plugin_types: Vec<_> = graph
-        .nodes
-        .iter()
-        .map(|node| node.plugin_type.as_str())
-        .collect();
-    // Factored topology: one matrix (sub-bus), two crossovers (HP+LP),
-    // two delays (HP+LP), two gains (pre + post), two EQs (pre + post).
-    // The LP gain that used to live in its own `gain_lp` node is now
-    // baked into the matrix coefficient.
+    let labels = collect_labels(&graph);
     assert_eq!(
-        plugin_types
+        labels
             .iter()
-            .filter(|&&kind| kind == "matrix")
+            .filter(|l| l.starts_with("room_eq_route_"))
             .count(),
-        1,
-        "factored graph has exactly one routing matrix (the sub-bus sum)"
+        2
     );
     assert_eq!(
-        plugin_types
+        labels
             .iter()
-            .filter(|&&kind| kind == "crossover")
+            .filter(|l| l.as_str() == "pre_room_eq")
             .count(),
-        2,
-        "factored graph has exactly two crossover nodes (HP + LP)"
+        1
     );
     assert_eq!(
-        plugin_types.iter().filter(|&&kind| kind == "delay").count(),
-        2,
-        "factored graph has exactly two delay nodes (HP + LP)"
+        labels
+            .iter()
+            .filter(|l| l.as_str() == "post_room_eq")
+            .count(),
+        1
     );
     assert_eq!(
-        plugin_types.iter().filter(|&&kind| kind == "gain").count(),
-        2,
-        "factored graph has exactly two gain nodes (pre + post)"
+        labels
+            .iter()
+            .filter(|l| l.as_str() == "sub_post_room_eq")
+            .count(),
+        1
     );
-    assert_eq!(
-        plugin_types.iter().filter(|&&kind| kind == "eq").count(),
-        2,
-        "factored graph has exactly two EQ nodes (pre + post)"
-    );
-    assert!(graph.nodes.iter().all(|node| node.input_channels == 2));
-
-    let labeled_nodes: Vec<_> = graph
-        .nodes
-        .iter()
-        .filter_map(|node| {
-            node.parameters
-                .get("label")
-                .and_then(|label| label.as_str())
-                .map(|label| (node.id, label))
-        })
-        .collect();
-    let pre_eq_id = labeled_nodes
-        .iter()
-        .find(|(_, label)| *label == "room_eq_eq_pre")
-        .map(|(id, _)| *id)
-        .expect("factored pre-route EQ should be emitted");
-    let xover_hp_id = labeled_nodes
-        .iter()
-        .find(|(_, label)| *label == "room_eq_xover_hp")
-        .map(|(id, _)| *id)
-        .expect("factored HP crossover should be emitted");
-    let xover_lp_id = labeled_nodes
-        .iter()
-        .find(|(_, label)| *label == "room_eq_xover_lp")
-        .map(|(id, _)| *id)
-        .expect("factored LP crossover should be emitted");
-    let post_eq_id = labeled_nodes
-        .iter()
-        .find(|(_, label)| *label == "room_eq_eq_post")
-        .map(|(id, _)| *id)
-        .expect("factored post-route EQ should be emitted");
-    let sum_id = labeled_nodes
-        .iter()
-        .find(|(_, label)| *label == "room_eq_matrix_to_sub_bus")
-        .map(|(id, _)| *id)
-        .expect("factored sub-bus matrix should be emitted");
-    assert!(
-        pre_eq_id < xover_hp_id && pre_eq_id < xover_lp_id,
-        "pre-route EQ must stay before both HP and LP crossovers"
-    );
-    assert!(
-        post_eq_id > sum_id,
-        "post-route EQ must stay after the sub-bus sum"
-    );
-    // Sub-bus matrix coefficients: the physical-sub row carries the LP
-    // fan-in (one column per source with a *_lowpass_to_sub route).
-    let matrix_node = graph
-        .nodes
-        .iter()
-        .find(|n| {
-            n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_matrix_to_sub_bus")
-        })
-        .unwrap();
-    let matrix: Vec<f32> = matrix_node.parameters["matrix"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_f64().unwrap() as f32)
-        .collect();
-    // routed_bass_output: L (idx 0) → Sub (idx 1) with route.gain_db = -3 dB.
-    // Per the factored builder, the per-route gain is baked into the
-    // matrix coefficient (linear amplitude), not in a separate gain node.
-    let expected = 10.0_f32.powf(-3.0 / 20.0);
-    let got = matrix[2];
-    assert!(
-        (got - expected).abs() < 1e-5,
-        "L→Sub matrix coef should be 10^(-3/20) ≈ {expected}, got {got}"
-    );
-    // Silence the unused warnings (assertion paths above use the ids).
-    let _ = (xover_hp_id, xover_lp_id);
-    let _ = labeled_nodes;
+    assert!(labels.iter().any(|l| l == "room_eq_output_sum_1"));
     assert_room_eq_matrix_nodes_have_width(&graph, 2);
 }
 
@@ -1052,122 +752,95 @@ fn test_build_room_eq_graph_emits_route_dsp_and_output_correction() {
 fn test_build_room_eq_graph_applies_shared_sub_chain_to_physical_sub_routes() {
     let output = routed_physical_sub_output();
     let graph = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
-    assert!(graph.nodes.iter().all(|node| node.input_channels == 3));
-
-    // Factored model: each source channel's pre-route filters live at its
-    // own channel index inside the single `room_eq_eq_pre` node, and each
-    // destination channel's post-route filters live at its index in
-    // `room_eq_eq_post`. For `routed_physical_sub_output` the physical
-    // sub is at the SubA index, with the LFE source's chain rerouted to
-    // it. Verify the sub's pre/post filter lists are non-empty and that
-    // the matrix sums onto the SubA row.
-    let eq_pre = graph
-        .nodes
-        .iter()
-        .find(|n| n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_eq_pre"))
-        .expect("factored pre EQ node");
-    let eq_post = graph
-        .nodes
-        .iter()
-        .find(|n| n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_eq_post"))
-        .expect("factored post EQ node");
-    let matrix_node = graph
-        .nodes
-        .iter()
-        .find(|n| {
-            n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_matrix_to_sub_bus")
-        })
-        .expect("factored sub-bus matrix");
-
-    // routed_physical_sub_output: channel order is [L, LFE, SubA]; SubA
-    // (idx 2) is the physical sub. The LFE source's chain plugins are
-    // attached to that channel.
-    let _channel_filters = eq_pre.parameters["channel_filters"]
-        .as_array()
-        .expect("eq_pre channel_filters array");
-    let _post_filters = eq_post.parameters["channel_filters"]
-        .as_array()
-        .expect("eq_post channel_filters array");
-    // Sub-bus matrix routes L → SubA on LP. Row major: matrix[dst*N+src].
-    let matrix: Vec<f32> = matrix_node.parameters["matrix"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_f64().unwrap() as f32)
-        .collect();
-    let n = 3;
-    let sub_a = 2; // SubA idx
-    let l_idx = 0;
-    // L → SubA route has gain_db = -3 dB → matrix carries the linear gain.
-    let expected = 10.0_f32.powf(-3.0 / 20.0);
-    let got = matrix[sub_a * n + l_idx];
-    assert!(
-        (got - expected).abs() < 1e-5,
-        "L→SubA matrix coef should be 10^(-3/20) ≈ {expected}, got {got}"
+    let labels = collect_labels(&graph);
+    assert!(labels.iter().any(|l| l == "room_eq_output_sum_2"));
+    assert!(!labels.iter().any(|l| l == "room_eq_output_sum_1"));
+    assert_eq!(
+        labels
+            .iter()
+            .filter(|l| l.as_str() == "post_room_eq")
+            .count(),
+        1
+    );
+    assert_eq!(
+        labels
+            .iter()
+            .filter(|l| l.as_str() == "sub_post_room_eq")
+            .count(),
+        1
     );
     assert_room_eq_matrix_nodes_have_width(&graph, 3);
 }
 
 #[test]
-fn test_factored_graph_has_one_node_per_dsp_role() {
-    let output = routed_bass_output();
-    let graph = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
+fn test_physical_graph_shares_inputs_not_distinct_routes() {
+    let graph = build_room_eq_plugin_graph_config(&routed_bass_output(), 48_000.0).unwrap();
     let labels = collect_labels(&graph);
-    for required in [
-        "room_eq_gain_pre",
-        "room_eq_eq_pre",
-        "room_eq_xover_hp",
-        "room_eq_delay_hp",
-        "room_eq_xover_lp",
-        "room_eq_delay_lp",
-        "room_eq_matrix_to_sub_bus",
-        "room_eq_eq_post",
-        "room_eq_gain_post",
+    assert_eq!(
+        labels
+            .iter()
+            .filter(|l| l.as_str() == "room_eq_input_0")
+            .count(),
+        1
+    );
+    for label in [
+        "room_eq_route_0",
+        "room_eq_route_1",
+        "room_eq_output_sum_0",
+        "room_eq_output_sum_1",
+        "room_eq_physical_outputs",
     ] {
-        let count = labels.iter().filter(|l| l.as_str() == required).count();
         assert_eq!(
-            count, 1,
-            "factored graph must emit exactly one '{required}' node, found {count} in {labels:?}"
+            labels.iter().filter(|l| l.as_str() == label).count(),
+            1,
+            "{label}"
         );
     }
-    // The intermediate `room_eq_gain_lp` node is gone — its per-route gain
-    // is baked directly into the matrix coefficients.
-    assert!(
-        !labels.iter().any(|l| l == "room_eq_gain_lp"),
-        "factored graph must not emit a separate LP gain node — \
-             gain lives in the matrix coefficient: {labels:?}"
-    );
-    assert!(
-        !labels
+    assert_eq!(
+        graph
+            .nodes
             .iter()
-            .any(|l| l.starts_with("room_eq_output_isolate_")),
-        "factored graph should not emit per-channel isolator matrices: {labels:?}"
+            .filter(|n| n.plugin_type == "crossover")
+            .count(),
+        2
     );
-    assert!(
-        !labels
+    assert_eq!(
+        graph
+            .nodes
             .iter()
-            .any(|l| l.starts_with("room_eq_route_") && l.as_str() != "room_eq_matrix_to_sub_bus"),
-        "factored graph should not emit per-route nodes: {labels:?}"
+            .filter(|n| n.plugin_type == "delay")
+            .count(),
+        2
     );
 }
 
 #[test]
-fn test_factored_graph_node_count_independent_of_channel_count() {
-    // 2-channel routed bass scenario vs 3-channel physical-sub scenario:
-    // the factored builder emits the same fixed number of DSP nodes in
-    // both cases (channel count only affects the per-channel parameter
-    // arrays inside each node).
-    let small = build_room_eq_plugin_graph_config(&routed_bass_output(), 48_000.0).unwrap();
-    let larger =
-        build_room_eq_plugin_graph_config(&routed_physical_sub_output(), 48_000.0).unwrap();
-    assert_eq!(
-        small.nodes.len(),
-        larger.nodes.len(),
-        "factored graph node count must be channel-count-invariant; \
-             small={:?} larger={:?}",
-        collect_labels(&small),
-        collect_labels(&larger),
-    );
+fn test_physical_graph_keeps_added_distinct_route() {
+    let mut output = routed_physical_sub_output();
+    let before = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
+    let routes = &mut output
+        .metadata
+        .as_mut()
+        .unwrap()
+        .bass_management
+        .as_mut()
+        .unwrap()
+        .routing_graph
+        .as_mut()
+        .unwrap()
+        .routes;
+    let mut distinct = routes[1].clone();
+    distinct.delay_ms += 1.0;
+    routes.push(distinct);
+    let after = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
+    let count = |g: &sotf_audio::engine::PluginGraphConfig| {
+        collect_labels(g)
+            .iter()
+            .filter(|l| l.starts_with("room_eq_route_"))
+            .count()
+    };
+    assert_eq!(count(&before), 2);
+    assert_eq!(count(&after), 3);
 }
 
 // =========================================================================

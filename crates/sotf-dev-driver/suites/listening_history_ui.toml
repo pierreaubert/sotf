@@ -1,0 +1,17 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+size = "700x1000"
+
+[[scenario]]
+name = "listening-history"
+path = "crates/sotf-dev-driver/scenarios/listening_history.scn"
+timeout = "120s"
+tags = ["listening", "history", "offline"]
+
+[[scenario]]
+name = "listening-history-empty"
+path = "crates/sotf-dev-driver/scenarios/listening_history_empty.scn"
+timeout = "60s"
+tags = ["listening", "history", "localization", "offline"]

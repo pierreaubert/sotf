@@ -293,7 +293,7 @@ pub fn render_mb_expander_plugin(
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
-                            "Threshold",
+                            text.label("Threshold"),
                             state.threshold_db,
                             pk(ME, "threshold").min_f64(),
                             pk(ME, "threshold").max_f64(),
@@ -308,7 +308,7 @@ pub fn render_mb_expander_plugin(
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
-                            "Ratio",
+                            text.label("Ratio"),
                             state.ratio,
                             pk(ME, "ratio").min_f64(),
                             pk(ME, "ratio").max_f64(),
@@ -323,7 +323,7 @@ pub fn render_mb_expander_plugin(
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
-                            "Knee",
+                            text.label("Knee"),
                             state.knee_db,
                             pk(ME, "knee").min_f64(),
                             pk(ME, "knee").max_f64(),
@@ -338,7 +338,7 @@ pub fn render_mb_expander_plugin(
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
-                            "Range",
+                            text.label("Range"),
                             state.range_db,
                             pk(ME, "range").min_f64(),
                             pk(ME, "range").max_f64(),
@@ -353,7 +353,7 @@ pub fn render_mb_expander_plugin(
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
-                            "Hyst",
+                            text.label("Hyst"),
                             state.hysteresis_db,
                             pk(ME, "hysteresis").min_f64(),
                             pk(ME, "hysteresis").max_f64(),
@@ -384,7 +384,7 @@ pub fn render_mb_expander_plugin(
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
-                            "Attack",
+                            text.label("Attack"),
                             state.attack_ms,
                             pk(ME, "attack").min_f64(),
                             pk(ME, "attack").max_f64(),
@@ -399,7 +399,7 @@ pub fn render_mb_expander_plugin(
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
-                            "Release",
+                            text.label("Release"),
                             state.release_ms,
                             pk(ME, "release").min_f64(),
                             pk(ME, "release").max_f64(),
@@ -414,7 +414,7 @@ pub fn render_mb_expander_plugin(
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
-                            "Hold",
+                            text.label("Hold"),
                             state.hold_ms,
                             pk(ME, "hold").min_f64(),
                             pk(ME, "hold").max_f64(),

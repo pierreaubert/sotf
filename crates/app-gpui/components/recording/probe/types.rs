@@ -205,9 +205,8 @@ impl PlayerView {
                     gain_db: format!("{:+.1}", ch.gain_db),
                     snr_db: ch.snr_db,
                     snr_text: format!("{:+.1}", ch.snr_db),
-                    align_ms: format!(
-                        "{:.2}",
-                        results.alignment_delays_ms.get(i).copied().unwrap_or(0.0)
+                    align_ms: crate::recording_display::probe_alignment_text(
+                        results.alignment_delays_ms.get(i).copied(),
                     ),
                 })
                 .collect();

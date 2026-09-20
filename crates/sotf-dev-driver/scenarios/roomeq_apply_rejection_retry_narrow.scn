@@ -1,0 +1,69 @@
+# Room EQ review, export, and apply E2E against the in-repository fixture.
+# Fixture setup only seeds Recording; every Room EQ transition is a visible UI action.
+
+focus       room-e-q
+click       roomeq.load_from_recording
+wait_idle 2s
+click       roomeq.next
+wait_idle 2s
+click       roomeq.next
+wait_idle 2s
+scroll_into_view roomeq.content roomeq.select_simple
+assert_in_viewport roomeq.select_simple
+click       roomeq.select_simple
+wait_until roomeq.step == "Configure" timeout=3s
+wait_idle 2s
+click       roomeq.next
+wait_idle 2s
+wait_until roomeq.step == "Optimize" timeout=3s
+scroll_into_view roomeq.content roomeq.optimize_start
+assert_in_viewport roomeq.optimize_start
+click       roomeq.optimize_start
+wait_until  roomeq.optimization_status == "Completed" timeout=150s
+assert      roomeq.step == "Review"
+assert      roomeq.result_count == 2
+assert      roomeq.filter_count >= 2
+assert      roomeq.average_pre_score != null
+assert      roomeq.average_post_score != null
+scroll_into_view roomeq.content workflow.result_status
+assert_in_viewport workflow.result_status
+screenshot roomeq-workflow-calculated
+screenshot roomeq-review-summary
+scroll_into_view roomeq.content roomeq.review.sources
+assert_in_viewport roomeq.review.sources
+click roomeq.review.sources
+wait_idle 2s
+screenshot roomeq-review-sources
+screenshot roomeq-review-comparison
+click       roomeq.next
+wait_idle 2s
+assert      roomeq.step == "Export"
+scroll_into_view roomeq.content roomeq.export_file
+click       roomeq.export_file
+wait_idle   2s
+assert      roomeq.export.exists == true
+assert      roomeq.export.channel_count == 2
+assert      roomeq.export.filter_count >= 2
+scroll_into_view roomeq.content roomeq.apply_to_player
+click       roomeq.apply_to_player
+wait_until roomeq.application_status == "Applied" timeout=5s
+wait_idle   2s
+assert      roomeq.error == null
+assert      roomeq.status != ""
+screenshot  roomeq-export-applied
+
+scroll_into_view roomeq.content workflow.result_status
+assert_in_viewport workflow.result_status
+screenshot roomeq-workflow-applied-exported
+resize 600 1000
+wait_idle 500ms
+action RoomEqRejectApplyFixture
+wait_until roomeq.application_status == "Failed" timeout=5s
+scroll_into_view roomeq.content correction.application_status
+screenshot roomeq-apply-rejected
+scroll_into_view roomeq.content roomeq.apply_to_player
+click roomeq.apply_to_player
+wait_until roomeq.application_status == "Applied" timeout=5s
+assert roomeq.error == null
+assert playback.is_playing == false
+screenshot roomeq-apply-retried

@@ -146,6 +146,41 @@ impl Default for HeadphoneEqScreenModel {
 }
 
 impl HeadphoneEqScreenModel {
+    /// Bounds of the active catalog response, excluding invalid samples.
+    /// File-mode data is not inferred from a previously downloaded response.
+    pub fn measurement_frequency_bounds(&self) -> Option<(f64, f64)> {
+        if self.measurement_source != HeadphoneMeasurementSource::Spinorama {
+            return None;
+        }
+        self.downloaded_curve
+            .as_ref()?
+            .iter()
+            .filter(|(frequency, level)| {
+                frequency.is_finite() && *frequency > 0.0 && level.is_finite()
+            })
+            .map(|(frequency, _)| *frequency)
+            .fold(None, |bounds, frequency| {
+                Some(match bounds {
+                    Some((low, high)) => (f64::min(low, frequency), f64::max(high, frequency)),
+                    None => (frequency, frequency),
+                })
+            })
+    }
+    /// Identity of every selected optimization input, independent of progress,
+    /// navigation and export formatting. Capture this when starting a run.
+    pub fn optimization_input_snapshot(&self) -> serde_json::Value {
+        serde_json::json!({
+            "source": format!("{:?}", self.measurement_source),
+            "measurement": self.measurement_path,
+            "headphone": self.selected_headphone,
+            "downloaded_curve": self.downloaded_curve,
+            "loss": self.loss_type,
+            "target": self.target_preset,
+            "custom_target": self.custom_target_path,
+            "config": self.optimizer_config,
+        })
+    }
+
     /// Return the UI-normalized loss type ("flat" or "score").
     pub fn ui_loss_type(&self) -> &'static str {
         match self.optimizer_config.loss.as_str() {
@@ -180,7 +215,10 @@ impl HeadphoneEqScreenModel {
     /// Check if we can proceed from the current step.
     pub fn can_advance(&self) -> bool {
         match self.step {
-            HeadphoneEqStep::MeasurementTarget => !self.measurement_path.is_empty(),
+            HeadphoneEqStep::MeasurementTarget => {
+                !self.measurement_path.trim().is_empty()
+                    && (!self.requires_custom_target_path() || self.has_custom_target_path())
+            }
             HeadphoneEqStep::Optimization => {
                 self.optimization_status == OptimizationStatus::Completed
             }
@@ -284,4 +322,46 @@ fn headphone_fuzzy_match_score(query: &str, name: &str) -> Option<f64> {
     }
 
     Some(total_score / query_words.len() as f64)
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    #[test]
+    fn measurement_step_requires_the_selected_custom_target_file() {
+        let mut model = HeadphoneEqScreenModel {
+            measurement_path: "measurement.csv".into(),
+            target_preset: "custom".into(),
+            ..Default::default()
+        };
+        assert!(!model.can_advance());
+        model.custom_target_path = "target.csv".into();
+        assert!(model.can_advance());
+        model.custom_target_path.clear();
+        model.target_preset = "flat".into();
+        assert!(model.can_advance());
+    }
+
+    #[test]
+    fn headphone_identity_bounds_use_only_active_finite_measurements() {
+        let mut model = HeadphoneEqScreenModel {
+            measurement_source: HeadphoneMeasurementSource::Spinorama,
+            downloaded_curve: Some(vec![
+                (1000.0, 1.0),
+                (20.0, 0.0),
+                (20000.0, 2.0),
+                (f64::NAN, 0.0),
+                (5.0, f64::INFINITY),
+                (-1.0, 0.0),
+            ]),
+            ..Default::default()
+        };
+        assert_eq!(model.measurement_frequency_bounds(), Some((20.0, 20000.0)));
+        model.measurement_source = HeadphoneMeasurementSource::File;
+        assert_eq!(model.measurement_frequency_bounds(), None);
+        model.measurement_source = HeadphoneMeasurementSource::Spinorama;
+        model.downloaded_curve = Some(vec![(0.0, 0.0), (f64::INFINITY, 0.0)]);
+        assert_eq!(model.measurement_frequency_bounds(), None);
+    }
 }

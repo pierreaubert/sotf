@@ -1,0 +1,38 @@
+action ListeningResetGuide
+click listening.guide.acknowledge
+click listening.tab-comparison
+action ListeningSetSourceFixture {"mode":"comparison"}
+assert playback.is_playing == false
+wait_idle 1s
+screenshot listening-setup-header
+scroll_into_view listening.comparison.content listening.planned-trials
+click listening.planned-trials
+key cmd-a
+type "25"
+key enter
+wait_until listening.planned_trials == 25 timeout=3s
+scroll_into_view listening.comparison.content listening.capture.a
+assert_in_viewport listening.capture.a
+click listening.capture.a
+wait_idle 500ms
+scroll_into_view listening.comparison.content listening.capture.b
+assert_in_viewport listening.capture.b
+click listening.capture.b
+wait_until listening.paths_ready == true timeout=3s
+wait_idle 1s
+# A plugin preset is valid JSON but is not a listening-session document.
+plugin_chain_save $SOTF_QA_DIR/listening-session.json
+scroll_into_view listening.comparison.content listening.session.listening-load-session
+click listening.session.listening-load-session
+wait_idle 1s
+wait_until listening.status == "could not load listening-test session: invalid session document (missing field `schema_version` at line 58 column 1)" timeout=5s
+assert listening.paths_ready == true
+assert listening.planned_trials == 25
+assert listening.session_exists == false
+scroll_into_view listening.comparison.content listening.comparison.status
+assert_in_viewport listening.comparison.status
+screenshot listening-incompatible-session
+scroll_into_view listening.comparison.content listening.session.prepare
+click listening.session.prepare
+wait_until listening.session_ready == true timeout=20s
+assert playback.is_playing == false

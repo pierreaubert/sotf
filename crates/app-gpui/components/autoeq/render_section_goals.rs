@@ -86,7 +86,7 @@
         OptimizationType::Headphone => {
             HEADPHONE_TARGET_CURVE_OPTIONS
                 .iter()
-                .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                .map(|(val, lbl)| SelectOption::new(*val, crate::app::i18n::HeadphoneIdentityTranslations::target_label(self.meta.language, val, lbl)))
                 .collect()
         }
         OptimizationType::Speaker => {

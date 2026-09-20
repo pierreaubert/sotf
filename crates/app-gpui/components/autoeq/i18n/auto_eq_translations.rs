@@ -235,7 +235,7 @@ impl AutoEqTranslations {
         t.insert((Language::English, TipTargetCurve), "For headphones, Harman 2018 is the most validated target. For speakers, 'flat' is typical unless you have a preferred house curve.");
         t.insert((Language::English, TipMode), "Use IIR for real-time playback. FIR for offline mastering or when phase linearity matters.");
         t.insert((Language::English, TipNumFilters), "5-9 filters is a good balance. Above 12, diminishing returns set in and the result may sound worse.");
-        t.insert((Language::English, TipFirTaps), "At 48 kHz, 4096 taps = ~85 ms latency. Use 2048 for lower latency, 8192+ for surgical room correction.");
+        t.insert((Language::English, TipFirTaps), "At 48 kHz, 4096 taps span about 85 ms. This is impulse duration; processing latency depends on phase and the host.");
         t.insert((Language::English, TipFirPhase), "Linear phase is safest for headphones. Minimum phase for speakers where pre-ringing matters.");
         t.insert((Language::English, TipDbRange), "Limiting boost to +6 dB prevents excessive resonances. Allow more cut than boost — cutting is always safer.");
         t.insert((Language::English, TipQRange), "Keep max Q below 10 to avoid ringing. Q around 1-2 gives natural-sounding corrections.");

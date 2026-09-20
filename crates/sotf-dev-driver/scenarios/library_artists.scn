@@ -1,0 +1,31 @@
+focus library
+wait_until library.album_count > 0 timeout=10s
+wait_idle 2s
+click library.tab.artist
+wait_idle 2s
+assert_visible library.artist.album.0
+assert queue.length == 0
+click library.artist.album.0
+wait_until library.detail.open == true timeout=2s
+assert queue.length == 0
+assert playback.is_playing == false
+click library.detail.back
+wait_until library.detail.open == false timeout=2s
+wait_idle 2s
+assert_visible library.artist.album.0
+click library.search_input
+type "Demo"
+wait_until library.search_query == "Demo" timeout=2s
+assert library.sort_order == "Artist"
+wait_idle 2s
+assert_visible library.artist.album.0
+resize 600 800
+wait_idle 2s
+assert_in_viewport library.artist.album.0
+screenshot library-artists-narrow
+click library.artist.album.0
+wait_until library.detail.open == true timeout=2s
+click library.detail.back
+assert library.search_query == "Demo"
+assert queue.length == 0
+assert toast.type == null

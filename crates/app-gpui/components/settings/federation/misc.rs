@@ -130,7 +130,14 @@ impl PlayerView {
         }
 
         content
-            .child(settings_section_label("Remote Devices", &theme, &d))
+            .child(settings_section_label(
+                crate::app::i18n::ServerSettingsTranslations::for_language(
+                    self.state.read(cx).app.ui_state.language,
+                )
+                .remote_players,
+                &theme,
+                &d,
+            ))
             .child(self.render_remote_sotf_section(&theme, &d, cx))
     }
 
@@ -141,22 +148,37 @@ impl PlayerView {
         theme: &crate::app::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        dev_track!(
-            Button::new(
-                SharedString::from(format!("add-{type_name}-btn")),
-                format!("+ {label}"),
-            )
-            .variant(ButtonVariant::Secondary)
-            .size(ButtonSize::Xs)
-            .theme(theme.to_button_theme())
-            .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
-                view.state.update(cx, |state, _cx| {
-                    state.app.add_federation_source(type_name);
-                });
-                cx.notify();
-            })),
-            format!("settings.federation.add.{type_name}")
+        let button = Button::new(
+            SharedString::from(format!("add-{type_name}-btn")),
+            format!("+ {label}"),
         )
+        .variant(ButtonVariant::Secondary)
+        .size(ButtonSize::Xs)
+        .theme(theme.to_button_theme());
+        let button = if type_name == "subsonic" {
+            self.preference_action(
+                crate::app::types::PreferencesSetting::RemoteSources,
+                button,
+                false,
+                move |view, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        state.app.add_federation_source(type_name);
+                    });
+                    cx.notify();
+                },
+                cx,
+            )
+        } else {
+            button
+                .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        state.app.add_federation_source(type_name);
+                    });
+                    cx.notify();
+                }))
+                .into_any_element()
+        };
+        dev_track!(button, format!("settings.federation.add.{type_name}"))
     }
 
     pub(super) fn render_source_card(

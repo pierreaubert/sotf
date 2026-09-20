@@ -69,6 +69,7 @@
         // Strategy-dependent params
         if config.system_optimization.multi_measurement_strategy == "variance_penalized" {
             let mut lambda_input = NumberInput::new((base_id.clone(), "mm-variance-lambda"))
+                .scroll_requires_alt(true)
                 .value(config.system_optimization.multi_measurement_variance_lambda)
                 .min(ParamLimits::VARIANCE_LAMBDA.min)
                 .max(ParamLimits::VARIANCE_LAMBDA.max)
@@ -103,6 +104,7 @@
                     .unwrap_or_else(|| format!("Measurement {}", i + 1));
 
                 let mut weight_input = NumberInput::new((base_id.clone(), &format!("mm-weight-{i}")))
+                    .scroll_requires_alt(true)
                     .value(*weight)
                     .min(ParamLimits::WEIGHT.min)
                     .max(ParamLimits::WEIGHT.max)

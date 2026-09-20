@@ -1,0 +1,40 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "60s"
+
+[[scenario]]
+name = "device-loss"
+path = "crates/sotf-dev-driver/scenarios/recording_error_to_save.scn"
+timeout = "90s"
+allowed_log_patterns = ["Failed to prepare recording directory: target directory already exists:"]
+font_scale = 1.5
+theme = "Light"
+[scenario.fake_recording]
+channels = 2
+points = 48
+fault = "device-loss"
+
+[[scenario]]
+name = "clipping"
+path = "crates/sotf-dev-driver/scenarios/recording_error_to_save.scn"
+timeout = "90s"
+allowed_log_patterns = ["Failed to prepare recording directory: target directory already exists:"]
+font_scale = 1.5
+theme = "Light"
+[scenario.fake_recording]
+channels = 2
+points = 48
+fault = "clipping"
+
+[[scenario]]
+name = "io-failure"
+path = "crates/sotf-dev-driver/scenarios/recording_error_to_save.scn"
+timeout = "90s"
+allowed_log_patterns = ["Failed to prepare recording directory: target directory already exists:"]
+font_scale = 1.5
+theme = "Light"
+[scenario.fake_recording]
+channels = 2
+points = 48
+fault = "io-failure"

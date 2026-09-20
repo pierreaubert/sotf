@@ -16,6 +16,8 @@ use super::pot::pot_size_large;
 use super::types::LayoutTabContent;
 use super::types::collect_all_tabs;
 use crate::app::AppState;
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::{DevElementState, DevTrackExt};
 use crate::app::i18n::PluginCommonTranslations;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
@@ -28,14 +30,52 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_audio_kit::audio::potentiometer::PotentiometerSize;
 use gpui_ui_kit::{
-    AdaptiveOverflow, Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize,
-    IconButtonVariant, NumberInput, NumberInputSize,
+    Accordion, AccordionItem, AccordionMode, Button, ButtonSize, ButtonVariant, IconButton,
+    IconButtonSize, IconButtonVariant, NumberInput, NumberInputSize, Slider, SliderSize,
 };
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::layout_solver::{Direction, KnobSize, SolvedLayout, solve_layout_scaled};
 use sotf_plugins::param_specs::{ParamSpec, ParamType};
 use sotf_plugins::plugin_layout::*;
 use std::collections::HashMap;
+
+fn solve_editor_layout(layout: &PluginLayout, available_width: f32, scale: f32) -> SolvedLayout {
+    // Setup is disclosed separately; reserving invisible side columns would
+    // make the primary controls stack even in a wide measured editor.
+    let mut constraints: Vec<_> = layout
+        .column_constraints
+        .iter()
+        .filter(|column| column.role == ColumnRole::Main)
+        .copied()
+        .collect();
+    if constraints.is_empty() {
+        constraints.push(ColumnConstraint::main(200.0));
+    }
+    solve_layout_scaled(&constraints, available_width, scale)
+}
+
+fn localized_parameter_specs(
+    params: &[ParamSpec],
+    text: PluginCommonTranslations,
+) -> Vec<ParamSpec> {
+    params
+        .iter()
+        .map(|param| {
+            let mut localized = *param;
+            localized.name = text.label(param.name);
+            if let ParamType::Bool {
+                true_label,
+                false_label,
+                ..
+            } = &mut localized.param_type
+            {
+                *true_label = text.label(true_label);
+                *false_label = text.label(false_label);
+            }
+            localized
+        })
+        .collect()
+}
 
 /// Render a plugin using its declarative layout.
 ///
@@ -50,7 +90,7 @@ pub fn render_from_layout(
     is_editing: bool,
     selected_param: usize,
     active_tab: usize,
-    overflow_open: bool,
+    sections: Option<(usize, Vec<String>)>,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     available_width: f32,
     layout_scale: f32,
@@ -62,7 +102,8 @@ pub fn render_from_layout(
     let layout = settings
         .layout()
         .expect("render_from_layout called on plugin without layout");
-    let params = settings.param_specs();
+    let localized_params = localized_parameter_specs(settings.param_specs(), text);
+    let params = localized_params.as_slice();
     let values: Vec<f64> = (0..params.len())
         .map(|i| settings.param_value(i).unwrap_or(0.0))
         .collect();
@@ -71,7 +112,7 @@ pub fn render_from_layout(
     let file_paths = extract_file_paths(params, settings);
 
     // Run the constraint solver
-    let solved = solve_layout_scaled(layout.column_constraints, available_width, layout_scale);
+    let solved = solve_editor_layout(layout, available_width, layout_scale);
 
     // Overlay the chassis theme onto the global app theme so every helper
     // that takes `&Theme` (section title, knob, toggle, panel, ...) picks up
@@ -79,7 +120,112 @@ pub fn render_from_layout(
     // colors (error / warning / meter palette) keep their global values.
     let chassis_theme = plugin_theme.apply_to(theme);
 
-    render_solved_layout(
+    // Small utilities use value/slider rows instead of a bank of framed knobs.
+    if params.len() <= 3
+        && layout.main.len() == 1
+        && layout.visualizations.is_empty()
+        && layout.config.is_empty()
+        && layout.output.is_empty()
+        && layout.tabs.is_empty()
+        && params.iter().all(|param| {
+            matches!(
+                param.param_type,
+                ParamType::Float { .. } | ParamType::Int { .. }
+            )
+        })
+    {
+        let mut rows = div().flex().flex_col().min_w_0().gap(d.gap);
+        for spec in layout.main[0].controls.iter().filter(|spec| !spec.hidden) {
+            let idx = spec.param_index;
+            let Some(param) = params.get(idx) else {
+                continue;
+            };
+            let interactive = spec.is_enabled(&values);
+            let value = values[idx];
+            let (min, max) = match param.param_type {
+                ParamType::Float { min, max, .. } => (min, max),
+                ParamType::Int { min, max, .. } => (min as f64, max as f64),
+                _ => continue,
+            };
+            let scale = param.display_scale;
+            let entity_for_change = entity.clone();
+            let entity_for_reset = entity.clone();
+            let unity_control = if matches!(settings, PluginSettings::Gain { .. }) && idx == 0 {
+                let entity = entity.clone();
+                let button = Button::new(("gain-unity", plugin_idx), "0 dB")
+                    .size(ButtonSize::Sm)
+                    .variant(ButtonVariant::Secondary)
+                    .theme(chassis_theme.to_button_theme())
+                    .disabled(!interactive)
+                    .selected(value == 0.0)
+                    .aria_label(format!("{}: 0 dB", param.name))
+                    .on_click_event(move |_, _, cx| {
+                        entity.update(cx, |state, cx| {
+                            state.app.reset_plugin_param(plugin_idx, idx);
+                            cx.notify();
+                        });
+                    });
+                #[cfg(feature = "dev-api")]
+                let button = button.dev_track_with_state(
+                    format!("plugin.gain.{plugin_idx}.unity"),
+                    DevElementState::default()
+                        .enabled(interactive)
+                        .selected(value == 0.0),
+                );
+                Some(button)
+            } else {
+                None
+            };
+            rows = rows.child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .min_w_0()
+                    .items_center()
+                    .gap(d.gap)
+                    .children(render_param_as_number_input(
+                        entity.clone(),
+                        plugin_idx,
+                        idx,
+                        param,
+                        value,
+                        true,
+                        idx,
+                        interactive,
+                        &chassis_theme,
+                    ))
+                    .child(
+                        Slider::new(("utility-slider", plugin_idx * 1000 + idx))
+                            .value((value * scale) as f32)
+                            .range((min * scale) as f32, (max * scale) as f32)
+                            .width(
+                                (available_width - 160.0 * layout_scale)
+                                    .clamp(1.0, 480.0 * layout_scale),
+                            )
+                            .size(SliderSize::Sm)
+                            .theme(chassis_theme.to_slider_theme())
+                            .disabled(!interactive)
+                            .aria_label(param.name)
+                            .on_change(move |value, _, cx| {
+                                entity_for_change.update(cx, |state, _| {
+                                    state
+                                        .app
+                                        .set_plugin_param(plugin_idx, idx, f64::from(value));
+                                })
+                            })
+                            .on_reset(move |_, cx| {
+                                entity_for_reset.update(cx, |state, _| {
+                                    state.app.reset_plugin_param(plugin_idx, idx);
+                                })
+                            }),
+                    )
+                    .children(unity_control),
+            );
+        }
+        return rows.into_any_element();
+    }
+
+    let controls = render_solved_layout(
         d,
         entity,
         plugin_idx,
@@ -91,14 +237,35 @@ pub fn render_from_layout(
         is_editing,
         selected_param,
         active_tab,
-        overflow_open,
+        sections,
         plugin_data,
         available_width,
         layout_scale,
         text,
         &chassis_theme,
         spider_snapshot.as_ref(),
-    )
+    );
+    if let PluginSettings::Pnd {
+        reference_frequency_hz,
+        ..
+    } = settings
+    {
+        let mode = if *reference_frequency_hz == 0.0 {
+            "Change-only tracking: no fixed reference pitch."
+        } else {
+            "Fixed-reference pitch correction."
+        };
+        div()
+            .flex()
+            .flex_col()
+            .min_w_0()
+            .gap(d.gap)
+            .child(gpui_ui_kit::Text::caption(text.label(mode)).color(chassis_theme.text_secondary))
+            .child(controls)
+            .into_any_element()
+    } else {
+        controls
+    }
 }
 
 /// Render only the primary control groups from a plugin's declarative layout.
@@ -116,20 +283,20 @@ pub fn render_main_controls_from_layout(
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     available_width: f32,
     layout_scale: f32,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> AnyElement {
     let Some(layout) = settings.layout() else {
         return div().into_any_element();
     };
-    let params = settings.param_specs();
+    let localized_params = localized_parameter_specs(settings.param_specs(), text);
+    let params = localized_params.as_slice();
     let values: Vec<f64> = (0..params.len())
         .map(|i| settings.param_value(i).unwrap_or(0.0))
         .collect();
     let file_paths = extract_file_paths(params, settings);
-    let solved = solve_layout_scaled(layout.column_constraints, available_width, layout_scale);
-    let main_width = solved
-        .column_width(ColumnRole::Main)
-        .unwrap_or(available_width);
+    let solved = solve_editor_layout(layout, available_width, layout_scale);
+    let main_width = available_width;
 
     render_main_column(
         d,
@@ -144,11 +311,11 @@ pub fn render_main_controls_from_layout(
         is_editing,
         selected_param,
         0,
-        false,
+        None,
         plugin_data,
         layout_scale,
         None,
-        None,
+        Some(text),
         theme,
         false,
     )
@@ -174,11 +341,17 @@ pub fn render_config_controls_from_layout(
     plugin_theme: &PluginTheme,
 ) -> Option<AnyElement> {
     let layout = settings.layout()?;
-    if layout.config.is_empty() && layout.output.is_empty() {
+    let custom_editor = super::super::gpui_view_registry()
+        .get(super::super::custom_view_registry::plugin_type_key(
+            settings,
+        ))
+        .is_some();
+    if layout.config.is_empty() && (!custom_editor || layout.output.is_empty()) {
         return None;
     }
 
-    let params = settings.param_specs();
+    let localized_params = localized_parameter_specs(settings.param_specs(), text);
+    let params = localized_params.as_slice();
     let values: Vec<f64> = (0..params.len())
         .map(|i| settings.param_value(i).unwrap_or(0.0))
         .collect();
@@ -206,7 +379,7 @@ pub fn render_config_controls_from_layout(
             &chassis_theme,
         ));
     }
-    if !layout.output.is_empty() {
+    if custom_editor && !layout.output.is_empty() {
         content = content.child(render_config_column(
             d,
             entity,
@@ -339,7 +512,7 @@ fn render_solved_layout(
     is_editing: bool,
     selected_param: usize,
     active_tab: usize,
-    overflow_open: bool,
+    sections: Option<(usize, Vec<String>)>,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     available_width: f32,
     layout_scale: f32,
@@ -354,37 +527,37 @@ fn render_solved_layout(
         .size_full()
         .bg(theme.background);
 
-    let main_width = solved
-        .column_width(ColumnRole::Main)
-        .unwrap_or(available_width);
+    let main_width = available_width;
 
-    let row = div()
-        .flex()
-        .items_start()
-        .justify_center()
-        .w_full()
-        .child(render_main_column(
-            d,
-            entity.clone(),
-            plugin_idx,
-            layout,
-            params,
-            values,
-            file_paths,
-            solved,
-            main_width,
-            is_editing,
-            selected_param,
-            active_tab,
-            overflow_open,
-            plugin_data,
-            layout_scale,
-            spider_snapshot,
-            Some(text),
-            theme,
-            true,
-        ));
+    // A block wrapper lets the width-constrained column report its wrapped height.
+    // A single-child flex row retained its taller intrinsic estimate when controls wrapped.
+    let row = div().w_full().child(render_main_column(
+        d,
+        entity.clone(),
+        plugin_idx,
+        layout,
+        params,
+        values,
+        file_paths,
+        solved,
+        main_width,
+        is_editing,
+        selected_param,
+        active_tab,
+        sections,
+        plugin_data,
+        layout_scale,
+        spider_snapshot,
+        Some(text),
+        theme,
+        true,
+    ));
 
+    #[cfg(feature = "dev-api")]
+    let row = {
+        use crate::app::dev_api::DevTrackExt;
+        row.dev_track(format!("plugin.layout.row.{plugin_idx}"))
+    };
     root = root.child(row);
 
     // Custom visualizations rendered at the root level (FullCenter position).
@@ -487,7 +660,7 @@ fn render_main_column(
     is_editing: bool,
     selected_param: usize,
     active_tab: usize,
-    overflow_open: bool,
+    sections: Option<(usize, Vec<String>)>,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     layout_scale: f32,
     spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
@@ -640,7 +813,7 @@ fn render_main_column(
             .gap(d.section)
             .items_start()
             .justify_center()
-            .when(!include_tabs, |div| div.flex_wrap());
+            .flex_wrap();
         for group in &visible_groups {
             container = container.child(render_group(
                 d,
@@ -658,21 +831,24 @@ fn render_main_column(
                 theme,
                 spider_snapshot,
                 text,
+                true,
             ));
         }
+        #[cfg(feature = "dev-api")]
+        let container = {
+            use crate::app::dev_api::DevTrackExt;
+            container.dev_track(format!("plugin.layout.groups.{plugin_idx}"))
+        };
         center = center.child(container);
 
         // Output meters are live feedback, not setup controls. Keep them on
         // the primary surface even though other output parameters remain in
         // the gear popover. This also makes generic layouts useful for any
         // dynamics plugin that declares its GR meter in `layout.output`.
-        if layout
-            .output
-            .iter()
-            .any(|spec| !spec.hidden && matches!(&spec.control_type, ControlType::BarMeter { .. }))
-        {
+        if layout.output.iter().any(|spec| !spec.hidden) {
             let mut meter_row = div()
                 .flex()
+                .flex_wrap()
                 .items_center()
                 .justify_center()
                 .gap(d.gap)
@@ -681,9 +857,7 @@ fn render_main_column(
                     text.map_or("OUTPUT", |translations| translations.label("OUTPUT")),
                     theme,
                 ));
-            for spec in layout.output.iter().filter(|spec| {
-                !spec.hidden && matches!(&spec.control_type, ControlType::BarMeter { .. })
-            }) {
+            for spec in layout.output.iter().filter(|spec| !spec.hidden) {
                 meter_row = meter_row.child(render_control(
                     d,
                     entity.clone(),
@@ -704,60 +878,59 @@ fn render_main_column(
         }
 
         if !overflow_groups.is_empty() {
-            let overflow_count: usize = overflow_groups
+            let items = overflow_groups
                 .iter()
-                .map(|group| visible_control_count(group))
-                .sum();
-            let mut overflow_content = div()
-                .flex()
-                .flex_col()
-                .items_stretch()
-                .gap(d.section)
-                .p(d.card);
-            for group in &overflow_groups {
-                overflow_content = overflow_content.child(render_group(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    group,
-                    layout,
-                    params,
-                    values,
-                    file_paths,
-                    is_editing,
-                    selected_param,
-                    solved,
-                    plugin_data,
-                    theme,
-                    spider_snapshot,
-                    text,
-                ));
-            }
-
-            let overflow_entity = entity.clone();
-            let more_label = format!(
-                "{} ({overflow_count})",
-                text.map_or("More", |translations| translations.more)
-            );
-            let trigger = Button::new(
-                SharedString::from(format!("plugin-more-trigger-{plugin_idx}")),
-                more_label,
-            )
-            .variant(ButtonVariant::Secondary)
-            .size(ButtonSize::Sm);
+                .map(|group| {
+                    let title =
+                        text.map_or(group.title, |translations| translations.label(group.title));
+                    AccordionItem::new(group.id, title).content(render_group(
+                        d,
+                        entity.clone(),
+                        plugin_idx,
+                        group,
+                        layout,
+                        params,
+                        values,
+                        file_paths,
+                        is_editing,
+                        selected_param,
+                        solved,
+                        plugin_data,
+                        theme,
+                        spider_snapshot,
+                        text,
+                        false,
+                    ))
+                })
+                .collect();
+            let (instance_id, expanded) = sections.unwrap_or((plugin_idx, Vec::new()));
+            let section_entity = entity.clone();
             center = center.child(
-                div().w_full().flex().justify_end().child(
-                    AdaptiveOverflow::new(SharedString::from(format!("plugin-more-{plugin_idx}")))
-                        .open(overflow_open)
-                        .trigger(trigger)
-                        .content(overflow_content)
-                        .on_open_change(move |open, _window, cx| {
-                            overflow_entity.update(cx, |state, _| {
-                                state
+                div().w(px(main_width)).flex_none().child(
+                    Accordion::new()
+                        .items(items)
+                        .mode(AccordionMode::Multiple)
+                        .expanded(expanded.into_iter().map(SharedString::from).collect())
+                        .bordered(false)
+                        .rounded(false)
+                        .theme(theme.to_accordion_theme())
+                        .aria_label(
+                            text.map_or("Advanced", |translations| translations.configuration),
+                        )
+                        .on_change(move |id, open, _window, cx| {
+                            section_entity.update(cx, |state, cx| {
+                                let expanded = state
                                     .app
-                                    .plugin_ui
-                                    .plugin_auto_overflow_open
-                                    .insert(plugin_idx, open);
+                                    .plugin_state
+                                    .plugin_ui_state
+                                    .plugin_sections
+                                    .entry(instance_id)
+                                    .or_default();
+                                expanded.retain(|value| value != id.as_ref());
+                                if open {
+                                    expanded.push(id.to_string());
+                                }
+                                cx.notify();
                             });
                         }),
                 ),
@@ -852,6 +1025,11 @@ fn render_main_column(
                         ),
                 );
             }
+            #[cfg(feature = "dev-api")]
+            let tab_bar = {
+                use crate::app::dev_api::DevTrackExt;
+                tab_bar.dev_track(format!("plugin.layout.tabs.{plugin_idx}"))
+            };
             center = center.child(tab_bar);
 
             // Active tab content
@@ -873,11 +1051,21 @@ fn render_main_column(
                     spider_snapshot,
                     text,
                 );
+                #[cfg(feature = "dev-api")]
+                let tab_div = {
+                    use crate::app::dev_api::DevTrackExt;
+                    tab_div.dev_track(format!("plugin.layout.tab-content.{plugin_idx}"))
+                };
                 center = center.child(tab_div);
             }
         }
     }
 
+    #[cfg(feature = "dev-api")]
+    let center = {
+        use crate::app::dev_api::DevTrackExt;
+        center.dev_track(format!("plugin.layout.main.{plugin_idx}"))
+    };
     center
 }
 
@@ -899,20 +1087,29 @@ fn render_group(
     theme: &Theme,
     spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
     text: Option<PluginCommonTranslations>,
+    show_heading: bool,
 ) -> impl IntoElement {
     // Individual controls carry their own visual frames. The generated group
     // wrapper should size to content instead of drawing a large empty chassis.
-    let has_sliders = group
-        .controls
-        .iter()
-        .any(|c| matches!(c.control_type, ControlType::VerticalSlider));
+    let has_sliders = group.controls.iter().any(|c| {
+        matches!(c.control_type, ControlType::VerticalSlider)
+            && params
+                .get(c.param_index)
+                .is_some_and(|param| param.unit == "dB")
+    });
     let stack_controls = solved.group_direction == Direction::Column;
     let compact_width = solved
         .column_width(ColumnRole::Main)
         .unwrap_or_else(|| control_column_width(solved.knob_size) * 2.0);
 
-    let mut col = div().flex().flex_col().gap(d.gap).flex_none();
-    if !group.title.is_empty() {
+    let mut col = div()
+        .flex()
+        .flex_col()
+        .gap(d.gap)
+        .min_w_0()
+        .max_w_full()
+        .when(stack_controls, |col| col.w_full());
+    if show_heading && !group.title.is_empty() {
         col = col.child(render_section_title(
             d,
             text.map_or(group.title, |translations| translations.label(group.title)),
@@ -921,8 +1118,13 @@ fn render_group(
     }
 
     if has_sliders {
+        let mut compact_inputs = Vec::new();
         let mut slider_row = div()
             .flex()
+            .flex_shrink_0()
+            .flex_wrap()
+            .min_w_0()
+            .max_w_full()
             .gap(d.gap)
             .items_end()
             .when(stack_controls, |row| {
@@ -930,10 +1132,72 @@ fn render_group(
                 // is followed by fixed-height sliders. Stack the compact
                 // fallback layout vertically so each control contributes its
                 // full measured height to the scroll extent.
-                row.max_w(px(compact_width)).flex_col().items_stretch()
+                row.w_full()
+                    .max_w(px(compact_width))
+                    .flex_col()
+                    .items_stretch()
             });
         for spec in group.controls {
             if spec.hidden {
+                continue;
+            }
+            // Compact mixed groups use exact numeric rows instead of stacking
+            // full-height knobs. Keep detector choices and live meters alongside
+            // the dynamics values even when the rack has little vertical space.
+            if stack_controls
+                && let Some(param) = params.get(spec.param_index)
+                && matches!(
+                    spec.control_type,
+                    ControlType::Knob | ControlType::KnobLarge | ControlType::VerticalSlider
+                )
+                && let Some(input) = render_param_as_number_input(
+                    entity.clone(),
+                    plugin_idx,
+                    spec.param_index,
+                    param,
+                    values.get(spec.param_index).copied().unwrap_or(0.0),
+                    true,
+                    spec.param_index,
+                    spec.is_enabled(values),
+                    theme,
+                )
+            {
+                compact_inputs.push(input);
+                continue;
+            }
+            if stack_controls
+                && let Some(param) = params.get(spec.param_index)
+                && let ParamType::Bool {
+                    true_label,
+                    false_label,
+                    ..
+                } = param.param_type
+            {
+                compact_inputs.push(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .w_full()
+                        .min_w_0()
+                        .items_center()
+                        .gap(d.grid)
+                        .child(gpui_ui_kit::Text::label(param.name))
+                        .child(render_param_as_button_set(
+                            d,
+                            entity.clone(),
+                            plugin_idx,
+                            spec.param_index,
+                            param,
+                            values.get(spec.param_index).copied().unwrap_or(0.0),
+                            &[false_label, true_label],
+                            false,
+                            is_editing,
+                            selected_param,
+                            spec.is_enabled(values),
+                            theme,
+                        ))
+                        .into_any_element(),
+                );
                 continue;
             }
             slider_row = slider_row.child(render_control(
@@ -952,17 +1216,41 @@ fn render_group(
                 theme,
             ));
         }
+        let mut compact_inputs = compact_inputs.into_iter();
+        while let Some(first) = compact_inputs.next() {
+            let mut row = div()
+                .flex()
+                .w_full()
+                .min_w_0()
+                .flex_shrink_0()
+                .gap(d.gap)
+                .child(div().flex_1().min_w_0().child(first));
+            if let Some(second) = compact_inputs.next() {
+                row = row.child(div().flex_1().min_w_0().child(second));
+            } else {
+                row = row.child(div().flex_1().min_w_0());
+            }
+            col = col.child(row);
+        }
         col = col.child(slider_row);
     } else {
         let visible_count = visible_control_count(group);
         let base_width = control_column_width(solved.knob_size);
         let use_two_columns = visible_count >= 4;
         let two_column_width = base_width * 2.0 + 12.0;
+        // ui.md Phase 3 pilot: share one row-control grammar — small groups
+        // (Gain's minimal row, limiter mix alongside its meter, utility
+        // plugins) lay out side by side and wrap instead of stacking into a
+        // tall column, so compact editors stay short and scroll vertically.
         let mut knob_row = div()
             .flex()
+            .flex_row()
+            .flex_wrap()
+            .items_start()
+            .justify_center()
             .gap(d.gap)
-            .when(!use_two_columns, |d| d.flex_col())
-            .when(use_two_columns, |d| d.flex_wrap().w(px(two_column_width)));
+            .max_w_full()
+            .when(use_two_columns, |d| d.w(px(two_column_width)));
         for spec in group.controls {
             if spec.hidden {
                 continue;
@@ -1092,19 +1380,34 @@ fn render_control(
         ControlType::VerticalSlider => {
             if let Some(param) = params.get(idx) {
                 let value = values.get(idx).copied().unwrap_or(0.0);
-                render_param_as_slider(
-                    entity,
-                    plugin_idx,
-                    idx,
-                    param,
-                    value,
-                    is_editing,
-                    selected_param,
-                    knob_size,
-                    slider_height,
-                    interactive,
-                    theme,
-                )
+                if param.unit != "dB" {
+                    render_param_as_knob(
+                        entity,
+                        plugin_idx,
+                        idx,
+                        param,
+                        value,
+                        is_editing,
+                        selected_param,
+                        pot_size(knob_size),
+                        interactive,
+                        theme,
+                    )
+                } else {
+                    render_param_as_slider(
+                        entity,
+                        plugin_idx,
+                        idx,
+                        param,
+                        value,
+                        is_editing,
+                        selected_param,
+                        knob_size,
+                        slider_height,
+                        interactive,
+                        theme,
+                    )
+                }
             } else {
                 div().into_any_element()
             }
@@ -1193,12 +1496,14 @@ fn render_control(
         .get(idx)
         .map(|param| param.engine_key)
         .unwrap_or("meter");
-    div()
+    let control = div()
         .id(SharedString::from(format!(
             "plugin-control-{plugin_idx}-{engine_key}"
         )))
-        .child(control)
-        .into_any_element()
+        .child(control);
+    #[cfg(feature = "dev-api")]
+    let control = control.dev_track(format!("plugin.control.{plugin_idx}.{idx}"));
+    control.into_any_element()
 }
 
 /// Render a param as a knob (rotary potentiometer).
@@ -1222,6 +1527,7 @@ fn render_param_as_knob(
         value,
         is_editing,
         selected_param,
+        interactive,
         theme,
     ) {
         return input;
@@ -1306,6 +1612,7 @@ fn render_param_as_slider(
         value,
         is_editing,
         selected_param,
+        interactive,
         theme,
     ) {
         return input;
@@ -1381,6 +1688,7 @@ fn render_param_as_number_input(
     value: f64,
     is_editing: bool,
     selected_param: usize,
+    interactive: bool,
     _theme: &Theme,
 ) -> Option<AnyElement> {
     if !is_editing || selected_param != idx {
@@ -1405,25 +1713,33 @@ fn render_param_as_number_input(
     let decimals = param.precision();
     let entity_for_change = entity;
 
+    let input = NumberInput::new(SharedString::from(format!(
+        "plugin-number-input-{plugin_idx}-{idx}"
+    )))
+    .value(display_value)
+    .min(display_min.min(display_max))
+    .max(display_min.max(display_max))
+    .step(display_step)
+    .decimals(decimals)
+    .unit(param.unit)
+    .size(NumberInputSize::Sm)
+    .disabled(!interactive)
+    .aria_label(format!("{} value", param.name))
+    .on_change(move |new_value, _window, cx| {
+        entity_for_change.update(cx, |state, _| {
+            state.app.set_plugin_param(plugin_idx, idx, new_value);
+        });
+    });
+    #[cfg(feature = "dev-api")]
+    let input = input.dev_track(format!("plugin.param.{plugin_idx}.{idx}.exact"));
     Some(
-        NumberInput::new(SharedString::from(format!(
-            "plugin-number-input-{plugin_idx}-{idx}"
-        )))
-        .value(display_value)
-        .min(display_min.min(display_max))
-        .max(display_min.max(display_max))
-        .step(display_step)
-        .decimals(decimals)
-        .unit(param.unit)
-        .label(param.name)
-        .size(NumberInputSize::Xs)
-        .aria_label(format!("{} value", param.name))
-        .on_change(move |new_value, _window, cx| {
-            entity_for_change.update(cx, |state, _| {
-                state.app.set_plugin_param(plugin_idx, idx, new_value);
-            });
-        })
-        .into_any_element(),
+        div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(gpui_ui_kit::Text::label(param.name))
+            .child(input)
+            .into_any_element(),
     )
 }
 
@@ -1622,6 +1938,7 @@ fn render_param_as_button_set(
     let is_sel = selected_param == idx && is_editing;
 
     let mut choices = div()
+        .key_context("PluginChoice")
         .flex()
         .flex_wrap()
         .gap(d.grid)
@@ -1634,39 +1951,35 @@ fn render_param_as_button_set(
         let btn_idx = idx;
         let btn_plugin_idx = plugin_idx;
         let btn_val = i;
-        let choice = div()
-            .text_size(d.text_sm)
-            .min_w(rems(2.0))
-            .min_h(rems(2.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .px(d.pad_y)
-            .py(d.pad_y_half)
-            .rounded(d.r_sm)
-            .when(interactive, |el| el.cursor_pointer())
-            .id(SharedString::from(format!(
-                "btn-set-{plugin_idx}-{idx}-{i}"
-            )))
-            .when(is_active, |d| {
-                d.bg(theme.accent).text_color(theme.text_on_accent)
-            })
-            .when(!is_active, |d| {
-                d.bg(theme.background_secondary)
-                    .text_color(theme.text_secondary)
-            })
-            .when(interactive, |el| {
-                el.hover(|d| d.opacity(0.8))
-                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                        btn_entity.update(cx, |state, _| {
-                            state
-                                .app
-                                .set_plugin_param(btn_plugin_idx, btn_idx, btn_val as f64);
-                        });
-                    })
-            })
-            .when(!interactive, |el| el.opacity(0.45))
-            .child(label.to_string());
+        let choice = Button::new(
+            SharedString::from(format!("btn-set-{plugin_idx}-{idx}-{i}")),
+            label.to_string(),
+        )
+        .size(ButtonSize::Sm)
+        .selected(is_active)
+        .variant(if is_active {
+            ButtonVariant::Primary
+        } else {
+            ButtonVariant::Secondary
+        })
+        .theme(theme.to_button_theme())
+        .disabled(!interactive)
+        .aria_label(format!("{}: {label}", param.name))
+        .on_click_event(move |_, _, cx| {
+            btn_entity.update(cx, |state, cx| {
+                state
+                    .app
+                    .set_plugin_param(btn_plugin_idx, btn_idx, btn_val as f64);
+                cx.notify();
+            });
+        });
+        #[cfg(feature = "dev-api")]
+        let choice = choice.dev_track_with_state(
+            format!("plugin.choice.{plugin_idx}.{idx}.{i}"),
+            DevElementState::default()
+                .selected(is_active)
+                .enabled(interactive),
+        );
         choices = choices.child(choice);
     }
 
@@ -1676,9 +1989,12 @@ fn render_param_as_button_set(
             .flex_col()
             .items_stretch()
             .gap(d.grid)
-            .min_w(rems(8.125))
-            .max_w(rems(15.0))
-            .flex_1()
+            // Resolve wrapping against a concrete width during measurement.
+            // A flex basis of zero underestimates wrapped choice rows and lets
+            // their buttons paint beyond the editor's clipped content bounds.
+            .w(rems(15.0))
+            .max_w_full()
+            .flex_none()
             .rounded(d.r_md)
             .when(is_sel, |el| el.border_1().border_color(theme.accent))
             .child(
@@ -2013,6 +2329,7 @@ fn render_layout_tab_content(
                 theme,
                 spider_snapshot,
                 text,
+                true,
             ))
             .into_any_element(),
     }

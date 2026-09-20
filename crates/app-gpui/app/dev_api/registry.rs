@@ -5,11 +5,12 @@
 //!
 //! The map is keyed by an opaque selector string (the caller picks the
 //! convention — usually `"<area>.<role>"` like `"library.play-button"`).
-//! On every paint pass, the wrapper *overwrites* the entry, so stale
-//! entries from previous frames simply get refreshed; entries for
-//! elements no longer painted are still present but their bounds may
-//! be off-screen — the `/click` handler should sanity-check.
+//! Application roots stage their bounds on the paint thread and publish only
+//! after the complete root paints. HTTP readers see the last completed frame,
+//! never an empty or partially populated registry during repaint. Standalone
+//! tracked elements can still record directly for isolated component tests.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
@@ -51,6 +52,30 @@ pub struct TrackedElement {
 
 type SelectorMap = HashMap<String, TrackedElement>;
 
+thread_local! {
+    static PAINT_FRAMES: RefCell<HashMap<u64, SelectorMap>> = RefCell::new(HashMap::new());
+}
+
+/// Stage a complete paint on the UI thread without exposing partial bounds.
+pub fn begin_frame(window_id: u64) {
+    PAINT_FRAMES.with(|frames| {
+        frames.borrow_mut().insert(window_id, HashMap::new());
+    });
+}
+
+/// Publish all bounds together. On reader contention retain the last full frame.
+pub fn finish_frame(window_id: u64) -> bool {
+    if let Ok(mut map) = store().try_lock() {
+        if let Some(frame) = PAINT_FRAMES.with(|frames| frames.borrow_mut().remove(&window_id)) {
+            let _ = PRIMARY_WINDOW.set(window_id);
+            map.insert(window_id, frame);
+        }
+        true
+    } else {
+        false
+    }
+}
+
 static REGISTRY: OnceLock<Mutex<HashMap<u64, SelectorMap>>> = OnceLock::new();
 static PRIMARY_WINDOW: OnceLock<u64> = OnceLock::new();
 
@@ -68,22 +93,35 @@ pub fn record_with_state(
     bounds: Bounds<Pixels>,
     state: DevElementState,
 ) {
-    // Painting runs on GPUI's main thread. A QA request may concurrently take
-    // a snapshot from the listener thread, so registry publication must never
-    // stall rendering while it waits for that short-lived read lock. The next
-    // frame refreshes any selector skipped here.
+    let element = TrackedElement { bounds, state };
+    let staged = PAINT_FRAMES.with(|frames| {
+        let mut frames = frames.borrow_mut();
+        if let Some(frame) = frames.get_mut(&window_id) {
+            frame.insert(selector.to_string(), element.clone());
+            true
+        } else {
+            false
+        }
+    });
+    if staged {
+        return;
+    }
+    // Standalone tracked elements (outside the app root) keep the existing API.
     let _ = PRIMARY_WINDOW.set(window_id);
-    if let Ok(mut map) = store().try_lock() {
+    if let Ok(mut map) = store().lock() {
         map.entry(window_id)
             .or_default()
-            .insert(selector.to_string(), TrackedElement { bounds, state });
+            .insert(selector.to_string(), element);
     }
 }
 
-/// Start a fresh rendered-selector frame.
+/// Clear a retired window’s published and staged selectors.
 pub fn clear(window_id: u64) {
+    PAINT_FRAMES.with(|frames| {
+        frames.borrow_mut().remove(&window_id);
+    });
     let _ = PRIMARY_WINDOW.set(window_id);
-    if let Ok(mut map) = store().try_lock() {
+    if let Ok(mut map) = store().lock() {
         map.entry(window_id).or_default().clear();
     }
 }

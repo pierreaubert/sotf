@@ -278,6 +278,12 @@ pub fn render_lufs_with_true_peak(
     text: LevelMeterTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
+    if loudness.is_none() {
+        let empty = div().w_full().child(render_no_meter_data(d, text, theme));
+        #[cfg(feature = "dev-api")]
+        let empty = empty.dev_track("plugin.loudness.no-data");
+        return div().child(empty);
+    }
     // Older snapshots and analyzers that do not expose oversampled peaks can
     // still provide per-channel sample peaks. Keep that fallback channel
     // aware instead of silently substituting a fake stereo L/R pair. The

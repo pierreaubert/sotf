@@ -1,0 +1,15 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "60s"
+[[scenario]]
+name = "english"
+path = "crates/sotf-dev-driver/scenarios/compressor_primary_controls.scn"
+timeout = "90s"
+[[scenario]]
+name = "german"
+language = "German"
+font_scale = 1.5
+theme = "Light"
+path = "crates/sotf-dev-driver/scenarios/compressor_primary_controls_scaled.scn"
+timeout = "90s"

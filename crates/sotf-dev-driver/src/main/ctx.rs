@@ -37,9 +37,12 @@ use super::verb::verb_query;
 use super::verb::verb_resize;
 use super::verb::verb_screenshot;
 use super::verb::verb_scroll;
+use super::verb::verb_scroll_at;
+use super::verb::verb_scroll_into_view;
 use super::verb::verb_type;
 use super::verb::verb_wait_idle;
 use super::verb::verb_wait_until;
+use super::verb::{verb_click_at, verb_double_click_at};
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -70,7 +73,7 @@ struct TimingCollector {
 }
 
 pub(crate) fn run_script(script: &PathBuf, url: &str, verbose: bool) -> Result<()> {
-    let report = run_script_with_run_id(script, url, verbose, None)?;
+    let report = run_script_with_run_id(script, url, verbose, None, None)?;
     report.ensure_budgets()
 }
 
@@ -79,6 +82,7 @@ pub(crate) fn run_script_with_run_id(
     url: &str,
     verbose: bool,
     run_id: Option<&str>,
+    qa_directory: Option<&str>,
 ) -> Result<ScriptTimingReport> {
     let source = fs::read_to_string(script).with_context(|| format!("reading {:?}", script))?;
     let mut headers = reqwest::header::HeaderMap::new();
@@ -106,7 +110,7 @@ pub(crate) fn run_script_with_run_id(
     for (lineno, raw) in source.lines().enumerate() {
         let lineno = lineno + 1;
         let line = strip_comment(raw);
-        let expanded = crate::misc::expand_env_vars(line);
+        let expanded = crate::misc::expand_env_vars_in_qa(line, qa_directory);
         let line = expanded.trim();
         if line.is_empty() {
             continue;
@@ -117,6 +121,11 @@ pub(crate) fn run_script_with_run_id(
         }
         let (verb, rest) = split2(line);
         match verb {
+            "qa_empty_dir" => {
+                fixture_empty_directory(qa_directory, rest)
+                    .with_context(|| format!("line {lineno}: `{diagnostic_line}`"))?;
+                continue;
+            }
             "timing_start" => {
                 timing
                     .start(rest)
@@ -134,6 +143,74 @@ pub(crate) fn run_script_with_run_id(
         execute(line, &ctx).with_context(|| format!("line {lineno}: `{diagnostic_line}`"))?;
     }
     timing.finish_report()
+}
+
+#[cfg(test)]
+mod fixture_directory_tests {
+    use super::fixture_empty_directory;
+
+    #[test]
+    fn fixture_directory_is_confined_and_never_removes_contents() {
+        let root = tempfile::tempdir().unwrap();
+        let qa = root.path().to_str();
+        assert!(fixture_empty_directory(None, "create collision").is_err());
+        assert!(fixture_empty_directory(qa, "create ../outside").is_err());
+        assert!(fixture_empty_directory(qa, "create /tmp/outside").is_err());
+        assert!(fixture_empty_directory(qa, "remove .").is_err());
+        fixture_empty_directory(qa, "create collision").unwrap();
+        let file = root.path().join("collision/keep.txt");
+        std::fs::write(&file, "preserved").unwrap();
+        assert!(fixture_empty_directory(qa, "remove collision").is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "preserved");
+        std::fs::remove_file(file).unwrap();
+        fixture_empty_directory(qa, "remove collision").unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fixture_directory_rejects_symlink_escape() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join("link")).unwrap();
+        assert!(fixture_empty_directory(root.path().to_str(), "create link/escape").is_err());
+        assert!(fixture_empty_directory(root.path().to_str(), "remove link").is_err());
+        assert!(!outside.path().join("escape").exists());
+    }
+}
+
+fn fixture_empty_directory(qa_directory: Option<&str>, arguments: &str) -> Result<()> {
+    use std::path::{Component, Path};
+    let (operation, relative) = split2(arguments);
+    if !matches!(operation, "create" | "remove") {
+        bail!("qa_empty_dir requires create or remove");
+    }
+    let relative = Path::new(relative.trim());
+    if relative.as_os_str().is_empty()
+        || !relative
+            .components()
+            .all(|part| matches!(part, Component::Normal(_)))
+    {
+        bail!("qa_empty_dir requires a relative path without traversal");
+    }
+    let root = Path::new(qa_directory.context("qa_empty_dir requires an isolated QA directory")?)
+        .canonicalize()?;
+    let target = root.join(relative);
+    let parent = target
+        .parent()
+        .context("fixture path has no parent")?
+        .canonicalize()?;
+    if !parent.starts_with(&root) {
+        bail!("fixture directory must stay inside the QA directory");
+    }
+    if fs::symlink_metadata(&target).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+        bail!("fixture directory must not be a symlink");
+    }
+    match operation {
+        "create" => fs::create_dir(&target),
+        "remove" => fs::remove_dir(&target), // Never remove contents or recurse.
+        _ => unreachable!(),
+    }
+    .with_context(|| format!("{operation} empty fixture directory {}", target.display()))
 }
 
 impl TimingCollector {
@@ -287,6 +364,16 @@ mod timing_tests {
 fn execute(line: &str, ctx: &Ctx) -> Result<()> {
     let (verb, rest) = split2(line);
     match verb {
+        "snapshot" => {
+            let path = rest.trim();
+            if path.is_empty() {
+                anyhow::bail!("snapshot needs an output path");
+            }
+            let response = ctx.client.get(format!("{}/snapshot", ctx.base)).send()?;
+            let snapshot = parse_dev_response(response, "diagnostic snapshot")?;
+            std::fs::write(path, serde_json::to_vec_pretty(&snapshot)?)?;
+            Ok(())
+        }
         "action" => verb_action(rest, ctx),
         "query" => verb_query(rest, ctx).map(|v| {
             if ctx.verbose {
@@ -311,9 +398,13 @@ fn execute(line: &str, ctx: &Ctx) -> Result<()> {
         "key" => verb_key(rest, ctx),
         "type" | "type_secret" => verb_type(rest, ctx),
         "click" => verb_click(rest, ctx),
+        "click_at" => verb_click_at(rest, ctx),
+        "double_click_at" => verb_double_click_at(rest, ctx),
         "hover" => verb_hover(rest, ctx),
         "drag" => verb_drag(rest, ctx),
         "scroll" => verb_scroll(rest, ctx),
+        "scroll_at" => verb_scroll_at(rest, ctx),
+        "scroll_into_view" => verb_scroll_into_view(rest, ctx),
         "resize" => verb_resize(rest, ctx),
         "screenshot" => verb_screenshot(rest, ctx),
         "assert_visible" => verb_assert_visible(rest, ctx),

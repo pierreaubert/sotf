@@ -8,6 +8,7 @@ pub mod ab_compare_path;
 pub mod ab_test_controller;
 pub mod ab_test_execution;
 pub mod ab_test_session;
+pub mod eq_audition;
 pub mod library;
 pub mod playback;
 pub mod playlist;
@@ -26,10 +27,13 @@ pub use ab_test_session::{
     LevelMatchMetric, ListeningTestSetup, MediaSegment, PathSelection, TrialAnswer, TrialCue,
     TrialMode, TrialRecord, TrialResult, measure_level_match,
 };
-pub use library::LibraryController;
+pub use library::{LibraryController, LibraryResultOrder};
 pub use playback::PlaybackController;
 pub use playlist::PlaylistController;
 pub use plugin::{EqEditTarget, PluginController, PluginUpdateEffect, get_param_count};
 pub use plugin_param_map::param_index_to_engine_param;
-pub use queue::{PlaylistQueueAppend, QueueController, QueuePlaybackEffect};
+pub use queue::{
+    PlaylistQueueAppend, QueueController, QueuePlaybackEffect, QueueTrackPosition,
+    UpcomingTrackRemoval,
+};
 pub use scan::ScanController;

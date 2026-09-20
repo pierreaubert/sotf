@@ -4,6 +4,7 @@
 //! Uses the WorkflowCanvas from gpui-ui-kit for pan/zoom, connections, and hit testing.
 
 mod build;
+mod connections;
 mod consts;
 mod create;
 mod keyboard;

@@ -73,6 +73,50 @@ impl PluginGraph {
         Self::default()
     }
 
+    /// Validate editable routing against the host's node, channel and DAG contract.
+    pub fn validate_routing(&self) -> Result<(), String> {
+        let mut connections = std::collections::HashSet::new();
+        let mut connected_inputs = std::collections::HashSet::new();
+        for edge in &self.connections {
+            if !self.node_exists(edge.from_node)
+                || !self.node_exists(edge.to_node)
+                || edge.from_port >= self.node_output_channels(edge.from_node)
+                || edge.to_port >= self.node_input_channels(edge.to_node)
+            {
+                return Err("A connection references a missing node or channel.".into());
+            }
+            if !connections.insert((edge.from_node, edge.from_port, edge.to_node, edge.to_port)) {
+                return Err("The routing graph contains a duplicate connection.".into());
+            }
+            connected_inputs.insert((edge.to_node, edge.to_port));
+        }
+        self.topological_sort()?;
+        for node in self.nodes.values() {
+            node.plugin.validate()?;
+        }
+        for id in self.nodes.keys().chain(self.special_nodes.keys()) {
+            for channel in 0..self.node_input_channels(*id) {
+                if !connected_inputs.contains(&(*id, channel)) {
+                    let label = self
+                        .nodes
+                        .get(id)
+                        .map(|node| node.plugin.plugin_type().name().to_string())
+                        .or_else(|| {
+                            self.special_nodes
+                                .get(id)
+                                .map(|node| node.display_name().to_string())
+                        })
+                        .unwrap_or_else(|| id.to_string());
+                    return Err(format!(
+                        "Connect input {} of {label} before applying routing.",
+                        channel + 1
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Add a plugin node at the given position
     pub fn add_plugin_node(
         &mut self,
@@ -2067,6 +2111,9 @@ impl PluginGraph {
         // a whole-graph transaction: an invalid combined channel contract must
         // not replace the currently working rack.
         let mut candidate = Self::with_default_rack();
+        // Presets replace processing, not the active source's channel layout.
+        // Validate the restored chain against the same input as the live rack.
+        candidate.adapt_matrix_to_input(self.input_channel_count());
 
         // Extract non-permanent plugins and insert them
         let user_plugins: Vec<Plugin> = loaded_plugins

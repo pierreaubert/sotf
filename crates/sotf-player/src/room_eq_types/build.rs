@@ -1,11 +1,8 @@
 use super::infer::infer_plugin_output_channels;
 use super::linear::linear_room_eq_initial_channels;
 use super::linear::linear_room_eq_output_order;
-use super::misc::routed_graph_channel_count;
 use super::misc::single_channel_matrix_parameters;
-use super::misc::sorted_channel_names;
 use super::types::append_channel_dsp_graph_branch;
-use super::types::is_route_replaced_global_plugin;
 use super::types::plugin_stage;
 use crate::recording_types::{ChannelRecording, ChannelRecordingState};
 pub use autoeq::roomeq::DspChainOutput;
@@ -118,14 +115,9 @@ pub fn build_speakers_from_recordings(
     speakers
 }
 
-/// Build an engine graph that preserves RoomEQ routed bass management.
-///
-/// Routed bass management is encoded as a factored multichannel graph: each
-/// per-channel-replicated DSP stage (pre-route gain, pre-route EQ, HP
-/// crossover, HP delay, LP crossover, LP gain, LP delay, post-route EQ) is
-/// emitted as a single multichannel plugin node carrying per-channel
-/// parameter arrays. The graph fans out only at the HP/LP split and merges
-/// at a sub-bus summing matrix node before the shared post-route EQ.
+/// Build native playback from AutoEQ's resolved physical routing contract.
+/// Input processing precedes fan-out; each route retains its own transfer;
+/// physical-output processing follows summation at that destination.
 pub fn build_room_eq_plugin_graph_config(
     output: &DspChainOutput,
     _sample_rate: f64,
@@ -138,349 +130,19 @@ pub fn build_room_eq_plugin_graph_config(
         .filter(|graph| !graph.routes.is_empty());
 
     if let Some(graph) = routed_graph {
-        return build_factored_routed_room_eq_graph(output, graph);
+        return build_routed_room_eq_graph(output, graph);
     }
 
     build_linear_room_eq_graph(output)
 }
 
-/// Build the factored graph for routed bass management.
-///
-/// Each per-channel-replicated DSP stage collapses to a single multichannel
-/// plugin instance carrying per-channel parameter arrays. The LP branch
-/// terminates in a sparse N×N matrix that sums LP signals onto each route's
-/// destination row, with the per-route dB gain baked into the matrix
-/// coefficient so different routes from the same source to different
-/// destinations don't collapse to a single gain.
-///
-/// Node order and roles:
-///   0. gain_pre        (per-channel pre-route gain_db)
-///   1. eq_pre          (per-channel pre-route filter list)
-///   2. xover_hp        (per-channel HP cutoff / Mute / Passthrough)
-///   3. delay_hp        (per-channel HP delay_ms)
-///   4. xover_lp        (per-channel LP cutoff / Mute)
-///   5. delay_lp        (per-channel LP-to-sub delay_ms)
-///   6. matrix_to_sub_bus (sparse N×N, per-route coefficients on the
-///      destination row carry route gain in linear units)
-///   7. eq_post         (per-channel post-route filter list)
-///   8. gain_post       (per-channel post-route trim gain_db)
-///
-/// Destination-only channels (channels that are the destination of some
-/// route but not the source of any route — e.g. a physical sub channel that
-/// receives redirected bass but has no own HP/LP processing) flow through
-/// the HP branch in `Passthrough` mode so direct sub-channel input reaches
-/// the post-EQ stage without being silenced.
-fn build_factored_routed_room_eq_graph(
+fn build_routed_room_eq_graph(
     output: &DspChainOutput,
     graph: &autoeq::roomeq::BassManagementRoutingGraph,
 ) -> anyhow::Result<sotf_audio::engine::PluginGraphConfig> {
-    use sotf_audio::engine::{PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig};
-
-    let channel_count = routed_graph_channel_count(output, graph);
-    if channel_count == 0 {
-        anyhow::bail!("routed_graph has no channels");
-    }
-
-    // Channel name → index. Prefer the routing graph's declared input order;
-    // fall back to sorted channel names when the graph leaves it empty.
-    let channel_order: Vec<String> = if graph.input_channels.is_empty() {
-        sorted_channel_names(output)
-    } else {
-        graph.input_channels.clone()
-    };
-    let name_to_index =
-        |name: &str| -> Option<usize> { channel_order.iter().position(|n| n == name) };
-
-    // Per-channel parameter arrays, sized to channel_count and zero-initialized.
-    let mut gain_pre_db = vec![0.0f32; channel_count];
-    let mut gain_post_db = vec![0.0f32; channel_count];
-    let mut filters_pre: Vec<Vec<serde_json::Value>> = vec![Vec::new(); channel_count];
-    let mut hp_fc = vec![1000.0f32; channel_count];
-    let mut hp_modes: Vec<&'static str> = vec!["mute"; channel_count];
-    let mut hp_delay_ms = vec![0.0f32; channel_count];
-    let mut lp_fc = vec![1000.0f32; channel_count];
-    let mut lp_modes: Vec<&'static str> = vec!["mute"; channel_count];
-    let mut lp_delay_ms = vec![0.0f32; channel_count];
-    // chain[ch] route_owned gain_db (i.e. baked-in LFE-style gain).
-    // Self-routes must prefer this baked-in chain gain over route metadata
-    // so the LFE channel is not attenuated twice.
-    let mut chain_route_owned_gain_db = vec![0.0f32; channel_count];
-    // Per-route LP fan-in: (dst_idx, src_idx, gain_db). Built directly from
-    // routes so routes that point to different destinations from the same
-    // source are encoded independently.
-    let mut lp_matrix_entries: Vec<(usize, usize, f32)> = Vec::new();
-    let mut filters_post: Vec<Vec<serde_json::Value>> = vec![Vec::new(); channel_count];
-
-    // Folder for the per-channel chain plugins.
-    for (channel_name, chain) in output.channels.iter() {
-        let Some(idx) = name_to_index(channel_name) else {
-            // Channel exists in chains but not in the routing graph: skip.
-            continue;
-        };
-        // Collect by stage. We *don't* fold post_route into pre_route —
-        // post_route trims live in their own per-channel `gain_post` node so
-        // they only apply to the final per-channel output, never to the LP
-        // path summed into the sub bus.
-        let mut pre_gain_db = 0.0f64;
-        let mut post_gain_db = 0.0f64;
-        let mut route_owned_gain_db = 0.0f64;
-        for plugin in &chain.plugins {
-            let stage = plugin_stage(plugin);
-            match (plugin.plugin_type.as_str(), stage) {
-                ("gain", Some("pre_route")) => {
-                    pre_gain_db += plugin
-                        .parameters
-                        .get("gain_db")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0);
-                }
-                ("gain", Some("post_route")) => {
-                    post_gain_db += plugin
-                        .parameters
-                        .get("gain_db")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0);
-                }
-                ("gain", Some("route_owned")) => {
-                    route_owned_gain_db += plugin
-                        .parameters
-                        .get("gain_db")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0);
-                }
-                ("eq", Some("pre_route")) => {
-                    if let Some(arr) = plugin.parameters.get("filters").and_then(|v| v.as_array()) {
-                        filters_pre[idx].extend(arr.iter().cloned());
-                    }
-                }
-                ("eq", Some("post_route")) => {
-                    if let Some(arr) = plugin.parameters.get("filters").and_then(|v| v.as_array()) {
-                        filters_post[idx].extend(arr.iter().cloned());
-                    }
-                }
-                _ => {
-                    // crossover / delay route_owned: covered by the routing
-                    // graph metadata below — ignore the per-chain copies.
-                }
-            }
-        }
-        gain_pre_db[idx] = pre_gain_db as f32;
-        gain_post_db[idx] = post_gain_db as f32;
-        if route_owned_gain_db.abs() > 1e-9 {
-            chain_route_owned_gain_db[idx] = route_owned_gain_db as f32;
-        }
-    }
-
-    // First pass: tag which channels are routing sources and destinations.
-    let mut is_source = vec![false; channel_count];
-    let mut is_destination = vec![false; channel_count];
-    for route in &graph.routes {
-        let src_idx = route.source_index.min(channel_count - 1);
-        let dst_idx = route.destination_index.min(channel_count - 1);
-        is_source[src_idx] = true;
-        is_destination[dst_idx] = true;
-    }
-
-    // Apply route metadata. The HP branch is per-source (a route HP-to-self
-    // sets that source's HP filter). The LP branch carries a per-route gain
-    // that gets baked into the matrix coefficient (route gain in dB →
-    // linear amplitude on the (dst, src) cell).
-    for route in &graph.routes {
-        let src_idx = route.source_index.min(channel_count - 1);
-        let dst_idx = route.destination_index.min(channel_count - 1);
-        match route.route_kind.as_str() {
-            "main_highpass_to_self" => {
-                hp_modes[src_idx] = "highpass";
-                if let Some(fc) = route.high_pass_hz {
-                    hp_fc[src_idx] = fc as f32;
-                }
-                hp_delay_ms[src_idx] = route.delay_ms as f32;
-            }
-            "redirected_bass_lowpass_to_sub" | "lfe_lowpass_to_sub" => {
-                lp_modes[src_idx] = "lowpass";
-                if let Some(fc) = route.low_pass_hz {
-                    lp_fc[src_idx] = fc as f32;
-                }
-                lp_delay_ms[src_idx] = route.delay_ms as f32;
-                // Prefer the chain's route_owned gain only for self-routes
-                // (src == dst), where it represents the applied-sub-gain
-                // baked into the LFE chain. For all other routes use
-                // route.gain_db so multi-destination routes from a single
-                // source don't collapse into one shared gain.
-                let route_gain_db =
-                    if src_idx == dst_idx && chain_route_owned_gain_db[src_idx].abs() > 1e-6 {
-                        chain_route_owned_gain_db[src_idx]
-                    } else {
-                        route.gain_db as f32
-                    };
-                lp_matrix_entries.push((dst_idx, src_idx, route_gain_db));
-            }
-            _ => {
-                // Unknown route kind — ignore. Future route kinds should be
-                // added here explicitly.
-            }
-        }
-    }
-
-    // Destination-only channels (channels that receive routed bass but have
-    // no source-side processing) pass their direct input through the HP branch
-    // unchanged. This preserves the sub-direct-feed case (.1 from a 5.1
-    // source mixed onto the sub channel upstream of RoomEQ).
-    for ch in 0..channel_count {
-        if is_destination[ch] && !is_source[ch] {
-            hp_modes[ch] = "passthrough";
-            hp_delay_ms[ch] = 0.0;
-        }
-    }
-
-    // Build the matrix coefficient grid (N×N row-major, dst-major).
-    // matrix[dst * N + src] = 10^(route_gain_db / 20).
-    let mut matrix = vec![0.0f32; channel_count * channel_count];
-    for (dst, src, gain_db) in &lp_matrix_entries {
-        let lin = 10.0_f32.powf(gain_db / 20.0);
-        matrix[dst * channel_count + src] = lin;
-    }
-
-    // Emit nodes and edges.
-    let mut nodes = Vec::new();
-    let mut edges = Vec::new();
-    let mut next_id = 0usize;
-    let mut add_node = |plugin_type: &str, parameters: serde_json::Value| -> usize {
-        let id = next_id;
-        next_id += 1;
-        nodes.push(PluginGraphNodeConfig {
-            id,
-            plugin_type: plugin_type.to_string(),
-            parameters,
-            input_channels: channel_count,
-            bypassed: false,
-        });
-        id
-    };
-
-    // Prepend non-routing global plugins (e.g., a global broadband EQ).
-    // The legacy `home_cinema_bass_management` matrix is fully encoded by the
-    // factored routing nodes below and is dropped here.
-    let mut global_tail: Option<usize> = None;
-    for plugin in &output.global_plugins {
-        if is_route_replaced_global_plugin(plugin) {
-            continue;
-        }
-        let id = add_node(&plugin.plugin_type, plugin.parameters.clone());
-        if let Some(prev) = global_tail {
-            edges.push(PluginGraphEdgeConfig {
-                from_node: prev,
-                to_node: id,
-            });
-        }
-        global_tail = Some(id);
-    }
-
-    let gain_pre_id = add_node(
-        "gain",
-        serde_json::json!({
-            "label": "room_eq_gain_pre",
-            "gain_db": 0.0,
-            "channel_gains": gain_pre_db,
-        }),
-    );
-    let eq_pre_id = add_node(
-        "eq",
-        serde_json::json!({
-            "label": "room_eq_eq_pre",
-            "channel_filters": filters_pre,
-        }),
-    );
-    let xover_hp_id = add_node(
-        "crossover",
-        serde_json::json!({
-            "label": "room_eq_xover_hp",
-            "type": "LR24",
-            "frequency": hp_fc.first().copied().unwrap_or(1000.0),
-            "output": "highpass",
-            "channel_frequencies_hz": hp_fc,
-            "channel_modes": hp_modes,
-        }),
-    );
-    let delay_hp_id = add_node(
-        "delay",
-        serde_json::json!({
-            "label": "room_eq_delay_hp",
-            "delay_ms": hp_delay_ms.first().copied().unwrap_or(0.0),
-            "feedback": 0.0,
-            "mix": 1.0,
-            "channel_delays_ms": hp_delay_ms,
-        }),
-    );
-    let xover_lp_id = add_node(
-        "crossover",
-        serde_json::json!({
-            "label": "room_eq_xover_lp",
-            "type": "LR24",
-            "frequency": lp_fc.first().copied().unwrap_or(1000.0),
-            "output": "lowpass",
-            "channel_frequencies_hz": lp_fc,
-            "channel_modes": lp_modes,
-        }),
-    );
-    let delay_lp_id = add_node(
-        "delay",
-        serde_json::json!({
-            "label": "room_eq_delay_lp",
-            "delay_ms": lp_delay_ms.first().copied().unwrap_or(0.0),
-            "feedback": 0.0,
-            "mix": 1.0,
-            "channel_delays_ms": lp_delay_ms,
-        }),
-    );
-    let matrix_id = add_node(
-        "matrix",
-        serde_json::json!({
-            "label": "room_eq_matrix_to_sub_bus",
-            "input_channels": channel_count,
-            "output_channels": channel_count,
-            "matrix": matrix,
-            "metadata": {
-                "physical_sub_output": graph.physical_sub_output,
-            },
-        }),
-    );
-    let eq_post_id = add_node(
-        "eq",
-        serde_json::json!({
-            "label": "room_eq_eq_post",
-            "channel_filters": filters_post,
-        }),
-    );
-    let gain_post_id = add_node(
-        "gain",
-        serde_json::json!({
-            "label": "room_eq_gain_post",
-            "gain_db": 0.0,
-            "channel_gains": gain_post_db,
-        }),
-    );
-
-    let mut wire = |from: usize, to: usize| {
-        edges.push(PluginGraphEdgeConfig {
-            from_node: from,
-            to_node: to,
-        })
-    };
-    if let Some(prev) = global_tail {
-        wire(prev, gain_pre_id);
-    }
-    wire(gain_pre_id, eq_pre_id);
-    wire(eq_pre_id, xover_hp_id);
-    wire(xover_hp_id, delay_hp_id);
-    wire(delay_hp_id, eq_post_id);
-    wire(eq_pre_id, xover_lp_id);
-    wire(xover_lp_id, delay_lp_id);
-    wire(delay_lp_id, matrix_id);
-    wire(matrix_id, eq_post_id);
-    wire(eq_post_id, gain_post_id);
-
-    Ok(PluginGraphConfig { nodes, edges })
+    let physical =
+        autoeq::roomeq_engine::physical_routing::resolve_physical_routing(&output.channels, graph)?;
+    super::physical::build_physical_room_eq_graph(&physical, &output.global_plugins)
 }
 
 fn build_linear_room_eq_graph(

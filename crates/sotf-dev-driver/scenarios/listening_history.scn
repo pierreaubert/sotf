@@ -1,0 +1,96 @@
+# 2026-09-09: History in listening_test.rs silently displayed only eight sessions.
+# The history renderer now exposes all records and retained difficulty details.
+# Run: target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/listening_history_ui.toml
+# Screenshots require visual review of the saved settings and localized labels.
+action ListeningResetGuide
+click listening.guide.acknowledge
+wait_until listening.guide_open == false timeout=3s
+scroll_into_view listening.eq.content listening.eq.config.trials
+click listening.eq.config.trials
+key cmd-a
+type "1"
+key enter
+assert listening.eq.config.trials == 1
+scroll_into_view listening.eq.content listening.eq.start
+click listening.eq.start
+wait_until listening.eq.has_question == true timeout=3s
+click listening.eq.answer.0
+click listening.eq.submit
+wait_until listening.eq.answered == true timeout=3s
+click listening.eq.next
+wait_until listening.eq.progress_sessions == 1 timeout=3s
+click listening.eq.retry
+wait_until listening.eq.has_question == true timeout=3s
+click listening.eq.answer.0
+click listening.eq.submit
+wait_until listening.eq.answered == true timeout=3s
+click listening.eq.next
+wait_until listening.eq.progress_sessions == 2 timeout=3s
+click listening.eq.retry
+wait_until listening.eq.has_question == true timeout=3s
+click listening.eq.answer.0
+click listening.eq.submit
+wait_until listening.eq.answered == true timeout=3s
+click listening.eq.next
+wait_until listening.eq.progress_sessions == 3 timeout=3s
+click listening.eq.retry
+wait_until listening.eq.has_question == true timeout=3s
+click listening.eq.answer.0
+click listening.eq.submit
+wait_until listening.eq.answered == true timeout=3s
+click listening.eq.next
+wait_until listening.eq.progress_sessions == 4 timeout=3s
+click listening.eq.retry
+wait_until listening.eq.has_question == true timeout=3s
+click listening.eq.answer.0
+click listening.eq.submit
+wait_until listening.eq.answered == true timeout=3s
+click listening.eq.next
+wait_until listening.eq.progress_sessions == 5 timeout=3s
+click listening.eq.retry
+wait_until listening.eq.has_question == true timeout=3s
+click listening.eq.answer.0
+click listening.eq.submit
+wait_until listening.eq.answered == true timeout=3s
+click listening.eq.next
+wait_until listening.eq.progress_sessions == 6 timeout=3s
+click listening.eq.retry
+wait_until listening.eq.has_question == true timeout=3s
+click listening.eq.answer.0
+click listening.eq.submit
+wait_until listening.eq.answered == true timeout=3s
+click listening.eq.next
+wait_until listening.eq.progress_sessions == 7 timeout=3s
+click listening.eq.retry
+wait_until listening.eq.has_question == true timeout=3s
+click listening.eq.answer.0
+click listening.eq.submit
+wait_until listening.eq.answered == true timeout=3s
+click listening.eq.next
+wait_until listening.eq.progress_sessions == 8 timeout=3s
+click listening.eq.retry
+wait_until listening.eq.has_question == true timeout=3s
+click listening.eq.answer.0
+click listening.eq.submit
+wait_until listening.eq.answered == true timeout=3s
+click listening.eq.next
+wait_until listening.eq.progress_sessions == 9 timeout=3s
+click listening.eq.nav.progress
+wait_until listening.surface == "Progress" timeout=3s
+assert_visible listening.history.session.8
+screenshot history-coach-english
+scroll listening.history.content -2400
+wait_idle
+assert_in_viewport listening.history.session.0
+screenshot history-oldest-session
+action CycleLanguage
+action CycleLanguage
+assert settings.language == "German"
+wait_idle
+scroll_into_view listening.history.content listening.history.session.0
+assert_in_viewport listening.history.session.0
+screenshot history-german-oldest
+scroll listening.history.content 2400
+wait_idle
+screenshot history-coach-german
+assert playback.is_playing == false

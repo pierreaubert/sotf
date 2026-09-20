@@ -1,17 +1,10 @@
 use super::misc::spinorama_runtime;
 use super::spawn::spawn_phase_data_check_thread;
 use super::spawn::spawn_spinorama_curves_thread;
-use crate::app::types::{PluginUpdateType, Screen, SpinoramaStep};
-use crate::components::design::Ds;
-use crate::components::icons::{Icon, IconName};
-use crate::i18n::{EqDiscoveryTranslations, WizardNavigationTranslations};
+use crate::app::types::{PluginUpdateType, SpinoramaStep};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{
-    Button, ButtonSize, ButtonTheme, ButtonVariant, HStack, StackSpacing, StepStatus, WizardHeader,
-    WizardStep, WizardTheme,
-};
 use sotf_audio_player::autoeq::speaker::{
     CallbackConfig, MeasurementInput, SpeakerOptimizationCallback, SpeakerOptimizationConfig,
     SpeakerOptimizationProgress,
@@ -32,20 +25,6 @@ type OptimizationOutcome = (
     Option<sotf_audio_player::autoeq::SpeakerOptimizationResult>,
     Option<String>,
 );
-
-macro_rules! dev_track {
-    ($element:expr, $selector:expr) => {{
-        #[cfg(feature = "dev-api")]
-        {
-            use crate::app::dev_api::DevTrackExt;
-            $element.dev_track($selector)
-        }
-        #[cfg(not(feature = "dev-api"))]
-        {
-            $element
-        }
-    }};
-}
 
 const SPINORAMA_FETCH_RETRIES: usize = 3;
 const SPINORAMA_RETRY_DELAY: Duration = Duration::from_secs(2);
@@ -229,9 +208,7 @@ impl PlayerView {
             .detach();
         }
 
-        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let theme = state.app.ui_state.theme.clone();
         let current_step = state.app.measurement_state.spinorama_eq_state.step;
 
         // Content for current step
@@ -244,177 +221,7 @@ impl PlayerView {
             SpinoramaStep::Export => self.render_spinorama_export(cx).into_any_element(),
         };
 
-        div()
-            .flex()
-            .flex_col()
-            .size_full()
-            .min_h_0()
-            .bg(theme.background)
-            .child(self.render_spinorama_header(cx))
-            .child(dev_track!(
-                div()
-                    .id("spinorama-eq-content")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .p(d.card)
-                    .child(content),
-                "spinorama.content"
-            ))
-    }
-
-    /// Render the spinorama EQ screen header with step indicators
-    pub(super) fn render_spinorama_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let d = Ds::from_cx(cx);
-        let state = self.state.read(cx);
-        let theme = state.app.ui_state.theme.clone();
-        let title = state.app.ui_state.translations.screen_spinorama;
-        let language = state.app.ui_state.language;
-        let translations = EqDiscoveryTranslations::for_language(language);
-        let wizard_text = WizardNavigationTranslations::for_language(language);
-        let theme_id = state.app.ui_state.theme_id;
-        let current_step = state.app.measurement_state.spinorama_eq_state.step;
-        let can_go_next = state.app.can_advance_workflow_step();
-        let is_busy = state
-            .app
-            .measurement_state
-            .spinorama_eq_state
-            .is_optimizing();
-
-        let step_index = current_step.index();
-
-        // Build step statuses
-        let step_statuses: Vec<StepStatus> = (0..4)
-            .map(|i| {
-                if i < step_index {
-                    StepStatus::Completed
-                } else if i == step_index {
-                    StepStatus::Active
-                } else {
-                    StepStatus::NotVisited
-                }
-            })
-            .collect();
-
-        // Build wizard steps
-        let steps = vec![
-            WizardStep::new(
-                "select",
-                translations.spinorama_step_label(SpinoramaStep::SelectSpeaker),
-            ),
-            WizardStep::new(
-                "configure",
-                translations.spinorama_step_label(SpinoramaStep::Configure),
-            ),
-            WizardStep::new(
-                "review",
-                translations.spinorama_step_label(SpinoramaStep::Review),
-            ),
-            WizardStep::new(
-                "export",
-                translations.spinorama_step_label(SpinoramaStep::Export),
-            ),
-        ];
-
-        let ui_kit_theme = theme.to_ui_kit_theme(theme_id, cx);
-        let wizard_theme = WizardTheme::from(&ui_kit_theme);
-        let button_theme = ButtonTheme::from(&ui_kit_theme);
-
-        let header = WizardHeader::new()
-            .title(title)
-            .steps(steps)
-            .step_statuses(step_statuses)
-            .current_step(step_index)
-            .theme(wizard_theme.clone());
-
-        let back_label = match current_step {
-            SpinoramaStep::SelectSpeaker => wizard_text.close,
-            _ => wizard_text.back,
-        };
-        let next_label = crate::components::wizard_continue_label(
-            language,
-            current_step
-                .next()
-                .map(|next| translations.spinorama_step_label(next)),
-        );
-
-        let navigation = HStack::new()
-            .spacing(StackSpacing::Sm)
-            .child(dev_track!(
-                Button::new("back", back_label)
-                    .variant(ButtonVariant::Secondary)
-                    .size(ButtonSize::Sm)
-                    .disabled(is_busy)
-                    .theme(button_theme.clone())
-                    .on_click_event(cx.listener(|view, _, _, cx| {
-                        view.state.update(cx, |state, _| {
-                            state.app.move_workflow_step(false);
-                        });
-                        cx.notify();
-                    })),
-                "spinorama.back"
-            ))
-            .child(dev_track!(
-                Button::new("next", next_label)
-                    .variant(ButtonVariant::Primary)
-                    .size(ButtonSize::Sm)
-                    .disabled(!can_go_next || is_busy)
-                    .theme(button_theme.clone())
-                    .on_click_event(cx.listener(|view, _, _, cx| {
-                        view.state.update(cx, |state, _| {
-                            state.app.move_workflow_step(true);
-                        });
-                        cx.notify();
-                    })),
-                "spinorama.next"
-            ));
-        let navigation = navigation.build().flex_none();
-
-        // Home button for navigation back to Library
-        let state_for_home = self.state.clone();
-        let text_muted = theme.text_muted;
-        let surface_hover = theme.surface_hover;
-
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .min_w_0()
-            .px(d.card)
-            .py(d.card)
-            .bg(theme.background_secondary)
-            .border_b_1()
-            .border_color(theme.border)
-            // Home button on the left
-            .child(
-                div()
-                    .id("spinorama-home-button")
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .w(rems(2.5))
-                    .h(rems(2.0))
-                    .cursor_pointer()
-                    .rounded(d.r_md)
-                    .hover(move |s| s.bg(surface_hover))
-                    .child(Icon::new(IconName::Home).color(text_muted))
-                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                        state_for_home.update(cx, |state, _cx| {
-                            state.app.ui_state.current_screen = Screen::Library;
-                        });
-                    }),
-            )
-            // Centered header with flex-1
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .justify_center()
-                    .child(header),
-            )
-            // Navigation buttons on the right
-            .child(navigation)
+        self.render_workflow_shell("spinorama-eq-content", content, cx)
     }
 
     // ========================================================================
@@ -1109,6 +916,9 @@ impl PlayerView {
         let (speaker_name, version, measurement, curve_name, optimizer_config, mode, target_curve) = {
             let state = self.state.read(cx);
             let spinorama = &state.app.measurement_state.spinorama_eq_state;
+            if spinorama.is_optimizing() {
+                return;
+            }
             let speaker = spinorama.selected_speaker.clone().unwrap_or_default();
             let version = spinorama.selected_version.clone();
             let measurement = spinorama.selected_measurement.clone();
@@ -1153,6 +963,8 @@ impl PlayerView {
             });
 
         let cancel_flag = self.state.update(cx, |state, _cx| {
+            let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
+            spinorama.result_inputs = Some(spinorama.model.optimization_input_snapshot());
             state
                 .app
                 .measurement_state
@@ -1567,6 +1379,12 @@ impl PlayerView {
                         .spinorama_eq_state
                         .status_message = "Complete!".to_string();
                     state.app.measurement_state.spinorama_eq_state.progress = 1.0;
+                    state
+                        .app
+                        .measurement_state
+                        .spinorama_eq_state
+                        .delivery
+                        .calculated();
                     state.app.measurement_state.spinorama_eq_state.result = result;
                     state.app.measurement_state.spinorama_eq_state.full_result = full_result;
                     state.app.measurement_state.spinorama_eq_state.step =
@@ -1603,7 +1421,33 @@ impl PlayerView {
         });
     }
 
+    fn check_spinorama_result_freshness(&mut self, cx: &mut Context<Self>) -> bool {
+        let state = self.state.read(cx);
+        let spinorama = &state.app.measurement_state.spinorama_eq_state;
+        if spinorama.result.is_none() || spinorama.result_is_current() {
+            return true;
+        }
+        self.state.update(cx, |state, cx| {
+            let text =
+                crate::app::i18n::DesktopTranslations::for_language(state.app.ui_state.language);
+            state.app.ui_state.toast_message =
+                Some(crate::app::ToastMessage::warning(text.stale_result));
+            cx.notify();
+        });
+        false
+    }
+
     pub(super) fn apply_spinorama_eq_result(&mut self, cx: &mut Context<Self>) {
+        {
+            let app = &self.state.read(cx).app;
+            let correction = &app.measurement_state.spinorama_eq_state;
+            if app.correction_application_status(&correction.delivery, correction.result_is_current())
+                == sotf_audio_player::ui_models::correction_delivery::CorrectionApplicationStatus::Pending
+            { return; }
+        }
+        if !self.check_spinorama_result_freshness(cx) {
+            return;
+        }
         log::info!("Applying spinorama EQ result to playback...");
 
         // Get the result biquads
@@ -1640,16 +1484,9 @@ impl PlayerView {
         let eq_filters: Vec<sotf_audio_player::EQFilter> = biquads
             .iter()
             .map(|b| {
-                sotf_audio_player::EQFilter::new(
-                    math_audio_iir_fir::BiquadFilterType::Peak,
-                    b.freq,
-                    b.q,
-                    b.db_gain,
-                )
+                sotf_audio_player::EQFilter::new(b.biquad_filter_type(), b.freq, b.q, b.db_gain)
             })
             .collect();
-
-        let num_filters = eq_filters.len();
 
         // Update the plugin chain
         self.state.update(cx, |state, _| {
@@ -1709,19 +1546,38 @@ impl PlayerView {
                 Some(PluginUpdateType::Structural);
             // Invalidate the workflow canvas so the graph view rebuilds
             state.app.plugin_state.graph_state.workflow_canvas = None;
-            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(format!(
-                "Applied {} filter Spinorama EQ",
-                num_filters
-            )));
+            if let Some(graph) = state.app.correction_processing_snapshot() {
+                state
+                    .app
+                    .measurement_state
+                    .spinorama_eq_state
+                    .delivery
+                    .request_application(graph);
+            }
+            let text = crate::app::i18n::CorrectionApplicationTranslations::for_language(
+                state.app.ui_state.language,
+            );
+            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::info(text.pending));
         });
         cx.notify();
     }
 
     pub(super) fn save_spinorama_eq_result(&mut self, cx: &mut Context<Self>) {
+        if !self.check_spinorama_result_freshness(cx) {
+            return;
+        }
+        let export_revision = self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .spinorama_eq_state
+            .delivery
+            .revision();
         log::info!("Saving spinorama EQ result...");
 
         // Get the result and export format
-        let (result, export_format, speaker_name) = {
+        let (result, export_format, speaker_name, sample_rate_hz) = {
             let state = self.state.read(cx);
             let result = state
                 .app
@@ -1742,7 +1598,17 @@ impl PlayerView {
                 .selected_speaker
                 .clone()
                 .unwrap_or_else(|| "speaker".to_string());
-            (result, format, speaker)
+            (
+                result,
+                format,
+                speaker,
+                state
+                    .app
+                    .measurement_state
+                    .spinorama_eq_state
+                    .optimizer_config
+                    .sample_rate,
+            )
         };
 
         let Some(result) = result else {
@@ -1758,89 +1624,97 @@ impl PlayerView {
         let extension = sotf_audio_player::autoeq::get_export_extension(&export_format);
 
         let safe_speaker_name = speaker_name.replace([' ', '/', '\\'], "_");
-        let default_filename = format!("spinorama_eq_{}.{}", safe_speaker_name, extension);
+        let default_filename = format!("spinorama_eq_{}{}", safe_speaker_name, extension);
 
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let weak_state = self.state.downgrade();
             cx.spawn(async move |_, cx| {
-                // Open save file dialog
-                let file = rfd::AsyncFileDialog::new()
-                    .add_filter(extension.to_uppercase(), &[extension])
-                    .set_title("Save Spinorama EQ")
-                    .set_file_name(&default_filename)
-                    .save_file()
-                    .await;
-
-                if let Some(file) = file {
-                    let Some(state_entity) = weak_state.upgrade() else {
+                // QA substitutes only the destination; formatting, writing and
+                // successful revision attribution use the production path.
+                #[cfg(feature = "dev-api")]
+                let qa_path = std::env::var_os("SOTF_QA_DIR")
+                    .map(std::path::PathBuf::from)
+                    .map(|directory| directory.join(&default_filename));
+                #[cfg(not(feature = "dev-api"))]
+                let qa_path: Option<std::path::PathBuf> = None;
+                let path = if let Some(path) = qa_path {
+                    path
+                } else {
+                    let Some(file) = rfd::AsyncFileDialog::new()
+                        .add_filter(
+                            extension.trim_start_matches('.').to_uppercase(),
+                            &[extension.trim_start_matches('.')],
+                        )
+                        .set_title("Save Spinorama EQ")
+                        .set_file_name(&default_filename)
+                        .save_file()
+                        .await
+                    else {
                         return;
                     };
-                    // Export using the appropriate format function
-                    let comment = format!(
-                        "Spinorama EQ for {} ({})",
-                        speaker_name,
-                        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-                    );
-                    let biquads: Vec<math_audio_iir_fir::Biquad> = result
-                        .biquads
-                        .iter()
-                        .map(|b| {
-                            let ft = match b.filter_type.as_str() {
-                                "peak" => math_audio_iir_fir::BiquadFilterType::Peak,
-                                "lowshelf" => math_audio_iir_fir::BiquadFilterType::Lowshelf,
-                                "highshelf" => math_audio_iir_fir::BiquadFilterType::Highshelf,
-                                "lowpass" => math_audio_iir_fir::BiquadFilterType::Lowpass,
-                                "highpass" => math_audio_iir_fir::BiquadFilterType::Highpass,
-                                _ => math_audio_iir_fir::BiquadFilterType::Peak,
-                            };
-                            math_audio_iir_fir::Biquad::new(ft, b.freq, 48000.0, b.q, b.db_gain)
-                        })
-                        .collect();
-                    let content = match sotf_audio_player::autoeq::format_peq_export(
-                        &export_format,
-                        &comment,
-                        &biquads,
-                        48000,
-                    ) {
-                        Ok(c) => c,
-                        Err(e) => {
-                            log::error!("Format error: {e}");
-                            state_entity.update(cx, |state, cx| {
-                                state.app.ui_state.toast_message = Some(
-                                    crate::app::ToastMessage::error(format!("Format error: {e}")),
-                                );
-                                cx.notify();
-                            });
-                            return;
-                        }
-                    };
-
-                    match std::fs::write(file.path(), content) {
+                    file.path().to_path_buf()
+                };
+                let export_path = path.clone();
+                let format = export_format.clone();
+                let write_result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let comment = format!(
+                            "Spinorama EQ for {} ({})",
+                            speaker_name,
+                            chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+                        );
+                        let biquads = result
+                            .biquads
+                            .iter()
+                            .map(|filter| {
+                                math_audio_iir_fir::Biquad::new(
+                                    filter.biquad_filter_type(),
+                                    filter.freq,
+                                    f64::from(sample_rate_hz),
+                                    filter.q,
+                                    filter.db_gain,
+                                )
+                            })
+                            .collect::<Vec<_>>();
+                        let content = sotf_audio_player::autoeq::format_peq_export(
+                            &format,
+                            &comment,
+                            &biquads,
+                            sample_rate_hz,
+                        )?;
+                        std::fs::write(export_path, content).map_err(|error| error.to_string())
+                    })
+                    .await;
+                let Some(state_entity) = weak_state.upgrade() else {
+                    return;
+                };
+                state_entity.update(cx, |state, cx| {
+                    let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
+                    match write_result {
                         Ok(()) => {
-                            log::info!("Saved Spinorama EQ to {:?}", file.path());
-                            state_entity.update(cx, |state, cx| {
-                                state.app.ui_state.toast_message =
-                                    Some(crate::app::ToastMessage::success(format!(
-                                        "Saved to {}",
-                                        file.path().display()
-                                    )));
-                                cx.notify();
-                            });
+                            spinorama.delivery.exported(
+                                export_revision,
+                                export_format,
+                                path.clone(),
+                            );
+                            if spinorama.delivery.revision() == export_revision {
+                                spinorama.error_message = None;
+                            }
+                            // The persistent receipt above the export controls
+                            // presents success and its destination without a
+                            // duplicate, potentially overflowing path toast.
                         }
-                        Err(e) => {
-                            log::error!("Failed to save Spinorama EQ: {}", e);
-                            state_entity.update(cx, |state, cx| {
-                                state.app.ui_state.toast_message =
-                                    Some(crate::app::ToastMessage::error(format!(
-                                        "Failed to save: {}",
-                                        e
-                                    )));
-                                cx.notify();
-                            });
+                        Err(error) => {
+                            if spinorama.delivery.revision() == export_revision {
+                                spinorama.error_message =
+                                    Some(format!("Failed to save: {}", error));
+                            }
                         }
                     }
-                }
+                    cx.notify();
+                });
             })
             .detach();
         }

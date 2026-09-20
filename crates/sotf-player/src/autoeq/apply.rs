@@ -139,11 +139,8 @@ pub fn apply_headphone_easy_chain(
     }
 
     let nyquist = sample_rate * 0.5;
-    let active: Vec<(String, f64, f64, f64)> = filters
-        .iter()
-        .filter(|(_, _, _, gain)| gain.abs() >= 0.1)
-        .cloned()
-        .collect();
+    // Gain does not indicate whether notch or pass filters are active.
+    let active = filters.to_vec();
     if active.is_empty() {
         return Err("No active headphone EQ filters to apply".to_string());
     }
@@ -972,6 +969,31 @@ mod headphone_easy_apply_tests {
             ("Peak".to_string(), 120.0, 1.2, 4.0),
             ("highshelf".to_string(), 8_000.0, 0.7, -2.0),
         ]
+    }
+
+    #[test]
+    fn preserves_zero_gain_notch_and_pass_filters() {
+        let mut graph = PluginGraph::with_default_rack();
+        let filters = vec![
+            ("Notch".into(), 1000.0, 0.7, 0.0),
+            ("Highpass".into(), 80.0, 0.7, 0.0),
+            ("Lowpass".into(), 12000.0, 0.7, 0.0),
+        ];
+        let outcome =
+            apply_headphone_easy_chain(&mut graph, &filters, 48000.0, 70.0, 83.0).unwrap();
+        assert_eq!(outcome.active_filters, 3);
+        let plugins = graph.plugins();
+        let applied = plugins
+            .iter()
+            .find_map(|plugin| match &plugin.settings {
+                PluginSettings::EQ { filters, .. } if !plugin.permanent => Some(filters),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(applied.len(), 3);
+        assert_eq!(format!("{:?}", applied[0].filter_type), "Notch");
+        assert_eq!(format!("{:?}", applied[1].filter_type), "Highpass");
+        assert_eq!(format!("{:?}", applied[2].filter_type), "Lowpass");
     }
 
     #[test]

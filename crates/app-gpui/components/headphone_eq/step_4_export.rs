@@ -38,6 +38,12 @@ impl PlayerView {
         let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id, cx));
         let headphone_eq = &state.app.measurement_state.headphone_eq_state;
         let has_result = headphone_eq.result.is_some();
+        let result_is_current = headphone_eq.result_is_current();
+        let can_apply = result_is_current && state.app.correction_application_status(&headphone_eq.delivery, result_is_current)
+            != sotf_audio_player::ui_models::correction_delivery::CorrectionApplicationStatus::Pending;
+        let stale_text =
+            crate::app::i18n::DesktopTranslations::for_language(state.app.ui_state.language)
+                .stale_result;
         let easy_mode = headphone_eq.detail_level == DetailLevel::Simple;
         let export_format = headphone_eq.export_format.clone();
 
@@ -50,10 +56,18 @@ impl PlayerView {
                     .size(TextSize::Md),
             )
             .child(
-                Text::new(translations.apply_export_description)
+                Text::new(translations.delivery.apply_export_description)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
+            .child(self.render_correction_export_status(
+                cx,
+                &headphone_eq.delivery,
+                result_is_current,
+            ))
+            .when(has_result && !result_is_current, |stack| {
+                stack.child(Text::body(stale_text).color(theme.warning))
+            })
             .when(has_result, |vstack| {
                 let theme = theme.clone();
                 let button_theme = button_theme.clone();
@@ -65,6 +79,7 @@ impl PlayerView {
                         self.render_apply_to_playback_card(
                             cx,
                             "headphone",
+                            can_apply,
                             &theme,
                             &button_theme,
                             Self::apply_headphone_eq_result,
@@ -85,7 +100,7 @@ impl PlayerView {
                                 VStack::new()
                                     .spacing(StackSpacing::Sm)
                                     .child(
-                                        Text::new(translations.export_description)
+                                        Text::new(translations.delivery.export_description)
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
@@ -132,6 +147,7 @@ impl PlayerView {
                                             "save-headphone-eq",
                                             discovery_text.save_eq_file
                                         )
+                                        .disabled(!result_is_current)
                                         .variant(ButtonVariant::Primary)
                                         .size(ButtonSize::Sm)
                                         .theme(button_theme.clone())
@@ -175,7 +191,10 @@ impl PlayerView {
         let translations =
             HeadphoneEasyTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let can_undo = headphone_eq.easy_mode_undo_graph.is_some();
-        let summary = headphone_eq.easy_mode_last_apply;
+        let summary = headphone_eq.easy_mode_last_apply.filter(|_| {
+            self.state.read(cx).app.correction_application_status(&headphone_eq.delivery, headphone_eq.result_is_current())
+                == sotf_audio_player::ui_models::correction_delivery::CorrectionApplicationStatus::Applied
+        });
 
         Card::new()
             .background(theme.surface)
@@ -214,6 +233,8 @@ impl PlayerView {
                             .wrap(true)
                             .child(dev_track!(
                                 Button::new("apply-headphone-easy-chain", translations.apply)
+                                    .disabled(!headphone_eq.result_is_current() || self.state.read(cx).app.correction_application_status(&headphone_eq.delivery, headphone_eq.result_is_current())
+                                        == sotf_audio_player::ui_models::correction_delivery::CorrectionApplicationStatus::Pending)
                                     .variant(ButtonVariant::Primary)
                                     .size(ButtonSize::Sm)
                                     .theme(button_theme.clone())
@@ -222,7 +243,7 @@ impl PlayerView {
                                     })),
                                 "headphone.apply"
                             ))
-                            .child(
+                            .child(dev_track!(
                                 Button::new("undo-headphone-easy-chain", translations.undo)
                                     .variant(ButtonVariant::Secondary)
                                     .size(ButtonSize::Sm)
@@ -231,7 +252,8 @@ impl PlayerView {
                                     .on_click_event(cx.listener(|view, _, _, cx| {
                                         view.undo_headphone_easy_chain(cx);
                                     })),
-                            )
+                                "headphone.undo"
+                            ))
                             .child(
                                 Button::new(
                                     "edit-headphone-easy-chain",

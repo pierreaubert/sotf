@@ -1,0 +1,8 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "60s"
+[[scenario]]
+name = "compressor-details"
+path = "crates/sotf-dev-driver/scenarios/compressor_detail_controls.scn"
+timeout = "60s"

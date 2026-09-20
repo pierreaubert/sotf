@@ -1,6 +1,6 @@
 pub use super::super::plugin_param_map::param_index_to_engine_param;
 use super::adjust::adjust_plugin_param;
-use super::misc::get_param_count;
+use super::misc::{apply_structural_side_effects, get_param_count, reset_multiband_override};
 use super::set::set_eq_param_value_for_target;
 use super::set::set_plugin_param_value;
 use super::types::EqEditTarget;
@@ -166,11 +166,78 @@ fn cycle_eq_topology_in_settings(
         return PluginUpdateEffect::None;
     };
     filter.topology = match filter.topology {
+        EqFilterTopology::Biquad if filter.order != 2 => return PluginUpdateEffect::None,
         EqFilterTopology::Biquad => EqFilterTopology::WarpedBiquad,
         EqFilterTopology::WarpedBiquad => EqFilterTopology::KautzFilter,
         EqFilterTopology::KautzFilter => EqFilterTopology::Biquad,
     };
     PluginUpdateEffect::Structural
+}
+
+pub fn eq_supports_svf(settings: &PluginSettings) -> bool {
+    let PluginSettings::EQ {
+        filters,
+        channel_filters,
+        ..
+    } = settings
+    else {
+        return false;
+    };
+    filters
+        .iter()
+        .chain(channel_filters.iter().flatten().flatten())
+        .all(|filter| filter.order == 2)
+}
+
+pub fn set_eq_global_topology(
+    settings: &mut PluginSettings,
+    value: f64,
+) -> Result<PluginUpdateEffect, String> {
+    if value != 0.0 && value != 1.0 {
+        return Err("Unknown EQ topology".to_string());
+    }
+    if value == 1.0 && !eq_supports_svf(settings) {
+        return Err("SVF requires second-order filters in all channels".to_string());
+    }
+    let PluginSettings::EQ { topology, .. } = settings else {
+        return Err("Selected plugin is not an EQ".to_string());
+    };
+    if *topology == value {
+        return Ok(PluginUpdateEffect::None);
+    }
+    *topology = value;
+    Ok(PluginUpdateEffect::Structural)
+}
+
+fn set_eq_order_in_settings(
+    settings: &mut PluginSettings,
+    target: EqEditTarget,
+    band_idx: usize,
+    order: usize,
+) -> Result<PluginUpdateEffect, String> {
+    if !matches!(order, 2 | 4 | 6 | 8) {
+        return Err("EQ order must be 2, 4, 6, or 8".to_string());
+    }
+    let PluginSettings::EQ { topology, .. } = settings else {
+        return Err("Filter order is available only for standard EQ".to_string());
+    };
+    if *topology == 1.0 && order != 2 {
+        return Err("SVF supports only second-order filters".to_string());
+    }
+    let filter = eq_band_mut(settings, target, band_idx)
+        .ok_or_else(|| "Selected EQ band is unavailable".to_string())?;
+    if !matches!(
+        filter.topology,
+        sotf_audio::plugins::EqFilterTopology::Biquad
+    ) && order != 2
+    {
+        return Err("Higher orders require a biquad band".to_string());
+    }
+    if filter.order == order {
+        return Ok(PluginUpdateEffect::None);
+    }
+    filter.order = order;
+    Ok(PluginUpdateEffect::Structural)
 }
 
 fn set_eq_topology_in_settings(
@@ -182,7 +249,9 @@ fn set_eq_topology_in_settings(
     let Some(filter) = eq_band_mut(settings, target, band_idx) else {
         return PluginUpdateEffect::None;
     };
-    if filter.topology == topology {
+    if filter.topology == topology
+        || (filter.order != 2 && !matches!(topology, sotf_audio::plugins::EqFilterTopology::Biquad))
+    {
         return PluginUpdateEffect::None;
     }
     filter.topology = topology;
@@ -475,6 +544,28 @@ impl PluginController {
         }
     }
 
+    /// Adjust a graph node without relying on a linear rack index.
+    pub fn adjust_param_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        param_idx: usize,
+        delta: f64,
+    ) -> bool {
+        let mut channels_changed = false;
+        let adjusted = self.graph.nodes.get_mut(&node_id).is_some_and(|node| {
+            adjust_plugin_param(
+                &mut node.plugin.settings,
+                param_idx,
+                delta,
+                &mut channels_changed,
+            )
+        });
+        if channels_changed {
+            self.graph.update_channel_dependent_plugins();
+        }
+        adjusted
+    }
+
     /// Set a specific parameter value for a plugin.
     pub fn set_plugin_param(
         &mut self,
@@ -657,6 +748,35 @@ impl PluginController {
             return PluginUpdateEffect::None;
         };
         set_eq_topology_in_settings(&mut plugin.settings, target, band_idx, topology)
+    }
+
+    pub fn set_eq_filter_order_for_target(
+        &mut self,
+        plugin_idx: usize,
+        target: EqEditTarget,
+        band_idx: usize,
+        order: usize,
+    ) -> Result<PluginUpdateEffect, String> {
+        let plugin = self
+            .graph
+            .get_plugin_mut(plugin_idx)
+            .ok_or_else(|| "Selected EQ plugin is unavailable".to_string())?;
+        set_eq_order_in_settings(&mut plugin.settings, target, band_idx, order)
+    }
+
+    pub fn set_eq_filter_order_for_target_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        target: EqEditTarget,
+        band_idx: usize,
+        order: usize,
+    ) -> Result<PluginUpdateEffect, String> {
+        let node = self
+            .graph
+            .nodes
+            .get_mut(&node_id)
+            .ok_or_else(|| "Selected EQ node is unavailable".to_string())?;
+        set_eq_order_in_settings(&mut node.plugin.settings, target, band_idx, order)
     }
 
     pub fn cycle_eq_filter_topology_for_target_by_node_id(
@@ -1195,6 +1315,19 @@ impl PluginController {
         node_id: crate::plugin_graph::GraphNodeId,
         param_idx: usize,
     ) -> PluginUpdateEffect {
+        if let Some(reset) = self
+            .graph
+            .nodes
+            .get_mut(&node_id)
+            .map(|node| &mut node.plugin.settings)
+            .and_then(|settings| reset_multiband_override(settings, param_idx))
+        {
+            return if reset {
+                self.determine_update_effect_by_node_id(node_id, param_idx, false)
+            } else {
+                PluginUpdateEffect::None
+            };
+        }
         let plugin_type = if let Some(node) = self.graph.nodes.get(&node_id) {
             node.plugin.plugin_type()
         } else {
@@ -1216,36 +1349,11 @@ impl PluginController {
                 .settings
                 .set_param_value(param_idx, default_value);
 
-            match &mut node.plugin.settings {
-                PluginSettings::Upmixer { .. } if param_idx == 0 => {
-                    channel_count_changed = true;
-                }
-                PluginSettings::MultibandCompressor {
-                    num_bands, bands, ..
-                } if param_idx == 0 => {
-                    bands.resize_with(*num_bands, Default::default);
-                    for (i, band) in bands.iter_mut().enumerate() {
-                        band.active = match *num_bands {
-                            4 | 5 => i < 3,
-                            _ => true,
-                        };
-                    }
-                    channel_count_changed = true;
-                }
-                PluginSettings::MultibandExpander {
-                    num_bands, bands, ..
-                } if param_idx == 0 => {
-                    bands.resize_with(*num_bands, Default::default);
-                    for (i, band) in bands.iter_mut().enumerate() {
-                        band.active = match *num_bands {
-                            4 | 5 => i < 3,
-                            _ => true,
-                        };
-                    }
-                    channel_count_changed = true;
-                }
-                _ => {}
-            }
+            apply_structural_side_effects(
+                &mut node.plugin.settings,
+                param_idx,
+                &mut channel_count_changed,
+            );
         }
 
         if channel_count_changed {
@@ -1261,6 +1369,18 @@ impl PluginController {
         plugin_idx: usize,
         param_idx: usize,
     ) -> PluginUpdateEffect {
+        if let Some(reset) = self
+            .graph
+            .get_plugin_mut(plugin_idx)
+            .map(|plugin| &mut plugin.settings)
+            .and_then(|settings| reset_multiband_override(settings, param_idx))
+        {
+            return if reset {
+                self.determine_update_effect(Some(plugin_idx), param_idx, false)
+            } else {
+                PluginUpdateEffect::None
+            };
+        }
         let plugin_type = if let Some(plugin) = self.graph.get_plugin(plugin_idx) {
             plugin.plugin_type()
         } else {
@@ -1280,39 +1400,11 @@ impl PluginController {
         if let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) {
             plugin.settings.set_param_value(param_idx, default_value);
 
-            match &mut plugin.settings {
-                PluginSettings::Upmixer { .. } if param_idx == 0 => {
-                    channel_count_changed = true;
-                }
-                PluginSettings::MultibandCompressor {
-                    num_bands, bands, ..
-                } if param_idx == 0 => {
-                    bands.resize_with(*num_bands, Default::default);
-                    // Default active states: 4 bands => band 4 passive, 5 bands => bands 4,5 passive
-                    for (i, band) in bands.iter_mut().enumerate() {
-                        band.active = match *num_bands {
-                            4 => i < 3,
-                            5 => i < 3,
-                            _ => true,
-                        };
-                    }
-                    channel_count_changed = true;
-                }
-                PluginSettings::MultibandExpander {
-                    num_bands, bands, ..
-                } if param_idx == 0 => {
-                    bands.resize_with(*num_bands, Default::default);
-                    for (i, band) in bands.iter_mut().enumerate() {
-                        band.active = match *num_bands {
-                            4 => i < 3,
-                            5 => i < 3,
-                            _ => true,
-                        };
-                    }
-                    channel_count_changed = true;
-                }
-                _ => {}
-            }
+            apply_structural_side_effects(
+                &mut plugin.settings,
+                param_idx,
+                &mut channel_count_changed,
+            );
         }
 
         if channel_count_changed {
@@ -1327,6 +1419,46 @@ impl PluginController {
     // ========================================================================
 
     /// Load EQ filters from an APO file path. Works for both EQ and LinearPhaseEq.
+    pub fn load_apo_filters_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        path: &Path,
+    ) -> Result<PluginUpdateEffect, String> {
+        crate::security::validate_plugin_apo_file_path(path).map_err(|e| e.to_string())?;
+        let new_filters = EQFilter::from_apo_file(path)?;
+        let filters = self
+            .graph
+            .nodes
+            .get_mut(&node_id)
+            .and_then(|node| node.plugin.settings.eq_global_filters_mut())
+            .ok_or_else(|| "Selected node is not an EQ".to_string())?;
+        *filters = new_filters;
+        Ok(PluginUpdateEffect::Structural)
+    }
+
+    pub fn load_sofa_path_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        path: String,
+    ) -> Result<PluginUpdateEffect, String> {
+        if !path.is_empty() {
+            crate::security::validate_plugin_sofa_file_path(Path::new(&path))
+                .map_err(|e| e.to_string())?;
+        }
+        match self
+            .graph
+            .nodes
+            .get_mut(&node_id)
+            .map(|node| &mut node.plugin.settings)
+        {
+            Some(PluginSettings::BinauralDecoder { sofa_file, .. }) => {
+                *sofa_file = path;
+                Ok(PluginUpdateEffect::Structural)
+            }
+            _ => Err("Selected node is not a Binaural Decoder".into()),
+        }
+    }
+
     pub fn load_apo_filters(&mut self, path: &Path) -> Result<PluginUpdateEffect, String> {
         crate::security::validate_plugin_apo_file_path(path).map_err(|e| e.to_string())?;
         let new_filters = EQFilter::from_apo_file(path)?;

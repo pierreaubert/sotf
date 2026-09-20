@@ -149,6 +149,7 @@ fn payload_candidates(payload: &super::model::ActionPayload) -> Vec<super::model
                 CoordinateInput::Pointer {
                     phase,
                     button,
+                    click_count,
                     viewport_revision,
                     ..
                 } => CoordinateInput::Pointer {
@@ -156,6 +157,7 @@ fn payload_candidates(payload: &super::model::ActionPayload) -> Vec<super::model
                     x: 0.0,
                     y: 0.0,
                     button: *button,
+                    click_count: *click_count,
                     viewport_revision: *viewport_revision,
                 },
                 CoordinateInput::Touch {
@@ -326,6 +328,7 @@ mod tests {
                 x: 640.0,
                 y: 480.0,
                 button: 0,
+                click_count: 1,
                 viewport_revision: 3,
             },
         };

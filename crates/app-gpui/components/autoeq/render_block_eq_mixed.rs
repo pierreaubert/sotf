@@ -3,6 +3,7 @@
 {
     let mut mixed_freq_input =
         NumberInput::new((base_id.clone(), "mixed-crossover-freq"))
+            .scroll_requires_alt(true)
             .value(config.v2.mixed_crossover_freq)
             .min(ParamLimits::MIXED_CROSSOVER_FREQ.min)
             .max(ParamLimits::MIXED_CROSSOVER_FREQ.max)

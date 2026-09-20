@@ -1,0 +1,17 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+
+[[scenario]]
+name = "expander-slider-wheel"
+path = "crates/sotf-dev-driver/scenarios/expander_slider_wheel_preserves_gain.scn"
+timeout = "45s"
+
+[[scenario]]
+name = "expander-slider-wheel-german"
+path = "crates/sotf-dev-driver/scenarios/expander_slider_wheel_preserves_gain.scn"
+timeout = "45s"
+language = "German"
+theme = "Light"
+font_scale = 1.5

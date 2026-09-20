@@ -1,5 +1,4 @@
 use super::home_album_ext::HomeAlbumExt;
-use crate::ui::PlayerView;
 use crate::ui::{ALBUM_CARD_GAP_REMS, ALBUM_CARD_WIDTH_REMS, estimate_grid_dimensions};
 use sotf_audio_player::Album;
 use std::sync::Arc;
@@ -38,65 +37,6 @@ pub(super) fn expanded_album_limit_for_dimensions(
 
     // Show enough rows to fill the viewport plus one extra row of buffering.
     (columns * rows.saturating_add(1)).max(EXPANDED_ALBUM_LIMIT)
-}
-
-pub(super) fn add_home_album_to_queue(
-    state: &mut crate::app::AppState,
-    album: &Album,
-    play_now: bool,
-) {
-    if let Some(id) = album.id
-        && let Some(filtered_idx) = state
-            .app
-            .filtered_albums()
-            .iter()
-            .position(|candidate| candidate.id == Some(id))
-    {
-        state.app.library_state.selected_index = filtered_idx;
-        let result = if play_now {
-            state.app.play_album_now()
-        } else {
-            state.app.add_album_to_queue()
-        };
-
-        match result {
-            Ok(Some(path)) => PlayerView::play_track(state, path),
-            Ok(None) => {}
-            Err(e) => {
-                if e.starts_with("None of the files") {
-                    remove_home_album_from_view(state, album);
-                    state.app.ui_state.toast_message = Some(
-                        crate::app::ToastMessage::persistent(e, crate::app::ToastType::Warning)
-                            .with_action(crate::app::ToastAction::new("Rescan", "rescan-library")),
-                    );
-                } else {
-                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(e));
-                }
-            }
-        }
-    }
-}
-
-fn remove_home_album_from_view(state: &mut crate::app::AppState, album: &Album) {
-    let before = state.app.library_state.library.albums.len();
-    state.app.library_state.library.albums.retain(|candidate| {
-        if let (Some(candidate_id), Some(album_id)) = (candidate.id, album.id) {
-            candidate_id != album_id
-        } else {
-            candidate.title != album.title || candidate.artist() != album.artist()
-        }
-    });
-
-    if state.app.library_state.library.albums.len() != before {
-        state.app.library_state.invalidate_cache();
-        let len = state.app.filtered_albums().len();
-        if len == 0 {
-            state.app.library_state.selected_index = 0;
-        } else if state.app.library_state.selected_index >= len {
-            state.app.library_state.selected_index = len - 1;
-        }
-        state.app.invalidate_library_stats();
-    }
 }
 
 pub(super) fn sort_album_refs_by_listening(mut albums: Vec<&Album>) -> Vec<&Album> {

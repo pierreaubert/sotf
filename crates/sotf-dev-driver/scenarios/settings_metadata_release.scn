@@ -7,6 +7,9 @@ assert      screen.focused == "Settings"
 
 click       settings.tab.Metadata
 assert      settings.active_tab == "Metadata"
+wait_until  settings.metadata_cached_enabled != null timeout=5s
+wait_until  settings.metadata_busy == false timeout=5s
+wait_idle   1s
 assert      settings.metadata_search_enabled == true
 assert_visible settings.metadata.search-toggle
 timing_end   first_meaningful_paint max=1s
@@ -15,6 +18,8 @@ screenshot  settings-metadata-enabled
 
 timing_start input_response
 click       settings.metadata.search-toggle
+wait_until  settings.metadata_busy == false timeout=5s
+wait_idle   1s
 assert      settings.metadata_search_enabled == false
 assert      settings.metadata_error == null
 timing_end   input_response max=500ms
@@ -24,6 +29,8 @@ screenshot  settings-metadata-disabled
 # Restore the production default and prove that the same persisted file is read
 # back through the QA boundary.
 click       settings.metadata.search-toggle
+wait_until  settings.metadata_busy == false timeout=5s
+wait_idle   1s
 assert      settings.metadata_search_enabled == true
 assert      settings.metadata_error == null
 

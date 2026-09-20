@@ -1,0 +1,38 @@
+focus library
+wait_until library.album_count > 0 timeout=10s
+wait_idle 2s
+click library.tab.album
+assert library.list_view == false
+click library.layout.toggle
+assert library.list_view == true
+key enter
+assert library.list_view == false
+key enter
+assert library.list_view == true
+wait_idle 2s
+assert_visible library.list.album.0
+assert queue.length == 0
+click library.list.album.0
+wait_until library.detail.open == true timeout=2s
+assert queue.length == 0
+click library.detail.back
+assert library.list_view == true
+click library.search_input
+type "Demo"
+wait_until library.search_query == "Demo" timeout=2s
+wait_idle 2s
+assert_visible library.list.album.0
+click library.layout.toggle
+assert library.list_view == false
+assert library.search_query == "Demo"
+wait_idle 2s
+assert_visible library.album.0
+click library.layout.toggle
+assert library.list_view == true
+resize 600 800
+wait_idle 2s
+assert_in_viewport library.layout.toggle
+assert_in_viewport library.list.album.0
+screenshot library-album-list-narrow
+assert playback.is_playing == false
+assert toast.type == null

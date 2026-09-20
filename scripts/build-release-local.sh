@@ -668,14 +668,8 @@ build_macos() {
         fi
     fi
 
-    # --- macOS Systemwide pkg ---
-    log_step "Building macOS Systemwide pkg..."
-    if $DRY_RUN; then
-        log_dry "./scripts/build-systemwide.sh"
-    else
-        ./scripts/build-systemwide.sh
-        record_result "macOS Systemwide pkg: OK"
-    fi
+    # --- macOS Systemwide pkg (moved) ---
+    # Systemwide packaging now lives in ../sotf-systemwide (scripts/build-systemwide.sh).
 
     # --- Sign macOS artifacts ---
     if ! $SKIP_SIGN && [ -n "${DEVELOPER_ID:-}" ]; then

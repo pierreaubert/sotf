@@ -1,0 +1,44 @@
+focus library
+wait_until library.album_count > 0 timeout=10s
+wait_idle 2s
+click library.tab.search
+click library.search_input
+type "Demo"
+wait_until library.filtered_album_count > 0 timeout=2s
+click library.album.0
+wait_until library.detail.open == true timeout=2s
+click library.detail.play
+wait_until playback.is_playing == true timeout=4s
+action PlayPause
+wait_until playback.is_playing == false timeout=4s
+focus home
+wait_idle 2s
+assert_visible home.resume
+assert_visible home.view-album
+click home.view-album
+assert library.detail.open == true
+assert library.detail.track_count > 1
+assert playback.is_playing == false
+focus home
+wait_idle 2s
+click home.resume
+wait_until playback.is_playing == true timeout=4s
+assert screen.focused == "NowPlaying"
+assert queue.length == 1
+assert queue.current_index == 0
+assert playback.current_title == "Country"
+focus home
+wait_idle 2s
+click home.resume
+assert playback.is_playing == true
+assert queue.length == 1
+focus home
+resize 600 800
+wait_idle 2s
+assert_in_viewport home.resume
+assert_in_viewport home.view-album
+screenshot home-continue-narrow
+wait_until home.recent_count > 0 timeout=40s
+assert home.recent_first_title == "Demo"
+wait_idle 2s
+screenshot home-live-history-narrow

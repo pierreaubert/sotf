@@ -1,0 +1,26 @@
+focus PluginGraph
+wait_idle 2s
+click routing.node.2
+wait_idle 2s
+assert input_mode == "EditingPluginNode"
+assert plugins.graph.selection_count == 1
+screenshot routing-selected-inspector
+click routing.node.0
+wait_idle 2s
+assert input_mode == "EditingPluginNode"
+assert plugins.graph.selection_count == 1
+screenshot routing-selected-endpoint
+action IncrementPluginParam
+assert routing.dirty == false
+assert routing.active_matches_base == true
+click routing.node.2
+action IncrementPluginParam
+assert routing.dirty == true
+assert routing.active_matches_base == true
+click routing.node.0
+action IncrementPluginParam
+assert routing.dirty == true
+assert routing.active_matches_base == true
+click routing-discard
+assert routing.dirty == false
+assert playback.is_playing == false

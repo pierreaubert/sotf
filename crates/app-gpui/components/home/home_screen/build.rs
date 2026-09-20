@@ -12,20 +12,17 @@ use sotf_audio_player::{Album, sotf_api_client::SotfApiAlbum};
 use std::collections::BTreeSet;
 
 pub(super) fn build_home_shelves(
-    albums: &[Album],
+    library: &sotf_audio_player::MusicLibrary,
     collapsed_limit: usize,
     expanded_limit: usize,
 ) -> Vec<HomeShelf> {
+    let albums = &library.albums;
     let display_limit = expanded_limit.max(collapsed_limit);
+    let recent = library.recently_played_albums();
     let favorite = prioritize_cover_refs(sort_album_refs_by_listening(
         albums.iter().filter(|album| album.is_favorite).collect(),
     ));
-    let top_listened = prioritize_cover_refs(sort_album_refs_by_listening(albums.iter().collect()));
-    let favorite_albums = if favorite.is_empty() {
-        top_listened
-    } else {
-        favorite
-    };
+    let favorite_albums = favorite;
     let favorite_row = row_album_keys(&favorite_albums, collapsed_limit);
     let recommended = prioritize_cover_refs(build_recommended(albums, &favorite_row));
     let mut first_two_rows = favorite_row.clone();
@@ -33,6 +30,12 @@ pub(super) fn build_home_shelves(
     let discover = prioritize_cover_refs(build_discover(albums, &first_two_rows));
 
     let mut shelves = vec![
+        HomeShelf {
+            id: "recent".to_string(),
+            title: "Recently played".to_string(),
+            total_count: recent.len(),
+            albums: arc_album_refs(&recent, display_limit),
+        },
         HomeShelf {
             id: "favorite".to_string(),
             title: "Favorite".to_string(),

@@ -36,6 +36,29 @@ pub struct Track {
 }
 
 impl Track {
+    pub(super) fn from_metadata(path: PathBuf, metadata: super::types::TrackMetadata) -> Self {
+        Self {
+            path,
+            title: metadata.title,
+            artist: metadata.artist,
+            track_number: metadata.track_number,
+            duration_secs: metadata.duration_secs,
+            channels: metadata.channels,
+            sample_rate: metadata.sample_rate,
+            bit_depth: metadata.bit_depth,
+            genre: metadata.genre,
+            composer: metadata.composer,
+            disc_number: metadata.disc_number,
+            conductor: metadata.conductor,
+            performer: metadata.performer,
+            isrc: metadata.isrc,
+            album_artist: metadata.album_artist,
+            ensemble: metadata.ensemble,
+            edition: metadata.edition,
+            ..Self::default()
+        }
+    }
+
     /// Get the audio source for this track.
     ///
     /// If an explicit `source` override is set (e.g. for streaming tracks),

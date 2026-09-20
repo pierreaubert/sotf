@@ -12,12 +12,15 @@ impl PlayerView {
         cx.notify();
     }
 
-    pub(super) fn adjust_eq_training_config(
+    pub(super) fn set_eq_training_config(
         &mut self,
         field: EqConfigField,
-        direction: i32,
+        value: f64,
         cx: &mut Context<Self>,
     ) {
+        if !value.is_finite() {
+            return;
+        }
         self.state.update(cx, |state, _| {
             let settings_changed = state
                 .app
@@ -27,26 +30,23 @@ impl PlayerView {
                 .eq
                 .configure_start;
             let listening = &mut state.app.plugin_state.listening_test_state;
-            match field {
-                EqConfigField::Bands => {
-                    listening.eq_config.band_count =
-                        (listening.eq_config.band_count as i32 + direction).clamp(2, 25) as usize;
-                }
-                EqConfigField::Gain => {
-                    listening.eq_config.gain_db =
-                        (listening.eq_config.gain_db + f64::from(direction)).clamp(1.0, 15.0);
-                }
-                EqConfigField::Q => {
-                    listening.eq_config.q =
-                        (listening.eq_config.q + f64::from(direction) * 0.1).clamp(0.2, 10.0);
-                }
-                EqConfigField::Trials => {
-                    listening.eq_config.trial_count =
-                        (listening.eq_config.trial_count as i32 + direction * 5).clamp(5, 100)
-                            as usize;
-                }
+            if listening.eq_session.is_some() {
+                return;
             }
-            listening.eq_session = None;
+            let mut config = listening.eq_config.clone();
+            match field {
+                EqConfigField::Bands => config.band_count = value.round() as usize,
+                EqConfigField::Gain => config.gain_db = value,
+                EqConfigField::Q => config.q = value,
+                EqConfigField::Trials => config.trial_count = value.round() as usize,
+                EqConfigField::MinFrequency => config.min_frequency_hz = value,
+                EqConfigField::MaxFrequency => config.max_frequency_hz = value,
+            }
+            if config.validate().is_err() {
+                return;
+            }
+            listening.eq_config = config;
+            listening.eq_active_course = None;
             listening.eq_selected_band = 0;
             listening.eq_filtered = false;
             listening.status = settings_changed.into();
@@ -81,6 +81,13 @@ impl PlayerView {
     }
 
     pub(super) fn start_eq_training_session(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _| {
+            let workspace = &mut state.app.plugin_state.plugin_ui_state.listening_workspace;
+            // A source probe started before this session must never replace its audio,
+            // including if the session ends before the probe finishes.
+            workspace.source_request = None;
+            workspace.practice = Default::default();
+        });
         self.ensure_eq_audition_plugin(cx);
         let started = self.state.update(cx, |state, _| {
             let session_started = state
@@ -157,39 +164,211 @@ impl PlayerView {
         cx.notify();
     }
 
+    pub(super) fn browse_eq_training_source(&mut self, cx: &mut Context<Self>) {
+        self.browse_listening_source(EarTrainingSurface::EqBands, cx);
+    }
+
+    pub(super) fn browse_listening_source(
+        &mut self,
+        surface: EarTrainingSurface,
+        cx: &mut Context<Self>,
+    ) {
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+        {
+            let title = self
+                .state
+                .read(cx)
+                .app
+                .ui_state
+                .translations
+                .listening_test
+                .eq
+                .choose_source();
+            let owner = cx.entity().downgrade();
+            cx.spawn(async move |_, cx| {
+                let file = rfd::AsyncFileDialog::new()
+                    .set_title(title)
+                    .add_filter(
+                        "Audio",
+                        &[
+                            "wav", "flac", "mp3", "m4a", "ogg", "opus", "aiff", "aif", "aac",
+                            "dsf", "dff", "wv", "caf",
+                        ],
+                    )
+                    .pick_file()
+                    .await;
+                if let Some(file) = file {
+                    let _ = owner.update(cx, |view, cx| {
+                        view.load_listening_source(file.path().to_path_buf(), surface, cx)
+                    });
+                }
+            })
+            .detach();
+        }
+    }
+
+    /// Native picker and QA both use the same bounded metadata-probe worker.
+    pub(crate) fn load_eq_training_source(
+        &mut self,
+        path: std::path::PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        self.load_listening_source(path, EarTrainingSurface::EqBands, cx);
+    }
+
+    pub(crate) fn load_listening_source(
+        &mut self,
+        path: std::path::PathBuf,
+        surface: EarTrainingSurface,
+        cx: &mut Context<Self>,
+    ) {
+        let state = self.state.read(cx);
+        if state.app.ui_state.current_screen != crate::app::Screen::ListeningTest
+            || state.app.plugin_state.listening_test_state.surface != surface
+            || (surface == EarTrainingSurface::BlindComparison && self.comparison_setup_locked(cx))
+            || (surface == EarTrainingSurface::EqBands
+                && state
+                    .app
+                    .plugin_state
+                    .listening_test_state
+                    .eq_session
+                    .is_some())
+        {
+            return;
+        }
+        let request = std::sync::Arc::new(());
+        self.state.update(cx, |state, _| {
+            state
+                .app
+                .plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .source_request = Some(request.clone());
+        });
+        let owner = cx.entity().downgrade();
+        cx.notify();
+        cx.spawn(async move |_, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { sotf_audio_player::Album::from_audio_file(&path) })
+                .await;
+            let _ = owner.update(cx, |view, cx| {
+                view.state.update(cx, |state, cx| {
+                    let workspace = &mut state.app.plugin_state.plugin_ui_state.listening_workspace;
+                    if !workspace
+                        .source_request
+                        .as_ref()
+                        .is_some_and(|current| std::sync::Arc::ptr_eq(current, &request))
+                    {
+                        return;
+                    }
+                    workspace.source_request = None;
+                    if state.app.ui_state.current_screen != crate::app::Screen::ListeningTest
+                        || state.app.plugin_state.listening_test_state.surface != surface
+                        || (surface == EarTrainingSurface::EqBands
+                            && state
+                                .app
+                                .plugin_state
+                                .listening_test_state
+                                .eq_session
+                                .is_some())
+                        || (surface == EarTrainingSurface::BlindComparison && {
+                            let session =
+                                state.app.plugin_state.listening_test_state.ab_test.view();
+                            session.runtime_active || session.completed_trials > 0
+                        })
+                    {
+                        cx.notify();
+                        return;
+                    }
+                    let text = state.app.ui_state.translations.listening_test.eq.clone();
+                    match result.and_then(|album| state.app.play_single_audio_file(album)) {
+                        Ok(Some(source)) => {
+                            if surface == EarTrainingSurface::BlindComparison {
+                                // Even reloading the same path invalidates a pending
+                                // measurement: its file contents may have changed.
+                                state
+                                    .app
+                                    .plugin_state
+                                    .plugin_ui_state
+                                    .listening_workspace
+                                    .preparation_request = None;
+                                let listening = &mut state.app.plugin_state.listening_test_state;
+                                let _ = listening.ab_test.clear_session();
+                                listening.status.clear();
+                            } else if let Some(path) = source.as_path() {
+                                let listening = &mut state.app.plugin_state.listening_test_state;
+                                let index = listening
+                                    .eq_sources
+                                    .iter()
+                                    .position(|existing| existing == path)
+                                    .unwrap_or_else(|| {
+                                        listening.eq_sources.push(path.to_path_buf());
+                                        listening.eq_sources.len() - 1
+                                    });
+                                listening.eq_source_index = index;
+                                listening.eq_loop_range = None;
+                                listening.eq_loop_enabled = false;
+                                listening.status =
+                                    text.source_position(index + 1, listening.eq_sources.len());
+                            }
+                            Self::play_track(state, source);
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            let message = text.source_error(&error);
+                            state.app.plugin_state.listening_test_state.status = message.clone();
+                            state.app.ui_state.toast_message =
+                                Some(crate::app::types::ToastMessage::error(message));
+                        }
+                    }
+                    cx.notify();
+                });
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     pub(super) fn add_current_eq_source(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _| {
             let Some(path) = state.app.get_current_track_path() else {
                 return;
             };
+            let text = state.app.ui_state.translations.listening_test.eq.clone();
+            state
+                .app
+                .plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .source_request = None;
             let listening = &mut state.app.plugin_state.listening_test_state;
-            if !listening.eq_sources.contains(&path) {
-                listening.eq_sources.push(path);
-                listening.eq_source_index = listening.eq_sources.len() - 1;
-            }
-            listening.status = format!("{} training sources", listening.eq_sources.len());
+            let index = listening
+                .eq_sources
+                .iter()
+                .position(|existing| existing == &path)
+                .unwrap_or_else(|| {
+                    listening.eq_sources.push(path);
+                    listening.eq_sources.len() - 1
+                });
+            listening.eq_source_index = index;
+            listening.status = text.source_position(index + 1, listening.eq_sources.len());
         });
         cx.notify();
     }
 
     pub(super) fn navigate_eq_source(&mut self, direction: i32, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
-            let listening = &mut state.app.plugin_state.listening_test_state;
+        let path = {
+            let state = self.state.read(cx);
+            let listening = &state.app.plugin_state.listening_test_state;
             if listening.eq_sources.is_empty() {
                 return;
             }
-            listening.eq_source_index = (listening.eq_source_index as i32 + direction)
-                .rem_euclid(listening.eq_sources.len() as i32)
-                as usize;
-            let path = listening.eq_sources[listening.eq_source_index].clone();
-            listening.status = format!(
-                "Source {}/{}",
-                listening.eq_source_index + 1,
-                listening.eq_sources.len()
-            );
-            Self::play_track(state, sotf_audio::decoder::AudioSource::File(path));
-        });
-        cx.notify();
+            let index = (listening.eq_source_index as i64 + i64::from(direction))
+                .rem_euclid(listening.eq_sources.len() as i64) as usize;
+            listening.eq_sources[index].clone()
+        };
+        self.load_eq_training_source(path, cx);
     }
 
     pub(super) fn set_eq_loop_boundary(&mut self, start: bool, cx: &mut Context<Self>) {
@@ -258,6 +437,9 @@ impl PlayerView {
     }
 
     pub(super) fn select_eq_training_band(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.eq_practice_locked(cx) {
+            return;
+        }
         self.state.update(cx, |state, _| {
             let listening = &mut state.app.plugin_state.listening_test_state;
             let answer_count = listening
@@ -284,6 +466,9 @@ impl PlayerView {
     }
 
     pub(super) fn move_eq_training_selection(&mut self, direction: i32, cx: &mut Context<Self>) {
+        if self.eq_practice_locked(cx) {
+            return;
+        }
         self.state.update(cx, |state, _| {
             let listening = &mut state.app.plugin_state.listening_test_state;
             let answer_count = listening
@@ -311,8 +496,28 @@ impl PlayerView {
         cx.notify();
     }
 
+    fn eq_practice_locked(&self, cx: &Context<Self>) -> bool {
+        let plugins = &self.state.read(cx).app.plugin_state;
+        plugins
+            .plugin_ui_state
+            .listening_workspace
+            .practice
+            .interaction_locked()
+            || plugins
+                .listening_test_state
+                .eq_session
+                .as_ref()
+                .is_none_or(|session| session.current_question.is_none())
+    }
+
     pub(super) fn activate_eq_training_path(&mut self, filtered: bool, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _| {
+        if !self.eq_practice_locked(cx) {
+            self.configure_eq_training_path(filtered, cx);
+        }
+    }
+
+    fn configure_eq_training_path(&mut self, filtered: bool, cx: &mut Context<Self>) -> bool {
+        let succeeded = self.state.update(cx, |state, _| {
             let eq_text = state.app.ui_state.translations.listening_test.eq.clone();
             let question = state
                 .app
@@ -334,7 +539,7 @@ impl PlayerView {
                                 .iter()
                                 .position(|node| node.plugin.plugin_type() == PluginType::ABCompare)
                         })
-                        .ok_or_else(|| eq_text.add_ab_plugin.to_owned())?;
+                        .ok_or_else(|| eq_text.comparison.add_ab_plugin.to_owned())?;
                     let path_a = serde_json::to_string(&PathConfig::None)
                         .map_err(|error| error.to_string())?;
                     let path_b = serde_json::to_string(&PathConfig::Plugin {
@@ -350,29 +555,34 @@ impl PlayerView {
                         .app
                         .set_plugin_param(plugin_idx, 2, if filtered { 1.0 } else { 0.0 });
                     state.app.set_plugin_param(plugin_idx, 4, 0.0);
-                    state.app.set_plugin_param(plugin_idx, 7, 0.0);
+                    state.app.set_plugin_param(plugin_idx, 7, 100.0);
                     state.app.set_plugin_param(plugin_idx, 8, 20.0);
                     Ok(())
                 });
+            let succeeded = result.is_ok();
             let listening = &mut state.app.plugin_state.listening_test_state;
             match result {
                 Ok(()) => {
                     listening.eq_filtered = filtered;
                     listening.status = if filtered {
-                        eq_text.filtered_active
+                        eq_text.comparison.filtered_active
                     } else {
-                        eq_text.original_active
+                        eq_text.comparison.original_active
                     }
                     .into();
                 }
                 Err(error) => listening.status = error,
             }
+            succeeded
         });
         cx.notify();
+        succeeded
     }
 
     pub(super) fn submit_eq_training_answer(&mut self, cx: &mut Context<Self>) {
-        self.activate_eq_training_path(false, cx);
+        if self.eq_practice_locked(cx) || !self.configure_eq_training_path(false, cx) {
+            return;
+        }
         self.state.update(cx, |state, _| {
             let eq_text = state.app.ui_state.translations.listening_test.eq.clone();
             let listening = &mut state.app.plugin_state.listening_test_state;
@@ -395,7 +605,11 @@ impl PlayerView {
     }
 
     pub(super) fn advance_eq_training_question(&mut self, cx: &mut Context<Self>) {
+        if self.eq_practice_locked(cx) {
+            return;
+        }
         let (advanced, progress_to_save) = self.state.update(cx, |state, _| {
+            let eq_text = state.app.ui_state.translations.listening_test.eq.clone();
             let next_trial = state.app.ui_state.translations.listening_test.eq.next;
             let configure_start = state
                 .app
@@ -415,11 +629,10 @@ impl PlayerView {
                     }
                     Ok(None) => {
                         completed_session = Some(session.clone());
-                        format!(
-                            "Session complete: {}/{} correct ({:.0}%).",
+                        eq_text.completion_status(
                             session.correct_count(),
                             session.trials.len(),
-                            session.accuracy() * 100.0
+                            session.accuracy() * 100.0,
                         )
                     }
                     Err(error) => error.to_string(),
@@ -455,6 +668,117 @@ impl PlayerView {
         if advanced {
             self.activate_eq_training_path(false, cx);
         }
+        cx.notify();
+    }
+
+    pub(super) fn toggle_eq_practice_pause(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, cx| {
+            let practice = &mut state
+                .app
+                .plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .practice;
+            if practice.confirm_end {
+                return;
+            }
+            let playing = state.app.playback.is_playing;
+            let result = if practice.paused && practice.resume_playback {
+                state.player.resume()
+            } else if !practice.paused && playing {
+                state.player.pause()
+            } else {
+                Ok(())
+            };
+            match result {
+                Ok(()) => {
+                    let resumed = practice.paused && (playing || practice.resume_playback);
+                    if !practice.paused {
+                        practice.resume_playback = playing;
+                    }
+                    practice.paused = !practice.paused;
+                    state.app.playback.is_playing = resumed;
+                    if resumed && !playing {
+                        state.app.record_playback_resumed();
+                    } else if playing && !resumed {
+                        state.app.record_playback_paused();
+                    }
+                }
+                Err(error) => {
+                    state.app.plugin_state.listening_test_state.status = error.to_string()
+                }
+            }
+            cx.notify();
+        });
+    }
+
+    pub(super) fn confirm_eq_practice_end(
+        &mut self,
+        confirm: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _| {
+            state
+                .app
+                .plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .practice
+                .confirm_end = confirm;
+        });
+        self.focus_handle.focus(window, cx);
+        cx.notify();
+    }
+
+    pub(super) fn end_eq_practice(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self
+            .state
+            .read(cx)
+            .app
+            .plugin_state
+            .plugin_ui_state
+            .listening_workspace
+            .practice
+            .confirm_end
+        {
+            return;
+        }
+        // Restore the original audition path before discarding its question.
+        if !self.configure_eq_training_path(false, cx) {
+            return;
+        }
+        let progress = self.state.update(cx, |state, _| {
+            let listening = &mut state.app.plugin_state.listening_test_state;
+            let session = listening.eq_session.as_mut()?;
+            if !session.finish_early() {
+                return None;
+            }
+            let keep = !session.trials.is_empty();
+            if keep {
+                listening
+                    .eq_progress
+                    .record(session, listening.eq_active_course);
+            }
+            listening.status.clear();
+            state
+                .app
+                .plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .practice = Default::default();
+            keep.then(|| listening.eq_progress.clone())
+        });
+        if let (Some(path), Some(progress)) = (
+            sotf_audio_player::config::get_ear_training_progress_path(),
+            progress,
+        ) && let Err(error) = progress.save_atomic(&path)
+        {
+            self.state.update(cx, |state, _| {
+                state.app.plugin_state.listening_test_state.status = error.to_string();
+            });
+        }
+        self.focus_handle.focus(window, cx);
         cx.notify();
     }
 

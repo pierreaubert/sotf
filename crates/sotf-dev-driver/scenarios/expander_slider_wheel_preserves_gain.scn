@@ -1,0 +1,17 @@
+# Ordinary wheel events over the gain slider must not change its value.
+resize 600 1000
+focus Studio
+plugin_clear
+plugin_add Expander
+action PluginSelectFirstUser
+wait_idle 1s
+scroll rack.params 10000
+scroll rack.params -400
+screenshot expander-wheel-ready
+scroll_into_view rack.params plugin.control.2.4
+assert plugins.plugin.2.param.4.value == 40 tolerance=0.001
+scroll plugin.control.2.4 -300
+wait_idle 500ms
+screenshot expander-center-wheel
+assert plugins.plugin.2.param.4.value == 40 tolerance=0.001
+assert playback.is_playing == false

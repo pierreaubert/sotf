@@ -1,0 +1,77 @@
+# Native Gate detector setup at narrow width.
+resize 600 1000
+focus Studio
+plugin_clear
+plugin_add Gate
+action PluginSelectFirstUser
+wait_idle 1s
+click rack.config.toggle
+wait_idle 500ms
+scroll_into_view rack.config.scroll plugin.choice.2.8.1
+click plugin.choice.2.8.1
+assert plugins.plugin.2.param.8.value == 1
+assert_selected plugin.choice.2.8.1 == true
+scroll_into_view rack.config.scroll plugin.choice.2.9.1
+click plugin.choice.2.9.1
+assert plugins.plugin.2.param.9.value == 1
+assert_selected plugin.choice.2.9.1 == true
+scroll_into_view rack.config.scroll plugin.control.2.7
+click plugin.control.2.7
+wait_idle 500ms
+scroll_into_view rack.config.scroll plugin.param.2.7.exact
+click plugin.param.2.7.exact
+key cmd-a
+type "80"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.7.value == 80 tolerance=0.001
+screenshot gate-detector-setup
+scroll_into_view rack.config.scroll plugin.choice.2.6.0
+assert plugins.plugin.2.param.7.value == 80 tolerance=0.001
+click plugin.choice.2.6.0
+assert plugins.plugin.2.param.7.value == 80 tolerance=0.001
+assert plugins.plugin.2.param.6.value == 0
+assert_selected plugin.choice.2.6.0 == true
+scroll_into_view rack.config.scroll plugin.choice.2.10.1
+assert plugins.plugin.2.param.7.value == 80 tolerance=0.001
+click plugin.choice.2.10.1
+assert plugins.plugin.2.param.7.value == 80 tolerance=0.001
+assert plugins.plugin.2.param.10.value == 1
+assert_selected plugin.choice.2.10.1 == true
+wait_idle 1s
+assert plugins.plugin.2.param.7.value == 80 tolerance=0.001
+screenshot gate-before-close
+click rack.config.toggle
+assert plugins.plugin.2.param.7.value == 80 tolerance=0.001
+wait_idle 500ms
+assert plugins.plugin.2.param.7.value == 80 tolerance=0.001
+click rack.config.toggle
+assert plugins.plugin.2.param.7.value == 80 tolerance=0.001
+wait_idle 500ms
+assert plugins.plugin.2.param.7.value == 80 tolerance=0.001
+assert plugins.plugin.2.param.6.value == 0
+assert plugins.plugin.2.param.10.value == 1
+scroll_into_view rack.config.scroll plugin.choice.2.6.1
+assert plugins.plugin.2.param.7.value == 80 tolerance=0.001
+click plugin.choice.2.6.1
+assert plugins.plugin.2.param.7.value == 80 tolerance=0.001
+assert plugins.plugin.2.param.6.value == 1
+scroll_into_view rack.config.scroll plugin.choice.2.10.0
+assert plugins.plugin.2.param.7.value == 80 tolerance=0.001
+click plugin.choice.2.10.0
+assert plugins.plugin.2.param.7.value == 80 tolerance=0.001
+assert plugins.plugin.2.param.10.value == 0
+screenshot gate-detector-toggles
+click rack.config.toggle
+assert plugins.plugin.2.param.7.value == 80 tolerance=0.001
+
+plugin_chain_save $SOTF_QA_DIR/gate-detector-settings.json
+plugin_remove 2
+assert plugins.user_count == 0
+plugin_chain_load $SOTF_QA_DIR/gate-detector-settings.json
+assert plugins.plugin.2.type == "Gate"
+assert plugins.plugin.2.param.6.value == 1
+assert plugins.plugin.2.param.7.value == 80 tolerance=0.001
+assert plugins.plugin.2.param.8.value == 1
+assert plugins.plugin.2.param.9.value == 1
+assert plugins.plugin.2.param.10.value == 0

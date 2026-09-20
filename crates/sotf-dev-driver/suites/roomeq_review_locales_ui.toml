@@ -1,0 +1,79 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+demo_audio_dir = "data_tests/audio"
+readiness_timeout = "20s"
+size = "600x1000"
+
+[[scenario]]
+name = "roomeq-review-sources-german"
+language = "German"
+theme = "Light"
+font_scale = 1.5
+path = "crates/sotf-dev-driver/scenarios/roomeq_review_export_apply.scn"
+timeout = "180s"
+tags = ["roomeq", "ui", "review", "export", "apply"]
+
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true
+[[scenario]]
+name = "roomeq-review-sources-french"
+language = "French"
+theme = "Light"
+font_scale = 1.5
+path = "crates/sotf-dev-driver/scenarios/roomeq_review_export_apply.scn"
+timeout = "180s"
+tags = ["roomeq", "ui", "review", "export", "apply"]
+
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true
+[[scenario]]
+name = "roomeq-review-sources-spanish"
+language = "Spanish"
+theme = "Light"
+font_scale = 1.5
+path = "crates/sotf-dev-driver/scenarios/roomeq_review_export_apply.scn"
+timeout = "180s"
+tags = ["roomeq", "ui", "review", "export", "apply"]
+
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true
+[[scenario]]
+name = "roomeq-review-sources-pseudo"
+language = "Pseudo"
+theme = "Light"
+font_scale = 1.5
+path = "crates/sotf-dev-driver/scenarios/roomeq_review_export_apply.scn"
+timeout = "180s"
+tags = ["roomeq", "ui", "review", "export", "apply"]
+
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true

@@ -313,7 +313,7 @@ pub fn render_mb_compressor_plugin(
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
-                            "Threshold",
+                            text.label("Threshold"),
                             state.threshold_db,
                             pk(MC, "threshold").min_f64(),
                             pk(MC, "threshold").max_f64(),
@@ -328,7 +328,7 @@ pub fn render_mb_compressor_plugin(
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
-                            "Ratio",
+                            text.label("Ratio"),
                             state.ratio,
                             pk(MC, "ratio").min_f64(),
                             pk(MC, "ratio").max_f64(),
@@ -343,7 +343,7 @@ pub fn render_mb_compressor_plugin(
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
-                            "Knee",
+                            text.label("Knee"),
                             state.knee_db,
                             pk(MC, "knee").min_f64(),
                             pk(MC, "knee").max_f64(),
@@ -370,7 +370,7 @@ pub fn render_mb_compressor_plugin(
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
-                            "Attack",
+                            text.label("Attack"),
                             state.attack_ms,
                             pk(MC, "attack").min_f64(),
                             pk(MC, "attack").max_f64(),
@@ -385,7 +385,7 @@ pub fn render_mb_compressor_plugin(
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
-                            "Release",
+                            text.label("Release"),
                             state.release_ms,
                             pk(MC, "release").min_f64(),
                             pk(MC, "release").max_f64(),
@@ -401,7 +401,7 @@ pub fn render_mb_compressor_plugin(
                             d.child(render_vertical_slider_with_ticks(
                                 entity.clone(),
                                 plugin_idx,
-                                "Makeup",
+                                text.label("Makeup"),
                                 state.makeup_gain_db,
                                 -24.0,
                                 24.0,

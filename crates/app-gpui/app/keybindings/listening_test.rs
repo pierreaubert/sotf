@@ -8,6 +8,16 @@ use gpui::KeyBinding;
 pub(super) fn listening_test_bindings() -> Vec<KeyBinding> {
     vec![
         KeyBinding::new(
+            "ctrl-alt-n",
+            actions::ListeningToggleMetadata,
+            Some("ListeningTest"),
+        ),
+        KeyBinding::new(
+            "ctrl-alt-t",
+            actions::ListeningToggleTrialDetails,
+            Some("ListeningTest"),
+        ),
+        KeyBinding::new(
             "ctrl-e",
             actions::EarTrainingShowEqBands,
             Some("ListeningTest"),

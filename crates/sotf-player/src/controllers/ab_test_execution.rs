@@ -268,7 +268,7 @@ pub fn save_ab_test_session(
 pub fn load_ab_test_session(path: impl AsRef<Path>) -> Result<AbTestSession, AbTestError> {
     let json = std::fs::read(path).map_err(|error| AbTestError::SessionIo(error.to_string()))?;
     let session: AbTestSession = serde_json::from_slice(&json)
-        .map_err(|error| AbTestError::Serialization(error.to_string()))?;
+        .map_err(|error| AbTestError::SessionFormat(error.to_string()))?;
     session.validate()?;
     Ok(session)
 }
@@ -496,6 +496,22 @@ mod tests {
         assert!(restored.trials.is_empty());
         assert_eq!(restored.pending_mode(), None);
         restored.validate().unwrap();
+    }
+
+    #[test]
+    fn incompatible_session_document_reports_a_load_error() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("session.json");
+        for contents in [r#"{"version":2,"plugins":[]}"#, "{invalid json"] {
+            std::fs::write(&path, contents).unwrap();
+            let error = load_ab_test_session(&path).unwrap_err();
+            assert!(matches!(error, AbTestError::SessionFormat(_)));
+            assert!(
+                error
+                    .to_string()
+                    .starts_with("could not load listening-test session:")
+            );
+        }
     }
 
     #[test]

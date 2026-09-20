@@ -6,7 +6,7 @@ use crate::app::state::{
     EXTERNAL_PLUGIN_SCAN_PAGE_SIZE, ExternalPluginRuntimeSummary, ExternalPluginScanCounts,
     ExternalPluginWorkerHealth, external_plugin_error_key, external_plugin_worker_health,
 };
-use crate::app::types::PluginUpdateType;
+use crate::app::types::{PluginUpdateType, PreferencesSetting};
 use crate::components::design::Ds;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -38,14 +38,28 @@ impl PlayerView {
         let plugin_sandbox_status_section: Option<AnyElement> = {
             #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             {
+                use gpui_ui_kit::{
+                    AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState,
+                };
                 let external = text.external;
                 let ui = state.app.plugin_state.external_plugin_ui.clone();
                 let plugins = state.app.plugin_state.scanned_external_plugins.clone();
+                cx.register_accessible(AccessibilityNode {
+                    element_id: "scan-external-plugins".into(),
+                    label: if ui.scan_in_progress {
+                        external.scanning
+                    } else {
+                        external.scan
+                    }
+                    .into(),
+                    props: AriaProps::with_role(AriaRole::Button)
+                        .maybe_state(ui.scan_in_progress, AriaState::Disabled),
+                });
                 let counts = ExternalPluginScanCounts::from_plugins(&plugins);
 
                 let runtime_summary = ui
                     .runtime_summary
-                    .map(|summary| render_external_runtime_summary(external, summary, &theme));
+                    .map(|summary| render_external_runtime_summary(&d, external, summary, &theme));
                 let runtime_error = ui
                     .runtime_error
                     .as_deref()
@@ -136,11 +150,63 @@ impl PlayerView {
                                     .size(ButtonSize::Xs)
                                     .disabled(ui.scan_in_progress)
                                     .theme(theme.to_button_theme())
-                                    .on_click_event(
-                                        cx.listener(move |view, _: &ClickEvent, _window, cx| {
-                                            start_external_plugin_scan(view, external, cx);
-                                        }),
-                                    ),
+                                    .build()
+                                    .text_size(d.text_sm)
+                                    .px(d.pad_x)
+                                    .py(d.pad_y_half)
+                                    .focusable()
+                                    .when_some(
+                                        self.preference_focus_handle(
+                                            PreferencesSetting::PluginDiscovery,
+                                            cx,
+                                        ),
+                                        |button, focus| {
+                                            button.track_focus(&focus).track_focus_element(&focus)
+                                        },
+                                    )
+                                    .on_click(cx.listener(
+                                        move |view, _: &ClickEvent, _window, cx| {
+                                            if !view
+                                                .state
+                                                .read(cx)
+                                                .app
+                                                .plugin_state
+                                                .external_plugin_ui
+                                                .scan_in_progress
+                                            {
+                                                start_external_plugin_scan(view, external, cx);
+                                                cx.notify();
+                                            }
+                                        },
+                                    ))
+                                    .on_key_down(cx.listener(
+                                        move |view, event: &KeyDownEvent, _window, cx| {
+                                            if matches!(
+                                                event.keystroke.key.as_str(),
+                                                "enter" | "space"
+                                            ) {
+                                                if !view
+                                                    .state
+                                                    .read(cx)
+                                                    .app
+                                                    .plugin_state
+                                                    .external_plugin_ui
+                                                    .scan_in_progress
+                                                {
+                                                    start_external_plugin_scan(view, external, cx);
+                                                    cx.notify();
+                                                }
+                                                cx.stop_propagation();
+                                            }
+                                        },
+                                    ))
+                                    .map(|button| {
+                                        self.preference_control(
+                                            PreferencesSetting::PluginDiscovery,
+                                            button,
+                                            cx,
+                                        )
+                                    }),
                                 ),
                         )
                         .when_some(scan_error, |stack, error| stack.child(error))
@@ -163,6 +229,8 @@ impl PlayerView {
         let current_value = max_cores.unwrap_or(total_cores) as f64;
 
         div()
+            .w_full()
+            .min_w_0()
             .flex()
             .flex_col()
             .gap(d.section_lg)
@@ -188,8 +256,13 @@ impl PlayerView {
                     })
                     // CPU cores row
                     .child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap(d.gap_md)
+                            .w_full()
+                            .min_w_0()
                             .child(
                                 VStack::new()
                                     .spacing(StackSpacing::Xs)
@@ -210,7 +283,9 @@ impl PlayerView {
                                         .color(theme.text_secondary),
                                     )
                                     .build()
-                                    .flex_1(),
+                                    .flex_1()
+                                    .min_w(rems(12.0))
+                                    .max_w_full(),
                             )
                             .child({
                                 let state_entity = self.state.clone();
@@ -233,6 +308,13 @@ impl PlayerView {
                                             }
                                         });
                                     })
+                                    .map(|input| {
+                                        self.preference_number_input(
+                                            PreferencesSetting::CpuLimit,
+                                            input,
+                                            cx,
+                                        )
+                                    })
                             }),
                     ),
             )
@@ -241,6 +323,7 @@ impl PlayerView {
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn render_external_runtime_summary(
+    d: &Ds,
     text: ExternalPluginSettingsTranslations,
     summary: ExternalPluginRuntimeSummary,
     theme: &Theme,
@@ -261,8 +344,10 @@ fn render_external_runtime_summary(
             .color(theme.text_secondary),
         )
         .child(
-            HStack::new()
-                .spacing(StackSpacing::Sm)
+            div()
+                .flex()
+                .flex_wrap()
+                .gap(d.gap)
                 .child(
                     Text::new(format!(
                         "{}: {}",
@@ -286,8 +371,7 @@ fn render_external_runtime_summary(
                     ))
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
-                )
-                .build(),
+                ),
         )
         .build()
         .into_any_element()

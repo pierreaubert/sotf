@@ -1,0 +1,45 @@
+action ListeningResetGuide
+click listening.guide.acknowledge
+click listening.tab-comparison
+action ListeningSetSourceFixture {"mode":"comparison"}
+assert playback.is_playing == false
+wait_idle 1s
+screenshot listening-setup-header
+scroll_into_view listening.comparison.content listening.planned-trials
+click listening.planned-trials
+key cmd-a
+type "25"
+key enter
+wait_until listening.planned_trials == 25 timeout=3s
+scroll_into_view listening.comparison.content listening.capture.a
+assert_in_viewport listening.capture.a
+click listening.capture.a
+wait_idle 500ms
+scroll_into_view listening.comparison.content listening.capture.b
+assert_in_viewport listening.capture.b
+click listening.capture.b
+wait_until listening.paths_ready == true timeout=3s
+wait_idle 1s
+scroll_into_view listening.comparison.content listening.session.prepare
+click listening.session.prepare
+wait_until listening.session_ready == true timeout=20s
+key ctrl-b
+wait_until listening.pending_mode == "BlindAb" timeout=3s
+assert playback.is_playing == false
+scroll_into_view listening.workspace.content listening.end
+click listening.end
+wait_until listening.confirm_end == true timeout=3s
+assert_in_viewport listening.confirm-end
+click listening.confirm-end
+wait_until listening.results_open == true timeout=3s
+assert listening.completed_trials == 0
+assert listening.pending_mode == null
+assert listening.runtime_active == false
+assert_visible listening.empty-results
+assert_absent listening.trials
+assert_absent listening.preference-totals
+scroll_into_view listening.workspace.content listening.session.comparison-save-results
+assert_enabled listening.session.comparison-save-results == false
+assert listening.session_file_exists == false
+assert playback.is_playing == false
+screenshot listening-empty-results

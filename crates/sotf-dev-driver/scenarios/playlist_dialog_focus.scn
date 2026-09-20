@@ -1,0 +1,56 @@
+# 2026-09-08: removing a focused Playlist dialog control left navigation
+# actions without the PlayerView dispatch path. Restore page focus in
+# components/playlists.rs only when the dialog/control actually disappears.
+# Run: target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/playlists_ui.toml
+focus Library
+wait_until library.album_count > 0 timeout=10s
+focus Playlists
+wait_idle 2s
+click playlist.create
+click playlist.save
+assert playlists.dialog == "Create"
+assert playlists.error != null
+assert_visible playlist.name_input
+click playlist.name_input
+type "Focus recovery"
+click playlist.save
+wait_until playlists.dialog == "None" timeout=2s
+key S
+wait_until screen.focused == "Settings" timeout=2s
+wait_idle 1s
+click preferences.done
+wait_until screen.focused == "Playlists" timeout=2s
+click playlist.create
+click playlist.cancel
+assert playlists.dialog == "None"
+key S
+wait_until screen.focused == "Settings" timeout=2s
+wait_idle 1s
+click preferences.done
+wait_until screen.focused == "Playlists" timeout=2s
+click playlist.open.0
+click playlist.delete_active
+click playlist.delete_cancel
+assert playlists.dialog == "None"
+assert playlists.count == 1
+key S
+wait_until screen.focused == "Settings" timeout=2s
+wait_idle 1s
+click preferences.done
+wait_until screen.focused == "Playlists" timeout=2s
+click playlist.delete_active
+click playlist.delete_confirm
+assert playlists.count == 0
+key S
+wait_until screen.focused == "Settings" timeout=2s
+wait_idle 1s
+click preferences.done
+wait_until screen.focused == "Playlists" timeout=2s
+click playlist.undo_delete
+assert playlists.count == 1
+key S
+wait_until screen.focused == "Settings" timeout=2s
+wait_idle 1s
+click preferences.done
+assert screen.focused == "Playlists"
+assert playback.is_playing == false

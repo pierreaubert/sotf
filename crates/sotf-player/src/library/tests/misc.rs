@@ -44,6 +44,21 @@ fn test_extract_wavpack_metadata_reports_multichannel_layout() {
     assert_eq!(metadata.bit_depth, Some(32));
 }
 
+#[test]
+fn single_audio_file_preserves_format_metadata_without_scanning() {
+    let file = tempfile::NamedTempFile::with_suffix(".wv").unwrap();
+    write_minimal_wavpack_10ch(file.path());
+    let album = Album::from_audio_file(file.path()).unwrap();
+    assert_eq!(album.tracks.len(), 1);
+    assert_eq!(album.tracks[0].path, file.path().canonicalize().unwrap());
+    assert_eq!(album.tracks[0].channels, Some(10));
+    assert_eq!(album.tracks[0].sample_rate, Some(48_000));
+    assert_eq!(album.tracks[0].bit_depth, Some(32));
+    let invalid = tempfile::NamedTempFile::with_suffix(".wav").unwrap();
+    assert!(Album::from_audio_file(invalid.path()).is_err());
+    assert!(Album::from_audio_file(file.path().parent().unwrap()).is_err());
+}
+
 /// Helper function to create a test track with just an artist
 fn test_track_with_artist(artist: &str) -> Track {
     Track {

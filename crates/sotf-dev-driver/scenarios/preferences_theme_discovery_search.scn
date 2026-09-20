@@ -1,0 +1,48 @@
+focus Settings
+resize 600 800
+wait_idle 2s
+click preferences.search
+type "theme mode"
+wait_idle 1s
+click preferences.result.ThemeMode
+wait_idle 2s
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.ThemeMode
+click settings.appearance.mode.follow_system
+wait_idle 1s
+assert settings.theme_mode == "system"
+click preferences.search
+type "scheduled theme"
+wait_idle 1s
+click preferences.result.ThemeMode
+wait_idle 2s
+key tab
+key enter
+wait_idle 1s
+assert settings.theme_mode == "light"
+key tab
+key enter
+wait_idle 1s
+assert settings.theme_mode == "dark"
+assert_in_viewport settings.appearance.mode.scheduled
+key tab
+key enter
+wait_idle 1s
+assert settings.theme_mode == "scheduled"
+screenshot preferences-theme-search
+click preferences.search
+type "plugin discovery"
+wait_idle 1s
+click preferences.result.PluginDiscovery
+wait_idle 2s
+assert settings.active_tab == "Misc"
+assert preferences.setting == "PluginDiscovery"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.PluginDiscovery
+assert settings.plugin_scan_in_progress == false
+assert settings.plugin_scan_completed == false
+key enter
+wait_until settings.plugin_scan_completed == true timeout=30s
+assert settings.plugin_scan_in_progress == false
+screenshot preferences-plugin-discovery-search
+assert playback.is_playing == false

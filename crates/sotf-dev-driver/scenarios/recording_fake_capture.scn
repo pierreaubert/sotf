@@ -53,5 +53,12 @@ assert      recording.bass_anchor_complete == true
 click       recording.next
 assert      recording.step == "Evaluating"
 screenshot  recording-evaluating
+assert_visible recording.accept.0
+assert_visible recording.accept.1
+assert_enabled recording.next == false
+click       recording.accept.0
+assert_enabled recording.next == false
+click       recording.accept.1
+assert_enabled recording.next == true
 click       recording.next
 assert      recording.step == "Saving"

@@ -34,7 +34,6 @@ use sotf_audio_player_gpui::components::plugins::theme::{
     PluginThemeId, plugin_theme_id_for_app_theme,
 };
 use sotf_audio_player_gpui::components::plugins::ui_layout_renderer::extract_file_paths;
-use sotf_audio_player_gpui::components::room_eq::room_eq_header_uses_icon_only_steps;
 use sotf_audio_player_gpui::components::wizard_continue_label;
 use sotf_audio_player_gpui::components::{settings_tab_icon_name, settings_tab_label};
 use sotf_audio_player_gpui::i18n::{
@@ -515,7 +514,7 @@ fn eq_renderer_uses_curve_render_cache_helper() {
             && eq_render.contains("fn get_or_build(")
             && eq_render.contains("eq_curve_cache()")
             && eq_render.contains(".lock()")
-            && eq_render.contains("cache.get_or_build(filters, freq_points)")
+            && eq_render.contains("cache.get_or_build(filters, freq_points, sample_rate)")
             && eq_render.contains("filter.topology")
             && eq_render.contains(".lambda")
             && eq_render.contains("filter.kautz_sections"),
@@ -525,6 +524,75 @@ fn eq_renderer_uses_curve_render_cache_helper() {
         !eq_render.contains("let combined_response: Vec<f64> = freq_points"),
         "EQ renderer must not allocate combined response data inline every render"
     );
+}
+
+fn production_unwrap_expect_count(source: &str) -> usize {
+    fn test_only(attributes: &[syn::Attribute]) -> bool {
+        attributes.iter().any(|attribute| {
+            attribute.path().is_ident("cfg")
+                && attribute
+                    .parse_args::<syn::Path>()
+                    .is_ok_and(|path| path.is_ident("test"))
+        })
+    }
+
+    #[derive(Default)]
+    struct ProductionCalls(usize);
+
+    impl<'ast> Visit<'ast> for ProductionCalls {
+        fn visit_item_mod(&mut self, item: &'ast syn::ItemMod) {
+            if !test_only(&item.attrs) {
+                syn::visit::visit_item_mod(self, item);
+            }
+        }
+
+        fn visit_item_fn(&mut self, item: &'ast syn::ItemFn) {
+            if !test_only(&item.attrs) {
+                syn::visit::visit_item_fn(self, item);
+            }
+        }
+
+        fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
+            if call.method == "unwrap" || call.method == "expect" {
+                self.0 += 1;
+            }
+            syn::visit::visit_expr_method_call(self, call);
+        }
+
+        fn visit_macro(&mut self, invocation: &'ast syn::Macro) {
+            // syn cannot expand macros, but production calls inside their
+            // token trees must still count toward the audit.
+            let tokens = invocation.tokens.to_string();
+            self.0 += tokens.matches(". unwrap (").count();
+            self.0 += tokens.matches(". expect (").count();
+        }
+    }
+
+    let Ok(file) = syn::parse_file(source) else {
+        // Some .rs files are include! fragments rather than complete modules.
+        // Keep the conservative original count for those sources.
+        return source.matches(".unwrap()").count() + source.matches(".expect(").count();
+    };
+    let mut visitor = ProductionCalls::default();
+    visitor.visit_file(&file);
+    visitor.0
+}
+
+#[test]
+fn production_panic_audit_excludes_test_only_calls_and_literals() {
+    let source = r#"
+        fn production() { value.unwrap(); value.expect("context"); }
+        fn literal() { let text = ".unwrap()"; }
+        #[cfg(test)]
+        mod tests { fn test() { value.unwrap(); } }
+        #[cfg(test)]
+        fn test() { value.expect("test assertion"); }
+        #[cfg(target_os = "macos")]
+        fn platform() { value.unwrap(); }
+        fn macro_argument() { log!("{}", value.unwrap()); }
+    "#;
+    assert_eq!(production_unwrap_expect_count(source), 4);
+    assert_eq!(production_unwrap_expect_count("value.unwrap(),"), 1);
 }
 
 #[test]
@@ -558,19 +626,19 @@ fn app_gpui_unwrap_expect_production_audit_is_current() {
             .to_string();
         let source = std::fs::read_to_string(&file)
             .unwrap_or_else(|err| panic!("failed to read {relative}: {err}"));
-        let count = source.matches(".unwrap()").count() + source.matches(".expect(").count();
+        let count = production_unwrap_expect_count(&source);
         if count > 0 {
             actual.insert(relative, count);
         }
     }
 
+    // Test-only calls in player_handle, midi_input and spatial_spider are
+    // excluded; this baseline tracks production panic sites only.
     let expected = BTreeMap::from([
         ("app/cast.rs".to_string(), 2),
         ("app/dev_api/server/parse.rs".to_string(), 1),
         ("app/federation/local.rs".to_string(), 2),
-        ("app/midi_input.rs".to_string(), 3),
         ("app/remote/consts.rs".to_string(), 5),
-        ("components/plugins/spatial_spider/data.rs".to_string(), 13),
         (
             "components/plugins/ui_layout_renderer/render.rs".to_string(),
             1,
@@ -630,8 +698,8 @@ fn channel_mute_solo_buttons_have_click_handlers() {
     assert!(mute_solo.contains("MsdAction::Solo"));
     assert!(mute_solo.contains("MsdAction::Dim"));
     assert!(
-        mute_solo.contains("pending_plugin_update"),
-        "channel mute/solo/dim clicks must schedule plugin graph reconfiguration"
+        mute_solo.contains("record_editor_effect"),
+        "channel controls must update the active graph or retain the routing draft"
     );
 }
 
@@ -879,7 +947,7 @@ fn listening_test_workflow_is_localized_in_every_supported_language() {
                 listening.eq.filtered,
                 listening.eq.submit,
                 listening.eq.shortcuts,
-                listening.eq.add_ab_plugin,
+                listening.eq.comparison.add_ab_plugin,
                 listening.how_to_listen_title(),
                 listening.how_to_listen_reopen(),
                 listening.how_to_listen_acknowledge(),
@@ -994,14 +1062,6 @@ fn pseudo_locale_generator_has_a_checked_in_drift_contract() {
 }
 
 #[test]
-fn room_eq_header_density_accounts_for_font_scale() {
-    assert!(room_eq_header_uses_icon_only_steps(900.0, 1.5));
-    assert!(room_eq_header_uses_icon_only_steps(700.0, 1.0));
-    assert!(!room_eq_header_uses_icon_only_steps(900.0, 1.0));
-    assert!(!room_eq_header_uses_icon_only_steps(1200.0, 1.5));
-}
-
-#[test]
 fn listening_test_exposes_configurable_matching_and_verified_media_reload() {
     let screen = app_source("components/listening_test.rs");
     let blind_controller = app_source("components/listening_test/blind_controller.rs");
@@ -1069,6 +1129,20 @@ fn listening_test_render_uses_narrow_snapshot_and_controller_boundaries() {
     assert!(blind_controller.contains("fn prepare_current_listening_session"));
     assert!(eq_controller.contains("fn start_eq_training_session"));
     assert!(eq_controller.contains("fn advance_eq_training_question"));
+}
+
+#[test]
+fn listening_confidence_is_optional_until_supplied() {
+    let state = app_source("app/state/plugin.rs");
+    let blind_controller = app_source("components/listening_test/blind_controller.rs");
+
+    // Draft confidence must be representable as "not supplied".
+    assert!(state.contains("pub confidence: Option<u8>"));
+    // Commit must pass the draft through instead of wrapping a default number.
+    assert!(blind_controller.contains("commit_ab_test_answer(answer, confidence, Some(notes))"));
+    assert!(!blind_controller.contains("Some(confidence)"));
+    // A submitted trial must not leak its confidence into the next draft.
+    assert!(blind_controller.contains("listening.confidence = None;"));
 }
 
 #[test]
@@ -1150,6 +1224,8 @@ fn listening_test_keyboard_workflow_is_registry_backed() {
         "ListeningPlayCue3",
         "ListeningCommitAnswer1",
         "ListeningCommitAnswer2",
+        "ListeningToggleMetadata",
+        "ListeningToggleTrialDetails",
     ] {
         assert!(actions.contains(action), "missing action {action}");
         assert!(bindings.contains(action), "missing binding for {action}");
@@ -2134,6 +2210,47 @@ fn test_input_mode_is_text_input_search() {
 }
 
 #[test]
+fn test_feature_availability_save_error_preserves_localized_context() {
+    use sotf_audio_player_gpui::app::i18n::{FeatureAvailabilityTranslations, Language};
+    for language in [
+        Language::English,
+        Language::French,
+        Language::German,
+        Language::Spanish,
+        Language::Pseudo,
+    ] {
+        let copy = FeatureAvailabilityTranslations::for_language(language);
+        let message = copy.save_error("disk full");
+        assert_eq!(message, format!("{}: disk full", copy.save_failed));
+        if language != Language::English {
+            assert_ne!(message, "Could not save feature channel: disk full");
+        }
+    }
+}
+
+#[test]
+fn test_library_worker_snapshot_rejects_newer_content_and_active_scan() {
+    use sotf_audio_player_gpui::app::state::library::LibraryState;
+    let mut state = LibraryState::new_for_test();
+    let generation = state.content_generation();
+    state.library.albums = vec![sotf_audio_player::Album {
+        title: "Newer library".into(),
+        ..Default::default()
+    }];
+    state.invalidate_cache();
+    assert!(!state.replace_loaded_albums_if_current(generation, vec![]));
+    assert_eq!(state.library.albums[0].title, "Newer library");
+    let generation = state.content_generation();
+    state.scan_in_progress = true;
+    assert!(!state.replace_loaded_albums_if_current(generation, vec![]));
+    assert_eq!(state.library.albums[0].title, "Newer library");
+    state.scan_in_progress = false;
+    assert!(state.replace_loaded_albums_if_current(generation, vec![]));
+    assert!(state.library.albums.is_empty());
+    assert_ne!(state.content_generation(), generation);
+}
+
+#[test]
 fn test_input_mode_is_text_input_command_palette() {
     assert!(InputMode::CommandPalette.is_text_input());
 }
@@ -2794,6 +2911,10 @@ fn autoeq_form_translations_are_complete_and_used_by_all_consumers() {
 
     for path in [
         "components/autoeq/render_body_simple.rs",
+        "components/autoeq/render_block_smoothing.rs",
+        "components/autoeq/render_block_goal_loss.rs",
+        "components/autoeq/render_detail_controls.rs",
+        "components/autoeq/render_review.rs",
         "components/autoeq/render_body_room_eq.rs",
         "components/autoeq/render_section_algorithm.rs",
         "components/autoeq/render_section_capability.rs",
@@ -2870,9 +2991,9 @@ fn headphone_eq_translations_are_complete_and_visible_copy_is_extracted() {
                 text.no_results,
                 text.no_results_description,
                 text.apply_export,
-                text.apply_export_description,
+                text.delivery.apply_export_description,
                 text.export,
-                text.export_description,
+                text.delivery.export_description,
                 text.no_target_curve,
             ]
             .iter()
@@ -3216,6 +3337,10 @@ fn plugin_rack_copy_is_complete_and_visible_literals_are_extracted() {
                 "Safety",
                 "Sharpen",
                 "Threshold",
+                "Range",
+                "Hyst",
+                "Hold",
+                "Makeup",
                 "Top Gain",
                 "Trans Red",
                 "Variance",
@@ -3549,8 +3674,8 @@ fn dialog_server_and_phone_copy_is_complete_and_direct_literals_are_extracted() 
                 recording.needs_review,
                 recording.accept_anyway,
                 recording.session_quality_title,
-                recording.sweeps_per_channel,
-                recording.sweeps_per_channel_hint,
+                recording.repeat.sweeps_per_channel,
+                recording.repeat.sweeps_per_channel_hint,
                 recording.positions_mlp_hint,
             ]
             .iter()
@@ -5302,6 +5427,27 @@ fn runtime_message_translations_preserve_dynamic_values_and_external_fallbacks()
 
     let german = RuntimeMessageTranslations::for_language(Language::German);
     assert_eq!(
+        german.translate("Failed to prepare output directory: disk full"),
+        "Ausgabeordner konnte nicht vorbereitet werden: disk full"
+    );
+    assert_eq!(
+        german.translate("Failed to save: disk full"),
+        "Speichern fehlgeschlagen: disk full"
+    );
+    assert_eq!(
+        french.translate("Failed to prepare output directory: disk full"),
+        "Échec de la préparation du dossier de sortie : disk full"
+    );
+    assert_eq!(
+        RuntimeMessageTranslations::for_language(Language::Spanish)
+            .translate("Failed to prepare output directory: disk full"),
+        "No se pudo preparar la carpeta de salida: disk full"
+    );
+    assert_eq!(
+        german.translate("Failed to custom action: external detail"),
+        "Aktion custom action fehlgeschlagen: external detail"
+    );
+    assert_eq!(
         german.translate("External plugin vendor error"),
         "External plugin vendor error"
     );
@@ -5627,7 +5773,7 @@ fn eq_drag_preview_is_taken_only_by_its_plugin() {
 #[test]
 fn primary_navigation_publishes_rendered_selection_state_for_dev_scenarios() {
     let sidebar = app_source("ui/render.rs");
-    let settings = app_source("components/mod.rs");
+    let settings = app_source("components/settings/navigation.rs");
 
     assert!(sidebar.contains("dev_track_with_state"));
     assert!(sidebar.contains("DevElementState::default().selected(selected)"));
@@ -5836,8 +5982,9 @@ fn phone_shared_pointer_controls_publish_keyboard_and_accessibility_contracts() 
     let tool_toggle = section("fn render_phone_tool_toggle", "fn move_phone_wizard_step");
     assert!(tool_toggle.contains("view_for_toggle.update"));
 
-    assert!(phone.contains("view_for_wizard_back.update"));
-    assert!(phone.contains("view_for_wizard_next.update"));
+    let compact_phone: String = phone.chars().filter(|ch| !ch.is_whitespace()).collect();
+    assert!(compact_phone.contains("view_for_wizard_back.update"));
+    assert!(compact_phone.contains("view_for_wizard_next.update"));
 
     let eq_sheet = section(
         "fn render_phone_eq_parameter_sheet",
@@ -5899,4 +6046,20 @@ fn headphone_eq_discovery_controls_are_rendered_fixture_targets() {
     assert!(measurements.contains("format!(\"headphone.select.{}\", headphone)"));
     assert!(measurements.contains("view.fetch_headphone_list(cx)"));
     assert!(measurements.contains("view.select_headphone(&name, cx)"));
+}
+
+#[test]
+fn now_playing_disclosures_default_collapsed() {
+    let playback = sotf_audio_player_gpui::app::state::PlaybackState::default();
+    assert!(!playback.track_information_open);
+    assert!(!playback.signal_path_open);
+}
+
+#[test]
+fn now_playing_signal_path_toggle_is_rendered_fixture_target() {
+    let now_playing = app_source("components/home/now_playing.rs");
+
+    assert!(now_playing.contains("\"now-playing.signal-path-toggle\""));
+    assert!(now_playing.contains("\"now-playing.signal-path\""));
+    assert!(now_playing.contains("signal_path_open"));
 }

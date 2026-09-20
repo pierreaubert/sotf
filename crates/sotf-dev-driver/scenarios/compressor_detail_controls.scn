@@ -1,0 +1,82 @@
+resize 1600 1400
+focus Studio
+plugin_clear
+plugin_add Compressor
+action PluginSelectFirstUser
+wait_idle 1s
+click rack.config.toggle
+wait_idle 500ms
+scroll_into_view rack.config.scroll plugin.choice.2.8.0
+click plugin.choice.2.8.0
+assert plugins.plugin.2.param.8.value == 0
+click plugin.choice.2.8.1
+assert plugins.plugin.2.param.8.value == 1
+click rack.config.toggle
+wait_idle 500ms
+scroll_at 200 700 -3000
+wait_idle 500ms
+scroll_into_view rack.params plugin.choice.2.7.1
+click plugin.choice.2.7.1
+assert plugins.plugin.2.param.7.value == 1
+scroll_into_view rack.params plugin.choice.2.7.0
+click plugin.choice.2.7.0
+assert plugins.plugin.2.param.7.value == 0
+scroll_into_view rack.params plugin.choice.2.7.1
+click plugin.choice.2.7.1
+assert plugins.plugin.2.param.7.value == 1
+scroll_into_view rack.params plugin.choice.2.14.1
+click plugin.choice.2.14.1
+assert plugins.plugin.2.param.14.value == 1
+scroll_into_view rack.params plugin.choice.2.14.0
+click plugin.choice.2.14.0
+assert plugins.plugin.2.param.14.value == 0
+scroll_into_view rack.params plugin.choice.2.14.1
+click plugin.choice.2.14.1
+assert plugins.plugin.2.param.14.value == 1
+# Timing header grounded in native capture 1788993710.
+click_at 800 1024
+wait_idle 500ms
+scroll_at 200 700 -3000
+wait_idle 500ms
+scroll_into_view rack.params plugin.control.2.12
+click plugin.control.2.12
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.12.exact
+click plugin.param.2.12.exact
+key cmd-a
+type "7"
+key enter
+assert plugins.plugin.2.param.12.value == 7 tolerance=0.001
+screenshot compressor-timing
+snapshot $SOTF_QA_DIR/timing.json
+# Knee header grounded in capture 1788993774.
+click_at 800 1070
+wait_idle 500ms
+scroll_at 200 700 -3000
+wait_idle 500ms
+scroll_into_view rack.params plugin.control.2.4
+click plugin.control.2.4
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.4.exact
+click plugin.param.2.4.exact
+key cmd-a
+type "10"
+key enter
+assert plugins.plugin.2.param.4.value == 10 tolerance=0.001
+screenshot compressor-knee
+plugin_chain_save $SOTF_QA_DIR/compressor-details.json
+plugin_remove 2
+plugin_chain_load $SOTF_QA_DIR/compressor-details.json
+assert plugins.plugin.2.type == "Compressor"
+assert plugins.plugin.2.param.4.value == 10 tolerance=0.001
+assert plugins.plugin.2.param.7.value == 1
+assert plugins.plugin.2.param.8.value == 1
+assert plugins.plugin.2.param.12.value == 7 tolerance=0.001
+assert plugins.plugin.2.param.14.value == 1
+resize 600 1000
+wait_idle 1s
+assert plugins.plugin.2.param.4.value == 10 tolerance=0.001
+assert plugins.plugin.2.param.7.value == 1
+assert plugins.plugin.2.param.8.value == 1
+assert plugins.plugin.2.param.12.value == 7 tolerance=0.001
+assert plugins.plugin.2.param.14.value == 1

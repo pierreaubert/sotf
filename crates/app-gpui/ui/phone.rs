@@ -64,7 +64,7 @@ impl PlayerView {
             state.app.playback.current_queue_index.is_some() && current_screen != Screen::NowPlaying
         };
         let tab_bar = self.render_phone_tab_bar_collapsible(current_screen, cx);
-        let tab_bar = if self.suppress_geometry_sync {
+        let tab_bar = if self.window_state.suppress_geometry_sync {
             // Off-screen visual QA captures a fresh scene into a cleared
             // texture. Paint the footer after route-specific deferred content
             // so every tab is materialized in deterministic screenshots.
@@ -126,7 +126,13 @@ impl PlayerView {
             Screen::EqCurve => self.render_phone_eq_curve(cx),
             Screen::Studio => self.render_phone_plugin_rack(cx),
             Screen::Queue => self.render_queue_screen_phone(cx),
-            Screen::Library => self.render_library_screen_phone(cx),
+            Screen::Library => {
+                if self.state.read(cx).app.library_state.album_detail.is_some() {
+                    self.render_album_detail(cx)
+                } else {
+                    self.render_library_screen_phone(cx)
+                }
+            }
             Screen::Home => self.render_home_screen_phone(cx),
             Screen::HomeShelf => self.render_home_shelf_screen_phone(cx),
             Screen::Playlists => self.render_playlists_screen(cx).into_any_element(),
@@ -1651,6 +1657,8 @@ impl PlayerView {
         let title = album.title.clone();
         let artist = album.artist();
         let album_id = album.id;
+        let detail_album = std::sync::Arc::new(album.clone());
+        let detail_focus = self.focus_handle.clone();
         let art_path = album.album_art_path.clone();
         let selected_title_for_activate = title.clone();
         let selected_artist_for_activate = artist.clone();
@@ -1668,7 +1676,7 @@ impl PlayerView {
             label: label.clone().into(),
             props: accessibility_props.clone(),
         });
-        let activate = std::rc::Rc::new(move |cx: &mut App| {
+        let activate = std::rc::Rc::new(move |window: &mut Window, cx: &mut App| {
             let selected_title = selected_title_for_activate.clone();
             let selected_artist = selected_artist_for_activate.clone();
             state_entity.update(cx, |state, _cx| {
@@ -1685,15 +1693,11 @@ impl PlayerView {
                     })
                     .unwrap_or(idx);
                 state.app.library_state.selected_index = resolved_idx;
-                match state.app.play_album_now() {
-                    Ok(Some(source)) => PlayerView::play_track(state, source),
-                    Err(e) => {
-                        state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(e));
-                    }
-                    _ => {}
-                }
-                state.app.set_screen(Screen::Queue, trigger);
+                state.app.library_state.album_detail = Some(std::sync::Arc::clone(&detail_album));
+                state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                state.app.set_screen(Screen::Library, trigger);
             });
+            detail_focus.focus(window, cx);
         });
         let mouse_activate = activate.clone();
         let key_activate = activate;
@@ -1733,13 +1737,13 @@ impl PlayerView {
                     .whitespace_nowrap()
                     .child(artist.clone()),
             )
-            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                mouse_activate(cx);
+            .on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                mouse_activate(window, cx);
             })
-            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
+            .on_key_down(move |event: &KeyDownEvent, window, cx| {
                 let key = event.keystroke.key.as_str();
                 if key == "enter" || key == "space" {
-                    key_activate(cx);
+                    key_activate(window, cx);
                     cx.stop_propagation();
                 }
             });
@@ -4182,8 +4186,8 @@ impl PlayerView {
         let (hold, smooth) = {
             let state = self.state.read(cx);
             (
-                state.app.ui_state.phone_spectrum_hold,
-                state.app.ui_state.phone_spectrum_smoothed,
+                state.app.ui_state.spectrum_view.hold,
+                state.app.ui_state.spectrum_view.smoothed,
             )
         };
         let content = self.render_spectrum_screen(cx).into_any_element();
@@ -4220,15 +4224,13 @@ impl PlayerView {
                 state.app.ui_state.phone_plugin_graph_actions_open = false;
             });
         });
-        let button = gpui_ui_kit::Button::new(
-            format!("phone-plugin-graph-remove-{idx}"),
-            remove_label,
-        )
-        .variant(gpui_ui_kit::ButtonVariant::Destructive)
-        .size(gpui_ui_kit::ButtonSize::Sm)
-        .theme(theme.to_button_theme())
-        .aria_label(label)
-        .on_click(move |_window, cx| activate(cx));
+        let button =
+            gpui_ui_kit::Button::new(format!("phone-plugin-graph-remove-{idx}"), remove_label)
+                .variant(gpui_ui_kit::ButtonVariant::Destructive)
+                .size(gpui_ui_kit::ButtonSize::Sm)
+                .theme(theme.to_button_theme())
+                .aria_label(label)
+                .on_click(move |_window, cx| activate(cx));
         phone_dev_track!(button, format!("phone.plugin-graph.remove.{idx}"))
     }
 
@@ -4850,8 +4852,8 @@ impl PlayerView {
                     PhoneTool::Spinorama => Some("spinorama"),
                     _ => None,
                 },
-                state.app.ui_state.phone_spectrum_hold,
-                state.app.ui_state.phone_spectrum_smoothed,
+                state.app.ui_state.spectrum_view.hold,
+                state.app.ui_state.spectrum_view.smoothed,
                 state.app.ui_state.phone_plugin_graph_list,
                 state.app.ui_state.phone_plugin_graph_actions_open,
                 state.app.ui_state.phone_stream_sources_open,
@@ -5090,22 +5092,17 @@ impl PlayerView {
         let activate = std::rc::Rc::new(move |cx: &mut App| {
             state_entity.update(cx, |state, _cx| match action {
                 "spectrum_hold" => {
-                    let next_hold = !state.app.ui_state.phone_spectrum_hold;
-                    state.app.ui_state.phone_spectrum_hold = next_hold;
-                    state.app.ui_state.phone_spectrum_hold_magnitudes = if next_hold {
-                        state
-                            .app
-                            .playback
-                            .spectrum_info
-                            .as_ref()
-                            .map(|info| info.magnitudes.as_ref().to_vec())
-                    } else {
-                        None
-                    };
+                    let next_hold = !state.app.ui_state.spectrum_view.hold;
+                    let rate = state.app.playback.spectrum_output_sample_rate();
+                    state.app.ui_state.spectrum_view.set_hold(
+                        next_hold,
+                        state.app.playback.spectrum_info.as_ref(),
+                        rate,
+                    );
                 }
                 "spectrum_smoothed" => {
-                    state.app.ui_state.phone_spectrum_smoothed =
-                        !state.app.ui_state.phone_spectrum_smoothed;
+                    state.app.ui_state.spectrum_view.smoothed =
+                        !state.app.ui_state.spectrum_view.smoothed;
                 }
                 "plugin_graph_list" => {
                     state.app.ui_state.phone_plugin_graph_list =

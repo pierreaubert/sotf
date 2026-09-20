@@ -1,0 +1,80 @@
+# 2026-09-08: ui-spectrum.html localized controls and scaled capture acceptance.
+# Exercises ui_spectrum_screen.rs using deterministic analyzer frames.
+# Run: target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/spectrum_ui.toml -v
+focus spectrum
+assert settings.language == "English"
+action CycleLanguage
+assert settings.language == "French"
+wait_idle
+assert_accessible switch Maintenir
+assert_accessible switch Lissage
+assert_visible spectrum.unavailable
+click spectrum.hold
+assert spectrum.hold == false
+action SpectrumSetFixture {"frame":"tone","sample_rate":48000}
+wait_idle
+click spectrum.hold
+assert spectrum.hold == true
+action SpectrumSetFixture {"frame":"changed","sample_rate":96000}
+assert spectrum.output_rate == 48000
+click spectrum.smoothing
+assert spectrum.smoothing == true
+screenshot spectrum-french-held
+action CycleLanguage
+assert settings.language == "German"
+wait_idle
+assert_accessible switch Halten
+assert_accessible switch Glättung
+assert spectrum.hold == true
+assert spectrum.smoothing == true
+assert spectrum.output_rate == 48000
+resize 620 900
+wait_idle
+assert_in_viewport spectrum.hold
+assert_in_viewport spectrum.smoothing
+scroll_into_view spectrum.content spectrum.details
+click spectrum.details
+wait_idle
+assert_accessible button Analysedetails
+scroll_into_view spectrum.content spectrum.inspect-frequency
+assert_in_viewport spectrum.inspect-frequency
+click spectrum.inspect-frequency
+key cmd-a
+type 173
+key enter
+# At the third band, five-band smoothing averages -80,-70,-60,-30,-20.
+assert spectrum.cursor_level == -52
+screenshot spectrum-german-analysis-narrow
+scroll_into_view spectrum.content spectrum.details
+click spectrum.details
+action CycleLanguage
+assert settings.language == "Spanish"
+wait_idle
+scroll spectrum.content 2000
+wait_idle
+assert_accessible switch Mantener
+assert_accessible switch Suavizado
+assert spectrum.hold == true
+click spectrum.hold
+assert spectrum.hold == false
+assert spectrum.output_rate == 96000
+action SpectrumSetFixture {"frame":"silence","sample_rate":16000}
+assert spectrum.output_rate == 16000
+assert spectrum.cursor_level == -100
+resize 360 700
+wait_idle
+assert_in_viewport spectrum.hold
+assert_in_viewport spectrum.smoothing
+screenshot spectrum-spanish-silence-narrow
+scroll_into_view spectrum.content spectrum.details
+click spectrum.details
+scroll_into_view spectrum.content spectrum.inspect-frequency
+assert_in_viewport spectrum.inspect-frequency
+screenshot spectrum-spanish-analysis-narrow
+scroll spectrum.content 2000
+action SpectrumSetFixture {"active":false}
+wait_idle
+assert spectrum.has_data == false
+assert_visible spectrum.unavailable
+assert_absent spectrum.plot
+assert playback.is_playing == false

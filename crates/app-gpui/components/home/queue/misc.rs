@@ -32,6 +32,10 @@ macro_rules! dev_track {
 }
 
 impl PlayerView {
+    pub(crate) fn render_queue_page(&self, cx: &mut Context<Self>) -> AnyElement {
+        self.render_flat_queue(cx)
+    }
+
     pub(crate) fn render_queue_screen(
         &self,
         solved_queue_width: Option<f32>,

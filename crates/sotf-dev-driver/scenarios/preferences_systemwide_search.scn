@@ -1,0 +1,50 @@
+# Search reveals inactive systemwide controls without changing the audio source.
+focus Settings
+wait_idle 500ms
+click preferences.search
+type "systemwide sample rate"
+wait_idle 500ms
+click preferences.result.SystemwideSampleRate
+wait_idle 500ms
+assert preferences.setting == "SystemwideSampleRate"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.SystemwideSampleRate
+assert_in_viewport settings.hal-sample-rate
+assert settings.playback_source == "File"
+assert preferences.systemwide_input == null
+click settings.hal-sample-rate
+key up
+key enter
+assert preferences.sample_rate_hz == 192000
+assert settings.sample_rate_hz == 48000
+click preferences.search
+type "systemwide channels"
+wait_idle 500ms
+click preferences.result.SystemwideChannels
+wait_idle 500ms
+assert preferences.setting == "SystemwideChannels"
+assert_in_viewport preferences.control.SystemwideChannels
+click settings.hal-channel-count
+key up
+key enter
+assert preferences.channel_count == 8
+assert settings.channel_count == 2
+click preferences.search
+type "systemwide buffer size"
+wait_idle 500ms
+click preferences.result.SystemwideBuffer
+wait_idle 500ms
+assert preferences.setting == "SystemwideBuffer"
+assert_in_viewport preferences.control.SystemwideBuffer
+click settings.hal-buffer-size
+key up
+key enter
+assert preferences.buffer_frames == 4096
+assert settings.buffer_frames == 1024
+assert preferences.systemwide_input == null
+assert settings.playback_source == "File"
+assert playback.is_playing == false
+screenshot preferences-systemwide-format-search
+click settings.audio-discard
+assert preferences.audio_dirty == false
+assert settings.playback_source == "File"

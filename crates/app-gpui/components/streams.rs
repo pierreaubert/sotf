@@ -45,6 +45,8 @@ impl PlayerView {
 
         let translations =
             StreamsTranslations::for_language(self.state.read(cx).app.ui_state.language);
+        let editor_open = self.state.read(cx).app.stream_state.editor_open;
+        let language = self.state.read(cx).app.ui_state.language;
 
         div()
             .id("streams-screen")
@@ -75,7 +77,24 @@ impl PlayerView {
                             ),
                     ),
             )
-            .child(self.render_stream_editor(name, url, format_hint, seekable, cx))
+            .when(!editor_open, |el| {
+                el.child(dev_track!(
+                    Button::new("stream-add", StreamsTranslations::add_station(language))
+                        .variant(ButtonVariant::Primary)
+                        .size(ButtonSize::Sm)
+                        .theme(theme.to_button_theme())
+                        .on_click_event(cx.listener(|view, _, window, cx| {
+                            view.state
+                                .update(cx, |state, _| state.app.stream_state.begin_add());
+                            view.focus_handle.focus(window, cx);
+                            cx.notify();
+                        })),
+                    "streams.add"
+                ))
+            })
+            .when(editor_open, |el| {
+                el.child(self.render_stream_editor(name, url, format_hint, seekable, cx))
+            })
             .when_some(last_error, |el, err| {
                 el.child(
                     div()
@@ -137,7 +156,6 @@ impl PlayerView {
         let state_for_url = self.state.clone();
         let state_for_hint = self.state.clone();
         let state_for_seekable = self.state.clone();
-        let state_for_save = self.state.clone();
         let state_for_play = self.state.clone();
 
         div()
@@ -151,10 +169,12 @@ impl PlayerView {
             .border_1()
             .border_color(theme.border)
             .child(
-                HStack::new()
-                    .spacing(StackSpacing::Sm)
-                    .align(StackAlign::Center)
-                    .child(div().flex_1().child(dev_track!(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(d.gap_md)
+                    .items_center()
+                    .child(div().flex_1().min_w(rems(12.0)).child(dev_track!(
                             Input::new("stream-name-input")
                                 .value(name)
                                 .placeholder(translations.name)
@@ -195,10 +215,12 @@ impl PlayerView {
                     )),
             )
             .child(
-                HStack::new()
-                    .spacing(StackSpacing::Sm)
-                    .align(StackAlign::Center)
-                    .child(div().flex_1().child(dev_track!(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(d.gap_md)
+                    .items_center()
+                    .child(div().flex_1().min_w(rems(12.0)).child(dev_track!(
                             Input::new("stream-url-input")
                                 .value(url)
                                 .placeholder(translations.url_placeholder)
@@ -215,13 +237,17 @@ impl PlayerView {
                             .variant(ButtonVariant::Secondary)
                             .size(ButtonSize::Sm)
                             .theme(theme.to_button_theme())
-                            .on_click(move |_, cx| {
-                                state_for_save.update(cx, |state, _cx| {
+                            .on_click_event(cx.listener(|view, _, window, cx| {
+                                view.state.update(cx, |state, _cx| {
                                     if let Err(err) = state.app.save_stream_from_inputs() {
                                         state.app.record_stream_error(err);
                                     }
                                 });
-                            }),
+                                if !view.state.read(cx).app.stream_state.editor_open {
+                                    view.focus_handle.focus(window, cx);
+                                }
+                                cx.notify();
+                            })),
                         "streams.save"
                     ))
                     .child(dev_track!(
@@ -251,6 +277,22 @@ impl PlayerView {
                         "streams.play_input"
                     )),
             )
+            .child(dev_track!(
+                Button::new(
+                    "stream-cancel",
+                    StreamsTranslations::cancel_station(self.state.read(cx).app.ui_state.language),
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ButtonSize::Sm)
+                .theme(theme.to_button_theme())
+                .on_click_event(cx.listener(|view, _, window, cx| {
+                    view.state
+                        .update(cx, |state, _| state.app.stream_state.clear_editor());
+                    view.focus_handle.focus(window, cx);
+                    cx.notify();
+                })),
+                "streams.cancel"
+            ))
             .into_any_element()
     }
 
@@ -265,6 +307,7 @@ impl PlayerView {
         let translations =
             StreamsTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let state_for_select = self.state.clone();
+        let state_for_edit = self.state.clone();
         let state_for_play = self.state.clone();
         let state_for_queue = self.state.clone();
         let state_for_remove = self.state.clone();
@@ -275,6 +318,7 @@ impl PlayerView {
             div()
                 .id(SharedString::from(format!("stream-row-{index}")))
                 .flex()
+                .flex_wrap()
                 .items_center()
                 .gap(d.gap_md)
                 .p(d.card)
@@ -324,6 +368,23 @@ impl PlayerView {
                                 .child(stream.url.clone()),
                         ),
                 )
+                .child(dev_track!(
+                    Button::new(
+                        SharedString::from(format!("stream-edit-{index}")),
+                        StreamsTranslations::edit_station(
+                            self.state.read(cx).app.ui_state.language
+                        ),
+                    )
+                    .variant(ButtonVariant::Ghost)
+                    .size(ButtonSize::Sm)
+                    .theme(theme.to_button_theme())
+                    .on_click(move |_, cx| {
+                        state_for_edit.update(cx, |state, _| {
+                            state.app.set_stream_inputs_from_selected(index);
+                        });
+                    }),
+                    format!("streams.edit.{index}")
+                ))
                 .child(dev_track!(
                     Button::new(
                         SharedString::from(format!("stream-play-{index}")),

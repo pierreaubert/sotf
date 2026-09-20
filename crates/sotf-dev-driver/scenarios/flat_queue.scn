@@ -1,0 +1,47 @@
+# A stopped queue can be edited and restored without starting playback.
+focus library
+wait_until library.album_count > 0 timeout=10s
+wait_idle 2s
+click library.tab.search
+click library.search_input
+type "Demo"
+wait_until library.filtered_album_count > 0 timeout=2s
+click library.album.0
+wait_until library.detail.open == true timeout=2s
+click library.detail.track.0.add
+click library.detail.track.0.add
+wait_until queue.upcoming_count == 2 timeout=2s
+focus Queue
+wait_idle 2s
+assert_visible queue.upcoming.0.play
+click queue.upcoming.1.up
+assert queue.upcoming_count == 2
+assert playback.is_playing == false
+click queue.upcoming.0.remove
+wait_until queue.upcoming_count == 1 timeout=2s
+click queue.undo_remove
+wait_until queue.upcoming_count == 2 timeout=2s
+assert playback.is_playing == false
+click queue.upcoming.0.play
+wait_until playback.is_playing == true timeout=4s
+assert playback.current_title == "Country"
+assert toast.type != "Error"
+wait_until queue.upcoming_count == 1 timeout=2s
+click queue.upcoming.0.remove
+wait_until queue.upcoming_count == 0 timeout=2s
+assert playback.current_title == "Country"
+assert playback.is_playing == true
+click queue.undo_remove
+wait_until queue.upcoming_count == 1 timeout=2s
+assert playback.current_title == "Country"
+resize 600 800
+wait_idle 2s
+assert_in_viewport queue.upcoming.0.remove
+screenshot flat-queue-narrow
+click queue.upcoming.0.remove
+wait_until queue.upcoming_count == 0 timeout=2s
+click queue.browse_library
+wait_until screen.focused == "Library" timeout=2s
+assert library.detail.open == false
+assert playback.current_title == "Country"
+assert toast.type != "Error"

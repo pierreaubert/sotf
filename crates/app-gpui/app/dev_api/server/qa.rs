@@ -207,6 +207,14 @@ pub(super) fn qa_recording_fake_capture(
         .collect::<Vec<_>>();
 
     let mut recording = RecordingState::default();
+    let qa_dir = std::env::var_os("SOTF_QA_DIR")
+        .map(std::path::PathBuf::from)
+        .ok_or_else(|| anyhow!("fake recording requires an isolated QA directory"))?;
+    let base = qa_dir.join("recordings");
+    recording.model.recording_base_directory = Some(base.to_string_lossy().into_owned());
+    let session = base.join(recording.model.safe_save_name());
+    std::fs::create_dir_all(&session)?;
+    recording.model.recording_directory = Some(session.to_string_lossy().into_owned());
     recording.model.playback_config.num_channels = channels;
     recording.model.playback_config.channel_mappings = channel_names
         .iter()
@@ -219,11 +227,68 @@ pub(super) fn qa_recording_fake_capture(
     recording.model.init_channel_recordings();
     recording.qa_fake_capture = Some(QaFakeCapture { points, fault });
 
+    let import = payload
+        .get("import_json")
+        .and_then(serde_json::Value::as_str)
+        .map(|json| -> Result<_> {
+            let directory = qa_dir.join("original-import");
+            std::fs::create_dir_all(&directory)?;
+            let path = directory.join("recordings.json");
+            std::fs::write(&path, json)?;
+            Ok((json.to_owned(), path, directory))
+        })
+        .transpose()?;
+    if import.is_some() {
+        recording.model.step = RecordingStep::Evaluating;
+        recording.model.playback_config.device_name = "QA imported output".into();
+        recording.model.recording_config.device_name = "QA imported input".into();
+    }
+
     with_player_view(window, cx, |view, cx| {
         view.state.update(cx, |state, cx| {
+            if import.is_some() {
+                let device = |name: &str, is_input: bool| sotf_audio::devices::AudioDevice {
+                    device_id: None,
+                    name: name.into(),
+                    display_info: None,
+                    is_input,
+                    is_default: false,
+                    supported_configs: Vec::new(),
+                    default_config: Some(sotf_audio::devices::AudioConfig {
+                        sample_rate: 48000,
+                        channels: 4,
+                        buffer_size: None,
+                        sample_format: "f32".into(),
+                    }),
+                    available_sample_rates: vec![48000],
+                };
+                state
+                    .app
+                    .audio_device_state
+                    .output_devices
+                    .push(device("QA imported output", false));
+                state
+                    .app
+                    .audio_device_state
+                    .input_devices
+                    .push(device("QA imported input", true));
+            }
             state.app.measurement_state.recording_state = recording;
             cx.notify();
         });
+        if let Some((json, path, directory)) = import {
+            let state = view.state.clone();
+            cx.spawn(async move |_, cx| {
+                crate::ui::PlayerView::load_recordings_internal(
+                    state,
+                    cx,
+                    &json,
+                    &path,
+                    Some(directory),
+                );
+            })
+            .detach();
+        }
         Ok(())
     })
 }
@@ -803,6 +868,7 @@ fn qa_done_recording(
     let mut channel = ChannelRecording::new(channel_index, channel_name.to_string());
     channel.state = ChannelRecordingState::Done;
     channel.result = Some(RecordingResult {
+        sample_rate_hz: None,
         channel: channel_index,
         wav_path: None,
         csv_path: None,

@@ -1,0 +1,51 @@
+# Export history follows the successful result, not subsequent calculations.
+action HeadphoneSetFileFixture {"mode":"valid"}
+wait_until headphone.loading == false timeout=5s
+assert headphone.export_current == false
+click headphone.next
+wait_until headphone.step == "Optimization" timeout=2s
+scroll headphone.content -5000
+wait_idle 500ms
+click headphone.optimize_start
+wait_until headphone.optimization_status != "Running" timeout=25s
+assert headphone.optimization_status == "Completed"
+assert headphone.result_revision == 1
+click headphone.next
+wait_until headphone.step == "Listen" timeout=2s
+click headphone.next
+wait_until headphone.step == "Export" timeout=2s
+assert headphone.export_current == false
+scroll_into_view headphone.content headphone.export
+click headphone.export
+wait_until headphone.export_current == true timeout=3s
+assert headphone.export_exists == true
+assert headphone.export_revision == 1
+scroll_into_view headphone.content correction.export_status
+wait_idle 500ms
+screenshot headphone-current-export
+click headphone.back
+click headphone.back
+wait_until headphone.step == "Optimization" timeout=2s
+scroll headphone.content -5000
+wait_idle 500ms
+click headphone.optimize_start
+wait_until headphone.optimization_status != "Running" timeout=25s
+assert headphone.optimization_status == "Completed"
+assert headphone.result_revision == 2
+assert headphone.export_revision == 1
+assert headphone.export_current == false
+click headphone.next
+wait_until headphone.step == "Listen" timeout=2s
+click headphone.next
+wait_until headphone.step == "Export" timeout=2s
+scroll_into_view headphone.content correction.export_status
+wait_idle 500ms
+screenshot headphone-previous-export
+scroll_into_view headphone.content headphone.export
+click headphone.export
+wait_until headphone.export_current == true timeout=3s
+assert headphone.export_revision == 2
+assert playback.is_playing == false
+scroll_into_view headphone.content correction.export_status
+wait_idle 500ms
+screenshot headphone-replaced-export

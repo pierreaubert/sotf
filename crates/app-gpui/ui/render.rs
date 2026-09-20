@@ -83,15 +83,13 @@ pub(crate) struct PendingGeometrySave {
 
 impl Render for PlayerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        #[cfg(feature = "dev-api")]
-        crate::app::dev_api::clear_tracked_elements(window.window_handle().window_id().as_u64());
         if cx.has_global::<AccessibilityTree>() {
             cx.global_mut::<AccessibilityTree>().clear();
         }
 
         // Focus view on first render to activate macOS menu bar
-        if self.needs_initial_focus {
-            self.needs_initial_focus = false;
+        if self.window_state.needs_initial_focus {
+            self.window_state.needs_initial_focus = false;
             self.focus_handle.focus(window, cx);
             window.activate_window();
             cx.activate(true);
@@ -105,6 +103,23 @@ impl Render for PlayerView {
             });
         }
 
+        // A responsive navigation replacement removes its focused child.
+        // Restore page focus only when navigation owns it, preserving input
+        // focus elsewhere while the window is resized.
+        let compact_navigation = self.desktop_navigation_compact(cx);
+        if self
+            .window_state
+            .compact_navigation
+            .is_some_and(|previous| previous != compact_navigation)
+            && self
+                .window_state
+                .navigation_focus
+                .contains_focused(window, cx)
+        {
+            self.focus_handle.focus(window, cx);
+        }
+        self.window_state.compact_navigation = Some(compact_navigation);
+
         // Update layout mode based on window height
         // Use defer to avoid re-entrant state updates during render
         let window_bounds = window.bounds();
@@ -112,7 +127,7 @@ impl Render for PlayerView {
         let window_width: f32 = window_bounds.size.width.into();
 
         // Check if dimensions actually changed to avoid unnecessary updates
-        let needs_dimension_update = !self.suppress_geometry_sync && {
+        let needs_dimension_update = !self.window_state.suppress_geometry_sync && {
             let state = self.state.read(cx);
             (state.app.ui_state.window_height - window_height).abs() > 0.5
                 || (state.app.ui_state.window_width - window_width).abs() > 0.5
@@ -154,6 +169,10 @@ impl Render for PlayerView {
 
                     // Recalculate pagination based on new window size
                     view.recalculate_pagination(cx, false);
+                    // Layout dimensions changed even when library pagination did
+                    // not. Publish them so compact navigation and specialist
+                    // workspaces cannot remain in the previous viewport layout.
+                    cx.notify();
                 });
             });
         }
@@ -312,7 +331,65 @@ impl Render for PlayerView {
 
         // Determine key context based on input mode
         // Use "TextInput" context when typing to disable single-letter keybindings
-        let key_context = if Self::is_text_input_mode(input_mode) {
+        let key_context = if Self::is_text_input_mode(input_mode)
+            || (matches!(current_screen, Screen::Settings | Screen::SettingsDetail)
+                && (gpui_ui_kit::is_input_editing()
+                    || self
+                        .state
+                        .read(cx)
+                        .app
+                        .audio_device_state
+                        .hal_dropdowns
+                        .is_open()
+                    || self.state.read(cx).app.audio_device_state.output_ui.open
+                    || self
+                        .state
+                        .read(cx)
+                        .app
+                        .settings
+                        .navigation
+                        .setting_focus
+                        .as_ref()
+                        .is_some_and(|focus| focus.is_focused(window))))
+            || self.state.read(cx).app.ui_state.show_studio_menu
+            || self
+                .state
+                .read(cx)
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .dropdowns
+                .target_open
+            || self
+                .state
+                .read(cx)
+                .app
+                .ui_state
+                .navigation
+                .studio_picker_open
+            || self.state.read(cx).app.settings.navigation.category_open
+            || (current_screen == Screen::Recording
+                && self
+                    .state
+                    .read(cx)
+                    .app
+                    .measurement_state
+                    .recording_state
+                    .imported_route_dropdown
+                    .is_some())
+            || (current_screen == Screen::Library
+                && self.state.read(cx).app.library_state.sort_menu_open)
+            || (current_screen == Screen::PluginGraph
+                && self
+                    .state
+                    .read(cx)
+                    .app
+                    .plugin_state
+                    .graph_state
+                    .connection_form
+                    .open
+                    .is_some())
+        {
             "TextInput"
         } else if current_screen == Screen::ListeningTest {
             "PlayerView ListeningTest"
@@ -342,6 +419,8 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::toggle_mute))
             .on_action(cx.listener(Self::switch_to_library))
             .on_action(cx.listener(Self::switch_to_queue))
+            .on_action(cx.listener(Self::switch_to_now_playing))
+            .on_action(cx.listener(Self::switch_to_home))
             .on_action(cx.listener(Self::switch_to_playlists))
             .on_action(cx.listener(Self::switch_to_plugins))
             .on_action(cx.listener(Self::switch_to_studio))
@@ -366,6 +445,8 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::listening_play_cue_3))
             .on_action(cx.listener(Self::listening_commit_answer_1))
             .on_action(cx.listener(Self::listening_commit_answer_2))
+            .on_action(cx.listener(Self::listening_toggle_metadata))
+            .on_action(cx.listener(Self::listening_toggle_trial_details))
             .on_action(cx.listener(Self::switch_to_devices))
             .on_action(cx.listener(Self::switch_to_directories))
             .on_action(cx.listener(Self::switch_to_settings))
@@ -754,7 +835,13 @@ impl Render for PlayerView {
                             .flex_1()
                             .min_h_0()
                             .overflow_hidden()
-                            .child(self.render_app_sidebar(cx))
+                            .when(
+                                !matches!(
+                                    current_screen,
+                                    Screen::Settings | Screen::SettingsDetail
+                                ) && !self.desktop_navigation_compact(cx),
+                                |row| row.child(self.render_app_sidebar(cx)),
+                            )
                             .child(
                                 div()
                                     .flex()
@@ -763,6 +850,13 @@ impl Render for PlayerView {
                                     .min_w_0()
                                     .min_h_0()
                                     .overflow_hidden()
+                                    .when(
+                                        !matches!(
+                                            current_screen,
+                                            Screen::Settings | Screen::SettingsDetail
+                                        ) && self.desktop_navigation_compact(cx),
+                                        |column| column.child(self.render_compact_navigation(cx)),
+                                    )
                                     .child(div().flex().flex_1().min_h_0().overflow_hidden().child(
                                         self.render_current_screen(current_screen, layout_mode, cx),
                                     ))
@@ -771,7 +865,13 @@ impl Render for PlayerView {
                                         |div| div.child(self.render_federation_scan_progress(cx)),
                                     )
                                     .child(self.render_scan_status_row(cx))
-                                    .child(self.render_footer(cx)),
+                                    .when(
+                                        !matches!(
+                                            current_screen,
+                                            Screen::Settings | Screen::SettingsDetail
+                                        ),
+                                        |column| column.child(self.render_footer(cx)),
+                                    ),
                             )
                             .into_any_element()
                     }),
@@ -815,7 +915,8 @@ impl Render for PlayerView {
                 div.child(self.render_screen_guide_dialog(cx))
             })
             .when(
-                input_mode == crate::app::InputMode::EditingPluginNode,
+                input_mode == crate::app::InputMode::EditingPluginNode
+                    && current_screen != Screen::PluginGraph,
                 |div| div.child(self.render_plugin_node_modal(cx)),
             )
             .when(
@@ -833,11 +934,22 @@ impl Render for PlayerView {
             .when(show_move_position_modal, |div| {
                 div.child(self.render_move_position_modal(cx))
             })
-            .child(self.render_toast(cx))
+            .child(self.render_toast(window, cx))
             .when(context_menu, |div| div.child(self.render_context_menu(cx)))
             // Menu dropdowns rendered last for z-ordering
             .when(active_menu != crate::app::ActiveMenu::None, |div| {
                 div.child(self.render_menu_dropdowns(cx))
+            })
+            .map(|root| {
+                #[cfg(feature = "dev-api")]
+                {
+                    use crate::app::dev_api::DevTrackExt;
+                    root.dev_frame().into_any_element()
+                }
+                #[cfg(not(feature = "dev-api"))]
+                {
+                    root.into_any_element()
+                }
             })
     }
 }
@@ -850,10 +962,10 @@ impl PlayerView {
     fn render_current_screen(
         &mut self,
         screen: Screen,
-        layout_mode: crate::app::LayoutMode,
+        _layout_mode: crate::app::LayoutMode,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        match screen {
+        let content = match screen {
             // These screens render the same regardless of layout mode
             Screen::Home => self.render_home_screen(cx).into_any_element(),
             Screen::HomeShelf => self.render_home_shelf_screen(cx).into_any_element(),
@@ -861,9 +973,9 @@ impl PlayerView {
             Screen::Spectrum => self.render_spectrum_screen(cx).into_any_element(),
             Screen::Settings => self.render_settings_screen(cx).into_any_element(),
             Screen::SettingsDetail => self.render_settings_screen(cx).into_any_element(),
-            Screen::StudioHub => self.render_plugins_screen(cx).into_any_element(),
-            Screen::EqCurve => self.render_plugins_screen(cx).into_any_element(),
-            Screen::Studio => self.render_plugins_screen(cx).into_any_element(),
+            Screen::StudioHub => self.render_desktop_studio_hub(cx),
+            Screen::EqCurve => self.render_plugins_screen(None, cx).into_any_element(),
+            Screen::Studio => self.render_plugins_screen(None, cx).into_any_element(),
             Screen::Recording => self.render_recording_screen(cx).into_any_element(),
             Screen::RoomEq => self.render_room_eq_screen(cx).into_any_element(),
             Screen::HeadphoneEq => self.render_headphone_eq_screen(cx).into_any_element(),
@@ -871,31 +983,61 @@ impl PlayerView {
             Screen::PluginGraph => self.render_plugin_graph_screen(cx).into_any_element(),
             Screen::ListeningTest => self.render_listening_test_screen(cx).into_any_element(),
             Screen::Playlists => self.render_playlists_screen(cx).into_any_element(),
-            // Library/Queue use 3-panel layout in Expanded mode, individual screens in Compact
-            Screen::NowPlaying | Screen::Library | Screen::Queue => {
-                let layout_orientation = self.state.read(cx).app.layout.orientation;
-                match layout_mode {
-                    crate::app::LayoutMode::Expanded => match layout_orientation {
-                        crate::app::LayoutOrientation::Horizontal => {
-                            self.render_horizontal_3panel(cx).into_any_element()
-                        }
-                        crate::app::LayoutOrientation::Vertical => {
-                            self.render_vertical_3panel(cx).into_any_element()
-                        }
-                    },
-                    crate::app::LayoutMode::Compact => match screen {
-                        Screen::Library => self.render_library_screen(cx).into_any_element(),
-                        Screen::NowPlaying | Screen::Queue => {
-                            self.render_queue_screen(None, cx).into_any_element()
-                        }
-                        _ => unreachable!("handled by outer match"),
-                    },
+            Screen::Library => {
+                if self.state.read(cx).app.library_state.album_detail.is_some() {
+                    self.render_album_detail(cx)
+                } else {
+                    self.render_library_screen(cx).into_any_element()
                 }
             }
+            Screen::NowPlaying => self.render_now_playing_screen(cx),
+            Screen::Queue => self.render_queue_page(cx),
+        };
+        if let Some(navigation) = self.studio_workspace_navigation(screen, cx) {
+            let owns_scroll = matches!(
+                screen,
+                Screen::Studio
+                    | Screen::Spectrum
+                    | Screen::Recording
+                    | Screen::RoomEq
+                    | Screen::HeadphoneEq
+                    | Screen::Spinorama
+                    | Screen::ListeningTest
+            );
+            let workspace = div()
+                .id("studio-workspace")
+                .track_scroll(&self.scroll.studio_workspace)
+                .flex()
+                .flex_col()
+                .size_full()
+                .min_h_0()
+                .min_w_0()
+                .overflow_y_scroll()
+                .child(navigation)
+                .child(
+                    div()
+                        .flex_1()
+                        // Workflow bodies own scrolling and must fit below the
+                        // Studio navigation, including at enlarged text sizes.
+                        .when(owns_scroll, |panel| panel.min_h_0().overflow_hidden())
+                        .when(!owns_scroll, |panel| {
+                            panel.flex_shrink_0().min_h(rems(32.0))
+                        })
+                        .min_w_0()
+                        .child(content),
+                );
+            #[cfg(feature = "dev-api")]
+            let workspace = {
+                use crate::app::dev_api::DevTrackExt;
+                workspace.dev_track("studio.workspace")
+            };
+            workspace.into_any_element()
+        } else {
+            content
         }
     }
 
-    fn render_app_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn render_legacy_app_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         reset_interactive_focus_order();
         let d = Ds::from_cx(cx);
         let language = self.state.read(cx).app.ui_state.language;
@@ -932,6 +1074,18 @@ impl PlayerView {
             )
         };
 
+        let ui = &self.state.read(cx).app.ui_state;
+        let collapsed = crate::ui::navigation_is_compact(
+            ui.window_width,
+            crate::ui::compute_combined_scale(
+                ui.window_width,
+                ui.window_height,
+                ui.font_scale,
+                ui.min_font_size_px,
+                ui.max_font_size_px,
+            ),
+            collapsed,
+        );
         let rail_width = if collapsed { rems(3.75) } else { rems(12.0) };
         let toggle_icon = if collapsed {
             IconName::ChevronRight
@@ -982,7 +1136,7 @@ impl PlayerView {
                 .variant(gpui_ui_kit::IconButtonVariant::Ghost)
                 .theme(theme.to_icon_button_theme())
                 .aria_label(toggle_label)
-                .on_click(move |_window, cx| toggle_action(cx))
+                .on_click(move |_window, cx| toggle_action(cx)),
             )
             .child(self.render_sidebar_mode_item(
                 "nav-player",
@@ -1705,23 +1859,15 @@ impl PlayerView {
         let activation_device_name = device_name.clone();
         let on_activate = std::rc::Rc::new(move |cx: &mut App| {
             state_entity.update(cx, |state, _cx| {
-                let was_playing = state.app.playback.is_playing;
-                let current_path = state.app.queue_state.current_track_source();
-                let current_pos = state.app.playback.position_secs;
-
-                state.app.audio_device_state.selected_output_device_index = index;
-                state.app.audio_device_state.current_output_device_name =
-                    Some(activation_device_name.clone());
-                state.app.deselect_cast_device();
-
-                if let Err(e) = state
-                    .player
-                    .set_output_device(activation_device_name.clone())
-                {
-                    log::error!("Failed to set output device: {}", e);
-                } else if was_playing && let Some(path) = current_path {
-                    Self::play_track_at(state, path, Some(current_pos));
-                }
+                let devices = &mut state.app.audio_device_state;
+                devices.output_draft.select(
+                    activation_device_name.clone(),
+                    devices.current_output_device_name.as_deref(),
+                );
+                state.app.ui_state.active_settings_tab = crate::app::SettingsTab::AudioDevice;
+                state
+                    .app
+                    .set_screen(Screen::Settings, "QuickOutputPreferences");
             });
         });
         let mouse_activate = on_activate.clone();

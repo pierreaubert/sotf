@@ -1,0 +1,22 @@
+# 2026-09-08: a user Matrix incorrectly started the permanent rack tail.
+# ui_rack/plugin.rs now finds the permanent Matrix when splitting the strip.
+# Run with the plugin_editor_lifecycle_ui.toml suite.
+focus Studio
+plugin_clear
+plugin_add Matrix
+action PluginSelectFirstUser
+wait_idle
+assert_visible rack.plugin.2.toggle
+assert plugins.plugin.2.type == "Matrix Mixer"
+assert plugins.plugin.3.type == "Matrix Mixer"
+assert plugins.plugin.2.enabled == true
+assert plugins.plugin.3.enabled == true
+click rack.plugin.2.toggle
+assert plugins.plugin.2.enabled == false
+assert plugins.plugin.3.enabled == true
+click rack.plugin.2.toggle
+assert plugins.plugin.2.enabled == true
+assert plugins.plugin.3.enabled == true
+assert_visible rack.params
+screenshot user-matrix-controls
+assert playback.is_playing == false

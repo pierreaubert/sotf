@@ -35,13 +35,37 @@ mod macos {
     use std::rc::Rc;
     use std::sync::Arc;
 
-    const VIEWPORTS: [(u32, u32); 2] = [(700, 900), (1600, 1000)];
+    const VIEWPORTS: [(u32, u32); 5] = [
+        (700, 900),
+        (1050, 900),
+        (1280, 600),
+        (1600, 1000),
+        (2560, 1440),
+    ];
 
     #[derive(Clone, Copy, Debug, Default, ValueEnum)]
     enum ReviewSurface {
         #[default]
         Rack,
         Settings,
+        Comparison,
+        ComparisonListen,
+        ComparisonResults,
+        Training,
+        Home,
+        Library,
+        NowPlaying,
+        Queue,
+        Playlists,
+        Streams,
+        Studio,
+        Preferences,
+        Recording,
+        RoomEq,
+        HeadphoneEq,
+        SpinoramaEq,
+        Routing,
+        Spectrum,
     }
 
     #[derive(Debug, Parser)]
@@ -58,6 +82,9 @@ mod macos {
         /// Capture the rack detail or the external-plugin Settings surface.
         #[arg(long, value_enum, default_value_t)]
         surface: ReviewSurface,
+        /// User UI zoom, independent of window dimensions.
+        #[arg(long, default_value_t = 1.0)]
+        zoom: f32,
     }
 
     fn external_descriptor(path: &Path) -> PluginDescriptor {
@@ -199,6 +226,58 @@ mod macos {
     }
 
     #[allow(clippy::too_many_arguments)]
+    fn seed_comparison_session(state: &mut AppState, results: bool) -> Result<()> {
+        use sotf_audio_player::controllers::ab_test_session::{
+            AbTestSession, ChainSnapshot, LevelMatchMeasurement, LevelMatchMetric,
+            ListeningTestSetup, MediaSegment, TrialAnswer, TrialMode,
+        };
+        use sotf_plugins::plugin_ab_compare::PathConfig;
+
+        let setup = ListeningTestSetup {
+            path_a: ChainSnapshot::new("Reference", PathConfig::None)?,
+            path_b: ChainSnapshot::new("Candidate", PathConfig::Rack { plugins: vec![] })?,
+            media: MediaSegment {
+                media_id: "visual-review-fixture".into(),
+                media_path: Some("Review excerpt.flac".into()),
+                start_ms: 0,
+                duration_ms: 20_000,
+            },
+            sample_rate: 48_000,
+            channels: 2,
+            level_match: LevelMatchMeasurement {
+                metric: LevelMatchMetric::ShortTermLufs,
+                window_ms: 3_000,
+                path_a_db: -18.0,
+                path_b_db: -18.0,
+                correction_b_db: 0.0,
+                tolerance_db: 0.1,
+                max_correction_db: 6.0,
+            },
+            switch_transition_ms: 20.0,
+            participant_id: None,
+            app_version: env!("CARGO_PKG_VERSION").into(),
+        };
+        let mut session = AbTestSession::new("visual-review", setup, 42)?;
+        session.start_trial(TrialMode::Abx)?;
+        session.commit_trial(TrialAnswer::A, Some(70), None)?;
+        if !results {
+            session.start_trial(TrialMode::Abx)?;
+        }
+        state
+            .app
+            .plugin_state
+            .listening_test_state
+            .ab_test
+            .replace_session(session)?;
+        state
+            .app
+            .plugin_state
+            .plugin_ui_state
+            .listening_workspace
+            .results_open = results;
+        Ok(())
+    }
+
     fn capture_viewport(
         cx: &mut VisualTestAppContext,
         output: &Path,
@@ -207,6 +286,7 @@ mod macos {
         plugin_types: &[PluginType],
         external_fixture: &Path,
         surface: ReviewSurface,
+        zoom: f32,
         manifest: &mut Vec<serde_json::Value>,
     ) -> Result<()> {
         for (ordinal, requested_type) in plugin_types.iter().cloned().enumerate() {
@@ -226,6 +306,7 @@ mod macos {
                     // window's dimensions during a deterministic capture.
                     state.app.ui_state.window_width = width as f32;
                     state.app.ui_state.window_height = height as f32;
+                    state.app.ui_state.font_scale = zoom;
                     state.app.plugin_state = PluginState::new();
                     if requested_type == PluginType::External {
                         seed_external_plugin_state(state, external_fixture)?;
@@ -239,8 +320,35 @@ mod macos {
                     if matches!(surface, ReviewSurface::Settings) {
                         state.app.ui_state.active_settings_tab = SettingsTab::Misc;
                         state.app.ui_state.current_screen = Screen::SettingsDetail;
+                    } else if matches!(surface, ReviewSurface::Comparison | ReviewSurface::ComparisonListen | ReviewSurface::ComparisonResults | ReviewSurface::Training) {
+                        state.app.ui_state.current_screen = Screen::ListeningTest;
+                        state.app.plugin_state.listening_test_state.surface = if !matches!(surface, ReviewSurface::Training) {
+                            sotf_audio_player_gpui::app::state::plugin::EarTrainingSurface::BlindComparison
+                        } else {
+                            sotf_audio_player_gpui::app::state::plugin::EarTrainingSurface::EqBands
+                        };
+                        state.app.tutorial.listening_guide_open = false;
+                        if matches!(surface, ReviewSurface::ComparisonListen | ReviewSurface::ComparisonResults) {
+                            seed_comparison_session(state, matches!(surface, ReviewSurface::ComparisonResults))?;
+                        }
                     } else {
-                        state.app.ui_state.current_screen = Screen::Studio;
+            state.app.ui_state.current_screen = match surface {
+                ReviewSurface::Home => Screen::Home,
+                ReviewSurface::Library => Screen::Library,
+                ReviewSurface::NowPlaying => Screen::NowPlaying,
+                ReviewSurface::Queue => Screen::Queue,
+                ReviewSurface::Playlists => Screen::Playlists,
+                ReviewSurface::Streams => Screen::Streams,
+                ReviewSurface::Studio => Screen::StudioHub,
+                ReviewSurface::Preferences => Screen::Settings,
+                ReviewSurface::Recording => Screen::Recording,
+                ReviewSurface::RoomEq => Screen::RoomEq,
+                ReviewSurface::HeadphoneEq => Screen::HeadphoneEq,
+                ReviewSurface::SpinoramaEq => Screen::Spinorama,
+                ReviewSurface::Routing => Screen::PluginGraph,
+                ReviewSurface::Spectrum => Screen::Spectrum,
+                _ => Screen::Studio,
+            };
                     }
                     state.app.tutorial.current_hint = None;
                     cx.notify();
@@ -268,6 +376,13 @@ mod macos {
                 .with_context(|| format!("opening {requested_name} at {width}x{height}"))?;
             // Let the platform finish its initial frame so `refresh()` below
             // runs from DrawPhase::None and invalidates the entire view tree.
+            cx.run_until_parked();
+            // Measured content boxes publish their width after layout. Drain
+            // that update before capture so the image represents settled UI.
+            cx.update_window(window.into(), |_, window, cx| {
+                window.refresh();
+                let _ = window.draw(cx);
+            })?;
             cx.run_until_parked();
             cx.update(|cx| cx.global_mut::<AccessibilityTree>().clear());
             let (image, accessibility) = cx.update_window(window.into(), |_, window, cx| {
@@ -328,6 +443,24 @@ mod macos {
             let surface_name = match surface {
                 ReviewSurface::Rack => "rack",
                 ReviewSurface::Settings => "settings",
+                ReviewSurface::Comparison => "comparison",
+                ReviewSurface::ComparisonListen => "comparison-listen",
+                ReviewSurface::ComparisonResults => "comparison-results",
+                ReviewSurface::Training => "training",
+                ReviewSurface::Home => "home",
+                ReviewSurface::Library => "library",
+                ReviewSurface::NowPlaying => "now-playing",
+                ReviewSurface::Queue => "queue",
+                ReviewSurface::Playlists => "playlists",
+                ReviewSurface::Streams => "streams",
+                ReviewSurface::Studio => "studio",
+                ReviewSurface::Preferences => "preferences",
+                ReviewSurface::Recording => "recording",
+                ReviewSurface::RoomEq => "roomeq",
+                ReviewSurface::HeadphoneEq => "headphoneeq",
+                ReviewSurface::SpinoramaEq => "spinoramaeq",
+                ReviewSurface::Routing => "routing",
+                ReviewSurface::Spectrum => "spectrum",
             };
             let filename = format!(
                 "{:02}-{}-{}-{}x{}.png",
@@ -413,6 +546,9 @@ mod macos {
         };
 
         let mut manifest = Vec::new();
+        if !args.zoom.is_finite() || !(0.5..=2.0).contains(&args.zoom) {
+            return Err(anyhow!("--zoom must be a finite scale between 0.5 and 2.0"));
+        }
         for (width, height) in VIEWPORTS {
             capture_viewport(
                 &mut cx,
@@ -422,6 +558,7 @@ mod macos {
                 &plugin_types,
                 &external_fixture,
                 args.surface,
+                args.zoom,
                 &mut manifest,
             )?;
         }

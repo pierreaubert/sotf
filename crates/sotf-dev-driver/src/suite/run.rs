@@ -369,6 +369,7 @@ fn run_one(
                     "channels": fake.channels,
                     "points": fake.points,
                     "fault": fake.fault,
+                    "import_json": fake.import_json,
                 }),
             )
             .context("installing fake recording capture")?;
@@ -475,9 +476,14 @@ fn run_one(
         let timeout = parse_duration(&scenario.timeout)?;
         let deadline = Instant::now() + timeout;
         let script_started = Instant::now();
-        let script_report =
-            crate::run_script_with_run_id(&scenario.path, &base_url, verbose, Some(&run_id))
-                .with_context(|| format!("running {:?}", scenario.path))?;
+        let script_report = crate::run_script_with_run_id(
+            &scenario.path,
+            &base_url,
+            verbose,
+            Some(&run_id),
+            Some(qa_dir.to_str().context("QA directory is not valid UTF-8")?),
+        )
+        .with_context(|| format!("running {:?}", scenario.path))?;
         let budget_result = script_report.ensure_budgets();
         timings.operations = script_report.named;
         timings.script_ms = Some(elapsed_ms(script_started));

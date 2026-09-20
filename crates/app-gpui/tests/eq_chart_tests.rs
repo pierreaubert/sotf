@@ -11,6 +11,86 @@ use sotf_audio_player_gpui::{
 };
 use sotf_plugins::param_specs::{eq::BAND_TEMPLATE as EQ, find_by_key as pk};
 
+/// Independent RBJ peak cascade, measured through its impulse response rather
+/// than the chart's stage builder or frequency-response implementation.
+fn peak_impulse_response_db(filter: &EQFilter, sample_rate: f64, frequency: f64) -> f64 {
+    let stages = filter.order / 2;
+    let amplitude = 10.0_f64.powf(filter.gain_db / stages as f64 / 40.0);
+    let omega = std::f64::consts::TAU * filter.frequency / sample_rate;
+    let mut impulse = vec![0.0; 8192];
+    impulse[0] = 1.0;
+    for stage in 0..stages {
+        let q = if filter.order == 2 {
+            filter.q
+        } else {
+            filter.q
+                / (2.0
+                    * (std::f64::consts::PI * (2 * stage + 1) as f64 / (2 * filter.order) as f64)
+                        .cos())
+        };
+        let alpha = omega.sin() / (2.0 * q);
+        let a0 = 1.0 + alpha / amplitude;
+        let b0 = (1.0 + alpha * amplitude) / a0;
+        let b1 = -2.0 * omega.cos() / a0;
+        let b2 = (1.0 - alpha * amplitude) / a0;
+        let a1 = b1;
+        let a2 = (1.0 - alpha / amplitude) / a0;
+        let (mut x1, mut x2, mut y1, mut y2) = (0.0, 0.0, 0.0, 0.0);
+        for sample in &mut impulse {
+            let input = *sample;
+            let output = b0 * input + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+            x2 = x1;
+            x1 = input;
+            y2 = y1;
+            y1 = output;
+            *sample = output;
+        }
+    }
+    let (real, imaginary) = impulse.iter().enumerate().fold((0.0, 0.0), |sum, (n, y)| {
+        let phase = std::f64::consts::TAU * frequency * n as f64 / sample_rate;
+        (sum.0 + y * phase.cos(), sum.1 - y * phase.sin())
+    });
+    20.0 * real.hypot(imaginary).log10()
+}
+
+#[test]
+fn explicit_rate_preview_matches_peak_impulse_cascade() {
+    use sotf_audio_player_gpui::{calculate_band_response_at_rate, calculate_response_at_rate};
+
+    for sample_rate in [44_100.0, 48_000.0, 96_000.0] {
+        for order in [2, 4, 6, 8] {
+            for gain_db in [-9.0, 9.0] {
+                let filter = EQFilter {
+                    frequency: 12_000.0,
+                    q: 1.4,
+                    gain_db,
+                    filter_type: BiquadFilterType::Peak,
+                    muted: false,
+                    solo: false,
+                    order,
+                    topology: Default::default(),
+                    lambda: None,
+                    kautz_sections: Vec::new(),
+                };
+                for frequency in [5_000.0, 12_000.0, 18_000.0] {
+                    let expected = peak_impulse_response_db(&filter, sample_rate, frequency);
+                    let actual = calculate_band_response_at_rate(&filter, frequency, sample_rate);
+                    assert!(
+                        (actual - expected).abs() < 1e-7,
+                        "rate={sample_rate}, order={order}, gain={gain_db}, frequency={frequency}: preview={actual}, impulse={expected}"
+                    );
+                    let combined = calculate_response_at_rate(
+                        &[filter.clone(), filter.clone()],
+                        frequency,
+                        sample_rate,
+                    );
+                    assert!((combined - 2.0 * expected).abs() < 1e-7);
+                }
+            }
+        }
+    }
+}
+
 const TEST_CHART_HEIGHT: f32 = 300.0;
 const TEST_PLOT_HEIGHT: f32 = TEST_CHART_HEIGHT - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
 const TEST_MIN_GAIN_DB: f64 = -24.0;
@@ -335,6 +415,7 @@ fn test_calculate_response_at_freq() {
         filter_type: BiquadFilterType::Peak,
         muted: false,
         solo: false,
+        order: 2,
         topology: Default::default(),
         lambda: None,
         kautz_sections: Vec::new(),
@@ -353,6 +434,7 @@ fn test_calculate_response_at_freq() {
         filter_type: BiquadFilterType::Peak,
         muted: true,
         solo: false,
+        order: 2,
         topology: Default::default(),
         lambda: None,
         kautz_sections: Vec::new(),
@@ -375,6 +457,7 @@ fn test_calculate_response_solo() {
             filter_type: BiquadFilterType::Peak,
             muted: false,
             solo: false,
+            order: 2,
             topology: Default::default(),
             lambda: None,
             kautz_sections: Vec::new(),
@@ -386,6 +469,7 @@ fn test_calculate_response_solo() {
             filter_type: BiquadFilterType::Peak,
             muted: false,
             solo: true,
+            order: 2,
             topology: Default::default(),
             lambda: None,
             kautz_sections: Vec::new(),
@@ -413,6 +497,7 @@ fn test_calculate_band_response() {
         filter_type: BiquadFilterType::Peak,
         muted: false,
         solo: false,
+        order: 2,
         topology: Default::default(),
         lambda: None,
         kautz_sections: Vec::new(),

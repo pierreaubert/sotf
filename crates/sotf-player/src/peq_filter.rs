@@ -36,3 +36,47 @@ pub struct PeqFilter {
     /// Gain in dB (used by Peak, Lowshelf, Highshelf).
     pub db_gain: f64,
 }
+
+impl PeqFilter {
+    /// Decode optimizer names and conventional PEQ abbreviations consistently
+    /// for playback and export. Unknown legacy names retain the Peak default.
+    pub fn biquad_filter_type(&self) -> math_audio_iir_fir::BiquadFilterType {
+        use math_audio_iir_fir::BiquadFilterType::*;
+        match self.filter_type.to_ascii_lowercase().as_str() {
+            "ls" | "lowshelf" => Lowshelf,
+            "hs" | "highshelf" => Highshelf,
+            "lp" | "lowpass" => Lowpass,
+            "hp" | "highpass" => Highpass,
+            "bp" | "bandpass" => Bandpass,
+            "no" | "notch" => Notch,
+            "ap" | "allpass" => AllPass,
+            _ => Peak,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn optimizer_filter_names_preserve_response_types() {
+        use math_audio_iir_fir::BiquadFilterType::*;
+        for filter_type in [
+            Peak, Lowshelf, Highshelf, Lowpass, Highpass, Bandpass, Notch, AllPass,
+        ] {
+            for name in [
+                filter_type.long_name().to_string(),
+                filter_type.long_name().to_lowercase(),
+            ] {
+                let filter = PeqFilter {
+                    filter_type: name,
+                    freq: 1000.0,
+                    q: 0.7,
+                    db_gain: 3.0,
+                };
+                assert_eq!(filter.biquad_filter_type(), filter_type);
+            }
+        }
+    }
+}

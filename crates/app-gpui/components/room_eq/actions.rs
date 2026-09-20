@@ -26,11 +26,15 @@ impl PlayerView {
                 return;
             }
 
-            state
+            if let Err(error) = state
                 .app
                 .measurement_state
                 .room_eq_state
-                .load_from_recording(&state.app.measurement_state.recording_state);
+                .load_from_recording(&state.app.measurement_state.recording_state)
+            {
+                state.app.measurement_state.room_eq_state.error_message = Some(error);
+                return;
+            }
             state
                 .app
                 .measurement_state
@@ -42,33 +46,12 @@ impl PlayerView {
                 .measurement_state
                 .room_eq_state
                 .apply_smart_defaults(playback_sr);
-            // Detect multi-mic recordings and set multi-position data
-            let has_multi_mic = state
+            if state
                 .app
                 .measurement_state
                 .room_eq_state
-                .channel_measurements
-                .iter()
-                .any(|m| !m.multi_mic_measurements.is_empty());
-
-            if has_multi_mic {
-                state
-                    .app
-                    .measurement_state
-                    .room_eq_state
-                    .has_multi_position_data = true;
-                state
-                    .app
-                    .measurement_state
-                    .room_eq_state
-                    .multi_position_counts = state
-                    .app
-                    .measurement_state
-                    .room_eq_state
-                    .channel_measurements
-                    .iter()
-                    .map(|m| (m.channel_name.clone(), 1 + m.multi_mic_measurements.len()))
-                    .collect();
+                .has_multiple_measurements()
+            {
                 // Auto-enable multi-measurement optimization
                 if !state
                     .app
@@ -155,10 +138,7 @@ impl PlayerView {
     pub(crate) fn load_room_eq_from_file(&mut self, cx: &mut Context<Self>) {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
-            use crate::app::types::{
-                ChannelMeasurement, RoomEqDataSource, RoomEqMeasurementsFile, RoomEqSpeakerConfig,
-                SpeakerConfigType,
-            };
+            use crate::app::types::{ChannelMeasurement, RoomEqDataSource, RoomEqMeasurementsFile};
 
             let state_entity = self.state.clone();
 
@@ -241,7 +221,8 @@ impl PlayerView {
                                     Ok(channels) => channels,
                                     Err(e) => {
                                         log::error!("Failed to parse measurements: {}", e);
-                                        state_entity.update(cx, |state, _| {
+                                        state_entity.update(cx, |state, cx| {
+                                cx.notify();
                                             state.app.measurement_state.room_eq_state.error_message =
                                                 Some(format!("Failed to parse measurements: {}", e));
                                         });
@@ -280,31 +261,21 @@ impl PlayerView {
 
                             if channel_measurements.is_empty() {
                                 log::error!("No valid inline measurements found in RoomConfig");
-                                state_entity.update(cx, |state, _| {
+                                state_entity.update(cx, |state, cx| {
+                                cx.notify();
                                     state.app.measurement_state.room_eq_state.error_message =
                                         Some("No valid measurement data found. The file may be an older format — try re-recording or re-exporting.".to_string());
                                 });
                                 return;
                             }
 
-                            // Create speaker configs
-                            let mut speaker_configs: Vec<RoomEqSpeakerConfig> = channel_measurements
-                                .iter()
-                                .map(|m| RoomEqSpeakerConfig {
-                                    channel_name: m.channel_name.clone(),
-                                    config_type: SpeakerConfigType::Single,
-                                    driver_names: Vec::new(),
-                                    ..Default::default()
-                                })
-                                .collect();
-
                             let channel_count = channel_measurements.len();
-                            state_entity.update(cx, |state, _| {
+                            state_entity.update(cx, |state, cx| {
+                                cx.notify();
                                 let max_ch = state.app.max_room_eq_channels();
                                 let truncated = max_ch > 0 && channel_count > max_ch;
                                 if truncated {
                                     channel_measurements.truncate(max_ch);
-                                    speaker_configs.truncate(max_ch);
                                 }
                                 state.app.measurement_state.room_eq_state.channel_measurements =
                                     channel_measurements;
@@ -318,8 +289,7 @@ impl PlayerView {
                                     .measurement_state
                                     .room_eq_state
                                     .imported_crossovers = backend_crossovers;
-                                state.app.measurement_state.room_eq_state.speaker_configs =
-                                    speaker_configs;
+                                state.app.measurement_state.room_eq_state.model.init_speaker_configs();
                                 state.app.measurement_state.room_eq_state.data_source =
                                     RoomEqDataSource::FromFile(file_path.clone());
                                 if truncated {
@@ -409,7 +379,8 @@ impl PlayerView {
                             "{} is not an autoeq RoomConfig (no \"speakers\" map). Re-run the Recording wizard to regenerate it.",
                             file_path.display()
                         );
-                        state_entity.update(cx, |state, _| {
+                        state_entity.update(cx, |state, cx| {
+                                cx.notify();
                             state.app.measurement_state.room_eq_state.error_message = Some(
                                 format!(
                                     "{} is not in the current RoomConfig format — re-run the Recording wizard to regenerate it.",
@@ -420,7 +391,8 @@ impl PlayerView {
                     }
                     Err(e) => {
                         log::error!("File read error: {}", e);
-                        state_entity.update(cx, |state, _| {
+                        state_entity.update(cx, |state, cx| {
+                                cx.notify();
                             state.app.measurement_state.room_eq_state.error_message =
                                 Some(format!("Failed to read file: {}", e));
                         });

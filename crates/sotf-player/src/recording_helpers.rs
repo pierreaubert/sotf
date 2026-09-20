@@ -24,6 +24,28 @@ use sotf_audio::signal_recorder::{
 /// regardless of the user-chosen session name.
 pub const RECORDINGS_FILENAME: &str = "recordings.json";
 
+/// Replace session metadata only after a complete write succeeds.
+/// A failed write leaves the previous saved session intact.
+pub fn save_recording_session_json(path: &std::path::Path, json: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    replace_recording_session(path, |file| file.write_all(json))
+}
+
+fn replace_recording_session(
+    path: &std::path::Path,
+    write: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+    write(temporary.as_file_mut())?;
+    temporary.as_file().sync_all()?;
+    temporary.persist(path).map_err(|error| error.error)?;
+    Ok(())
+}
+
 /// Shared default sweep start frequency (Hz) for all frontends (C2).
 pub const DEFAULT_SWEEP_START_FREQ: f32 = 20.0;
 
@@ -458,6 +480,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn session_save_replaces_complete_metadata_and_cleans_temporary_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(RECORDINGS_FILENAME);
+        save_recording_session_json(&path, br#"{"revision":1}"#).unwrap();
+        save_recording_session_json(&path, br#"{"revision":2}"#).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), br#"{"revision":2}"#);
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn session_save_preserves_previous_metadata_after_partial_write_failure() {
+        use std::io::Write;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(RECORDINGS_FILENAME);
+        let original = br#"{"revision":1}"#;
+        std::fs::write(&path, original).unwrap();
+        let error = replace_recording_session(&path, |file| {
+            file.write_all(b"incomplete replacement")?;
+            Err(std::io::Error::other("simulated full disk"))
+        })
+        .unwrap_err();
+        assert_eq!(error.to_string(), "simulated full disk");
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+        save_recording_session_json(&path, br#"{"revision":2}"#).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), br#"{"revision":2}"#);
+    }
+
+    #[test]
     fn signal_type_for_maps_each_variant() {
         assert_eq!(
             signal_type_for(RecordingSignalType::Sweep),
@@ -760,6 +811,7 @@ mod tests {
         let warn = quality_summary(false, &["low coherence"], None);
         let clean = quality_summary(true, &[], Some(5.0));
         let mk = |q: TakeQualitySummary| RecordingResult {
+            sample_rate_hz: None,
             channel: 0,
             wav_path: None,
             csv_path: None,
@@ -810,6 +862,7 @@ mod tests {
         clean_q.score = 0.95;
         clean_q.rejected_count = 0;
         clean.result = Some(RecordingResult {
+            sample_rate_hz: None,
             channel: 0,
             wav_path: None,
             csv_path: None,
@@ -833,6 +886,7 @@ mod tests {
         let mut bad_q = quality_summary(false, &["clipping detected"], None);
         bad_q.dropped_samples = 128;
         bad.result = Some(RecordingResult {
+            sample_rate_hz: None,
             channel: 1,
             wav_path: None,
             csv_path: None,
@@ -872,6 +926,7 @@ mod tests {
         let mut stale = ChannelRecording::new(0, "FL".to_string());
         stale.state = ChannelRecordingState::Error;
         stale.result = Some(RecordingResult {
+            sample_rate_hz: None,
             channel: 0,
             wav_path: None,
             csv_path: None,
@@ -913,6 +968,7 @@ mod tests {
             let mut q = quality_summary(true, &[], None);
             q.accepted_count = accepted;
             ch.result = Some(RecordingResult {
+                sample_rate_hz: None,
                 channel: 0,
                 wav_path: None,
                 csv_path: None,

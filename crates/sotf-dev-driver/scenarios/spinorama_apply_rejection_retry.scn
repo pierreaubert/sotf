@@ -1,0 +1,17 @@
+# Synthetic receipt rejection through the production acknowledgement poller.
+action SpinoramaSetExportFixture
+wait_idle 500ms
+scroll_into_view spinorama.content spinorama.apply
+click spinorama.apply
+wait_until spinorama.application_status == "Applied" timeout=5s
+assert plugins.user_count == 1
+action SpinoramaRejectApplyFixture
+wait_until spinorama.application_status == "Failed" timeout=5s
+scroll_into_view spinorama.content correction.application_status
+screenshot spinorama-apply-rejected
+scroll_into_view spinorama.content spinorama.apply
+click spinorama.apply
+wait_until spinorama.application_status == "Applied" timeout=5s
+assert plugins.user_count == 1
+assert playback.is_playing == false
+screenshot spinorama-apply-retried

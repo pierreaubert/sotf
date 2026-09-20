@@ -255,6 +255,8 @@ fn test_build_room_eq_graph_ctc_uses_stereo_input_and_speaker_branches() {
         }),
     });
     output.metadata = Some(OptimizationMetadata {
+        final_convolution_sha256: None,
+        qa_seed_distribution: None,
         pre_score: 1.0,
         post_score: 0.5,
         algorithm: "test".to_string(),
@@ -405,6 +407,8 @@ fn test_build_room_eq_graph_tracks_global_variable_channel_widths() {
         }),
     });
     output.metadata = Some(OptimizationMetadata {
+        final_convolution_sha256: None,
+        qa_seed_distribution: None,
         pre_score: 1.0,
         post_score: 0.5,
         algorithm: "test".to_string(),
@@ -501,17 +505,15 @@ fn test_build_room_eq_graph_tracks_global_variable_channel_widths() {
     }
 }
 
-/// When `lfe_gain_applied_to_chain == true` AND the LFE chain has a
-/// `route_owned` gain plugin, the chain-override branch in the builder
-/// should win for the LFE self-route. Matrix coefficient for the LFE
-/// self-route should reflect the chain's gain, not `route.gain_db`.
+/// Complete route gains remain authoritative even when redundant legacy
+/// route-owned chain gains and the LFE-chain flag are present.
 #[test]
-fn test_factored_graph_lfe_chain_route_owned_gain_overrides_route_gain() {
+fn test_physical_graph_uses_route_gain_without_chain_override() {
     // Build an output with two channels: L (main) and LFE (sub).
     // L → L HP route (main_highpass_to_self)
     // L → LFE LP route (redirected_bass_lowpass_to_sub, route.gain_db=-13)
     // LFE → LFE LP route (lfe_lowpass_to_sub, route.gain_db=-7, but the
-    // LFE chain has a route_owned gain of -17 dB which should override).
+    // LFE chain has a redundant route_owned gain of -17 dB, not an override).
     let mut output = bare_output(vec![
         (
             "L".to_string(),
@@ -536,6 +538,8 @@ fn test_factored_graph_lfe_chain_route_owned_gain_overrides_route_gain() {
         ),
     ]);
     output.metadata = Some(OptimizationMetadata {
+        final_convolution_sha256: None,
+        qa_seed_distribution: None,
         pre_score: 1.0,
         post_score: 0.5,
         algorithm: "test".to_string(),
@@ -632,7 +636,7 @@ fn test_factored_graph_lfe_chain_route_owned_gain_overrides_route_gain() {
                         high_pass_hz: None,
                         low_pass_hz: Some(80.0),
                         // Route metadata gain is -7. The chain has -17,
-                        // which should win for self-routes.
+                        // which must not replace the complete route gain.
                         gain_db: -7.0,
                         gain_linear: 0.4467,
                         matrix_gain: 0.4467,
@@ -656,45 +660,56 @@ fn test_factored_graph_lfe_chain_route_owned_gain_overrides_route_gain() {
         validation_bundle: None,
     });
 
-    let config = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
-    let matrix_node = config
-        .nodes
-        .iter()
-        .find(|n| {
-            n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_matrix_to_sub_bus")
-        })
-        .expect("factored sub-bus matrix");
-    let matrix: Vec<f32> = matrix_node.parameters["matrix"]
-        .as_array()
+    // The canonical route gain is complete. Redundant route-owned chain gain
+    // must neither override nor multiply it. Repair this legacy fixture's
+    // rounded linear metadata before checking the authoritative route values.
+    for route in &mut output
+        .metadata
+        .as_mut()
         .unwrap()
-        .iter()
-        .map(|v| v.as_f64().unwrap() as f32)
-        .collect();
-    // L → LFE redirected_bass: matrix[LFE_idx=1][L_idx=0] = 10^(-13/20).
-    let l_to_lfe = matrix[2];
-    let expected_l_to_lfe = 10.0_f32.powf(-13.0 / 20.0);
-    assert!(
-        (l_to_lfe - expected_l_to_lfe).abs() < 1e-5,
-        "L→LFE matrix coef should be 10^(-13/20) ≈ {expected_l_to_lfe}, got {l_to_lfe}"
-    );
-    // LFE → LFE: chain has route_owned gain = -17 dB, which should win
-    // over route.gain_db = -7 for the self-route.
-    let lfe_to_lfe = matrix[2 + 1];
-    let expected_lfe_to_lfe = 10.0_f32.powf(-17.0 / 20.0);
-    assert!(
-        (lfe_to_lfe - expected_lfe_to_lfe).abs() < 1e-5,
-        "LFE self-route should use chain route_owned gain -17, \
-             got {lfe_to_lfe}, expected 10^(-17/20) ≈ {expected_lfe_to_lfe}"
-    );
+        .bass_management
+        .as_mut()
+        .unwrap()
+        .routing_graph
+        .as_mut()
+        .unwrap()
+        .routes
+    {
+        route.gain_linear = 10.0_f64.powf(route.gain_db / 20.0);
+    }
+    let config = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
+    for (label, expected_db) in [("room_eq_route_1", -13.0), ("room_eq_route_2", -7.0)] {
+        let route = config
+            .nodes
+            .iter()
+            .find(|n| n.parameters["label"] == label)
+            .unwrap();
+        let gain_id = config
+            .edges
+            .iter()
+            .find(|e| e.from_node == route.id)
+            .unwrap()
+            .to_node;
+        let gain = config.nodes.iter().find(|n| n.id == gain_id).unwrap();
+        assert!(
+            (gain.parameters["matrix"][0].as_f64().unwrap() - 10.0_f64.powf(expected_db / 20.0))
+                .abs()
+                < 1e-6,
+            "{label}: {:?}",
+            gain.parameters
+        );
+    }
 }
 
 #[test]
-fn test_factored_graph_all_destinations_no_sources_builds_cleanly() {
+fn test_physical_graph_rejects_unconnected_declared_output() {
     let mut output = bare_output(vec![
         ("A".to_string(), bare_chain("A", None)),
         ("B".to_string(), bare_chain("B", None)),
     ]);
     output.metadata = Some(OptimizationMetadata {
+        final_convolution_sha256: None,
+        qa_seed_distribution: None,
         pre_score: 1.0,
         post_score: 0.5,
         algorithm: "test".to_string(),
@@ -779,66 +794,10 @@ fn test_factored_graph_all_destinations_no_sources_builds_cleanly() {
         validation_bundle: None,
     });
 
-    let config = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
-    let labels: Vec<&str> = config
-        .nodes
-        .iter()
-        .filter_map(|n| n.parameters.get("label").and_then(|l| l.as_str()))
-        .collect();
-    for required in [
-        "room_eq_gain_pre",
-        "room_eq_eq_pre",
-        "room_eq_xover_hp",
-        "room_eq_delay_hp",
-        "room_eq_xover_lp",
-        "room_eq_delay_lp",
-        "room_eq_matrix_to_sub_bus",
-        "room_eq_eq_post",
-        "room_eq_gain_post",
-    ] {
-        assert!(
-            labels.contains(&required),
-            "missing factored node {required} in {labels:?}"
-        );
-    }
-    // B (destination-only) → Passthrough on HP.
-    let xover_hp = config
-        .nodes
-        .iter()
-        .find(|n| n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_xover_hp"))
-        .unwrap();
-    let modes: Vec<String> = xover_hp.parameters["channel_modes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap().to_string())
-        .collect();
-    assert_eq!(modes[1], "passthrough");
-    // Matrix all zero (no LP routes).
-    let matrix_node = config
-        .nodes
-        .iter()
-        .find(|n| {
-            n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_matrix_to_sub_bus")
-        })
-        .unwrap();
-    let matrix: Vec<f32> = matrix_node.parameters["matrix"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_f64().unwrap() as f32)
-        .collect();
-    for v in &matrix {
-        assert_eq!(*v, 0.0);
-    }
-    // Every node must instantiate via the factory.
-    for node in &config.nodes {
-        sotf_plugins::create_plugin(
-            &node.plugin_type,
-            &node.parameters,
-            node.input_channels,
-            48_000,
-        )
-        .unwrap_or_else(|err| panic!("node {} ({}) failed: {err}", node.id, node.plugin_type));
-    }
+    let error = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("physical output A has no incoming route")
+    );
 }

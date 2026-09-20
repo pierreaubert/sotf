@@ -400,6 +400,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                         Some((
                             ch_idx,
                             RecordingResult {
+                                sample_rate_hz: Some(sample_rate),
                                 channel: ch_idx,
                                 wav_path: Some(wav_path.to_string_lossy().to_string()),
                                 csv_path: Some(csv_path.to_string_lossy().to_string()),

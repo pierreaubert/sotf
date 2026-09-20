@@ -77,6 +77,7 @@ impl PlayerView {
             .child(
                 // Accordion with five sections
                 Accordion::new()
+                    .aria_label(workflow_text.audio_device_configuration)
                     .mode(AccordionMode::Multiple)
                     .expanded(expanded_sections)
                     .item(
@@ -807,7 +808,7 @@ impl PlayerView {
                         .spacing(StackSpacing::Sm)
                         .align(StackAlign::Center)
                         .child(
-                            Text::new(recording_text.sweeps_per_channel)
+                            Text::new(recording_text.repeat.sweeps_per_channel)
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         )
@@ -834,7 +835,8 @@ impl PlayerView {
                         ),
                 )
                 .child(
-                    Text::caption(recording_text.sweeps_per_channel_hint).color(theme.text_muted),
+                    Text::caption(recording_text.repeat.sweeps_per_channel_hint)
+                        .color(theme.text_muted),
                 )
         };
 

@@ -21,13 +21,14 @@ wait_until library.search_query == "classical" timeout=2s
 wait_until library.filtered_album_count > 0 timeout=2s
 timing_end search max=1s
 
-# The Search tab doubles as a clear/close action. Re-open it instead of
-# mutating the input by fixture state, then enter a query with no matches.
+# Closing and reopening Search preserves its query; replace it via the input.
+# Enter a query with no matches through the visible input.
 click library.tab.search
-wait_until library.search_query == "" timeout=2s
+assert library.search_query == "classical"
 click library.tab.search
 assert_visible library.search_input
 click library.search_input
+key cmd-a
 type "no-sotf-library-result"
 wait_until library.search_query == "no-sotf-library-result" timeout=2s
 wait_until library.filtered_album_count == 0 timeout=2s

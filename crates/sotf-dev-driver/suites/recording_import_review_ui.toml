@@ -1,0 +1,32 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "/tmp/sotf-recording-import-ui"
+demo_audio_dir = "data_tests/audio"
+readiness_timeout = "30s"
+size = "1440x900"
+
+[[scenario]]
+name = "recording-import-review"
+allowed_log_patterns = ["Failed to prepare recording directory: target directory already exists:"]
+path = "crates/sotf-dev-driver/scenarios/recording_import_review.scn"
+timeout = "90s"
+tags = ["recording", "import", "fixture", "offline"]
+[scenario.fake_recording]
+channels = 2
+points = 48
+import_json = '''{"version": "1.1.0", "speakers": {"L": {"name": "Left speaker", "crossover": "main", "measurements": [{"speaker_name": "Woofer", "measurements": [{"name": "Seat 1", "frequencies": [100, 1000], "magnitude_db": [-3, 0], "wav_path": "Woofer-0.wav"}, {"name": "Seat 2", "frequencies": [100, 1000], "magnitude_db": [-4, -1], "wav_path": "Woofer-1.wav"}]}, {"speaker_name": "Tweeter", "measurements": [{"name": "Seat 1", "frequencies": [100, 1000], "magnitude_db": [-4, -1], "wav_path": "Tweeter-0.wav"}, {"name": "Seat 2", "frequencies": [100, 1000], "magnitude_db": [-5, -2], "wav_path": "Tweeter-1.wav"}]}]}}}'''
+
+[[scenario]]
+name = "recording-import-review-narrow-german"
+allowed_log_patterns = ["Failed to prepare recording directory: target directory already exists:"]
+path = "crates/sotf-dev-driver/scenarios/recording_import_review.scn"
+timeout = "90s"
+viewport = "600x1000"
+language = "German"
+font_scale = 1.5
+theme = "Light"
+tags = ["recording", "import", "fixture", "offline"]
+[scenario.fake_recording]
+channels = 2
+points = 48
+import_json = '''{"version": "1.1.0", "speakers": {"L": {"name": "Left speaker", "crossover": "main", "measurements": [{"speaker_name": "Woofer", "measurements": [{"name": "Seat 1", "frequencies": [100, 1000], "magnitude_db": [-3, 0], "wav_path": "Woofer-0.wav"}, {"name": "Seat 2", "frequencies": [100, 1000], "magnitude_db": [-4, -1], "wav_path": "Woofer-1.wav"}]}, {"speaker_name": "Tweeter", "measurements": [{"name": "Seat 1", "frequencies": [100, 1000], "magnitude_db": [-4, -1], "wav_path": "Tweeter-0.wav"}, {"name": "Seat 2", "frequencies": [100, 1000], "magnitude_db": [-5, -2], "wav_path": "Tweeter-1.wav"}]}]}}}'''

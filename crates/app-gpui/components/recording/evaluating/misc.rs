@@ -1,5 +1,5 @@
 // intentional-file: fixed pixel values here are graph and plugin control geometry.
-use crate::app::types::{PlotSmoothing, RecordingResult};
+use crate::app::types::{PlotSmoothing, RecordingResult, RecordingStep};
 use crate::components::design::Ds;
 use crate::components::graphs::common::render_empty_state;
 use crate::components::graphs::response_graphs::{
@@ -14,12 +14,263 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_px::ScaleType;
 use gpui_ui_kit::{
-    Card, EmptyState, HStack, Heading, Select, SelectOption, StackAlign, StackSpacing, Text,
-    TextSize, TextWeight, VStack,
+    Button, ButtonSize, ButtonVariant, Card, EmptyState, HStack, Heading, Select, SelectOption,
+    StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 use sotf_audio::signal_analysis as dsp;
 
 impl PlayerView {
+    fn render_take_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let recording = &state.app.measurement_state.recording_state;
+        let theme = &state.app.ui_state.theme;
+        let text =
+            crate::app::i18n::TakeReviewTranslations::for_language(state.app.ui_state.language);
+        let d = Ds::from_cx(cx);
+        let busy = recording.workflow_is_busy();
+        let current = recording.capture_inputs_are_current();
+        let (outputs, inputs) = self.imported_retake_device_channels(cx);
+        div()
+            .flex()
+            .flex_col()
+            .gap(d.gap)
+            .child(Text::section_header(text.title))
+            .when(recording.has_imported_takes(), |review| {
+                review.child(Text::caption(text.imported_routing_required).color(theme.warning))
+            })
+            .children(
+                recording
+                    .channel_recordings
+                    .iter()
+                    .enumerate()
+                    .map(|(index, take)| {
+                        let accepted = current && recording.take_review.is_accepted(take);
+                        let has_result = take.result.is_some();
+                        let can_retake = current
+                            && !busy
+                            && (take.imported_source.is_none()
+                                || recording
+                                    .validated_imported_route(index, outputs, inputs)
+                                    .is_some());
+                        let accept = self.state.clone();
+                        let (microphone, position) = recording.take_capture_indices(take);
+                        let index_label = |index: Option<usize>| {
+                            index
+                                .map(|index| (index + 1).to_string())
+                                .unwrap_or_else(|| text.unknown.to_string())
+                        };
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap(d.gap)
+                            .py(d.pad_y)
+                            .border_b_1()
+                            .border_color(theme.border)
+                            .child(
+                                div()
+                                    .w_full()
+                                    .min_w_0()
+                                    .flex()
+                                    .flex_col()
+                                    .child(Text::body(take.channel_name.clone()))
+                                    .child(Text::caption(format!(
+                                        "{} {} · {} {}",
+                                        text.microphone,
+                                        index_label(microphone),
+                                        text.position,
+                                        index_label(position)
+                                    ))),
+                            )
+                            .child(
+                                Text::caption(if accepted {
+                                    text.accepted
+                                } else if has_result {
+                                    text.unreviewed
+                                } else {
+                                    text.missing
+                                })
+                                .color(if accepted {
+                                    theme.success
+                                } else {
+                                    theme.warning
+                                }),
+                            )
+                            .child({
+                                let button = Button::new(
+                                    SharedString::from(format!("review-accept-{index}")),
+                                    text.accept,
+                                )
+                                .size(ButtonSize::Sm)
+                                .variant(ButtonVariant::Primary)
+                                .disabled(accepted || !has_result || !current || busy)
+                                .theme(theme.to_button_theme())
+                                .on_click_event(move |_, _, cx| {
+                                    accept.update(cx, |state, cx| {
+                                        state
+                                            .app
+                                            .measurement_state
+                                            .recording_state
+                                            .accept_take(index);
+                                        cx.notify();
+                                    });
+                                });
+                                #[cfg(feature = "dev-api")]
+                                let button = {
+                                    use crate::app::dev_api::DevTrackExt;
+                                    button.dev_track(format!("recording.accept.{index}"))
+                                };
+                                button
+                            })
+                            .when(take.imported_source.is_some(), |row| {
+                                row.child(self.render_imported_take_route(index, true, cx))
+                                    .child(self.render_imported_take_route(index, false, cx))
+                            })
+                            .child({
+                                let button = Button::new(
+                                    SharedString::from(format!("review-retake-{index}")),
+                                    text.retake,
+                                )
+                                .size(ButtonSize::Sm)
+                                .variant(ButtonVariant::Secondary)
+                                .disabled(!can_retake)
+                                .theme(theme.to_button_theme())
+                                .on_click_event(cx.listener(move |view, _, _, cx| {
+                                    view.state.update(cx, |state, _| {
+                                        state.app.measurement_state.recording_state.step =
+                                            RecordingStep::Capture;
+                                    });
+                                    view.start_recording_channel(index, cx);
+                                }));
+                                #[cfg(feature = "dev-api")]
+                                let button = {
+                                    use crate::app::dev_api::DevTrackExt;
+                                    button.dev_track_with_state(
+                                        format!("recording.retake.{index}"),
+                                        crate::app::dev_api::DevElementState::default()
+                                            .enabled(can_retake),
+                                    )
+                                };
+                                button
+                            })
+                    }),
+            )
+    }
+
+    fn render_imported_take_route(
+        &self,
+        index: usize,
+        output: bool,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let rec = &state.app.measurement_state.recording_state;
+        let theme = &state.app.ui_state.theme;
+        let text =
+            crate::app::i18n::TakeReviewTranslations::for_language(state.app.ui_state.language);
+        let (outputs, inputs) = self.imported_retake_device_channels(cx);
+        let options = if output {
+            (0..outputs)
+                .map(|channel| {
+                    SelectOption::new(
+                        channel.to_string(),
+                        format!("{} {}", text.output, channel + 1),
+                    )
+                })
+                .collect::<Vec<_>>()
+        } else {
+            rec.recording_config
+                .channel_mappings
+                .iter()
+                .enumerate()
+                .take(rec.recording_config.num_channels)
+                .filter(|(_, channel)| **channel < inputs)
+                .map(|(slot, channel)| {
+                    SelectOption::new(
+                        slot.to_string(),
+                        format!("{} {} · {}", text.microphone, slot + 1, channel + 1),
+                    )
+                })
+                .collect()
+        };
+        let selected = rec.imported_route(index).and_then(|route| {
+            if output {
+                route.output_channel
+            } else {
+                route.microphone_slot
+            }
+        });
+        let toggle = self.state.clone();
+        let change = self.state.clone();
+        let highlight = self.state.clone();
+        let label = if output { text.output } else { text.microphone };
+        let device = if output {
+            &rec.playback_config.device_name
+        } else {
+            &rec.recording_config.device_name
+        };
+        div()
+            .flex()
+            .flex_col()
+            .min_w_0()
+            .child(Text::caption(format!("{label} · {device}")))
+            .child({
+                let select = Select::new(SharedString::from(format!(
+                    "imported-route-{index}-{output}"
+                )))
+                .options(options)
+                .selected(selected.map(|value| value.to_string()).unwrap_or_default())
+                .placeholder(label)
+                .is_open(rec.imported_route_dropdown == Some((index, output)))
+                .highlighted_index(if rec.imported_route_dropdown == Some((index, output)) {
+                    rec.imported_route_highlight
+                } else {
+                    None
+                })
+                .on_highlight(move |value, _, cx| {
+                    highlight.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .recording_state
+                            .imported_route_highlight = value;
+                        cx.notify();
+                    });
+                })
+                .disabled(rec.workflow_is_busy())
+                .theme(theme.to_select_theme())
+                .on_toggle(move |open, _, cx| {
+                    toggle.update(cx, |state, cx| {
+                        let rec = &mut state.app.measurement_state.recording_state;
+                        rec.imported_route_dropdown = open.then_some((index, output));
+                        rec.imported_route_highlight = None;
+                        cx.notify();
+                    });
+                })
+                .on_change(move |value, _, cx| {
+                    if let Ok(channel) = value.parse() {
+                        change.update(cx, |state, cx| {
+                            state
+                                .app
+                                .measurement_state
+                                .recording_state
+                                .select_imported_route(index, output, channel);
+                            cx.notify();
+                        });
+                    }
+                });
+                #[cfg(feature = "dev-api")]
+                let select = {
+                    use crate::app::dev_api::DevTrackExt;
+                    select.dev_track(format!(
+                        "recording.route.{index}.{}",
+                        if output { "output" } else { "input" }
+                    ))
+                };
+                select
+            })
+    }
+
     /// Render the evaluating step UI with frequency response graphs
     pub(crate) fn render_recording_evaluating_step(
         &self,
@@ -44,6 +295,7 @@ impl PlayerView {
                             .color(theme.text_secondary),
                     ),
             )
+            .child(self.render_take_review(cx))
             .child(self.render_plot_controls(cx))
             .child(self.render_magnitude_plot(cx))
             .child(self.render_phase_plot(cx))
@@ -359,7 +611,9 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
         let results = self.get_filtered_results(cx);
-        let has_results = !results.is_empty();
+        let has_results = results.iter().any(|(_, _, result)| {
+            result.measured_impulse().is_some() || result.can_reconstruct_impulse()
+        });
 
         Card::new().content(
             VStack::new()
@@ -411,7 +665,17 @@ impl PlayerView {
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
-        let has_results = !results.is_empty();
+        let has_results = results.iter().any(|(_, _, result)| {
+            result
+                .rt60_ms
+                .as_ref()
+                .is_some_and(|values| !values.is_empty())
+                || (result.sample_rate_hz.is_some_and(|rate| rate > 0)
+                    && result
+                        .impulse_response
+                        .as_ref()
+                        .is_some_and(|values| !values.is_empty()))
+        });
 
         Card::new().content(
             VStack::new()
@@ -437,7 +701,17 @@ impl PlayerView {
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
-        let has_results = !results.is_empty();
+        let has_results = results.iter().any(|(_, _, result)| {
+            result
+                .clarity_c50_db
+                .as_ref()
+                .is_some_and(|values| !values.is_empty())
+                || (result.sample_rate_hz.is_some_and(|rate| rate > 0)
+                    && result
+                        .impulse_response
+                        .as_ref()
+                        .is_some_and(|values| !values.is_empty()))
+        });
 
         Card::new().content(
             VStack::new()
@@ -460,12 +734,6 @@ impl PlayerView {
         let language = state.app.ui_state.language;
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
-        let sample_rate = state
-            .app
-            .measurement_state
-            .recording_state
-            .playback_config
-            .sample_rate as f32;
 
         let results = self.get_filtered_results(cx);
         let has_results = !results.is_empty();
@@ -475,7 +743,7 @@ impl PlayerView {
                 .spacing(StackSpacing::Sm)
                 .child(Text::eyebrow(translations.recording_spectrogram).color(theme.accent))
                 .child(if has_results {
-                    self.render_spectrogram_chart(&d, &results, &theme, sample_rate)
+                    self.render_spectrogram_chart(&d, &results, &theme, language)
                         .into_any_element()
                 } else {
                     self.render_no_data_placeholder(&d, &theme, language)
@@ -490,31 +758,20 @@ impl PlayerView {
         d: &Ds,
         results: &[(String, usize, RecordingResult)],
         theme: &crate::theme::Theme,
-        sample_rate: f32,
+        language: crate::app::i18n::Language,
     ) -> impl IntoElement {
         // We only visualize the first selected channel's spectrogram for now
         if let Some((_, _, result)) = results.first()
+            && let Some(sample_rate) = result.sample_rate_hz.filter(|rate| *rate > 0)
             && let Some(spectrogram) = &result.spectrogram_db
             && !spectrogram.is_empty()
         {
             return self
-                .render_spectrogram_canvas(*d, spectrogram, theme, sample_rate)
+                .render_spectrogram_canvas(*d, spectrogram, theme, sample_rate as f32, language)
                 .into_any_element();
         }
 
-        div()
-            .h(px(300.0)) // intentional: spectrogram placeholder chart height
-            .w_full()
-            .bg(theme.surface)
-            .rounded(d.r_md)
-            .flex()
-            .items_center()
-            .justify_center()
-            .child(render_empty_state(
-                IconName::AudioWaveform,
-                "Spectrogram not available",
-                theme,
-            ))
+        self.render_no_data_placeholder(d, theme, language)
             .into_any_element()
     }
 
@@ -524,14 +781,23 @@ impl PlayerView {
         spectrogram: &[Vec<f32>],
         theme: &crate::theme::Theme,
         sample_rate: f32,
+        language: crate::app::i18n::Language,
     ) -> impl IntoElement {
         let num_time_slices = spectrogram.len();
         if num_time_slices == 0 {
-            return render_empty_state(IconName::AudioWaveform, "No data", theme);
+            return self
+                .render_no_data_placeholder(&d, theme, language)
+                .into_any_element();
         }
         let num_freq_bins = spectrogram[0].len();
-        if num_freq_bins == 0 {
-            return render_empty_state(IconName::AudioWaveform, "No data", theme);
+        if num_freq_bins == 0
+            || spectrogram
+                .iter()
+                .any(|row| row.len() != num_freq_bins || row.iter().any(|value| !value.is_finite()))
+        {
+            return self
+                .render_no_data_placeholder(&d, theme, language)
+                .into_any_element();
         }
 
         // Limit total cells to avoid exceeding GPU buffer limits.
@@ -629,7 +895,9 @@ impl PlayerView {
         theme: &crate::theme::Theme,
         language: crate::app::i18n::Language,
     ) -> impl IntoElement {
-        let text = crate::app::i18n::RecordingWorkflowTranslations::for_language(language);
+        let message = crate::app::i18n::RuntimeMessageTranslations::for_language(language)
+            .translate("No data for this view")
+            .into_owned();
         div()
             .h(px(200.0)) // intentional: empty-state placeholder height
             .w_full()
@@ -638,11 +906,7 @@ impl PlayerView {
             .flex()
             .items_center()
             .justify_center()
-            .child(
-                EmptyState::new(text.no_recordings_available)
-                    .description(text.go_back_to_capture)
-                    .icon("🎙️"),
-            )
+            .child(EmptyState::new(message).icon("🎙️"))
     }
 
     /// Compute average SPL in the 100 Hz - 10 kHz range.
@@ -951,13 +1215,11 @@ impl PlayerView {
         smoothing: PlotSmoothing,
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
-        // Assume 48kHz or get from config if possible (not passed here, using default)
-        let sample_rate = 48000.0;
-
         let series: Vec<Series> = results
             .iter()
             .map(|(name, idx, result)| {
                 let rt60 = result.rt60_ms.clone().or_else(|| {
+                    let sample_rate = result.sample_rate_hz.filter(|rate| *rate > 0)? as f32;
                     result
                         .impulse_response
                         .as_ref()
@@ -1015,14 +1277,12 @@ impl PlayerView {
         smoothing: PlotSmoothing,
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
-        // Assume 48kHz sample rate if missing
-        let sample_rate = 48000.0;
-
         // Process C50 results
         let series: Vec<Series> = results
             .iter()
             .filter_map(|(name, idx, result)| {
                 let c50 = result.clarity_c50_db.clone().or_else(|| {
+                    let sample_rate = result.sample_rate_hz.filter(|rate| *rate > 0)? as f32;
                     result.impulse_response.as_ref().map(|ir| {
                         dsp::compute_clarity_spectrum(ir, sample_rate, &result.frequencies).0
                     })
@@ -1102,21 +1362,26 @@ impl PlayerView {
         results: &[(String, usize, RecordingResult)],
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
-        // Assume 48kHz sample rate for impulse response computation
-        let sample_rate = 48000.0_f32;
-
         // Compute impulse response and find peak time for each channel
         let channel_data: Vec<(String, usize, Vec<f32>, Vec<f32>, f32)> = results
             .iter()
-            .map(|(name, idx, result)| {
-                let (times, impulse) = dsp::compute_impulse_response_from_fr(
-                    &result.frequencies,
-                    &result.magnitude_db,
-                    &result.phase_deg,
-                    sample_rate,
-                );
+            .filter_map(|(name, idx, result)| {
+                let (times, impulse) = if let Some((times, impulse)) = result.measured_impulse() {
+                    (times.to_vec(), impulse.to_vec())
+                } else {
+                    if !result.can_reconstruct_impulse() {
+                        return None;
+                    }
+                    let sample_rate = result.sample_rate_hz.filter(|rate| *rate > 0)? as f32;
+                    dsp::compute_impulse_response_from_fr(
+                        &result.frequencies,
+                        &result.magnitude_db,
+                        &result.phase_deg,
+                        sample_rate,
+                    )
+                };
                 let peak_time = Self::find_ir_peak_time(&times, &impulse);
-                (name.clone(), *idx, times, impulse, peak_time)
+                Some((name.clone(), *idx, times, impulse, peak_time))
             })
             .collect();
 
@@ -1130,11 +1395,10 @@ impl PlayerView {
         // Build series with time adjusted relative to first channel
         let series: Vec<Series> = channel_data
             .iter()
-            .map(|(name, idx, times, impulse, peak_time)| {
+            .map(|(name, idx, times, impulse, _)| {
                 // Shift time so first channel's peak is at t=0, others show relative delay
-                let time_offset = peak_time - reference_time;
                 let adjusted_times: Vec<f64> =
-                    times.iter().map(|&t| (t - time_offset) as f64).collect();
+                    times.iter().map(|&t| (t - reference_time) as f64).collect();
                 let impulse_f64: Vec<f64> = impulse.iter().map(|&v| v as f64).collect();
 
                 Series::new(

@@ -341,3 +341,48 @@ fn test_run_speaker_optimization_dummy() {
     let opt_result = result.unwrap();
     assert!(!opt_result.frequencies.is_empty());
 }
+
+#[test]
+fn curve_optimization_preserves_response_without_inventing_spinorama_data() {
+    let curve = autoeq::Curve {
+        freq: ndarray::Array1::from_vec(vec![
+            20.0, 50.0, 100.0, 300.0, 1000.0, 3000.0, 10000.0, 20000.0,
+        ]),
+        spl: ndarray::Array1::from_vec(vec![70.0, 72.0, 76.0, 73.0, 70.0, 74.0, 68.0, 62.0]),
+        ..Default::default()
+    };
+    let mut config = SpeakerOptimizationConfig::default();
+    config.args.maxeval = 10;
+    config.args.population = 10;
+    config.args.num_filters = 1;
+    let result = super::optimize::optimize_from_curve(&curve, &config, None)
+        .expect("plain measured response should optimize");
+    assert_eq!(result.input_curve.len(), result.frequencies.len());
+    assert_eq!(result.corrected_curve.len(), result.frequencies.len());
+    assert!(result.input_curve.iter().all(|value| value.is_finite()));
+    let min = result
+        .input_curve
+        .iter()
+        .copied()
+        .fold(f64::INFINITY, f64::min);
+    let max = result
+        .input_curve
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
+    assert!(
+        max - min > 1.0,
+        "the measured response must not become a flat placeholder"
+    );
+    for curve in [
+        &result.on_axis_curve,
+        &result.lw_curve,
+        &result.er_curve,
+        &result.sp_curve,
+        &result.pir_curve,
+        &result.er_di_curve,
+        &result.sp_di_curve,
+    ] {
+        assert!(curve.is_empty(), "a plain response has no CEA-2034 dataset");
+    }
+}

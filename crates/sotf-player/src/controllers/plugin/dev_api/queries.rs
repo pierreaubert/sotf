@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 /// - `plugins.count` -> number of plugin nodes
 /// - `plugins.list` -> array of `{ index, type, enabled, param_count }`
 /// - `plugins.plugin.{index}.type` -> plugin type display name
+/// - `plugins.plugin.{index}.enabled` -> whether the plugin is enabled
 /// - `plugins.plugin.{index}.param_count` -> number of parameters
 /// - `plugins.plugin.{index}.param.{i}.name|value|type|min|max|choice_count`
 pub fn plugin_query(graph: &PluginGraph, path: &str) -> Result<Value> {
@@ -52,6 +53,7 @@ fn resolve_plugin_path(graph: &PluginGraph, rest: &str) -> Result<Value> {
 
     match tail {
         "type" => Ok(json!(plugin.plugin_type().name())),
+        "enabled" => Ok(json!(plugin.enabled)),
         "param_count" => Ok(json!(crate::get_param_count(&plugin.settings))),
         other => {
             let prefix = "param.";

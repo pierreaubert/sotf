@@ -5,6 +5,102 @@
 
 use std::path::PathBuf;
 
+/// Validated measurement data for a file preview and its identity disclosure.
+/// Loading belongs on a worker thread, never in a UI render method.
+#[derive(Clone, Debug)]
+pub struct HeadphoneMeasurementPreview {
+    path: PathBuf,
+    points: Vec<(f64, f64)>,
+    bounds_hz: (f64, f64),
+    provenance: Option<autoeq_measurements::MeasurementRecord>,
+}
+
+impl HeadphoneMeasurementPreview {
+    pub fn load(path: &std::path::Path) -> Result<Self, String> {
+        path.to_str()
+            .ok_or_else(|| "Measurement path must be valid UTF-8".to_string())?;
+        let curve = autoeq::read::read_curve_from_csv(&path.to_path_buf())
+            .map_err(|error| error.to_string())?;
+        if curve.freq.len() != curve.spl.len() || curve.freq.len() < 2 {
+            return Err("A measurement needs at least two frequency/level pairs".into());
+        }
+        let points: Vec<_> = curve
+            .freq
+            .iter()
+            .copied()
+            .zip(curve.spl.iter().copied())
+            .collect();
+        if points.iter().any(|(frequency, level)| {
+            !frequency.is_finite() || *frequency <= 0.0 || !level.is_finite()
+        }) {
+            return Err("Measurement frequencies must be positive and all values finite".into());
+        }
+        let bounds_hz = points.iter().fold(
+            (f64::INFINITY, f64::NEG_INFINITY),
+            |(low, high), (frequency, _)| (low.min(*frequency), high.max(*frequency)),
+        );
+        if bounds_hz.0 >= bounds_hz.1 {
+            return Err("A measurement needs distinct frequency values".into());
+        }
+        let provenance = match autoeq_measurements::read_sidecar(path) {
+            Ok(record) => {
+                let validation = record.validate(autoeq_measurements::ValidationMode::Warn);
+                if !validation.is_valid() {
+                    return Err(format!(
+                        "Invalid measurement provenance: {}",
+                        validation.errors.join("; ")
+                    ));
+                }
+                let hash = curve.content_hash().map_err(|error| error.to_string())?;
+                if hash != record.provenance.content_hash {
+                    return Err("Measurement provenance does not match the imported curve".into());
+                }
+                Some(record)
+            }
+            Err(autoeq_measurements::ProvenanceError::Io(error))
+                if error.kind() == std::io::ErrorKind::NotFound =>
+            {
+                None
+            }
+            Err(error) => return Err(format!("Could not read measurement provenance: {error}")),
+        };
+        Ok(Self {
+            path: path.to_path_buf(),
+            points,
+            bounds_hz,
+            provenance,
+        })
+    }
+
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+    pub fn points(&self) -> &[(f64, f64)] {
+        &self.points
+    }
+    pub fn bounds_hz(&self) -> (f64, f64) {
+        self.bounds_hz
+    }
+
+    /// Validated source evidence, retained independently of the selected target.
+    pub fn provenance(&self) -> Option<&autoeq_measurements::MeasurementRecord> {
+        self.provenance.as_ref()
+    }
+
+    /// Optional source-supplied identity fields in the standard acquisition
+    /// extension map. Missing or non-text values remain unknown.
+    pub fn identity_field(&self, name: &str) -> Option<&str> {
+        self.provenance()?
+            .provenance
+            .acquisition
+            .extensions
+            .get(name)?
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
+}
+
 // Re-export types from autoeq for convenience
 pub use autoeq::{HeadphoneOptResult, VisualizationCurves};
 
@@ -146,6 +242,11 @@ where
 /// Load target curve from bundled data or custom file
 pub fn load_target_curve(target: &str, custom_path: &str) -> Result<autoeq::Curve, String> {
     match target {
+        "flat" => {
+            let mut curve = parse_csv_curve(target_curves::HARMAN_OVER_EAR_2018)?;
+            curve.spl.fill(0.0);
+            Ok(curve)
+        }
         "harman-over-ear-2018" => parse_csv_curve(target_curves::HARMAN_OVER_EAR_2018),
         "harman-over-ear-2015" => parse_csv_curve(target_curves::HARMAN_OVER_EAR_2015),
         "harman-over-ear-2013" => parse_csv_curve(target_curves::HARMAN_OVER_EAR_2013),
@@ -192,4 +293,94 @@ pub fn parse_csv_curve(csv_data: &str) -> Result<autoeq::Curve, String> {
         phase: None,
         ..Default::default()
     })
+}
+
+#[cfg(test)]
+mod measurement_preview_tests {
+    use super::HeadphoneMeasurementPreview;
+    use std::io::Write;
+
+    #[test]
+    fn flat_target_loads_without_a_custom_file() {
+        let flat = super::load_target_curve("flat", "").unwrap();
+        let reference = super::load_target_curve("harman-over-ear-2018", "").unwrap();
+        assert_eq!(flat.freq, reference.freq);
+        assert!(flat.freq.len() > 2);
+        assert!(flat.spl.iter().all(|level| *level == 0.0));
+    }
+
+    #[test]
+    fn file_preview_retains_source_points_and_bounds() {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        writeln!(file, "frequency,spl\n20,-4\n1000,0\n20000,-3").unwrap();
+        let preview = HeadphoneMeasurementPreview::load(file.path()).unwrap();
+        assert_eq!(preview.path(), file.path());
+        assert_eq!(preview.bounds_hz(), (20.0, 20000.0));
+        assert_eq!(
+            preview.points(),
+            &[(20.0, -4.0), (1000.0, 0.0), (20000.0, -3.0)]
+        );
+    }
+
+    #[test]
+    fn file_preview_rejects_invalid_or_degenerate_measurements() {
+        for contents in [
+            "frequency,spl\n0,0\n100,1",
+            "frequency,spl\n20,NaN\n100,1",
+            "frequency,spl\n20,0",
+            "frequency,spl\n20,0\n20,1",
+        ] {
+            let mut file = tempfile::NamedTempFile::new().unwrap();
+            file.write_all(contents.as_bytes()).unwrap();
+            assert!(
+                HeadphoneMeasurementPreview::load(file.path()).is_err(),
+                "{contents}"
+            );
+        }
+    }
+
+    #[test]
+    fn file_preview_retains_validated_provenance_and_rejects_stale_sidecars() {
+        use autoeq_measurements::{MeasurementOrigin, MeasurementRecord, write_sidecar};
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("headphone.csv");
+        std::fs::write(&path, "frequency,spl\n20,-4\n1000,0\n20000,-3\n").unwrap();
+        let curve = autoeq::read::read_curve_from_csv(&path).unwrap();
+        let mut record =
+            MeasurementRecord::from_source_path(curve, MeasurementOrigin::Csv, &path).unwrap();
+        for (key, value) in [
+            ("model", "Example variant"),
+            ("rig", "IEC fixture"),
+            ("sample", "Unit 2, left ear"),
+            ("compensation", "Uncompensated"),
+        ] {
+            record
+                .provenance
+                .acquisition
+                .extensions
+                .insert(key.into(), value.into());
+        }
+        write_sidecar(&path, &record).unwrap();
+        let preview = HeadphoneMeasurementPreview::load(&path).unwrap();
+        assert_eq!(preview.identity_field("model"), Some("Example variant"));
+        assert_eq!(preview.identity_field("rig"), Some("IEC fixture"));
+        assert_eq!(preview.identity_field("sample"), Some("Unit 2, left ear"));
+        assert_eq!(
+            preview.identity_field("compensation"),
+            Some("Uncompensated")
+        );
+        assert_eq!(preview.provenance().unwrap().id, record.id);
+        std::fs::write(&path, "frequency,spl\n20,-1\n1000,0\n20000,-3\n").unwrap();
+        assert!(
+            HeadphoneMeasurementPreview::load(&path)
+                .unwrap_err()
+                .contains("does not match")
+        );
+        std::fs::write(autoeq_measurements::sidecar_path(&path), "invalid json").unwrap();
+        assert!(
+            HeadphoneMeasurementPreview::load(&path)
+                .unwrap_err()
+                .contains("provenance")
+        );
+    }
 }

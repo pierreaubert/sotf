@@ -259,8 +259,7 @@ impl RoomEqScreenModel {
                 self.channel_measurements = measurements;
                 self.init_speaker_configs();
                 self.apply_smart_defaults(None);
-                self.has_multi_position_data = false;
-                self.multi_position_counts.clear();
+                self.refresh_position_metadata();
             }
             RoomEqViewEvent::LoadFromRecording(recording_state) => {
                 self.load_from_recording(&recording_state);
@@ -270,6 +269,8 @@ impl RoomEqScreenModel {
             RoomEqViewEvent::ClearMeasurements => {
                 self.channel_measurements.clear();
                 self.speaker_configs.clear();
+                self.has_multi_position_data = false;
+                self.multi_position_counts.clear();
             }
             RoomEqViewEvent::SetWizardMode(mode) => {
                 self.wizard_mode = mode;
@@ -429,7 +430,18 @@ impl RoomEqScreenModel {
                     SpeakerConfigType::Single
                 },
                 crossover_type: CrossoverType::LR24,
-                driver_names: if m.is_group {
+                driver_names: if !m.driver_measurement_sets.is_empty() {
+                    m.driver_measurement_sets
+                        .iter()
+                        .enumerate()
+                        .map(|(index, driver)| {
+                            driver
+                                .name
+                                .clone()
+                                .unwrap_or_else(|| format!("driver_{}", index + 1))
+                        })
+                        .collect()
+                } else if m.is_group {
                     m.group_drivers
                         .iter()
                         .enumerate()
@@ -442,6 +454,60 @@ impl RoomEqScreenModel {
                 ..Default::default()
             })
             .collect();
+    }
+
+    /// Valid crossover-frequency hint bounds in Hz.
+    pub const CROSSOVER_FREQ_MIN_HZ: f64 = 20.0;
+    /// Valid crossover-frequency hint bounds in Hz.
+    pub const CROSSOVER_FREQ_MAX_HZ: f64 = 20000.0;
+    /// Default hint used when materializing a missing entry for editing.
+    pub const CROSSOVER_FREQ_DEFAULT_HZ: f64 = 2000.0;
+
+    /// Number of crossover frequencies expected for a channel.
+    ///
+    /// A multi-driver channel with `D` drivers needs `D - 1` crossovers.
+    /// Single-driver channels and unknown indices expect zero.
+    pub fn expected_crossover_count(&self, channel_idx: usize) -> usize {
+        let Some(config) = self.speaker_configs.get(channel_idx) else {
+            return 0;
+        };
+        if config.config_type != crate::room_eq_types::SpeakerConfigType::MultiDriver {
+            return 0;
+        }
+        config.driver_names.len().saturating_sub(1)
+    }
+
+    /// Validated write for one crossover-frequency hint.
+    ///
+    /// Extends the hint vector with the default frequency when the entry is
+    /// missing. Returns false and mutates nothing for unknown channels,
+    /// single-driver channels, out-of-range crossover indices, or
+    /// non-finite/out-of-bounds frequencies.
+    pub fn set_crossover_freq_hint(
+        &mut self,
+        channel_idx: usize,
+        crossover_idx: usize,
+        freq_hz: f64,
+    ) -> bool {
+        if !freq_hz.is_finite()
+            || freq_hz < Self::CROSSOVER_FREQ_MIN_HZ
+            || freq_hz > Self::CROSSOVER_FREQ_MAX_HZ
+        {
+            return false;
+        }
+        if crossover_idx >= self.expected_crossover_count(channel_idx) {
+            return false;
+        }
+        let Some(config) = self.speaker_configs.get_mut(channel_idx) else {
+            return false;
+        };
+        if config.crossover_freq_hints.len() <= crossover_idx {
+            config
+                .crossover_freq_hints
+                .resize(crossover_idx + 1, Self::CROSSOVER_FREQ_DEFAULT_HZ);
+        }
+        config.crossover_freq_hints[crossover_idx] = freq_hz;
+        true
     }
 
     /// Apply smart defaults based on loaded measurement metadata.
@@ -489,6 +555,25 @@ impl RoomEqScreenModel {
     /// Check if multi-position measurement data is available.
     pub fn has_multiple_measurements(&self) -> bool {
         self.has_multi_position_data
+    }
+
+    fn refresh_position_metadata(&mut self) {
+        self.multi_position_counts = self
+            .channel_measurements
+            .iter()
+            .filter_map(|channel| {
+                // Drivers share positions; adding their counts would count each seat twice.
+                let count = channel
+                    .driver_measurement_sets
+                    .iter()
+                    .map(|driver| 1 + driver.multi_mic_measurements.len())
+                    .chain(std::iter::once(1 + channel.multi_mic_measurements.len()))
+                    .max()
+                    .unwrap_or(1);
+                (count > 1).then(|| (channel.channel_name.clone(), count))
+            })
+            .collect();
+        self.has_multi_position_data = !self.multi_position_counts.is_empty();
     }
 
     /// Height channel names used for Voice of God detection.
@@ -549,7 +634,32 @@ impl RoomEqScreenModel {
     /// produces one `ChannelMeasurement` with additional mic data stored in
     /// `multi_mic_measurements` for multi-position optimization.
     pub fn load_from_recording(&mut self, recording_state: &RecordingState) {
+        self.load_recording_with_channels(recording_state, None, None);
+    }
+
+    pub fn load_from_imported_recording(
+        &mut self,
+        recording_state: &RecordingState,
+        imported: &crate::recording_types::RecordingImport,
+    ) -> Result<(), String> {
+        let channels = imported.channels_with_recordings(&recording_state.channel_recordings)?;
+        self.load_recording_with_channels(recording_state, Some(channels), Some(imported));
+        Ok(())
+    }
+
+    fn load_recording_with_channels(
+        &mut self,
+        recording_state: &RecordingState,
+        imported_channels: Option<Vec<ChannelMeasurement>>,
+        imported: Option<&crate::recording_types::RecordingImport>,
+    ) {
         use std::collections::BTreeMap;
+
+        // Metadata belongs to this source, including an explicit absence. Clear
+        // settings retained from a previous file when loading captured takes.
+        self.imported_system = imported.and_then(|source| source.configuration.system.clone());
+        self.imported_crossovers =
+            imported.and_then(|source| source.configuration.crossovers.clone());
 
         // Group completed recordings by speaker index (channel_index)
         let mut grouped: BTreeMap<usize, Vec<&crate::recording_types::ChannelRecording>> =
@@ -560,45 +670,66 @@ impl RoomEqScreenModel {
             }
         }
 
-        self.channel_measurements = grouped
-            .into_values()
-            .map(|recordings| {
-                let first = recordings[0];
-                // Strip the first parenthetical suffix — handles
-                // " (Mic N)", " (Pos N)", and " (Pos N / Mic M)" naming.
-                let base_name = first
-                    .channel_name
-                    .find(" (")
-                    .map_or(first.channel_name.as_str(), |pos| {
-                        &first.channel_name[..pos]
-                    })
-                    .to_string();
+        self.channel_measurements = imported_channels.unwrap_or_else(|| {
+            grouped
+                .into_values()
+                .map(|recordings| {
+                    let first = recordings[0];
+                    // Strip the first parenthetical suffix — handles
+                    // " (Mic N)", " (Pos N)", and " (Pos N / Mic M)" naming.
+                    let base_name = first
+                        .channel_name
+                        .find(" (")
+                        .map_or(first.channel_name.as_str(), |pos| {
+                            &first.channel_name[..pos]
+                        })
+                        .to_string();
 
-                let primary_result = first.result.clone().unwrap();
-                let multi_mic = if recordings.len() > 1 {
-                    recordings
-                        .iter()
-                        .skip(1)
-                        .filter_map(|r| r.result.clone())
-                        .collect()
-                } else {
-                    Vec::new()
-                };
+                    let primary_result = first.result.clone().unwrap();
+                    let multi_mic = if recordings.len() > 1 {
+                        recordings
+                            .iter()
+                            .skip(1)
+                            .filter_map(|r| r.result.clone())
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
 
-                ChannelMeasurement {
-                    channel_name: base_name,
-                    measurement: primary_result,
-                    is_group: false,
-                    group_drivers: Vec::new(),
-                    multi_mic_measurements: multi_mic,
-                }
-            })
-            .collect();
+                    ChannelMeasurement {
+                        driver_measurement_sets: Vec::new(),
+                        provenance: recordings
+                            .iter()
+                            .map(|recording| crate::room_eq_types::MeasurementProvenance {
+                                name: Some(recording.channel_name.clone()),
+                                mic_index: Some(recording.mic_index),
+                                mic_position_index: Some(recording.mic_position_index),
+                            })
+                            .collect(),
+                        channel_name: base_name,
+                        measurement: primary_result,
+                        is_group: false,
+                        group_drivers: Vec::new(),
+                        multi_mic_measurements: multi_mic,
+                    }
+                })
+                .collect()
+        });
         normalize_channel_measurement_grids(&mut self.channel_measurements);
+        self.refresh_position_metadata();
 
-        let mut ctc_exported_raw = false;
-        let mut ctc_raw_sweep_range = None;
-        self.ctc_measurements = recording_state
+        if let Some(imported) = imported {
+            // Imported CTC references already have source-relative paths resolved.
+            // Loading a session must not regenerate files from current devices.
+            self.ctc_config = imported.configuration.ctc.clone();
+            self.ctc_measurements = self
+                .ctc_config
+                .as_ref()
+                .and_then(|config| config.measurements.clone());
+        } else {
+            let mut ctc_exported_raw = false;
+            let mut ctc_raw_sweep_range = None;
+            self.ctc_measurements = recording_state
             .recording_directory
             .as_ref()
             .and_then(|dir| {
@@ -670,44 +801,45 @@ impl RoomEqScreenModel {
                     }
                 })
             });
-        self.ctc_config = self.ctc_measurements.clone().map(|measurements| {
-            let raw = ctc_exported_raw && recording_state.ctc_reference_sweep_path.is_some();
-            autoeq::roomeq::CtcConfig {
-                enabled: false,
-                matrix_source: if raw { "raw_sweep" } else { "measured" }.to_string(),
-                measurements: Some(measurements),
-                reference_sweep: if raw {
-                    recording_state
-                        .ctc_reference_sweep_path
-                        .as_ref()
-                        .map(std::path::PathBuf::from)
-                } else {
-                    None
-                },
-                sweep_duration_s: if raw {
-                    // Truthful duration (task 10): the octave-scaled sweep is
-                    // self-timed, so persist the actual generated-signal
-                    // duration measured at capture time — `None` when unknown,
-                    // never the nominal `signal_duration_secs` knob value.
-                    recording_state
-                        .ctc_reference_sweep_duration_s
-                        .map(f64::from)
-                } else {
-                    None
-                },
-                sweep_start_hz: if raw {
-                    ctc_raw_sweep_range.map(|(start, _)| start as f64)
-                } else {
-                    None
-                },
-                sweep_end_hz: if raw {
-                    ctc_raw_sweep_range.map(|(_, end)| end as f64)
-                } else {
-                    None
-                },
-                ..Default::default()
-            }
-        });
+            self.ctc_config = self.ctc_measurements.clone().map(|measurements| {
+                let raw = ctc_exported_raw && recording_state.ctc_reference_sweep_path.is_some();
+                autoeq::roomeq::CtcConfig {
+                    enabled: false,
+                    matrix_source: if raw { "raw_sweep" } else { "measured" }.to_string(),
+                    measurements: Some(measurements),
+                    reference_sweep: if raw {
+                        recording_state
+                            .ctc_reference_sweep_path
+                            .as_ref()
+                            .map(std::path::PathBuf::from)
+                    } else {
+                        None
+                    },
+                    sweep_duration_s: if raw {
+                        // Truthful duration (task 10): the octave-scaled sweep is
+                        // self-timed, so persist the actual generated-signal
+                        // duration measured at capture time — `None` when unknown,
+                        // never the nominal `signal_duration_secs` knob value.
+                        recording_state
+                            .ctc_reference_sweep_duration_s
+                            .map(f64::from)
+                    } else {
+                        None
+                    },
+                    sweep_start_hz: if raw {
+                        ctc_raw_sweep_range.map(|(start, _)| start as f64)
+                    } else {
+                        None
+                    },
+                    sweep_end_hz: if raw {
+                        ctc_raw_sweep_range.map(|(_, end)| end as f64)
+                    } else {
+                        None
+                    },
+                    ..Default::default()
+                }
+            });
+        }
 
         self.delay_detection.sample_rate = recording_state.probe_capture.sample_rate;
         self.delay_detection.input_channel = recording_state.probe_capture.input_channel;
@@ -800,30 +932,101 @@ impl RoomEqScreenModel {
             {
                 match speaker_config.config_type {
                     crate::room_eq_types::SpeakerConfigType::Single => {
+                        let to_named_measurement = |curve: autoeq::Curve, index: usize| {
+                            autoeq::read::MeasurementRef::Inline(autoeq::read::InlineMeasurement {
+                                frequencies: curve.freq.to_vec(),
+                                magnitude_db: curve.spl.to_vec(),
+                                phase_deg: curve.phase.map(|phase| phase.to_vec()),
+                                name: meas
+                                    .provenance
+                                    .get(index)
+                                    .and_then(|source| source.name.clone()),
+                                wav_path: None,
+                                csv_path: None,
+                            })
+                        };
                         if meas.multi_mic_measurements.is_empty() {
                             let curve = to_curve(meas);
                             speakers.insert(
                                 channel_name.clone(),
                                 autoeq::roomeq::SpeakerConfig::Single(
-                                    autoeq::roomeq::MeasurementSource::InMemory(curve),
+                                    autoeq::roomeq::MeasurementSource::Single(
+                                        autoeq::read::MeasurementSingle {
+                                            measurement: to_named_measurement(curve, 0),
+                                            speaker_name: None,
+                                        },
+                                    ),
                                 ),
                             );
                         } else {
-                            let mut curves = vec![to_curve(meas)];
-                            for extra in &meas.multi_mic_measurements {
-                                curves.push(result_to_curve(extra));
+                            let mut measurements = vec![to_named_measurement(to_curve(meas), 0)];
+                            for (index, extra) in meas.multi_mic_measurements.iter().enumerate() {
+                                measurements
+                                    .push(to_named_measurement(result_to_curve(extra), index + 1));
                             }
                             speakers.insert(
                                 channel_name.clone(),
                                 autoeq::roomeq::SpeakerConfig::Single(
-                                    autoeq::roomeq::MeasurementSource::InMemoryMultiple(curves),
+                                    autoeq::roomeq::MeasurementSource::Multiple(
+                                        autoeq::read::MeasurementMultiple {
+                                            measurements,
+                                            speaker_name: None,
+                                        },
+                                    ),
                                 ),
                             );
                         }
                     }
                     crate::room_eq_types::SpeakerConfigType::MultiDriver => {
                         let mut driver_measurements = Vec::new();
-                        if meas.is_group && !meas.group_drivers.is_empty() {
+                        if !meas.driver_measurement_sets.is_empty() {
+                            for driver in &meas.driver_measurement_sets {
+                                let to_ref =
+                                    |result: &crate::recording_types::RecordingResult,
+                                     index: usize| {
+                                        let curve = result_to_curve(result);
+                                        autoeq::read::MeasurementRef::Inline(
+                                            autoeq::read::InlineMeasurement {
+                                                frequencies: curve.freq.to_vec(),
+                                                magnitude_db: curve.spl.to_vec(),
+                                                phase_deg: curve.phase.map(|phase| phase.to_vec()),
+                                                name: driver
+                                                    .provenance
+                                                    .get(index)
+                                                    .and_then(|source| source.name.clone()),
+                                                wav_path: None,
+                                                csv_path: None,
+                                            },
+                                        )
+                                    };
+                                let primary = to_ref(&driver.measurement, 0);
+                                let source = if driver.multi_mic_measurements.is_empty() {
+                                    autoeq::MeasurementSource::Single(
+                                        autoeq::read::MeasurementSingle {
+                                            measurement: primary,
+                                            speaker_name: driver.name.clone(),
+                                        },
+                                    )
+                                } else {
+                                    let measurements = std::iter::once(primary)
+                                        .chain(
+                                            driver
+                                                .multi_mic_measurements
+                                                .iter()
+                                                .enumerate()
+                                                .map(|(index, result)| to_ref(result, index + 1)),
+                                        )
+                                        .collect();
+                                    autoeq::MeasurementSource::Multiple(
+                                        autoeq::read::MeasurementMultiple {
+                                            measurements,
+                                            speaker_name: driver.name.clone(),
+                                        },
+                                    )
+                                };
+                                driver_measurements.push(source);
+                            }
+                        } else if meas.is_group && !meas.group_drivers.is_empty() {
                             for driver_res in &meas.group_drivers {
                                 driver_measurements.push(
                                     autoeq::roomeq::MeasurementSource::InMemory(result_to_curve(
@@ -850,8 +1053,12 @@ impl RoomEqScreenModel {
                             xover_id.clone(),
                             autoeq::roomeq::CrossoverConfig {
                                 crossover_type: xover_type.to_string(),
-                                frequency: None,
-                                frequencies: None,
+                                frequency: match speaker_config.crossover_freq_hints.as_slice() {
+                                    [frequency] => Some(*frequency),
+                                    _ => None,
+                                },
+                                frequencies: (speaker_config.crossover_freq_hints.len() > 1)
+                                    .then(|| speaker_config.crossover_freq_hints.clone()),
                                 frequency_range: None,
                             },
                         );
@@ -1088,6 +1295,7 @@ mod tests {
 
     fn make_recording_result(channel: usize) -> RecordingResult {
         RecordingResult {
+            sample_rate_hz: None,
             channel,
             wav_path: None,
             csv_path: None,
@@ -1109,6 +1317,8 @@ mod tests {
 
     fn make_measurement(channel_name: &str) -> ChannelMeasurement {
         ChannelMeasurement {
+            driver_measurement_sets: Vec::new(),
+            provenance: Vec::new(),
             channel_name: channel_name.to_string(),
             measurement: make_recording_result(0),
             is_group: false,
@@ -1169,6 +1379,29 @@ mod tests {
         assert_eq!(model.speaker_configs.len(), 2);
         assert_eq!(model.speaker_configs[0].channel_name, "L");
         assert_eq!(model.speaker_configs[1].channel_name, "R");
+    }
+
+    #[test]
+    fn loading_and_clearing_measurements_refreshes_position_metadata() {
+        let mut model = RoomEqScreenModel::default();
+        let mut left = make_measurement("L");
+        left.multi_mic_measurements.push(left.measurement.clone());
+        model.apply(RoomEqViewEvent::LoadMeasurements(vec![left.clone()]));
+        assert!(model.has_multi_position_data);
+        assert_eq!(model.multi_position_counts, vec![("L".to_string(), 2)]);
+
+        model.apply(RoomEqViewEvent::LoadMeasurements(vec![make_measurement(
+            "R",
+        )]));
+        assert!(!model.has_multi_position_data);
+        assert!(model.multi_position_counts.is_empty());
+
+        model.apply(RoomEqViewEvent::LoadMeasurements(vec![left]));
+        model.apply(RoomEqViewEvent::ClearMeasurements);
+        assert!(model.channel_measurements.is_empty());
+        assert!(model.speaker_configs.is_empty());
+        assert!(!model.has_multi_position_data);
+        assert!(model.multi_position_counts.is_empty());
     }
 
     #[test]
@@ -1255,6 +1488,202 @@ mod tests {
         assert_eq!(model.channel_measurements[1].channel_name, "R");
         assert_eq!(model.speaker_configs.len(), 2);
         assert_eq!(model.data_source, RoomEqDataSource::FromRecording);
+    }
+
+    #[test]
+    fn recording_provenance_survives_grouping_and_serialization() {
+        let mut primary = make_done_recording(0, "L (Pos 1 / Mic 1)");
+        primary.mic_position_index = 0;
+        primary.mic_index = 0;
+        let mut additional = make_done_recording(0, "L (Pos 3 / Mic 2)");
+        additional.mic_position_index = 2;
+        additional.mic_index = 1;
+        let mut model = RoomEqScreenModel::default();
+        model.apply(RoomEqViewEvent::LoadFromRecording(Box::new(
+            RecordingState {
+                channel_recordings: vec![primary, additional],
+                ..Default::default()
+            },
+        )));
+        let channel = &model.channel_measurements[0];
+        assert_eq!(channel.channel_name, "L");
+        assert_eq!(channel.multi_mic_measurements.len(), 1);
+        assert_eq!(channel.provenance.len(), 2);
+        assert_eq!(channel.provenance[0].mic_position_index, Some(0));
+        assert_eq!(channel.provenance[1].mic_position_index, Some(2));
+        assert_eq!(channel.provenance[1].mic_index, Some(1));
+        assert_eq!(
+            channel.provenance[1].name.as_deref(),
+            Some("L (Pos 3 / Mic 2)")
+        );
+        let json = serde_json::to_value(channel).unwrap();
+        let restored: ChannelMeasurement = serde_json::from_value(json).unwrap();
+        assert_eq!(restored.provenance, channel.provenance);
+        let config_json = serde_json::to_string(&model.to_room_config()).unwrap();
+        let imported =
+            crate::room_eq_types::RoomEqMeasurementsFile::load_from_json(&config_json, None)
+                .unwrap();
+        assert!(!imported.is_empty(), "{config_json}");
+        assert_eq!(imported[0].provenance[0].name, channel.provenance[0].name);
+        assert_eq!(imported[0].provenance[1].name, channel.provenance[1].name);
+        assert_eq!(
+            imported[0].measurement.frequencies,
+            channel.measurement.frequencies
+        );
+        assert_eq!(
+            imported[0].measurement.magnitude_db,
+            channel.measurement.magnitude_db
+        );
+        assert_eq!(
+            imported[0].multi_mic_measurements[0].magnitude_db,
+            channel.multi_mic_measurements[0].magnitude_db
+        );
+    }
+
+    #[test]
+    fn legacy_measurement_has_unknown_provenance() {
+        let mut json = serde_json::to_value(make_measurement("L")).unwrap();
+        json.as_object_mut().unwrap().remove("provenance");
+        let restored: ChannelMeasurement = serde_json::from_value(json).unwrap();
+        assert!(restored.provenance.is_empty());
+        assert!(restored.driver_measurement_sets.is_empty());
+    }
+
+    #[test]
+    fn grouped_driver_positions_and_names_round_trip() {
+        let response = |name: &str, gain: f64| {
+            autoeq::read::MeasurementRef::Inline(autoeq::read::InlineMeasurement {
+                name: Some(name.to_owned()),
+                frequencies: vec![100.0, 1000.0, 10000.0],
+                magnitude_db: vec![gain; 3],
+                phase_deg: None,
+                wav_path: None,
+                csv_path: None,
+            })
+        };
+        let mut config = autoeq::RoomConfig::default();
+        config.speakers.insert(
+            "L".into(),
+            autoeq::SpeakerConfig::Group(autoeq::roomeq::SpeakerGroup {
+                name: "Left speaker".into(),
+                speaker_name: None,
+                crossover: None,
+                measurements: vec![
+                    autoeq::MeasurementSource::Multiple(autoeq::read::MeasurementMultiple {
+                        speaker_name: Some("Woofer".into()),
+                        measurements: vec![
+                            response("Woofer seat A", 1.0),
+                            response("Woofer seat B", 2.0),
+                        ],
+                    }),
+                    autoeq::MeasurementSource::Single(autoeq::read::MeasurementSingle {
+                        speaker_name: Some("Tweeter".into()),
+                        measurement: response("Tweeter seat A", 3.0),
+                    }),
+                ],
+            }),
+        );
+        let json = serde_json::to_string(&config).unwrap();
+        let channels =
+            crate::room_eq_types::RoomEqMeasurementsFile::load_from_json(&json, None).unwrap();
+        assert_eq!(channels.len(), 1);
+        assert!(channels[0].is_group);
+        let mut model = RoomEqScreenModel::default();
+        model.apply(RoomEqViewEvent::LoadMeasurements(channels));
+        assert_eq!(model.speaker_configs[0].driver_names, ["Woofer", "Tweeter"]);
+        for hints in [vec![], vec![1800.0], vec![250.0, 2500.0]] {
+            model.speaker_configs[0].crossover_freq_hints = hints.clone();
+            let exported = model.to_room_config();
+            let crossover = &exported.crossovers.as_ref().unwrap()["xover_L"];
+            match hints.as_slice() {
+                [] => {
+                    assert!(crossover.frequency.is_none());
+                    assert!(crossover.frequencies.is_none());
+                }
+                [frequency] => {
+                    assert_eq!(crossover.frequency, Some(*frequency));
+                    assert!(crossover.frequencies.is_none());
+                }
+                _ => {
+                    assert!(crossover.frequency.is_none());
+                    assert_eq!(crossover.frequencies.as_ref(), Some(&hints));
+                }
+            }
+        }
+        let saved = serde_json::to_string(&model.to_room_config()).unwrap();
+        let restored =
+            crate::room_eq_types::RoomEqMeasurementsFile::load_from_json(&saved, None).unwrap();
+        let drivers = &restored[0].driver_measurement_sets;
+        assert_eq!(drivers.len(), 2);
+        assert_eq!(drivers[0].name.as_deref(), Some("Woofer"));
+        assert_eq!(drivers[0].multi_mic_measurements.len(), 1);
+        assert_eq!(
+            drivers[0].provenance[1].name.as_deref(),
+            Some("Woofer seat B")
+        );
+        assert_eq!(drivers[0].multi_mic_measurements[0].magnitude_db, [2.0; 3]);
+        assert_eq!(drivers[1].name.as_deref(), Some("Tweeter"));
+        assert!(drivers[1].multi_mic_measurements.is_empty());
+        assert_eq!(drivers[1].measurement.magnitude_db, [3.0; 3]);
+        // A broken extra position must reject the import, not silently reduce
+        // the driver's measurement set while reporting a successful load.
+        let autoeq::SpeakerConfig::Group(group) = config.speakers.get_mut("L").unwrap() else {
+            unreachable!()
+        };
+        let autoeq::MeasurementSource::Multiple(woofer) = &mut group.measurements[0] else {
+            unreachable!()
+        };
+        let autoeq::read::MeasurementRef::Inline(position) = &mut woofer.measurements[1] else {
+            unreachable!()
+        };
+        position.frequencies.clear();
+        position.magnitude_db.clear();
+        let invalid = serde_json::to_string(&config).unwrap();
+        let error = crate::room_eq_types::RoomEqMeasurementsFile::load_from_json(&invalid, None)
+            .unwrap_err();
+        assert!(error.contains("Speaker L, driver 1"), "{error}");
+        assert!(error.contains("1 of 2"), "{error}");
+    }
+
+    #[test]
+    fn set_crossover_freq_hint_validates_and_materializes() {
+        use crate::room_eq_types::{RoomEqSpeakerConfig, SpeakerConfigType};
+        let mut model = RoomEqScreenModel::default();
+        model.speaker_configs = vec![
+            RoomEqSpeakerConfig {
+                channel_name: "L".into(),
+                config_type: SpeakerConfigType::MultiDriver,
+                driver_names: vec!["Woofer".into(), "Tweeter".into()],
+                ..Default::default()
+            },
+            RoomEqSpeakerConfig {
+                channel_name: "R".into(),
+                config_type: SpeakerConfigType::Single,
+                ..Default::default()
+            },
+        ];
+        assert_eq!(model.expected_crossover_count(0), 1);
+        assert_eq!(model.expected_crossover_count(1), 0);
+        assert_eq!(model.expected_crossover_count(99), 0);
+
+        assert!(model.set_crossover_freq_hint(0, 0, 2500.0));
+        assert_eq!(model.speaker_configs[0].crossover_freq_hints, vec![2500.0]);
+
+        for bad in [f64::NAN, f64::INFINITY, 10.0, 30000.0] {
+            assert!(!model.set_crossover_freq_hint(0, 0, bad));
+        }
+        assert_eq!(model.speaker_configs[0].crossover_freq_hints, vec![2500.0]);
+
+        assert!(!model.set_crossover_freq_hint(0, 1, 3000.0));
+        assert!(!model.set_crossover_freq_hint(1, 0, 2500.0));
+        assert!(!model.set_crossover_freq_hint(99, 0, 2500.0));
+        assert_eq!(model.speaker_configs[0].crossover_freq_hints, vec![2500.0]);
+
+        model.channel_measurements = vec![make_measurement("L")];
+        let exported = model.to_room_config();
+        let crossover = &exported.crossovers.as_ref().unwrap()["xover_L"];
+        assert_eq!(crossover.frequency, Some(2500.0));
+        assert!(crossover.frequencies.is_none());
     }
 
     #[test]

@@ -1,7 +1,6 @@
 use super::album::album_genres;
 use super::build::build_home_shelves;
 use super::build::build_remote_home_shelves;
-use super::misc::add_home_album_to_queue;
 use super::misc::arc_album_refs;
 use super::misc::collapsed_album_limit_for_width;
 use super::misc::expanded_album_limit_for_dimensions;
@@ -78,11 +77,12 @@ std::thread_local! {
 }
 
 fn cached_home_shelves(
-    albums: &[Album],
+    library: &sotf_audio_player::MusicLibrary,
     content_generation: u64,
     collapsed_limit: usize,
     expanded_limit: usize,
 ) -> Vec<HomeShelf> {
+    let albums = &library.albums;
     let key = HomeShelvesCacheKey {
         content_generation,
         album_count: albums.len(),
@@ -99,7 +99,7 @@ fn cached_home_shelves(
             return entry.shelves.clone();
         }
 
-        let shelves = build_home_shelves(albums, collapsed_limit, expanded_limit);
+        let shelves = build_home_shelves(library, collapsed_limit, expanded_limit);
         *cache = Some(HomeShelvesCacheEntry {
             key,
             shelves: shelves.clone(),
@@ -163,7 +163,7 @@ fn visible_home_album_entries(state: &crate::app::AppState) -> Vec<HomeAlbumEntr
     }
 
     let shelves = cached_home_shelves(
-        &app.library_state.library.albums,
+        &app.library_state.library,
         app.library_state.content_generation(),
         collapsed_limit,
         expanded_limit,
@@ -218,23 +218,62 @@ pub(crate) fn move_home_album_selection(state: &mut crate::app::AppState, forwar
     state.app.library_state.home_album_selection.album_index = entry.album_index;
 }
 
-/// Activate the selected Home album through the same queue path as its card.
-pub(crate) fn activate_selected_home_album(state: &mut crate::app::AppState) {
+fn selected_home_album(state: &mut crate::app::AppState) -> Option<HomeAlbumEntry> {
     let entries = visible_home_album_entries(state);
     if entries.is_empty() {
         state.app.library_state.home_album_selection = Default::default();
-        return;
+        return None;
     }
 
     let selected =
         selected_home_entry_index(&entries, &state.app.library_state.home_album_selection)
             .unwrap_or(0);
     let entry = entries[selected].clone();
-    state.app.library_state.home_album_selection.shelf_id = Some(entry.shelf_id);
+    state.app.library_state.home_album_selection.shelf_id = Some(entry.shelf_id.clone());
     state.app.library_state.home_album_selection.album_index = entry.album_index;
 
+    Some(entry)
+}
+
+/// Open the selected album using the same route as its card.
+pub(crate) fn activate_selected_home_album(state: &mut crate::app::AppState) {
+    let Some(entry) = selected_home_album(state) else {
+        return;
+    };
+
     match entry.target {
-        HomeAlbumTarget::Local(album) => add_home_album_to_queue(state, &album, false),
+        HomeAlbumTarget::Local(album) => {
+            state.app.library_state.album_detail = Some(album);
+            state
+                .app
+                .set_screen(crate::app::Screen::Library, "HomeAlbum");
+        }
+        HomeAlbumTarget::Remote { id, title } => {
+            state.app.start_remote_add_album_to_queue(id, title, false);
+        }
+    }
+}
+
+/// Append the visible Home selection without starting playback or leaving Home.
+pub(crate) fn queue_selected_home_album(state: &mut crate::app::AppState) {
+    let Some(entry) = selected_home_album(state) else {
+        return;
+    };
+    match entry.target {
+        HomeAlbumTarget::Local(album) => {
+            let index = state.app.filtered_albums().iter().position(|candidate| {
+                super::album::album_key(candidate) == super::album::album_key(&album)
+            });
+            if let Some(index) = index {
+                state.app.library_state.selected_index = index;
+            }
+            PlayerView::apply_album_action(
+                state,
+                &album,
+                None,
+                crate::components::home::album_detail::AlbumAction::Append,
+            );
+        }
         HomeAlbumTarget::Remote { id, title } => {
             state.app.start_remote_add_album_to_queue(id, title, false);
         }
@@ -271,7 +310,7 @@ impl PlayerView {
             (
                 ui.theme.clone(),
                 cached_home_shelves(
-                    &state.app.library_state.library.albums,
+                    &state.app.library_state.library,
                     state.app.library_state.content_generation(),
                     collapsed_limit,
                     expanded_limit,
@@ -281,16 +320,48 @@ impl PlayerView {
             )
         };
 
+        let continue_listening = self.render_continue_listening(cx);
+        let home_title = self.state.read(cx).app.ui_state.translations.screen_home;
+        let browse_label = crate::app::i18n::HomeShelfTranslations::for_language(
+            self.state.read(cx).app.ui_state.language,
+        )[2];
         div()
             .id("home-screen")
             .flex()
             .flex_col()
             .size_full()
             .overflow_y_scroll()
-            .track_scroll(&self.home_scroll_handle)
+            .track_scroll(&self.scroll.home)
             .bg(theme.background)
             .p(d.card)
             .gap(d.section_lg)
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(d.gap)
+                    .child(Heading::h3(home_title))
+                    .child(div().flex_1())
+                    .child(dev_track!(
+                        Button::new("home-browse", browse_label)
+                            .size(ButtonSize::Sm)
+                            .variant(ButtonVariant::Secondary)
+                            .theme(theme.to_button_theme())
+                            .on_click_event(cx.listener(|view, _, window, cx| {
+                                view.state.update(cx, |state, _| {
+                                    state.app.library_state.album_detail = None;
+                                    state
+                                        .app
+                                        .set_screen(crate::app::Screen::Library, "HomeBrowse");
+                                });
+                                view.focus_handle.focus(window, cx);
+                                cx.notify();
+                            })),
+                        "home.browse"
+                    )),
+            )
+            .when_some(continue_listening, |el, resume| el.child(resume))
             .when(is_loading, |el| {
                 el.child(
                     div()
@@ -314,7 +385,10 @@ impl PlayerView {
                             .size_full()
                             .text_size(d.text_sm)
                             .text_color(theme.text_muted)
-                            .child(text.home_empty),
+                            .flex_col()
+                            .gap(d.section)
+                            .child(text.home_empty)
+                            .child(self.render_empty_library_actions(cx)),
                     )
                 },
             )
@@ -344,7 +418,7 @@ impl PlayerView {
                 .clone();
             let shelf = active_shelf_id.as_deref().and_then(|active_id| {
                 cached_home_shelves(
-                    &state.app.library_state.library.albums,
+                    &state.app.library_state.library,
                     state.app.library_state.content_generation(),
                     collapsed_limit,
                     usize::MAX,
@@ -574,6 +648,13 @@ impl PlayerView {
         let ui = &state.app.ui_state;
         let theme = ui.theme.clone();
         let text = PhoneTranslations::for_language(ui.language);
+        let home_text = crate::app::i18n::HomeShelfTranslations::for_language(ui.language);
+        let title = match shelf.id.as_str() {
+            "recent" => home_text[0].to_string(),
+            "favorite" => home_text[1].to_string(),
+            _ => shelf.title.clone(),
+        };
+        let favorites = shelf.id == "favorite";
         let collapsed_limit = collapsed_album_limit_for_width(ui.window_width);
         let expanded_limit = expanded_album_limit_for_dimensions(
             ui.window_width,
@@ -615,7 +696,7 @@ impl PlayerView {
                             .text_color(theme.text_primary)
                             .overflow_hidden()
                             .text_ellipsis()
-                            .child(shelf.title),
+                            .child(title),
                     )
                     .when(can_expand, |el| {
                         let button_theme = theme.clone();
@@ -658,6 +739,7 @@ impl PlayerView {
                 div()
                     .flex()
                     .gap(d.gap_md)
+                    .when(favorites, |el| el.flex_col())
                     .when(is_expanded, |el| el.flex_wrap())
                     .when(!is_expanded, |el| el.overflow_hidden())
                     .children(shelf.albums.into_iter().take(limit).enumerate().map(
@@ -665,6 +747,9 @@ impl PlayerView {
                             let is_selected = selection.shelf_id.as_deref()
                                 == Some(album_shelf_id.as_str())
                                 && selection.album_index == idx;
+                            if favorites {
+                                return self.render_home_favorite_row(album, idx, is_selected, cx);
+                            }
                             self.render_home_album_card(
                                 &album_shelf_id,
                                 album,
@@ -675,6 +760,62 @@ impl PlayerView {
                         },
                     )),
             )
+            .into_any_element()
+    }
+
+    fn render_home_favorite_row(
+        &self,
+        album: Arc<Album>,
+        index: usize,
+        is_selected: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let state = self.state.read(cx);
+        let d = Ds::from_cx(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let label =
+            crate::app::i18n::DesktopTranslations::for_language(state.app.ui_state.language)
+                .view_album;
+        div()
+            .flex()
+            .items_center()
+            .flex_wrap()
+            .gap(d.gap)
+            .py(d.pad_y)
+            .border_b_1()
+            .border_color(if is_selected {
+                theme.accent
+            } else {
+                theme.border
+            })
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap(d.grid)
+                    .child(Text::section_header(album.title.clone()))
+                    .child(Text::caption(album.artist())),
+            )
+            .child(dev_track!(
+                Button::new(
+                    SharedString::from(format!("home-favorite-open-{index}")),
+                    label
+                )
+                .size(ButtonSize::Sm)
+                .variant(ButtonVariant::Secondary)
+                .theme(theme.to_button_theme())
+                .on_click_event(cx.listener(move |view, _, window, cx| {
+                    view.state.update(cx, |state, _| {
+                        state.app.library_state.home_album_selection.shelf_id =
+                            Some("favorite".into());
+                        state.app.library_state.home_album_selection.album_index = index;
+                    });
+                    view.open_album_detail(Arc::clone(&album), window, cx);
+                })),
+                format!("home.favorite.open.{index}")
+            ))
             .into_any_element()
     }
 
@@ -821,13 +962,16 @@ impl PlayerView {
                 idx
             )))
             .flex_none()
-            .on_click(cx.listener(move |view, event: &ClickEvent, _window, cx| {
-                view.state.update(cx, |state, _cx| {
+            .on_click(cx.listener(move |view, event: &ClickEvent, window, cx| {
+                if event.modifiers().control {
+                    return;
+                }
+                view.state.update(cx, |state, _| {
                     state.app.library_state.home_album_selection.shelf_id =
                         Some(shelf_id_for_click.clone());
                     state.app.library_state.home_album_selection.album_index = idx;
-                    add_home_album_to_queue(state, &album_for_click, event.click_count() >= 2);
                 });
+                view.open_album_detail(Arc::clone(&album_for_click), window, cx);
             }))
             .on_mouse_up(
                 MouseButton::Right,

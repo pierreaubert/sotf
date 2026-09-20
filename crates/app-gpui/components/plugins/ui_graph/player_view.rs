@@ -32,6 +32,8 @@ use sotf_audio_player::PluginSettings;
 impl PlayerView {
     /// Ensure the WorkflowCanvas entity exists, creating it if needed
     pub(crate) fn ensure_workflow_canvas(&self, cx: &mut Context<Self>) {
+        self.state
+            .update(cx, |state, _| state.app.plugin_state.begin_routing_draft());
         let has_canvas = self
             .state
             .read(cx)
@@ -61,7 +63,7 @@ impl PlayerView {
                     .map(|c| c.channels as usize)
                     .unwrap_or(2);
                 (
-                    Some(state.app.plugin_state.graph.clone()),
+                    Some(state.app.plugin_state.routing_controller().graph.clone()),
                     output_device_name,
                     output_channels,
                     state.app.ui_state.theme.clone(),
@@ -80,12 +82,12 @@ impl PlayerView {
             let workflow_theme = create_workflow_theme(&theme);
 
             // Clone state for the callback
-            let state_for_dblclick = self.state.clone();
-            let canvas_for_dblclick = canvas.clone();
-            let state_for_change = self.state.clone();
-            let canvas_for_change = canvas.clone();
-            let state_for_menu = self.state.clone();
-            let canvas_for_menu = canvas.clone();
+            let state_for_dblclick = self.state.downgrade();
+            let canvas_for_dblclick = canvas.downgrade();
+            let state_for_change = self.state.downgrade();
+            let canvas_for_change = canvas.downgrade();
+            let state_for_menu = self.state.downgrade();
+            let canvas_for_menu = canvas.downgrade();
 
             canvas.update(cx, |canvas, _cx| {
                 canvas.set_theme(workflow_theme);
@@ -102,8 +104,12 @@ impl PlayerView {
                 // updated" panic.  cx.defer() schedules the work after
                 // the current entity update completes.
                 canvas.set_on_node_double_click(move |node_id, _window, cx| {
-                    let canvas = canvas_for_dblclick.clone();
-                    let state = state_for_dblclick.clone();
+                    let Some(canvas) = canvas_for_dblclick.upgrade() else {
+                        return;
+                    };
+                    let Some(state) = state_for_dblclick.upgrade() else {
+                        return;
+                    };
                     cx.defer(move |cx| {
                         let graph_node_uuid = canvas
                             .read(cx)
@@ -115,6 +121,11 @@ impl PlayerView {
                             .and_then(|s| sotf_audio_player::GraphNodeId::parse_str(s).ok());
 
                         state.update(cx, |state, _cx| {
+                            if state.app.plugin_state.graph_state.editing_plugin_node
+                                == Some(node_id)
+                            {
+                                return;
+                            }
                             if let Some(uuid) = graph_node_uuid {
                                 // Keep the app-side keyboard/action model in
                                 // step with the node opened by pointer input.
@@ -128,8 +139,15 @@ impl PlayerView {
                                     .graph_selection
                                     .select_node(uuid, false);
                             }
-                            let original_plugin = graph_node_uuid
-                                .and_then(|uuid| state.app.plugin_state.graph.nodes.get(&uuid));
+                            let original_plugin = graph_node_uuid.and_then(|uuid| {
+                                state
+                                    .app
+                                    .plugin_state
+                                    .routing_controller()
+                                    .graph
+                                    .nodes
+                                    .get(&uuid)
+                            });
                             let original_settings = original_plugin
                                 .and_then(|node| serde_json::to_string(&node.plugin.settings).ok());
                             let original_enabled = original_plugin.map(|node| node.plugin.enabled);
@@ -156,17 +174,18 @@ impl PlayerView {
                 // Same defer pattern as the double-click callback: the
                 // canvas is mutably borrowed when the observer fires.
                 canvas.set_on_graph_change(move |cx| {
-                    let canvas = canvas_for_change.clone();
-                    let state = state_for_change.clone();
+                    let Some(canvas) = canvas_for_change.upgrade() else {
+                        return;
+                    };
+                    let Some(state) = state_for_change.upgrade() else {
+                        return;
+                    };
                     cx.defer(move |cx| {
                         // Snapshot the canvas graph (Clone) so we can
                         // mutate state without holding a canvas read.
                         let workflow_graph = canvas.read(cx).graph().clone();
                         state.update(cx, |state, _cx| {
                             reconcile_plugin_graph_with_canvas(state, &workflow_graph);
-                            state.app.plugin_state.update_state.pending_plugin_update =
-                                Some(crate::app::types::PluginUpdateType::Structural);
-                            state.app.plugin_state.update_state.plugin_graph_modified = true;
                         });
                     });
                 });
@@ -190,14 +209,90 @@ impl PlayerView {
                     }
                 });
                 canvas.set_on_node_menu_select(move |menu_id, node_id, _window, cx| {
-                    let canvas = canvas_for_menu.clone();
-                    let state = state_for_menu.clone();
+                    let Some(canvas) = canvas_for_menu.upgrade() else {
+                        return;
+                    };
+                    let Some(state) = state_for_menu.upgrade() else {
+                        return;
+                    };
                     let menu_id = menu_id.clone();
                     cx.defer(move |cx| {
                         dispatch_plugin_node_action(&canvas, &state, &menu_id, node_id, cx);
                     });
                 });
             });
+
+            // Selection changes drive the inline inspector. Keep the last selection
+            // independently of the editor so panning does not reopen a closed panel.
+            let mut inspected_selection = None;
+            cx.observe(&canvas, move |view, canvas, cx| {
+                let canvas = canvas.read(cx);
+                let selected = if canvas.selection().selected_nodes.len() == 1 {
+                    canvas.selection().selected_nodes.iter().next().copied()
+                } else {
+                    None
+                };
+                if selected == inspected_selection {
+                    return;
+                }
+                inspected_selection = selected;
+                let app = &view.state.read(cx).app;
+                if app.ui_state.current_screen != Screen::PluginGraph
+                    || !matches!(
+                        app.ui_state.input_mode,
+                        crate::app::InputMode::Normal | crate::app::InputMode::EditingPluginNode
+                    )
+                {
+                    return;
+                }
+                let uuid = selected
+                    .and_then(|id| canvas.graph().nodes.get(&id))
+                    .and_then(|node| node.user_data.get("plugin_node_id"))
+                    .and_then(|value| value.as_str())
+                    .and_then(|value| sotf_audio_player::GraphNodeId::parse_str(value).ok());
+                // Special endpoint canvas IDs are the model IDs themselves;
+                // they deliberately have no plugin parameter-editing identity.
+                let selection_uuid = uuid.or_else(|| {
+                    selected.filter(|id| {
+                        app.plugin_state
+                            .routing_controller()
+                            .graph
+                            .special_nodes
+                            .contains_key(id)
+                    })
+                });
+                view.state.update(cx, |state, _| {
+                    let plugin = uuid.and_then(|id| {
+                        state
+                            .app
+                            .plugin_state
+                            .routing_controller()
+                            .graph
+                            .nodes
+                            .get(&id)
+                    });
+                    let original =
+                        plugin.and_then(|node| serde_json::to_string(&node.plugin.settings).ok());
+                    let enabled = plugin.map(|node| node.plugin.enabled);
+                    let graph = &mut state.app.plugin_state.graph_state;
+                    graph.clear_editing_context();
+                    graph.graph_selection.clear();
+                    if let Some(uuid) = selection_uuid {
+                        graph.graph_selection.select_node(uuid, false);
+                    }
+                    graph.editing_plugin_node = selected;
+                    graph.editing_graph_node_uuid = uuid;
+                    graph.editing_original_settings_json = original;
+                    graph.editing_original_enabled = enabled;
+                    state.app.ui_state.input_mode = if selected.is_some() {
+                        crate::app::InputMode::EditingPluginNode
+                    } else {
+                        crate::app::InputMode::Normal
+                    };
+                });
+                cx.notify();
+            })
+            .detach();
 
             // Store the canvas entity
             self.state.update(cx, |state, _cx| {
@@ -210,6 +305,30 @@ impl PlayerView {
     pub(crate) fn render_plugin_graph_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         // Ensure the canvas entity exists
         self.ensure_workflow_canvas(cx);
+
+        let state = self.state.read(cx);
+        let sizing = crate::ui::resolve_sizing_context(
+            state.app.ui_state.window_width,
+            state.app.ui_state.window_height,
+            state.app.ui_state.font_scale,
+            state.app.ui_state.min_font_size_px,
+            state.app.ui_state.max_font_size_px,
+        );
+        let compact = sizing.window_width_rems < 64.0;
+        let inspector_open =
+            state.app.ui_state.input_mode == crate::app::InputMode::EditingPluginNode;
+        let show_palette = state
+            .app
+            .plugin_state
+            .graph_state
+            .palette_open
+            .unwrap_or(!compact);
+        let show_keyboard = state
+            .app
+            .plugin_state
+            .graph_state
+            .keyboard_help_open
+            .unwrap_or(!compact);
 
         let (theme, workflow_canvas, node_count, connection_count, plugin_count) = {
             let state = self.state.read(cx);
@@ -224,7 +343,7 @@ impl PlayerView {
                     (stats.0, stats.1)
                 })
                 .unwrap_or((0, 0));
-            let pc = state.app.plugin_state.graph.len();
+            let pc = state.app.plugin_state.routing_controller().graph.len();
             (
                 state.app.ui_state.theme.clone(),
                 state.app.plugin_state.graph_state.workflow_canvas.clone(),
@@ -236,27 +355,87 @@ impl PlayerView {
 
         div()
             .id("plugin-graph-screen")
+            .track_scroll(&self.scroll.routing)
             .flex()
             .flex_col()
             .size_full()
+            .min_h_0()
+            .min_w_0()
+            .overflow_y_scroll()
             .bg(theme.background)
             // Header
-            .child(self.render_graph_header(node_count, connection_count, plugin_count, cx))
-            .child(self.render_graph_keyboard_bar(cx))
+            .child(if compact {
+                let open = self
+                    .state
+                    .read(cx)
+                    .app
+                    .plugin_state
+                    .graph_state
+                    .header_details_open;
+                let owner = self.state.clone();
+                let label = PluginGraphTranslations::for_language(
+                    self.state.read(cx).app.ui_state.language,
+                )
+                .nodes
+                .signal;
+                div()
+                    .child(super::connections::track_routing_button(
+                        Button::new("routing-signal-details", label)
+                            .icon_left(if open { "▾" } else { "▸" })
+                            .selected(open)
+                            .expanded(open)
+                            .aria_label(label)
+                            .size(ButtonSize::Sm)
+                            .variant(ButtonVariant::Secondary)
+                            .theme(theme.to_button_theme())
+                            .on_click_event(move |_, _, cx| {
+                                owner.update(cx, |state, cx| {
+                                    let open =
+                                        &mut state.app.plugin_state.graph_state.header_details_open;
+                                    *open = !*open;
+                                    cx.notify();
+                                });
+                            }),
+                        "routing.signal-details",
+                    ))
+                    .when(open, |el| {
+                        el.child(self.render_graph_header(
+                            node_count,
+                            connection_count,
+                            plugin_count,
+                            cx,
+                        ))
+                    })
+                    .into_any_element()
+            } else {
+                self.render_graph_header(node_count, connection_count, plugin_count, cx)
+                    .into_any_element()
+            })
+            .child(self.render_routing_draft_actions(cx))
+            .child(self.render_routing_connections(cx))
+            .when(show_keyboard, |el| {
+                el.child(self.render_graph_keyboard_bar(cx))
+            })
             // Main content: sidebar + canvas
             .child(
                 div()
                     .flex()
+                    .when(compact && inspector_open, |el| el.flex_col())
                     .flex_1()
+                    .min_h(rems(24.0))
+                    .flex_shrink_0()
+                    .min_w_0()
                     .overflow_hidden()
                     // Sidebar palette
-                    .child(self.render_graph_palette(cx))
+                    .when(show_palette, |el| el.child(self.render_graph_palette(cx)))
                     // Canvas area with drop support
                     .child({
                         let drag_highlight = Theme::opacity_8pct(theme.feedback.drag_over_border);
-                        div()
+                        let canvas_area = div()
                             .id("graph-canvas-area")
                             .flex_1()
+                            .min_w_0()
+                            .min_h_0()
                             .size_full()
                             .relative()
                             .drag_over::<PaletteDragData>(move |style, _, _, _| {
@@ -275,7 +454,16 @@ impl PlayerView {
                             .on_drop(cx.listener(|view, data: &PaletteDragData, window, cx| {
                                 view.handle_palette_drop(data, window, cx);
                             }))
-                            .when_some(workflow_canvas, |el, canvas| el.child(canvas))
+                            .when_some(workflow_canvas, |el, canvas| el.child(canvas));
+                        #[cfg(feature = "dev-api")]
+                        let canvas_area = {
+                            use crate::app::dev_api::DevTrackExt;
+                            canvas_area.dev_track("routing.canvas")
+                        };
+                        canvas_area
+                    })
+                    .when(inspector_open, |el| {
+                        el.child(self.render_plugin_node_modal(cx))
                     }),
             )
     }
@@ -319,10 +507,15 @@ impl PlayerView {
             let graph_node_id = match &data.item_type {
                 PaletteItemType::Plugin(plugin_type) => {
                     let id = self.state.update(cx, |state, _| {
-                        state.app.plugin_state.graph.add_plugin_node(
-                            plugin_type,
-                            sotf_audio_player::NodePosition::new(drop_x, drop_y),
-                        )
+                        state
+                            .app
+                            .plugin_state
+                            .routing_controller_mut()
+                            .graph
+                            .add_plugin_node(
+                                plugin_type,
+                                sotf_audio_player::NodePosition::new(drop_x, drop_y),
+                            )
                     });
                     match id {
                         Ok(id) => Some(id),
@@ -368,6 +561,208 @@ impl PlayerView {
     }
 
     /// Render the graph header with stats
+    fn render_routing_connections(&self, cx: &mut Context<Self>) -> AnyElement {
+        let d = Ds::from_cx(cx);
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let text = crate::app::i18n::DesktopTranslations::for_language(state.app.ui_state.language);
+        let graph = &state.app.plugin_state.routing_controller().graph;
+        let open = state.app.plugin_state.graph_state.connection_list_open;
+        let toggle = self.state.clone();
+        let mut root = div().flex().flex_col().px(d.card).gap(d.grid).child(
+            super::connections::track_routing_button(
+                Button::new(
+                    "routing-connections",
+                    format!("{} ({})", text.routing_connections, graph.connections.len()),
+                )
+                .size(ButtonSize::Sm)
+                .variant(ButtonVariant::Ghost)
+                .theme(theme.to_button_theme())
+                .on_click_event(move |_, _, cx| {
+                    toggle.update(cx, |state, cx| {
+                        state.app.plugin_state.graph_state.connection_list_open = !open;
+                        cx.notify();
+                    });
+                }),
+                "routing-connections",
+            ),
+        );
+        if open {
+            let label = |id| {
+                graph
+                    .nodes
+                    .get(&id)
+                    .map(|node| node.plugin.plugin_type().name().to_string())
+                    .or_else(|| {
+                        graph
+                            .special_nodes
+                            .get(&id)
+                            .map(|node| node.display_name().to_string())
+                    })
+                    .unwrap_or_else(|| "—".into())
+            };
+            let mut list = div()
+                .id("routing-connections-list")
+                .max_h(rems(12.0))
+                .overflow_y_scroll()
+                .flex()
+                .flex_col()
+                .gap(d.grid);
+            for edge in &graph.connections {
+                let description = format!(
+                    "{} [{}] → {} [{}]",
+                    label(edge.from_node),
+                    edge.from_port + 1,
+                    label(edge.to_node),
+                    edge.to_port + 1
+                );
+                let edge_id = edge.id;
+                let remove = self.state.clone();
+                list = list.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(d.gap)
+                        .child(gpui_ui_kit::Text::caption(description.clone()))
+                        .child(
+                            Button::new(
+                                SharedString::from(format!("routing-remove-{edge_id}")),
+                                state.app.ui_state.translations.settings_remove,
+                            )
+                            .size(ButtonSize::Sm)
+                            .variant(ButtonVariant::Ghost)
+                            .theme(theme.to_button_theme())
+                            .on_click_event(move |_, _, cx| {
+                                remove.update(cx, |state, cx| {
+                                    state
+                                        .app
+                                        .plugin_state
+                                        .routing_controller_mut()
+                                        .graph
+                                        .connections
+                                        .retain(|edge| edge.id != edge_id);
+                                    state.app.plugin_state.graph_state.workflow_canvas = None;
+                                    cx.notify();
+                                });
+                            }),
+                        ),
+                );
+            }
+            root = root
+                .child(self.render_routing_connection_form(cx))
+                .child(list);
+        }
+        root.into_any_element()
+    }
+
+    fn render_routing_draft_actions(&self, cx: &mut Context<Self>) -> AnyElement {
+        let d = Ds::from_cx(cx);
+        let state = self.state.read(cx);
+        let draft_dirty = state.app.plugin_state.routing_draft_is_dirty();
+        let theme = state.app.ui_state.theme.clone();
+        let text = crate::app::i18n::DesktopTranslations::for_language(state.app.ui_state.language);
+        let apply = self.state.clone();
+        let discard = self.state.clone();
+        let palette = self.state.clone();
+        let keyboard = self.state.clone();
+        let graph_text = PluginGraphTranslations::for_language(state.app.ui_state.language);
+        let sizing = crate::ui::resolve_sizing_context(
+            state.app.ui_state.window_width,
+            state.app.ui_state.window_height,
+            state.app.ui_state.font_scale,
+            state.app.ui_state.min_font_size_px,
+            state.app.ui_state.max_font_size_px,
+        );
+        let compact = sizing.window_width_rems < 64.0;
+        let validation_error = state
+            .app
+            .plugin_state
+            .routing_controller()
+            .graph
+            .validate_routing()
+            .err();
+        div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap(d.gap)
+            .px(d.card)
+            .py(d.pad_y)
+            .child(gpui_ui_kit::Text::caption(text.routing_draft))
+            .child(
+                Button::new("routing-palette-toggle", graph_text.nodes.plugins)
+                    .size(ButtonSize::Sm)
+                    .variant(ButtonVariant::Secondary)
+                    .theme(theme.to_button_theme())
+                    .on_click_event(move |_, _, cx| {
+                        palette.update(cx, |state, cx| {
+                            let open = &mut state.app.plugin_state.graph_state.palette_open;
+                            *open = Some(!open.unwrap_or(!compact));
+                            cx.notify();
+                        });
+                    }),
+            )
+            .child(
+                Button::new("routing-keyboard-toggle", graph_text.keyboard_editor)
+                    .size(ButtonSize::Sm)
+                    .variant(ButtonVariant::Secondary)
+                    .theme(theme.to_button_theme())
+                    .on_click_event(move |_, _, cx| {
+                        keyboard.update(cx, |state, cx| {
+                            let open = &mut state.app.plugin_state.graph_state.keyboard_help_open;
+                            *open = Some(!open.unwrap_or(!compact));
+                            cx.notify();
+                        });
+                    }),
+            )
+            .child(super::connections::track_routing_button(
+                Button::new("routing-discard", text.discard_routing)
+                    .size(ButtonSize::Sm)
+                    .disabled(!draft_dirty)
+                    .variant(ButtonVariant::Secondary)
+                    .theme(theme.to_button_theme())
+                    .on_click_event(move |_, _, cx| {
+                        discard.update(cx, |state, cx| {
+                            state.app.plugin_state.discard_routing_draft();
+                            state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                            cx.notify();
+                        });
+                    }),
+                "routing-discard",
+            ))
+            .child(super::connections::track_routing_button(
+                Button::new("routing-apply", text.apply_routing)
+                    .size(ButtonSize::Sm)
+                    .disabled(
+                        !draft_dirty
+                            || validation_error.is_some()
+                            || state
+                                .app
+                                .plugin_state
+                                .graph_state
+                                .applying_original
+                                .is_some(),
+                    )
+                    .variant(ButtonVariant::Primary)
+                    .theme(theme.to_button_theme())
+                    .on_click_event(move |_, _, cx| {
+                        apply.update(cx, |state, cx| {
+                            if let Err(error) = state.app.plugin_state.apply_routing_draft() {
+                                state.app.ui_state.toast_message = Some(ToastMessage::error(error));
+                            } else {
+                                state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                            }
+                            cx.notify();
+                        });
+                    }),
+                "routing-apply",
+            ))
+            .when_some(validation_error, |element, error| {
+                element.child(gpui_ui_kit::Text::caption(error).color(theme.error))
+            })
+            .into_any_element()
+    }
+
     pub(super) fn render_graph_header(
         &self,
         node_count: usize,
@@ -416,6 +811,9 @@ impl PlayerView {
             .graph_selection
             .selected_nodes
             .len();
+        let runtime_text = crate::app::i18n::RuntimeMessageTranslations::for_language(
+            self.state.read(cx).app.ui_state.language,
+        );
         let selection_status = if selected_count == 0 {
             graph_text.none_selected.to_string()
         } else {
@@ -424,6 +822,8 @@ impl PlayerView {
 
         div()
             .flex()
+            .flex_wrap()
+            .gap(d.gap)
             .justify_between()
             .items_center()
             .px(d.card)
@@ -446,7 +846,7 @@ impl PlayerView {
                     .child(Icon::new(IconName::Home).color(text_muted))
                     .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                         state_for_home.update(cx, |state, _cx| {
-                            state.app.ui_state.current_screen = Screen::Library;
+                            state.app.set_screen(Screen::StudioHub, "RoutingClose");
                         });
                     }),
             )
@@ -455,6 +855,8 @@ impl PlayerView {
                 div()
                     .flex()
                     .items_center()
+                    .flex_wrap()
+                    .min_w_0()
                     .gap(d.gap_md)
                     .child(
                         div()
@@ -467,13 +869,21 @@ impl PlayerView {
                         div()
                             .text_size(d.text_xs)
                             .text_color(theme.text_muted)
-                            .child(format!("#{} plugins", plugin_count)),
+                            .child(
+                                runtime_text
+                                    .translate(&format!("#{} plugins", plugin_count))
+                                    .into_owned(),
+                            ),
                     )
                     .child(
                         div()
                             .text_size(d.text_xs)
                             .text_color(theme.text_muted)
-                            .child(format!("#{} links", connection_count)),
+                            .child(
+                                runtime_text
+                                    .translate(&format!("#{} links", connection_count))
+                                    .into_owned(),
+                            ),
                     )
                     .child(
                         div()
@@ -494,7 +904,11 @@ impl PlayerView {
                             div()
                                 .text_size(d.text_xs)
                                 .text_color(theme.text_muted)
-                                .child(format!("{}k out", rate / 1000)),
+                                .child(
+                                    runtime_text
+                                        .translate(&format!("{}k out", rate / 1000))
+                                        .into_owned(),
+                                ),
                         )
                     })
                     .when(signal_path_resampled, |el| {
@@ -534,7 +948,11 @@ impl PlayerView {
                         div()
                             .text_size(d.text_xs)
                             .text_color(theme.text_muted)
-                            .child(format!("{} nodes", node_count)),
+                            .child(
+                                runtime_text
+                                    .translate(&format!("{} nodes", node_count))
+                                    .into_owned(),
+                            ),
                     )
                     // Reset view button
                     .child(
@@ -715,7 +1133,7 @@ impl PlayerView {
 
         let (plugin_settings, plugin_enabled, plugin_linear_idx) = graph_node_uuid
             .map(|uuid| {
-                let graph = &state.app.plugin_state.graph;
+                let graph = &state.app.plugin_state.routing_controller().graph;
                 let plugin = graph.nodes.get(&uuid).map(|node| &node.plugin);
                 let settings = plugin.map(|plugin| plugin.settings.clone());
                 let enabled = plugin.map(|plugin| plugin.enabled);
@@ -728,8 +1146,15 @@ impl PlayerView {
         // Enable editing whenever the plugin exists in the graph — the
         // `editing_graph_node_uuid` (set on double-click) ensures parameter
         // changes are dispatched via GraphNodeId, bypassing linear indices.
-        let node_exists_in_graph = graph_node_uuid
-            .is_some_and(|uuid| state.app.plugin_state.graph.nodes.contains_key(&uuid));
+        let node_exists_in_graph = graph_node_uuid.is_some_and(|uuid| {
+            state
+                .app
+                .plugin_state
+                .routing_controller()
+                .graph
+                .nodes
+                .contains_key(&uuid)
+        });
 
         let graph_state = &state.app.plugin_state.graph_state;
         let settings_are_dirty =
@@ -761,19 +1186,44 @@ impl PlayerView {
         };
 
         // Compute modal dimensions: 85% of window, clamped to reasonable bounds
-        let window_w = state.app.ui_state.window_width.max(400.0);
-        let window_h = state.app.ui_state.window_height.max(300.0);
-        let modal_w = (window_w * 0.85).clamp(400.0, 1600.0);
-        let modal_h = (window_h * 0.85).clamp(300.0, 1200.0);
+        let window_w = state.app.ui_state.window_width.max(1.0);
+        let window_h = state.app.ui_state.window_height.max(1.0);
+        let inline = state.app.ui_state.current_screen == Screen::PluginGraph;
+        let modal_w = if inline {
+            let sizing = crate::ui::resolve_sizing_context(
+                window_w,
+                window_h,
+                state.app.ui_state.font_scale,
+                state.app.ui_state.min_font_size_px,
+                state.app.ui_state.max_font_size_px,
+            );
+            if sizing.window_width_rems < 64.0 {
+                window_w
+            } else {
+                (window_w * 0.45).min(800.0)
+            }
+        } else {
+            (window_w * 0.85).min(1600.0)
+        };
+        let modal_h = (window_h * 0.85).min(1200.0);
+        let layout_scale = crate::ui::compute_combined_scale(
+            window_w,
+            window_h,
+            state.app.ui_state.font_scale,
+            state.app.ui_state.min_font_size_px,
+            state.app.ui_state.max_font_size_px,
+        );
+        let editor_width = (modal_w - 4.0 * d.card.0 * 16.0 * layout_scale - 4.0).max(1.0);
 
         // Create the modal
         div()
-            .absolute()
-            .inset_0()
+            .when(!inline, |el| {
+                el.absolute().inset_0().bg(theme.feedback.overlay_bg)
+            })
+            .when(inline, |el| el.min_w_0().flex_shrink_0())
             .flex()
-            .items_center()
-            .justify_center()
-            .bg(theme.feedback.overlay_bg)
+            .when(!inline, |el| el.items_center().justify_center())
+            .when(inline, |el| el.items_start().justify_start())
             // Closing is explicit: a backdrop click must not discard an
             // in-progress NumberInput edit.
             .child(
@@ -820,13 +1270,13 @@ impl PlayerView {
                                         let state = state_for_config.clone();
                                         IconButton::with_child(
                                             "graph-node-config",
-                                            Icon::new(IconName::Settings)
-                                                .small()
-                                                .color(if graph_config_open {
+                                            Icon::new(IconName::Settings).small().color(
+                                                if graph_config_open {
                                                     theme.text_on_accent
                                                 } else {
                                                     theme.text_secondary
-                                                }),
+                                                },
+                                            ),
                                         )
                                         .variant(if graph_config_open {
                                             IconButtonVariant::Filled
@@ -836,74 +1286,100 @@ impl PlayerView {
                                         .size(IconButtonSize::Sm)
                                         .theme(theme.to_icon_button_theme())
                                         .aria_label(rack_text.plugin_configuration)
-                                        .on_click_event(move |_event, _window, cx| {
-                                            state.update(cx, |state, cx| {
-                                                let graph_state =
-                                                    &mut state.app.plugin_state.graph_state;
-                                                graph_state.graph_config_open =
-                                                    !graph_state.graph_config_open;
-                                                cx.notify();
-                                            });
-                                        })
+                                        .on_click_event(
+                                            move |_event, _window, cx| {
+                                                state.update(cx, |state, cx| {
+                                                    let graph_state =
+                                                        &mut state.app.plugin_state.graph_state;
+                                                    graph_state.graph_config_open =
+                                                        !graph_state.graph_config_open;
+                                                    cx.notify();
+                                                });
+                                            },
+                                        )
                                     }))
                                     .children(confirm_close_dirty.then(|| {
+                                        let view = cx.entity().downgrade();
                                         let state = state_for_continue.clone();
-                                        Button::new(
+                                        let button = Button::new(
                                             "modal-continue-editing",
                                             graph_text.nodes.continue_editing,
                                         )
-                                            .variant(ButtonVariant::Secondary)
-                                            .size(ButtonSize::Sm)
-                                            .theme(theme.to_button_theme())
-                                            .aria_label(graph_text.nodes.continue_editing)
-                                            .on_click_event(move |_, _, cx| {
-                                                state.update(cx, |state, cx| {
-                                                    state
-                                                        .app
-                                                        .plugin_state
-                                                        .graph_state
-                                                        .confirm_close_dirty = false;
+                                        .variant(ButtonVariant::Secondary)
+                                        .size(ButtonSize::Sm)
+                                        .theme(theme.to_button_theme())
+                                        .aria_label(graph_text.nodes.continue_editing)
+                                        .on_click_event(move |_, window, cx| {
+                                            state.update(cx, |state, cx| {
+                                                state
+                                                    .app
+                                                    .plugin_state
+                                                    .graph_state
+                                                    .confirm_close_dirty = false;
+                                                cx.notify();
+                                            });
+                                            if let Some(view) = view.upgrade() {
+                                                view.update(cx, |view, cx| {
+                                                    view.focus_handle.focus(window, cx);
                                                     cx.notify();
                                                 });
-                                            })
+                                            }
+                                        });
+
+                                        super::connections::track_routing_button(
+                                            button,
+                                            "routing.inspector.continue",
+                                        )
                                     }))
                                     .children(confirm_close_dirty.then(|| {
+                                        let view = cx.entity().downgrade();
                                         let state = state_for_keep.clone();
-                                        Button::new(
+                                        let button = Button::new(
                                             "modal-keep-changes",
                                             graph_text.nodes.keep_changes,
                                         )
-                                            .variant(ButtonVariant::Primary)
-                                            .size(ButtonSize::Sm)
-                                            .theme(theme.to_button_theme())
-                                            .aria_label(graph_text.nodes.keep_changes)
-                                            .on_click_event(move |_, _, cx| {
-                                                state.update(cx, |state, cx| {
-                                                    state
-                                                        .app
-                                                        .plugin_state
-                                                        .graph_state
-                                                        .clear_editing_context();
-                                                    state.app.ui_state.input_mode =
-                                                        crate::app::InputMode::Normal;
+                                        .variant(ButtonVariant::Primary)
+                                        .size(ButtonSize::Sm)
+                                        .theme(theme.to_button_theme())
+                                        .aria_label(graph_text.nodes.keep_changes)
+                                        .on_click_event(move |_, window, cx| {
+                                            state.update(cx, |state, cx| {
+                                                state
+                                                    .app
+                                                    .plugin_state
+                                                    .graph_state
+                                                    .clear_editing_context();
+                                                state.app.ui_state.input_mode =
+                                                    crate::app::InputMode::Normal;
+                                                cx.notify();
+                                            });
+                                            if let Some(view) = view.upgrade() {
+                                                view.update(cx, |view, cx| {
+                                                    view.focus_handle.focus(window, cx);
                                                     cx.notify();
                                                 });
-                                            })
+                                            }
+                                        });
+                                        super::connections::track_routing_button(
+                                            button,
+                                            "routing.inspector.keep",
+                                        )
                                     }))
                                     // Close button
                                     .child({
+                                        let view = cx.entity().downgrade();
                                         let state = state_for_close.clone();
                                         let label = if confirm_close_dirty {
                                             graph_text.nodes.discard_changes
                                         } else {
                                             graph_text.nodes.close
                                         };
-                                        Button::new("modal-close", label)
+                                        let button = Button::new("modal-close", label)
                                             .variant(ButtonVariant::Destructive)
                                             .size(ButtonSize::Sm)
                                             .theme(theme.to_button_theme())
                                             .aria_label(label)
-                                            .on_click_event(move |_, _, cx| {
+                                            .on_click_event(move |_, window, cx| {
                                                 state.update(cx, |state, cx| {
                                                     if settings_are_dirty && !confirm_close_dirty {
                                                         state
@@ -922,21 +1398,23 @@ impl PlayerView {
                                                             .plugin_state
                                                             .graph_state
                                                             .clone();
-                                                        if let Some(node) = state.app.plugin_state.graph.nodes.get_mut(&uuid) {
-                                                            graph_state.restore_original(&mut node.plugin);
+                                                        if let Some(node) = state
+                                                            .app
+                                                            .plugin_state
+                                                            .routing_controller_mut()
+                                                            .graph
+                                                            .nodes
+                                                            .get_mut(&uuid)
+                                                        {
+                                                            graph_state
+                                                                .restore_original(&mut node.plugin);
                                                         }
                                                         state
                                                             .app
                                                             .plugin_state
+                                                            .routing_controller_mut()
                                                             .graph
                                                             .update_channel_dependent_plugins();
-                                                        state
-                                                            .app
-                                                            .plugin_state
-                                                            .update_state
-                                                            .pending_plugin_update = Some(
-                                                            crate::app::types::PluginUpdateType::Structural,
-                                                        );
                                                     }
                                                     state
                                                         .app
@@ -947,7 +1425,18 @@ impl PlayerView {
                                                         crate::app::InputMode::Normal;
                                                     cx.notify();
                                                 });
-                                            })
+                                                if let Some(view) = view.upgrade() {
+                                                    view.update(cx, |view, cx| {
+                                                        view.focus_handle.focus(window, cx);
+                                                        cx.notify();
+                                                    });
+                                                }
+                                            });
+
+                                        super::connections::track_routing_button(
+                                            button,
+                                            "routing.inspector.close",
+                                        )
                                     }),
                             ),
                     )
@@ -967,6 +1456,7 @@ impl PlayerView {
                                 plugin_settings.as_ref(),
                                 plugin_linear_idx,
                                 node_exists_in_graph,
+                                editor_width,
                                 &theme,
                                 cx,
                             ))
@@ -1081,6 +1571,7 @@ impl PlayerView {
         plugin_settings: Option<&PluginSettings>,
         plugin_linear_idx: Option<usize>,
         node_exists: bool,
+        editor_width: f32,
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -1094,7 +1585,14 @@ impl PlayerView {
                 if let Some(settings) = plugin_settings {
                     let idx = plugin_linear_idx.unwrap_or(0);
                     let editing = plugin_linear_idx.is_some() || node_exists;
-                    return self.render_plugin_settings_ui(settings, idx, editing, theme, cx);
+                    return self.render_plugin_settings_ui(
+                        settings,
+                        idx,
+                        editing,
+                        editor_width,
+                        theme,
+                        cx,
+                    );
                 }
 
                 // Fallback: show placeholder based on plugin type
@@ -1213,6 +1711,7 @@ impl PlayerView {
         settings: &PluginSettings,
         plugin_idx: usize,
         is_editing: bool,
+        editor_width: f32,
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -1248,7 +1747,7 @@ impl PlayerView {
                 _ => state.app.playback.rack_plugin_data.clone(),
             };
             (
-                state.app.plugin_state.graph.clone(),
+                state.app.plugin_state.routing_controller().graph.clone(),
                 state.app.playback.loudness_info.clone(),
                 state.app.plugin_state.selected_eq_band,
                 state.app.plugin_ui.spectrum_tilt_select_open,
@@ -1280,6 +1779,7 @@ impl PlayerView {
             self.eq_chart_focus_handle.clone(),
             self.plugin_exact_entry_focus_handle.clone(),
             cx,
+            Some(editor_width),
         )
     }
 }

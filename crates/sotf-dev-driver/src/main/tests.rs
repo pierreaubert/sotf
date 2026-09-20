@@ -303,3 +303,21 @@ fn env_var_expansion() {
     });
     assert_eq!(result, "plugin_chain_save /tmp/qa/gain.json");
 }
+
+#[test]
+fn suite_qa_directory_expansion_is_scoped_per_scenario() {
+    use super::misc::expand_env_vars_in_qa;
+    let line = "plugin_chain_save $SOTF_QA_DIR/Gain.json";
+    assert_eq!(
+        expand_env_vars_in_qa(line, Some("/tmp/first scenario/qa")),
+        "plugin_chain_save /tmp/first scenario/qa/Gain.json"
+    );
+    assert_eq!(
+        expand_env_vars_in_qa(line, Some("/tmp/second/qa")),
+        "plugin_chain_save /tmp/second/qa/Gain.json"
+    );
+    assert_eq!(
+        expand_env_vars_in_qa("assert playback.is_playing == false", Some("/tmp/qa")),
+        "assert playback.is_playing == false"
+    );
+}

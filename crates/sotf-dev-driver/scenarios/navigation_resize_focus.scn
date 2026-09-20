@@ -1,0 +1,34 @@
+# 2026-09-08: the focused sidebar button disappeared at the compact breakpoint,
+# leaving keyboard actions without a dispatch path. ui/render.rs now restores
+# page focus when ui/desktop.rs replaces the focused navigation region.
+# Run: target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/navigation_resize_focus_ui.toml
+focus Home
+resize 2400 1400
+wait_idle 2s
+click sidebar.nav-playlists
+wait_until screen.focused == "Playlists" timeout=2s
+resize 700 600
+wait_idle 1s
+key L
+wait_until screen.focused == "Library" timeout=2s
+click navigation.compact
+key down
+key enter
+wait_until screen.focused == "NowPlaying" timeout=2s
+resize 2400 1400
+wait_idle 1s
+key Q
+wait_until screen.focused == "Queue" timeout=2s
+assert playback.is_playing == false
+
+# Resizing must preserve an input that is outside the replaced navigation.
+focus Library
+wait_idle 1s
+click library.tab.search
+click library.search_input
+type "retained"
+wait_until library.search_query == "retained" timeout=2s
+resize 700 600
+wait_idle 1s
+type " input"
+wait_until library.search_query == "retained input" timeout=2s

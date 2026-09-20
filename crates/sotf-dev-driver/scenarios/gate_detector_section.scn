@@ -1,0 +1,48 @@
+# German Light150 600x1000; disclosure pointer measured from native screenshot.
+focus Studio
+plugin_clear
+plugin_add Gate
+action PluginSelectFirstUser
+wait_idle
+scroll_at 15 700 -900
+wait_idle
+screenshot gate-sections
+click_at 300 844
+wait_idle
+
+scroll_into_view rack.params plugin.choice.2.9.1
+click plugin.choice.2.9.1
+assert plugins.plugin.2.param.9.value == 1
+wait_idle
+scroll_into_view rack.params plugin.choice.2.6.0
+click plugin.choice.2.6.0
+assert plugins.plugin.2.param.6.value == 0
+wait_idle
+scroll_into_view rack.params plugin.choice.2.8.1
+click plugin.choice.2.8.1
+assert plugins.plugin.2.param.8.value == 1
+wait_idle
+scroll_into_view rack.params plugin.choice.2.10.1
+click plugin.choice.2.10.1
+assert plugins.plugin.2.param.10.value == 1
+wait_idle
+scroll_into_view rack.params plugin.control.2.7
+click plugin.control.2.7
+wait_idle
+scroll_into_view rack.params plugin.param.2.7.exact
+click plugin.param.2.7.exact
+key cmd-a
+type "120"
+key enter
+wait_idle
+assert plugins.plugin.2.param.7.value == 120 tolerance=0.001
+screenshot gate-detector-edited
+plugin_chain_save $SOTF_QA_DIR/gate-detector.json
+plugin_remove 2
+plugin_chain_load $SOTF_QA_DIR/gate-detector.json
+assert plugins.plugin.2.param.9.value == 1 tolerance=0.001
+assert plugins.plugin.2.param.6.value == 0 tolerance=0.001
+assert plugins.plugin.2.param.8.value == 1 tolerance=0.001
+assert plugins.plugin.2.param.10.value == 1 tolerance=0.001
+assert plugins.plugin.2.param.7.value == 120 tolerance=0.001
+assert playback.is_playing == false

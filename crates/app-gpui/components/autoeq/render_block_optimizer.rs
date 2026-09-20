@@ -46,6 +46,7 @@
 // --- Population + Max Evals ---
 {
     let mut population_input = NumberInput::new((base_id.clone(), "population"))
+        .scroll_requires_alt(true)
         .value(config.algorithm.population as f64)
         .min(ParamLimits::POPULATION.min)
         .max(ParamLimits::POPULATION.max)
@@ -64,6 +65,7 @@
     }
 
     let mut maxeval_input = NumberInput::new((base_id.clone(), "maxeval"))
+        .scroll_requires_alt(true)
         .value(config.algorithm.maxeval as f64)
         .min(ParamLimits::MAXEVAL.min)
         .max(ParamLimits::MAXEVAL.max)
@@ -96,6 +98,7 @@
 // --- Tolerance (conditional) ---
 if !hide_tolerance {
     let mut tolerance_input = NumberInput::new((base_id.clone(), "tolerance"))
+        .scroll_requires_alt(true)
         .value(config.algorithm.tolerance)
         .min(ParamLimits::TOLERANCE.min)
         .max(ParamLimits::TOLERANCE.max)
@@ -113,6 +116,7 @@ if !hide_tolerance {
     }
 
     let mut atolerance_input = NumberInput::new((base_id.clone(), "atolerance"))
+        .scroll_requires_alt(true)
         .value(config.algorithm.atolerance)
         .min(ParamLimits::TOLERANCE.min)
         .max(ParamLimits::TOLERANCE.max)
@@ -146,6 +150,7 @@ if !hide_tolerance {
 // --- BO-specific settings (conditional) ---
 if config.algorithm.algo.eq_ignore_ascii_case("autoeq:bo") || config.algorithm.algo.eq_ignore_ascii_case("bo") {
     let mut bo_initial_input = NumberInput::new((base_id.clone(), "bo-initial-samples"))
+        .scroll_requires_alt(true)
         .value(config.algorithm.bo_initial_samples as f64)
         .min(ParamLimits::BO_INITIAL_SAMPLES.min)
         .max(ParamLimits::BO_INITIAL_SAMPLES.max)
@@ -164,6 +169,7 @@ if config.algorithm.algo.eq_ignore_ascii_case("autoeq:bo") || config.algorithm.a
     }
 
     let mut bo_batch_input = NumberInput::new((base_id.clone(), "bo-batch-size"))
+        .scroll_requires_alt(true)
         .value(config.algorithm.bo_batch_size as f64)
         .min(ParamLimits::BO_BATCH_SIZE.min)
         .max(ParamLimits::BO_BATCH_SIZE.max)
@@ -181,6 +187,7 @@ if config.algorithm.algo.eq_ignore_ascii_case("autoeq:bo") || config.algorithm.a
     }
 
     let mut bo_std_input = NumberInput::new((base_id.clone(), "bo-posterior-std"))
+        .scroll_requires_alt(true)
         .value(config.algorithm.bo_posterior_std_threshold)
         .min(ParamLimits::BO_POSTERIOR_STD.min)
         .max(ParamLimits::BO_POSTERIOR_STD.max)
@@ -314,6 +321,7 @@ if !hide_de_params && config.algorithm.algo.contains(":de") {
 
         // DE F and CR row
         let mut de_f_input = NumberInput::new((base_id.clone(), "de-f"))
+            .scroll_requires_alt(true)
             .value(config.algorithm.de_f)
             .min(ParamLimits::DE_FACTOR.min)
             .max(ParamLimits::DE_FACTOR.max)
@@ -331,6 +339,7 @@ if !hide_de_params && config.algorithm.algo.contains(":de") {
         }
 
         let mut de_cr_input = NumberInput::new((base_id.clone(), "de-cr"))
+            .scroll_requires_alt(true)
             .value(config.algorithm.de_cr)
             .min(ParamLimits::DE_CR.min)
             .max(ParamLimits::DE_CR.max)
@@ -361,6 +370,7 @@ if !hide_de_params && config.algorithm.algo.contains(":de") {
         // Adaptive weight inputs (only for adaptive strategies)
         if config.algorithm.strategy.starts_with("adaptive") {
             let mut weight_f_input = NumberInput::new((base_id.clone(), "adaptive-weight-f"))
+                .scroll_requires_alt(true)
                 .value(config.algorithm.adaptive_weight_f)
                 .min(ParamLimits::ADAPTIVE_WEIGHT.min)
                 .max(ParamLimits::ADAPTIVE_WEIGHT.max)
@@ -378,6 +388,7 @@ if !hide_de_params && config.algorithm.algo.contains(":de") {
             }
 
             let mut weight_cr_input = NumberInput::new((base_id.clone(), "adaptive-weight-cr"))
+                .scroll_requires_alt(true)
                 .value(config.algorithm.adaptive_weight_cr)
                 .min(ParamLimits::ADAPTIVE_WEIGHT.min)
                 .max(ParamLimits::ADAPTIVE_WEIGHT.max)

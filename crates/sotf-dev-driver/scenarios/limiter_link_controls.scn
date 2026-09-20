@@ -1,0 +1,25 @@
+# Header coordinates from the 1600×1200 native reference capture.
+resize 1600 1200
+focus Studio
+plugin_clear
+plugin_add Limiter
+action PluginSelectFirstUser
+wait_idle 1s
+scroll_at 200 700 -3000
+wait_idle 500ms
+screenshot limiter-disclosures
+click_at 800 1035
+wait_idle 500ms
+scroll_at 200 700 -1000
+wait_idle 500ms
+scroll_into_view rack.params plugin.control.2.8
+click plugin.control.2.8
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.8.exact
+click plugin.param.2.8.exact
+key cmd-a
+type "75"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.8.value == 0.75 tolerance=0.001
+screenshot limiter-link-edited

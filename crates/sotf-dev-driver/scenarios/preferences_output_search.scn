@@ -1,0 +1,23 @@
+focus Settings
+resize 600 800
+wait_idle 2s
+click preferences.search
+type "output device"
+wait_idle 1s
+click preferences.result.OutputDevice
+wait_idle 2s
+assert settings.active_tab == "AudioDevice"
+assert preferences.setting == "OutputDevice"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.OutputDevice
+assert_in_viewport settings.output-device
+assert preferences.audio_dirty == false
+screenshot preferences-output-search
+key enter
+wait_until preferences.output_dropdown_open == true timeout=2s
+key down
+key escape
+assert preferences.output_dropdown_open == false
+assert screen.focused == "Settings"
+assert preferences.audio_dirty == false
+assert playback.is_playing == false

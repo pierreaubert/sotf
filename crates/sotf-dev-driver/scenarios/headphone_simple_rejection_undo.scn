@@ -1,0 +1,32 @@
+# 2026-09-10: Standard Apply discarded notch/pass filters with zero gain.
+# Fix: components/headphone_eq/actions/misc.rs preserves all calculated biquads.
+# Synthetic receipt rejection exercises the production acknowledgement poller, not a device failure.
+# Run: target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/headphone_apply_rejection_retry_ui.toml -v
+action HeadphoneSetApplyFixture {"simple":true}
+wait_idle 500ms
+assert headphone.application_status == "NotApplied"
+scroll_into_view headphone.content headphone.apply
+assert_in_viewport headphone.apply
+click headphone.apply
+wait_until headphone.application_status == "Applied" timeout=5s
+assert headphone.applied_filters == "Notch:1000:0.7:0;Highpass:80:0.7:0;Lowpass:12000:0.7:0"
+screenshot headphone-applied-nonpeak
+assert playback.is_playing == false
+action HeadphoneRejectApplyFixture
+wait_until headphone.application_status == "Failed" timeout=5s
+scroll_into_view headphone.content correction.application_status
+screenshot headphone-rejected-application
+assert plugins.user_count == 3
+scroll_into_view headphone.content headphone.apply
+click headphone.apply
+wait_until headphone.application_status == "Applied" timeout=5s
+assert plugins.user_count == 3
+assert headphone.applied_filters == "Notch:1000:0.7:0;Highpass:80:0.7:0;Lowpass:12000:0.7:0"
+screenshot headphone-retry-no-duplicate
+assert playback.is_playing == false
+scroll_into_view headphone.content headphone.undo
+click headphone.undo
+wait_until plugins.update_pending == false timeout=5s
+assert plugins.user_count == 0
+assert playback.is_playing == false
+screenshot headphone-simple-undo-original

@@ -1,11 +1,15 @@
 #[cfg(feature = "dev-api")]
 use crate::app::dev_api::DevTrackExt;
 use crate::app::i18n::SettingsSurfaceTranslations;
+use crate::app::types::PreferencesSetting;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
+use gpui_ui_kit::{
+    AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState, Button, ButtonSize,
+    ButtonVariant, Spinner,
+};
 
 macro_rules! dev_track {
     ($element:expr, $selector:expr) => {{
@@ -21,26 +25,84 @@ macro_rules! dev_track {
 }
 
 impl PlayerView {
+    fn update_metadata_preferences(&self, enabled: Option<bool>, cx: &mut Context<Self>) {
+        let state = self.state.read(cx);
+        if state.app.settings.metadata_loading {
+            return;
+        }
+        let text = SettingsSurfaceTranslations::for_language(state.app.ui_state.language);
+        let error_label = if enabled.is_some() {
+            text.metadata_save_failed
+        } else {
+            text.metadata_services
+        };
+        self.state
+            .update(cx, |state, _cx| state.app.settings.metadata_loading = true);
+        cx.notify();
+        cx.spawn(async move |view, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let mut config = sotf_audio_player::config::load_metadata_services_config()
+                        .map_err(|error| error.to_string())?;
+                    if let Some(enabled) = enabled {
+                        if config.providers.is_empty() {
+                            config.providers.push(Default::default());
+                        }
+                        config.providers[0].enabled = enabled;
+                        sotf_audio_player::config::save_metadata_services_config(&config)
+                            .map_err(|error| error.to_string())?;
+                    }
+                    Ok::<_, String>(config)
+                })
+                .await;
+            let _ = view.update(cx, |view, cx| {
+                view.state.update(cx, |state, _cx| {
+                    state.app.settings.metadata_loading = false;
+                    match result {
+                        Ok(config) => {
+                            state.app.settings.metadata_config = Some(config);
+                            state.app.settings.metadata_error = None;
+                        }
+                        Err(error) => {
+                            state
+                                .app
+                                .settings
+                                .metadata_config
+                                .get_or_insert_with(Default::default);
+                            state.app.settings.metadata_error =
+                                Some(format!("{error_label}: {error}"));
+                        }
+                    }
+                });
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     pub(crate) fn render_metadata_settings_content(
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
-        let (theme, text, retained_error) = {
+        if self.state.read(cx).app.settings.metadata_config.is_none() {
+            self.update_metadata_preferences(None, cx);
+        }
+        let (theme, text, retained_error, config, loading) = {
             let state = self.state.read(cx);
             (
                 state.app.ui_state.theme.clone(),
                 SettingsSurfaceTranslations::for_language(state.app.ui_state.language),
                 state.app.settings.metadata_error.clone(),
+                state
+                    .app
+                    .settings
+                    .metadata_config
+                    .clone()
+                    .unwrap_or_default(),
+                state.app.settings.metadata_loading,
             )
-        };
-        let (config, load_error) = match sotf_audio_player::config::load_metadata_services_config()
-        {
-            Ok(config) => (config, None),
-            Err(error) => (
-                sotf_audio_player::MetadataServicesConfig::default(),
-                Some(format!("{}: {error}", text.metadata_save_failed)),
-            ),
         };
         let provider = config.providers.first().cloned().unwrap_or_default();
         let enabled = provider.enabled;
@@ -60,6 +122,11 @@ impl PlayerView {
             text.enable_metadata_search
         };
 
+        cx.register_accessible(AccessibilityNode {
+            element_id: "metadata-search-toggle".into(),
+            label: toggle_label.into(),
+            props: AriaProps::with_role(AriaRole::Button).maybe_state(loading, AriaState::Disabled),
+        });
         div()
             .flex()
             .flex_col()
@@ -114,12 +181,13 @@ impl PlayerView {
                             .text_color(theme.text_secondary)
                             .child(format!("Account: {account}")),
                     )
-                    .child(
+                    .child(dev_track!(
                         div()
                             .text_size(d.text_xs)
                             .text_color(theme.text_secondary)
                             .child(auth_status),
-                    )
+                        "settings.metadata.auth-status"
+                    ))
                     .child(
                         div()
                             .text_size(d.text_xs)
@@ -135,28 +203,42 @@ impl PlayerView {
                             })
                             .size(ButtonSize::Sm)
                             .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(
-                                move |view, _: &ClickEvent, _window, cx| {
-                                    view.state.update(cx, |state, cx| {
-                                        let result = (|| {
-                                            let mut config = sotf_audio_player::config::load_metadata_services_config()?;
-                                            if config.providers.is_empty() {
-                                                config.providers.push(Default::default());
-                                            }
-                                            config.providers[0].enabled = !enabled;
-                                            sotf_audio_player::config::save_metadata_services_config(&config)
-                                        })();
-                                        state.app.settings.metadata_error = result
-                                            .err()
-                                            .map(|error| format!("{}: {error}", text.metadata_save_failed));
-                                        cx.notify();
-                                    });
-                                },
+                            .disabled(loading)
+                            .build()
+                            .text_size(d.text_sm)
+                            .px(d.pad_x)
+                            .py(d.pad_y_half)
+                            .focusable()
+                            .when_some(
+                                self.preference_focus_handle(
+                                    PreferencesSetting::MetadataSearch,
+                                    cx
+                                ),
+                                |button, focus| {
+                                    button.track_focus(&focus).track_focus_element(&focus)
+                                }
+                            )
+                            .on_click(cx.listener(move |view, _, _window, cx| {
+                                view.update_metadata_preferences(Some(!enabled), cx);
+                            }))
+                            .on_key_down(cx.listener(
+                                move |view, event: &KeyDownEvent, _window, cx| {
+                                    if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                                        view.update_metadata_preferences(Some(!enabled), cx);
+                                        cx.stop_propagation();
+                                    }
+                                }
+                            ))
+                            .map(|button| self.preference_control(
+                                PreferencesSetting::MetadataSearch,
+                                button,
+                                cx
                             )),
                         "settings.metadata.search-toggle"
                     )),
             )
-            .when_some(retained_error.or(load_error), |content, error| {
+            .when(loading, |content| content.child(Spinner::new()))
+            .when_some(retained_error, |content, error| {
                 let alert = div()
                     .p(d.pad_x)
                     .rounded(d.r_md)

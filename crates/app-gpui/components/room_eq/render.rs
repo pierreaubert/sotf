@@ -8,7 +8,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_px::LegendPosition;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Card, StackSpacing, Text, TextSize, TextWeight, VStack,
+    Button, ButtonSize, ButtonVariant, Card, NumberInput, NumberInputSize, StackSpacing, Text,
+    TextSize, TextWeight, VStack,
 };
 use sotf_audio::signal_analysis as dsp;
 
@@ -31,6 +32,7 @@ pub use types::*;
 use consts::ROOM_EQ_CHANNEL_COLORS;
 use consts::ROOM_EQ_DRIVER_OPACITIES;
 use consts::ROOM_EQ_REVIEW_WIDE_BREAKPOINT_PX;
+pub use consts::room_eq_chart_width;
 use fmt::epa_metric_row;
 use fmt::fmt_db;
 use fmt::fmt_hz;
@@ -53,7 +55,10 @@ pub(crate) fn render_room_eq_report_summary(
     report: &RoomEqReportData,
     text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
+    compact: bool,
+    language: crate::app::i18n::Language,
 ) -> impl IntoElement {
+    let labels = RoomEqReportTranslations::summary_labels(language);
     let improvement = report
         .pre_score
         .zip(report.post_score)
@@ -74,21 +79,21 @@ pub(crate) fn render_room_eq_report_summary(
                 .child(
                     div()
                         .grid()
-                        .grid_cols(4)
+                        .grid_cols(if compact { 1 } else { 4 })
                         .gap(d.gap_md)
-                        .child(render_room_eq_stat_item("Version", &report.version, theme))
+                        .child(render_room_eq_stat_item(labels[0], &report.version, theme))
                         .child(render_room_eq_stat_item(
-                            "Algorithm",
+                            labels[1],
                             report.algorithm.as_deref().unwrap_or("N/A"),
                             theme,
                         ))
                         .child(render_room_eq_stat_item(
-                            "Loss function",
+                            labels[2],
                             report.loss_type.as_deref().unwrap_or("N/A"),
                             theme,
                         ))
                         .child(render_room_eq_stat_item(
-                            "Iterations",
+                            text.iterations,
                             &report
                                 .iterations
                                 .map(|value| value.to_string())
@@ -96,31 +101,31 @@ pub(crate) fn render_room_eq_report_summary(
                             theme,
                         ))
                         .child(render_room_eq_stat_item(
-                            "Score Before",
+                            labels[3],
                             &fmt_optional_number(report.pre_score, "{:.2}"),
                             theme,
                         ))
                         .child(render_room_eq_stat_item(
-                            "Score After",
+                            labels[4],
                             &fmt_optional_number(report.post_score, "{:.2}"),
                             theme,
                         ))
                         .child(render_room_eq_colored_stat_item(
-                            "Improvement",
+                            labels[5],
                             &fmt_optional_number(improvement, "{:.2}"),
                             improvement.map(|v| v >= 0.0).unwrap_or(true),
                             theme,
-                        ))
-                        .child(render_room_eq_stat_item(
-                            "Timestamp",
-                            report.timestamp.as_deref().unwrap_or("N/A"),
-                            theme,
                         )),
                 )
+                .child(render_room_eq_stat_item(
+                    labels[6],
+                    report.timestamp.as_deref().unwrap_or("N/A"),
+                    theme,
+                ))
                 .when_some(report.epa_preference_avg, |el, (pre, post)| {
                     let delta = post - pre;
                     el.child(render_room_eq_colored_stat_item(
-                        "EPA Preference (avg)",
+                        labels[7],
                         &format!("{pre:.2} -> {post:.2} ({delta:+.2})"),
                         delta >= 0.0,
                         theme,
@@ -130,20 +135,20 @@ pub(crate) fn render_room_eq_report_summary(
                     el.child(
                         div()
                             .grid()
-                            .grid_cols(3)
+                            .grid_cols(if compact { 1 } else { 3 })
                             .gap(d.gap_md)
                             .child(render_room_eq_stat_item(
-                                "FIR pre-ring audible",
+                                &format!("FIR · {}", text.pre_audible_db),
                                 &fmt_optional_number(fm.pre_audible_db, "{:.1} dB"),
                                 theme,
                             ))
                             .child(render_room_eq_stat_item(
-                                "FIR post-ring audible",
+                                &format!("FIR · {}", text.post_audible_db),
                                 &fmt_optional_number(fm.post_audible_db, "{:.1} dB"),
                                 theme,
                             ))
                             .child(render_room_eq_stat_item(
-                                "FIR masking penalty",
+                                &format!("FIR · {}", text.penalty),
                                 &fmt_optional_number(fm.penalty, "{:.3}"),
                                 theme,
                             )),
@@ -531,6 +536,8 @@ fn render_room_eq_bass_headroom_chart(
         .map(|output| output.lfe_contribution_db)
         .collect();
     let bar_theme = BarTheme {
+        axis_label_color: theme.text_secondary,
+        axis_line_color: theme.border,
         plot_background: theme.surface,
         title_color: theme.text_primary,
         legend_text_color: theme.text_secondary,
@@ -818,7 +825,7 @@ pub(crate) fn render_room_eq_report_overview(
     // + 2 × grid gap (≈24). Floor at 280 px so charts stay legible on
     // narrow windows.
     // intentional-file: chart canvas dimensions are layout-driven px.
-    let overview_chart_width = ((window_width - 104.0) / 3.0).clamp(280.0, 900.0);
+    let overview_chart_width = room_eq_chart_width((window_width - 104.0) / 3.0, 280.0, 900.0);
     let overview_chart_height = (overview_chart_width * 0.62).clamp(220.0, 520.0);
     let chart_size = (overview_chart_width, overview_chart_height);
     let original_chart = render_room_eq_curve_chart(
@@ -949,9 +956,9 @@ pub(crate) fn render_room_eq_report_channel(
     // intentional-file: chart canvas dimensions are layout-driven px.
     let two_col = window_width >= ROOM_EQ_REVIEW_WIDE_BREAKPOINT_PX;
     let curve_chart_width = if two_col {
-        ((window_width - 120.0) / 2.0).clamp(420.0, 1100.0)
+        room_eq_chart_width((window_width - 120.0) / 2.0, 420.0, 1100.0)
     } else {
-        (window_width - 120.0).clamp(640.0, 1400.0)
+        room_eq_chart_width(window_width - 120.0, 640.0, 1400.0)
     };
     let curve_chart_height = (curve_chart_width * 0.5).clamp(260.0, 540.0);
     let curve_chart_size = (curve_chart_width, curve_chart_height);
@@ -1634,9 +1641,14 @@ pub(crate) fn render_channel_config_row(
     let crossover_type = config.crossover_type;
     let fir_taps = config.linear_phase_fir_taps;
     let is_linear_phase = matches!(crossover_type, CrossoverType::LinearPhase);
+    let crossover_count = config.driver_names.len().saturating_sub(1);
+    let crossover_hints = config.crossover_freq_hints.clone();
+    let crossover_label = text.crossover_label;
 
     div()
         .flex()
+        .flex_wrap()
+        .min_w_0()
         .gap(d.section)
         .items_center()
         .w_full()
@@ -1734,6 +1746,8 @@ pub(crate) fn render_channel_config_row(
             el.child(
                 div()
                     .flex()
+                    .flex_wrap()
+                    .min_w_0()
                     .gap(d.gap)
                     .items_center()
                     .child(
@@ -1755,6 +1769,55 @@ pub(crate) fn render_channel_config_row(
                             sample_rate_hz,
                         ))
                     }),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .min_w_0()
+                    .gap(d.gap)
+                    .items_center()
+                    .children((0..crossover_count).map(|i| {
+                        let hint = crossover_hints.get(i).copied().unwrap_or(
+                            sotf_audio_player::ui_models::room_eq::RoomEqScreenModel::CROSSOVER_FREQ_DEFAULT_HZ,
+                        );
+                        let label = format!("{} {}", crossover_label, i + 1);
+                        let view = view.clone();
+                        let control = NumberInput::new(SharedString::from(format!(
+                            "roomeq-xover-freq-{idx}-{i}"
+                        )))
+                        .scroll_requires_alt(true)
+                        .value(hint)
+                        .min(sotf_audio_player::ui_models::room_eq::RoomEqScreenModel::CROSSOVER_FREQ_MIN_HZ)
+                        .max(sotf_audio_player::ui_models::room_eq::RoomEqScreenModel::CROSSOVER_FREQ_MAX_HZ)
+                        .step(10.0)
+                        .decimals(0)
+                        .unit("Hz")
+                        .label(label.clone())
+                        .aria_label(label)
+                        .size(NumberInputSize::Sm)
+                        .width(110.0)
+                        .on_change(move |value, _, cx| {
+                            view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, cx| {
+                                    state
+                                        .app
+                                        .measurement_state
+                                        .room_eq_state
+                                        .set_crossover_freq_hint(idx, i, value);
+                                    cx.notify();
+                                });
+                            });
+                        });
+                        #[cfg(feature = "dev-api")]
+                        let control = {
+                            use crate::app::dev_api::DevTrackExt;
+                            control.dev_track(format!(
+                                "roomeq.crossover_freq.{idx}.{i}"
+                            ))
+                        };
+                        control
+                    })),
             )
         })
 }
@@ -2667,6 +2730,8 @@ fn render_tonal_histogram(
         ];
 
         let bar_theme = BarTheme {
+            axis_label_color: theme.text_secondary,
+            axis_line_color: theme.border,
             plot_background: theme.surface,
             title_color: theme.text_primary,
             legend_text_color: theme.text_secondary,

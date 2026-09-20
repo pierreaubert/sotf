@@ -25,9 +25,11 @@ where
         return None;
     }
 
-    let has_bass_output = speakers
+    let bass_outputs: Vec<_> = speakers
         .iter()
-        .any(|name| room_eq_channel_is_bass_output(name));
+        .filter(|name| room_eq_channel_is_bass_output(name))
+        .map(|name| serde_json::json!({"id": name, "speaker": name}))
+        .collect();
 
     Some(autoeq::roomeq::SystemConfig {
         model: autoeq::roomeq::SystemModel::HomeCinema,
@@ -35,10 +37,20 @@ where
             .into_iter()
             .map(|name| (name.clone(), name))
             .collect::<HashMap<_, _>>(),
-        subwoofers: has_bass_output.then(|| autoeq::roomeq::SubwooferSystemConfig {
-            config: autoeq::roomeq::SubwooferStrategy::Single,
-            crossover: bass_management_crossover,
-            mapping: HashMap::new(),
+        subwoofers: (!bass_outputs.is_empty()).then(|| {
+            // Bridge the released measurement-mapping schema and the explicit
+            // physical-output schema while the matching AutoEQ update rolls out.
+            serde_json::from_value(serde_json::json!({
+                "strategy": "single", "outputs": bass_outputs,
+                "crossover": bass_management_crossover,
+            }))
+            .or_else(|_| {
+                serde_json::from_value(serde_json::json!({
+                    "config": "single",
+                    "crossover": bass_management_crossover,
+                }))
+            })
+            .expect("generated subwoofer configuration must match a supported AutoEQ schema")
         }),
         bass_management: None,
         supporting_source_outputs: None,

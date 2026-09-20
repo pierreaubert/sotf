@@ -63,6 +63,8 @@ pub(super) struct ScenarioConfig {
 
 #[derive(Debug, Deserialize)]
 pub(super) struct FakeRecordingConfig {
+    /// Optional RoomConfig JSON imported through the production completion path.
+    pub(super) import_json: Option<String>,
     #[serde(default = "default_fake_channels")]
     pub(super) channels: usize,
     #[serde(default = "default_fake_points")]

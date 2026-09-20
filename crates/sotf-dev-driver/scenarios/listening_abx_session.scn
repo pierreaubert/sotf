@@ -9,7 +9,7 @@ action      PlayPause
 wait_until  playback.is_playing == true timeout=3s
 action      ListeningResetGuide
 click       listening.guide.acknowledge
-click       sidebar.nav-ab-compare
+click       listening.tab-comparison
 wait_until  listening.surface == "BlindComparison" timeout=2s
 click       listening.capture.a
 click       listening.capture.b
@@ -30,8 +30,15 @@ key         alt-b
 wait_until  listening.completed_trials == 2 timeout=2s
 assert      listening.abx_total == 2
 assert      listening.pending_mode == null
-assert_visible listening.session.listening-save-session
-click       listening.session.listening-save-session
+# End an uncommitted trial; the two committed trials must survive.
+key ctrl-x
+wait_until listening.pending_mode == "Abx" timeout=2s
+click listening.end
+wait_until listening.confirm_end == true timeout=2s
+click listening.confirm-end
+wait_idle
+assert_visible listening.session.comparison-save-results
+click       listening.session.comparison-save-results
 wait_until  listening.session_file_exists == true timeout=2s
 action      ListeningClearSession
 assert      listening.session_exists == false

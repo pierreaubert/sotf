@@ -1,0 +1,11 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+size = "900x1000"
+
+[[scenario]]
+name = "listening-course-localization"
+path = "crates/sotf-dev-driver/scenarios/listening_course_localization.scn"
+timeout = "60s"
+tags = ["listening", "courses", "localization", "offline"]

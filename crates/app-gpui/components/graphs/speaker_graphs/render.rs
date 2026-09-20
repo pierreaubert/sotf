@@ -22,6 +22,7 @@ impl PlayerView {
         text: SpeakerGraphTranslations,
         theme: &Theme,
         available_width: f32,
+        effective_rem: f32,
     ) -> impl IntoElement {
         let has_cea2034_curves = [
             &result.on_axis_curve,
@@ -32,18 +33,41 @@ impl PlayerView {
         .iter()
         .all(|curve| curve.len() == result.frequencies.len() && !curve.is_empty());
 
-        // A plain response measurement can produce a valid EQ result, but it
-        // cannot support the CEA-2034 review matrix. Keep the result summary
-        // and filters visible instead of building charts with missing series.
-        if !has_cea2034_curves {
-            return div();
-        }
-
-        let gap = 8.0;
+        let gap = d.section.0 * effective_rem;
+        let two_columns = available_width >= 60.0 * effective_rem;
         let graph_ratio = 0.75;
-        let graph_width = ((available_width - gap) / 2.0).max(600.0);
+        let graph_width = if two_columns {
+            (available_width - gap) / 2.0
+        } else {
+            available_width
+        }
+        .max(1.0);
         let legend_width = 150.0;
         let graph_height = 300.0_f32.max((graph_width - legend_width) * graph_ratio);
+
+        // A single response does not supply CEA-2034 directivity measurements.
+        // Show the actual optimized response and filters without inventing them.
+        if !has_cea2034_curves {
+            return div()
+                .flex()
+                .when(two_columns, |row| row.flex_row())
+                .when(!two_columns, |row| row.flex_col())
+                .gap(d.section)
+                .child(render_spinorama_main_response_plot(
+                    result,
+                    text,
+                    theme,
+                    graph_width,
+                    graph_height,
+                ))
+                .child(render_speaker_filter_response_plot(
+                    result,
+                    text,
+                    theme,
+                    graph_width,
+                    graph_height,
+                ));
+        }
 
         div()
             .flex()
@@ -54,7 +78,8 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
-                    .flex_row()
+                    .when(two_columns, |row| row.flex_row())
+                    .when(!two_columns, |row| row.flex_col())
                     .gap(d.section)
                     .child(render_cea2034_from_result(
                         result,
@@ -75,7 +100,8 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
-                    .flex_row()
+                    .when(two_columns, |row| row.flex_row())
+                    .when(!two_columns, |row| row.flex_col())
                     .gap(d.section)
                     .child(render_spinorama_main_response_plot(
                         result,
@@ -96,7 +122,8 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
-                    .flex_row()
+                    .when(two_columns, |row| row.flex_row())
+                    .when(!two_columns, |row| row.flex_col())
                     .gap(d.section)
                     .child(render_tonal_balance_plot(
                         d,
@@ -119,7 +146,8 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
-                    .flex_row()
+                    .when(two_columns, |row| row.flex_row())
+                    .when(!two_columns, |row| row.flex_col())
                     .gap(d.section)
                     .child(render_tonal_balance_plot(
                         d,
@@ -169,7 +197,6 @@ fn render_spinorama_main_response_plot(
     let chart = line(&result.frequencies, original)
         .x_scale(ScaleType::Log)
         .y_label("SPL (dB)")
-        .y_range(-15.0, 5.0)
         .label(text.original)
         .color(rgba_to_u32(colors::input(theme)))
         .stroke_width(1.5)
@@ -313,6 +340,9 @@ pub fn render_spinorama_cea2034_graph(
 
     let chart_theme = theme_to_chart_theme(theme);
 
+    // Responses may be absolute SPL or normalized levels. Let each axis
+    // derive its domain from its series instead of clipping absolute SPL
+    // to a normalized range (or excluding negative directivity indices).
     // CEA2034 standard colors (matching spinorama.org)
     const ON_AXIS_COLOR: u32 = 0x1f77b4; // Blue
     const LISTENING_WINDOW_COLOR: u32 = 0xff7f0e; // Orange
@@ -325,8 +355,6 @@ pub fn render_spinorama_cea2034_graph(
         .x_scale(ScaleType::Log)
         .x_range(20.0, 20000.0)
         .y_label("SPL (dB)")
-        .y_range(-40.0, 10.0)
-        .y2_range(0.0, 50.0)
         .y2_label("DI (dB)")
         .label("ON")
         .color(ON_AXIS_COLOR)
@@ -388,7 +416,6 @@ pub fn render_spinorama_pir_graph(
         .x_scale(ScaleType::Log)
         .x_range(20.0, 20000.0)
         .y_label("SPL (dB)")
-        .y_range(-40.0, 10.0)
         .label("PIR")
         .color(PIR_COLOR)
         .stroke_width(2.0)
@@ -461,7 +488,6 @@ pub fn render_spinorama_horizontal_graph(
         .x_scale(ScaleType::Log)
         .x_range(20.0, 20000.0)
         .y_label("SPL (dB)")
-        .y_range(-40.0, 10.0)
         .label(format!("{:.0}°", base.angle))
         .legend_position(LegendPosition::Bottom)
         .color(angle_colors[0])
@@ -548,7 +574,6 @@ pub fn render_spinorama_vertical_graph(
         .x_scale(ScaleType::Log)
         .x_range(20.0, 20000.0)
         .y_label("SPL (dB)")
-        .y_range(-40.0, 10.0)
         .label(format!("{:.0}°", base.angle))
         .color(angle_colors[0])
         .stroke_width(2.0)
@@ -684,7 +709,6 @@ fn render_tonal_balance_plot(
     let mut chart_builder = line(&result.frequencies, &original_curve)
         .x_scale(ScaleType::Log)
         .x_range(20.0, 20000.0)
-        .y_range(-15.0, 5.0)
         .label(format!("{} Orig", curve_type))
         .y_label("SPL (dB)")
         .legend_position(LegendPosition::Bottom)
@@ -740,6 +764,8 @@ fn render_tonal_balance_plot(
         ];
 
         let bar_theme = BarTheme {
+            axis_label_color: theme.text_secondary,
+            axis_line_color: theme.border,
             plot_background: theme.surface,
             title_color: theme.text_primary,
             legend_text_color: theme.text_secondary,

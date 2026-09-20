@@ -1,6 +1,0 @@
-/// Output format for offline rendering.
-#[derive(Debug, Clone)]
-pub enum OutputFormat {
-    /// WAV file with specified bits per sample (16, 24, or 32-bit float)
-    Wav { bits_per_sample: u16 },
-}

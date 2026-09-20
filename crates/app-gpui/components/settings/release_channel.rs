@@ -1,341 +1,289 @@
+use super::search::{focus_settings_choice_relative, settings_choice_focus_handle};
 #[cfg(feature = "dev-api")]
-use crate::app::dev_api::DevTrackExt;
-use crate::app::types::Screen;
+use crate::app::dev_api::{DevElementState, DevTrackExt};
+use crate::app::i18n::{
+    DialogTranslations, FeatureAvailabilityTranslations, SettingsSurfaceTranslations,
+};
+use crate::app::types::{PreferencesSetting, Screen};
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
+use gpui_ui_kit::{
+    AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState, Button, ButtonSize,
+    ButtonVariant, Text,
+};
 use sotf_audio_player::{PluginType, ReleaseChannel};
 
-macro_rules! dev_track {
-    ($element:expr, $selector:expr) => {{
-        #[cfg(feature = "dev-api")]
-        {
-            $element.dev_track($selector)
-        }
-        #[cfg(not(feature = "dev-api"))]
-        {
-            $element
-        }
-    }};
-}
-
-/// A row in the feature availability table.
 struct FeatureRow {
+    id: String,
     name: &'static str,
     maturity: ReleaseChannel,
 }
 
 impl PlayerView {
+    fn select_feature_availability(
+        &mut self,
+        channel: ReleaseChannel,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, cx| {
+            state.app.set_release_channel(channel);
+            let layout = state.layout.read(cx);
+            if let Err(error) = state.app.save_config(layout) {
+                let copy =
+                    FeatureAvailabilityTranslations::for_language(state.app.ui_state.language);
+                state.app.ui_state.toast_message =
+                    Some(crate::app::ToastMessage::error(copy.save_error(error)));
+            }
+        });
+        if let Some(focus) =
+            self.preference_focus_handle(PreferencesSetting::FeatureAvailability, cx)
+        {
+            focus.focus(window, cx);
+        }
+        cx.notify();
+    }
+
     pub(crate) fn render_release_channel_settings_content(
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let current_channel = state.app.ui_state.release_channel;
+        let current = state.app.ui_state.release_channel;
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
-        let text = SettingsSurfaceTranslations::for_language(state.app.ui_state.language);
-
+        let language = state.app.ui_state.language;
+        let copy = FeatureAvailabilityTranslations::for_language(language);
+        let text = SettingsSurfaceTranslations::for_language(language);
+        let compact = crate::ui::resolve_sizing_context(
+            state.app.ui_state.window_width,
+            state.app.ui_state.window_height,
+            state.app.ui_state.font_scale,
+            state.app.ui_state.min_font_size_px,
+            state.app.ui_state.max_font_size_px,
+        )
+        .window_width_rems
+            < 52.0;
+        let choices = [
+            (ReleaseChannel::Prod, text.stable),
+            (ReleaseChannel::Beta, text.beta),
+            (ReleaseChannel::Alpha, text.alpha),
+        ];
+        let controls = choices
+            .into_iter()
+            .map(|(channel, label)| {
+                let selected = current == channel;
+                let id = ElementId::from(SharedString::from(format!(
+                    "select-channel-{}",
+                    channel.name()
+                )));
+                let focus = if selected {
+                    self.preference_focus_handle(PreferencesSetting::FeatureAvailability, cx)
+                        .unwrap_or_else(|| settings_choice_focus_handle(&id, cx))
+                } else {
+                    settings_choice_focus_handle(&id, cx)
+                };
+                let accessible_label = format!("{label} {}", copy.channel);
+                cx.register_accessible(AccessibilityNode {
+                    element_id: id.clone(),
+                    label: accessible_label.clone().into(),
+                    props: AriaProps::with_role(AriaRole::Button)
+                        .maybe_state(selected, AriaState::Pressed(true)),
+                });
+                let button = Button::new(id, label)
+                    .aria_label(accessible_label)
+                    .selected(selected)
+                    .variant(if selected {
+                        ButtonVariant::Primary
+                    } else {
+                        ButtonVariant::Secondary
+                    })
+                    .size(ButtonSize::Sm)
+                    .theme(theme.to_button_theme())
+                    .build()
+                    .text_size(d.text_sm)
+                    .px(d.pad_x)
+                    .py(d.pad_y_half)
+                    .track_focus(&focus)
+                    .track_focus_element(&focus)
+                    .on_click(cx.listener(move |view, _, window, cx| {
+                        view.select_feature_availability(channel, window, cx)
+                    }))
+                    .on_key_down(cx.listener(move |view, event: &KeyDownEvent, window, cx| {
+                        if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                            view.select_feature_availability(channel, window, cx);
+                            cx.stop_propagation();
+                        }
+                    }));
+                #[cfg(feature = "dev-api")]
+                let button = button.dev_track_with_state(
+                    format!("settings.release-channel.{}", channel.name()),
+                    DevElementState::default().selected(selected),
+                );
+                (button.into_any_element(), focus)
+            })
+            .collect::<Vec<_>>();
+        let handles = controls
+            .iter()
+            .map(|(_, focus)| focus.clone())
+            .collect::<Vec<_>>();
+        let controls = div()
+            .flex()
+            .flex_wrap()
+            .gap(d.gap)
+            .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                if event.keystroke.key == "tab"
+                    && focus_settings_choice_relative(
+                        &handles,
+                        window,
+                        cx,
+                        event.keystroke.modifiers.shift,
+                    )
+                {
+                    cx.stop_propagation();
+                }
+            })
+            .children(controls.into_iter().map(|(button, _)| button));
         div()
             .flex()
             .flex_col()
             .gap(d.section_lg)
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(d.gap_md)
-                    .child(
-                        div()
-                            .text_size(d.text_sm)
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme.text_primary)
-                            .child(translations.settings_release_channel_title),
-                    )
-                    .child(
-                        div()
-                            .text_size(d.text_xs)
-                            .text_color(theme.text_secondary)
-                            .child(translations.settings_release_channel_description),
-                    )
-                    .child({
-                        let mut container = div().flex().flex_wrap().gap(d.section);
-
-                        for channel in ReleaseChannel::all() {
-                            let is_selected = current_channel == *channel;
-                            let channel_val = *channel;
-                            let accent = theme.accent;
-                            let border = theme.border;
-                            let surface = theme.surface;
-                            let surface_selected = theme.surface_selected;
-                            let text_primary = theme.text_primary;
-                            let text_secondary = theme.text_secondary;
-
-                            container = container.child(
-                                div()
-                                    .id(SharedString::from(format!(
-                                        "release-channel-{}",
-                                        channel.name()
-                                    )))
-                                    .flex()
-                                    .flex_col()
-                                    .w(rems(13.25))
-                                    .p(d.card)
-                                    .rounded(d.r_md)
-                                    .border_2()
-                                    .border_color(if is_selected { accent } else { border })
-                                    .bg(if is_selected {
-                                        surface_selected
-                                    } else {
-                                        surface
-                                    })
-                                    .cursor_pointer()
-                                    .hover(move |s| s.border_color(accent))
-                                    .child(
-                                        div()
-                                            .text_size(d.text_sm)
-                                            .font_weight(FontWeight::SEMIBOLD)
-                                            .text_color(if is_selected {
-                                                accent
-                                            } else {
-                                                text_primary
-                                            })
-                                            .child(channel.name()),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(d.text_xs)
-                                            .text_color(text_secondary)
-                                            .mt(d.grid)
-                                            .child(channel.description()),
-                                    )
-                                    .child(div().mt(d.gap_md).child(dev_track!(
-                                            Button::new(
-                                                SharedString::from(format!(
-                                                    "select-channel-{}",
-                                                    channel.name()
-                                                )),
-                                                if is_selected { "Active" } else { "Select" },
-                                            )
-                                            .aria_label(if is_selected {
-                                                format!("{} feature channel active", channel.name())
-                                            } else {
-                                                format!("Select {} feature channel", channel.name())
-                                            })
-                                            .variant(if is_selected {
-                                                ButtonVariant::Primary
-                                            } else {
-                                                ButtonVariant::Secondary
-                                            })
-                                            .size(ButtonSize::Xs)
-                                            .full_width(true)
-                                            .theme(theme.to_button_theme())
-                                            .on_click_event(cx.listener(
-                                                move |view, _: &ClickEvent, _window, cx| {
-                                                    view.state.update(cx, |state, cx| {
-                                                        state.app.set_release_channel(channel_val);
-                                                        let layout = state.layout.read(cx);
-                                                        if let Err(error) = state.app.save_config(layout) {
-                                                            state.app.ui_state.toast_message = Some(
-                                                                crate::app::ToastMessage::error(format!(
-                                                                    "Could not save the feature channel: {error}"
-                                                                )),
-                                                            );
-                                                        }
-                                                    });
-                                                    cx.notify();
-                                                },
-                                            )),
-                                            format!("settings.release-channel.{}", channel.name())
-                                        ))),
-                            );
-                        }
-
-                        container
-                    }),
-            )
-            .child(self.render_feature_table(text, &theme, d))
+            .w_full()
+            .min_w_0()
+            .child(Text::section_header(
+                translations.settings_release_channel_title,
+            ))
+            .child(Text::body(
+                translations.settings_release_channel_description,
+            ))
+            .child(self.preference_control(PreferencesSetting::FeatureAvailability, controls, cx))
+            .child(Text::section_header(copy.preview))
+            .child(Text::body(copy.summary(current)))
+            .child(self.render_feature_table(language, copy, text, &theme, d, compact))
     }
 
-    /// Render the feature availability table grouped by Features and Plugins.
     fn render_feature_table(
         &self,
+        language: crate::app::i18n::Language,
+        copy: FeatureAvailabilityTranslations,
         text: SettingsSurfaceTranslations,
         theme: &crate::theme::Theme,
         d: Ds,
+        compact: bool,
     ) -> impl IntoElement {
-        // --- Features (screens) ---
-        let features: Vec<FeatureRow> = vec![
-            FeatureRow {
-                name: "Now Playing",
-                maturity: Screen::NowPlaying.maturity(),
-            },
-            FeatureRow {
-                name: "Library",
-                maturity: Screen::Library.maturity(),
-            },
-            FeatureRow {
-                name: "Queue",
-                maturity: Screen::Queue.maturity(),
-            },
-            FeatureRow {
-                name: "Spectrum",
-                maturity: Screen::Spectrum.maturity(),
-            },
-            FeatureRow {
-                name: "Settings",
-                maturity: Screen::Settings.maturity(),
-            },
-            FeatureRow {
-                name: "Recording",
-                maturity: Screen::Recording.maturity(),
-            },
-            FeatureRow {
-                name: "Headphone EQ",
-                maturity: Screen::HeadphoneEq.maturity(),
-            },
-            FeatureRow {
-                name: "Spinorama",
-                maturity: Screen::Spinorama.maturity(),
-            },
-            FeatureRow {
-                name: "Plugin Graph",
-                maturity: Screen::PluginGraph.maturity(),
-            },
-            FeatureRow {
-                name: "Studio",
-                maturity: Screen::Studio.maturity(),
-            },
-            FeatureRow {
-                name: "Room EQ",
-                maturity: Screen::RoomEq.maturity(),
-            },
-        ];
-
-        // --- Plugins ---
-        let plugins: Vec<FeatureRow> = PluginType::all()
-            .into_iter()
-            .map(|p| FeatureRow {
-                name: p.name(),
-                maturity: p.maturity(),
+        let features = Screen::all()
+            .iter()
+            .copied()
+            .filter(|screen| {
+                !matches!(
+                    screen,
+                    Screen::HomeShelf | Screen::SettingsDetail | Screen::StudioHub
+                )
             })
-            .collect();
-
-        let col_w = rems(5.0);
-        let name_w = rems(12.5);
-        let text_primary = theme.text_primary;
-        let text_secondary = theme.text_secondary;
-        let border = theme.border;
-        let accent = theme.accent;
-        let surface = theme.surface;
-
-        // Header row
-        let header = div()
-            .flex()
-            .border_b_1()
-            .border_color(border)
-            .pb(d.pad_y_half)
-            .mb(d.grid)
-            .child(
+            .map(|screen| FeatureRow {
+                id: format!("screen.{screen:?}"),
+                name: DialogTranslations::for_language(language).screen_name(screen),
+                maturity: screen.maturity(),
+            })
+            .collect::<Vec<_>>();
+        let plugins = PluginType::all()
+            .into_iter()
+            .map(|plugin| FeatureRow {
+                id: format!("plugin.{plugin:?}"),
+                name: plugin.name(),
+                maturity: plugin.maturity(),
+            })
+            .collect::<Vec<_>>();
+        let channels = [
+            (ReleaseChannel::Prod, text.stable),
+            (ReleaseChannel::Beta, text.beta),
+            (ReleaseChannel::Alpha, text.alpha),
+        ];
+        let mut table = div().flex().flex_col().w_full().min_w_0().gap(d.gap);
+        if !compact {
+            table = table.child(
                 div()
-                    .w(name_w)
-                    .text_size(d.text_xs)
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(text_secondary),
-            )
-            .child(
-                div()
-                    .w(col_w)
-                    .text_size(d.text_xs)
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(text_secondary)
-                    .text_center()
-                    .child(text.stable),
-            )
-            .child(
-                div()
-                    .w(col_w)
-                    .text_size(d.text_xs)
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(text_secondary)
-                    .text_center()
-                    .child(text.beta),
-            )
-            .child(
-                div()
-                    .w(col_w)
-                    .text_size(d.text_xs)
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(text_secondary)
-                    .text_center()
-                    .child(text.alpha),
+                    .flex()
+                    .border_b_1()
+                    .border_color(theme.border)
+                    .pb(d.gap)
+                    .child(div().flex_1().min_w_0())
+                    .child(div().flex().w(rems(15.0)).children(channels.iter().map(
+                        |(_, label)| div().flex_1().text_center().child(Text::label(*label)),
+                    ))),
             );
-
-        // Helper to build one table section
-        let build_section = move |label: &'static str, rows: Vec<FeatureRow>| -> Div {
-            let mut section = div().flex().flex_col().gap_0p5();
-
-            // Section header
-            section = section.child(
-                div().flex().mt(d.gap_md).mb(d.grid).child(
-                    div()
-                        .w(name_w)
-                        .text_size(d.text_xs)
-                        .font_weight(FontWeight::BOLD)
-                        .text_color(accent)
-                        .child(label),
-                ),
-            );
-
-            for row in &rows {
-                let mark = |channel: ReleaseChannel| -> Div {
-                    div()
-                        .w(col_w)
-                        .text_size(d.text_xs)
-                        .text_center()
-                        .child(if row.maturity == channel {
-                            SharedString::from("\u{2714}") // checkmark
+        }
+        for (label, rows) in [(copy.screens, features), (copy.plugins, plugins)] {
+            table = table.child(Text::section_header(label));
+            for row in rows {
+                let mut cells = div()
+                    .flex()
+                    .min_w_0()
+                    .when(compact, |cells| cells.w_full())
+                    .when(!compact, |cells| cells.w(rems(15.0)).flex_shrink_0());
+                for (channel, label) in channels {
+                    let available = channel.allows(row.maturity);
+                    let selector =
+                        format!("preferences.availability.{}.{}", row.id, channel.name());
+                    let cell = div()
+                        .id(SharedString::from(selector.clone()))
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .items_center()
+                        .text_size(d.text_sm)
+                        .text_color(if available {
+                            theme.accent
                         } else {
-                            SharedString::from("")
+                            theme.text_muted
                         })
-                        .text_color(if row.maturity == channel {
-                            accent
-                        } else {
-                            text_secondary
-                        })
-                };
-
-                section = section.child(
+                        .aria_label(format!(
+                            "{} · {label}: {}",
+                            row.name,
+                            if available {
+                                copy.available
+                            } else {
+                                copy.unavailable
+                            }
+                        ))
+                        .when(compact, |cell| cell.child(Text::caption(label)))
+                        .child(if available { "✓" } else { "—" });
+                    cells = cells.child(track_availability(cell, selector, available));
+                }
+                table = table.child(
                     div()
                         .flex()
-                        .py_0p5()
-                        .rounded(d.r_sm)
-                        .hover(move |s| s.bg(surface))
+                        .gap(d.grid)
+                        .py(d.half_grid)
+                        .min_w_0()
+                        .when(compact, |row| row.flex_col())
                         .child(
                             div()
-                                .w(name_w)
-                                .text_size(d.text_xs)
-                                .text_color(text_primary)
-                                .child(row.name),
+                                .flex_1()
+                                .min_w_0()
+                                .child(Text::label(row.name).color(theme.text_primary)),
                         )
-                        .child(mark(ReleaseChannel::Prod))
-                        .child(mark(ReleaseChannel::Beta))
-                        .child(mark(ReleaseChannel::Alpha)),
+                        .child(cells),
                 );
             }
-
-            section
-        };
-
-        div()
-            .flex()
-            .flex_col()
-            .child(header)
-            .child(build_section("Features", features))
-            .child(build_section("Plugins", plugins))
+        }
+        table
     }
 }
-use crate::app::i18n::SettingsSurfaceTranslations;
+
+fn track_availability(cell: Stateful<Div>, selector: String, available: bool) -> AnyElement {
+    #[cfg(feature = "dev-api")]
+    {
+        cell.dev_track_with_state(selector, DevElementState::default().enabled(available))
+            .into_any_element()
+    }
+    #[cfg(not(feature = "dev-api"))]
+    {
+        let _ = (selector, available);
+        cell.into_any_element()
+    }
+}

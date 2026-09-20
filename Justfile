@@ -16,11 +16,10 @@ import 'builds/linux.just'
 import 'builds/ios.just'
 import 'builds/tvos.just'
 import 'builds/dev-driver.just'
-import 'builds/systemwide.just'
 
-import 'crates/sotf-plugins/Justfile'
-import 'crates/sotf-engine/Justfile'
 import 'crates/sotf-tools/Justfile'
+# Engine/plugin recipes moved with their crates to ../sotf-daw (see
+# sotf-daw/Justfile). Run those from the sotf-daw checkout.
 
 import 'builds/aggregates.just'
 
@@ -35,7 +34,9 @@ test_features := '--features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, stre
 release_test_features := '--features="qa, onnx, hal, gpu-2d, gpu-3d, iamf, streaming, hls"'
 prod_features := '--features="onnx, hal, gpu-2d, gpu-3d, iamf, streaming, hls"'
 
-test_features_macos := test_features
+# `sotf-dev-api/server` is intentionally unavailable in release builds.
+# Keep the release TUI shortcuts on the matching feature set.
+test_features_macos := release_test_features
 test_features_linux := '--features="qa, onnx, gpu-2d, gpu-3d, iamf, dev-api, streaming, hls"'
 test_features_windows := '--features="qa, onnx, gpu-2d, gpu-3d, iamf, dev-api, streaming, hls"'
 
@@ -120,7 +121,7 @@ test-integration-player:
 	cargo test -p sotf-player --test library_tests
 
 # Device-selection helpers are deterministic and do not enumerate hardware.
-# Platform smoke tests remain in systemwide-lab/portability.
+# Platform smoke tests live in ../sotf-systemwide (systemwide-lab recipe).
 
 [group('test')]
 test-device-fakes:
@@ -136,23 +137,8 @@ test-realtime-safety:
 [group('test')]
 test-pr: test-unit-core test-integration-engine test-integration-player test-device-fakes test-realtime-safety
 
-# Run the isolated macOS systemwide-audio lab. This does not install or touch
-# the CoreAudio HAL bundle; subprocess tests use temporary Unix sockets and
-# the deterministic lab driver.
-[group('test')]
-[macos]
-systemwide-lab:
-	#!/usr/bin/env bash
-	set -euo pipefail
-	runtime_dir="$(mktemp -d /private/tmp/sotf-systemwide-lab.XXXXXX)"
-	trap 'rm -rf "$runtime_dir"' EXIT
-	export SOTF_SYSTEMWIDE_RUNTIME_DIR="$runtime_dir"
-	cargo test -p sotf-daemon --bin sotf-daemon testkit
-	cargo test -p sotf-daemon --test daemon_state_tests
-	cargo test -p sotf-daemon --features hal --test ipc_line_tests -- --test-threads=1
-	cargo test -p driver-hal --lib
-	cargo test -p driver-hal --test streaming_regression_tests
-	swift test --package-path crates/systemwide/crates/daemon/configbar --scratch-path target/configbar-swiftpm
+# Systemwide audio lab, contract gates, and installer packaging moved to
+# ../sotf-systemwide (Justfile, builds/systemwide.just, scripts/).
 
 # ----------------------------------------------------------------------
 # COVERAGE

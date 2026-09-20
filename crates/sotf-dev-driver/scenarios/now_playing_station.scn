@@ -1,0 +1,29 @@
+wait_idle 2s
+click sidebar.nav-streams
+click streams.add
+click streams.name_input
+type "Example live station"
+click streams.url_input
+type "https://example.invalid/live.mp3"
+click streams.save
+wait_until streams.count == 1 timeout=2s
+click streams.queue.0
+action PlaybackResetQueueCursor {"activate":true}
+focus NowPlaying
+wait_idle 2s
+assert playback.is_playing == false
+assert playback.seekable == false
+assert_visible now-playing.view-station
+assert_absent now-playing.view-album
+assert now_playing.signal_open == false
+assert_absent now-playing.signal-path
+click now-playing.signal-path-toggle
+assert now_playing.signal_open == true
+assert_visible now-playing.signal-path
+click now-playing.details-toggle
+assert now_playing.details_open == true
+screenshot now-playing-station
+click now-playing.view-station
+assert screen.focused == "Streams"
+assert_visible streams.play.0
+assert toast.type == null

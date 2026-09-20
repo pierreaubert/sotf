@@ -1,0 +1,24 @@
+resize 1200 1000
+# Room EQ Advanced mode: user selects the full control surface explicitly.
+focus room-e-q
+click roomeq.load_from_recording
+click roomeq.next
+click roomeq.next
+assert roomeq.step == "Process"
+assert_visible roomeq.select_full
+click roomeq.select_full
+assert roomeq.wizard_mode == "Full"
+assert roomeq.step == "Configure"
+screenshot roomeq-advanced-configure
+
+click autoeq.stage.1
+click autoeq.detail
+click autoeq.detail
+wait_idle 1s
+screenshot autoeq-filter-controls
+resize 600 1000
+wait_idle 1s
+scroll_into_view roomeq.content autoeq.capability
+wait_idle 500ms
+screenshot autoeq-capability-narrow
+snapshot $SOTF_QA_DIR/capability-narrow.json

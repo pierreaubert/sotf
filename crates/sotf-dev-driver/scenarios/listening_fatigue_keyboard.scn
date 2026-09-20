@@ -9,7 +9,7 @@ action      PlayPause
 wait_until  playback.is_playing == true timeout=3s
 action      ListeningResetGuide
 click       listening.guide.acknowledge
-click       sidebar.nav-ab-compare
+click       listening.tab-comparison
 click       listening.capture.a
 click       listening.capture.b
 click       listening.session.prepare

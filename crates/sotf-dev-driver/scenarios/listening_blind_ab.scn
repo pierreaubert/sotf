@@ -9,7 +9,7 @@ action      PlayPause
 wait_until  playback.is_playing == true timeout=3s
 action      ListeningResetGuide
 click       listening.guide.acknowledge
-click       sidebar.nav-ab-compare
+click       listening.tab-comparison
 wait_until  listening.surface == "BlindComparison" timeout=2s
 assert_visible listening.capture.a
 assert_visible listening.capture.b

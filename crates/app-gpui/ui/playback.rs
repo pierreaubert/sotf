@@ -2,6 +2,36 @@
 use sotf_media_controls::MediaControlEvent;
 
 impl PlayerView {
+    /// Resume on the committed output without starting audio when Preferences is applied.
+    fn resume_on_selected_output(state: &mut AppState) -> bool {
+        if let Some(original) = state.app.audio_device_state.pending_output_restart.clone() {
+            let Some(source) = state.app.queue_state.current_track_source() else {
+                return false;
+            };
+            let position = state.app.playback.position_secs;
+            Self::play_track_at(state, source.clone(), Some(position));
+            if !state.app.playback.is_playing {
+                state.app.audio_device_state.selected_output_device_index = original.0;
+                state.app.audio_device_state.current_output_device_name = original.1;
+                state.app.audio_device_state.follow_system_default = original.2;
+                state.app.audio_device_state.pending_output_restart = None;
+                Self::play_track_at(state, source, Some(position));
+                let text = crate::app::i18n::DesktopTranslations::for_language(
+                    state.app.ui_state.language,
+                );
+                state.app.ui_state.toast_message =
+                    Some(crate::app::ToastMessage::error(text.output_failed));
+            }
+            return state.app.playback.is_playing;
+        }
+        match state.player.resume() {
+            Ok(()) => true,
+            Err(error) => {
+                log::warn!("Player resume failed: {error}");
+                false
+            }
+        }
+    }
     /// Handle an OS media control event (MPRIS play/pause/next/etc.).
     /// Called from the timer loop inside a `state.update()` closure.
     #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
@@ -13,10 +43,7 @@ impl PlayerView {
                         Self::play_track(state, path);
                     }
                 } else {
-                    if let Err(e) = state.player.resume() {
-                        log::warn!("Player resume failed: {e}");
-                    }
-                    state.app.playback.is_playing = true;
+                    state.app.playback.is_playing = Self::resume_on_selected_output(state);
                 }
             }
             MediaControlEvent::Pause => {
@@ -36,10 +63,7 @@ impl PlayerView {
                         Self::play_track(state, path);
                     }
                 } else {
-                    if let Err(e) = state.player.resume() {
-                        log::warn!("Player resume failed: {e}");
-                    }
-                    state.app.playback.is_playing = true;
+                    state.app.playback.is_playing = Self::resume_on_selected_output(state);
                 }
             }
             MediaControlEvent::Next => {
@@ -108,6 +132,24 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) {
         self.state.update(cx, |state, _cx| {
+            #[cfg(all(target_os = "macos", feature = "hal"))]
+            if matches!(
+                state.app.audio_device_state.playback_source,
+                crate::app::types::PlaybackSource::HalDevice
+            ) {
+                if state.app.playback.is_playing {
+                    match state.player.stop() {
+                        Ok(()) => state.app.playback.is_playing = false,
+                        Err(error) => {
+                            state.app.ui_state.toast_message =
+                                Some(crate::app::ToastMessage::error(error.to_string()));
+                        }
+                    }
+                } else {
+                    Self::start_hal_playback_state(state);
+                }
+                return;
+            }
             if state.app.playback.is_playing {
                 if let Err(e) = state.player.pause() {
                     log::warn!("Player pause failed: {e}");
@@ -120,11 +162,10 @@ impl PlayerView {
                     Self::play_track(state, path);
                 }
             } else {
-                if let Err(e) = state.player.resume() {
-                    log::warn!("Player resume failed: {e}");
+                state.app.playback.is_playing = Self::resume_on_selected_output(state);
+                if state.app.playback.is_playing {
+                    state.app.record_playback_resumed();
                 }
-                state.app.playback.is_playing = true;
-                state.app.record_playback_resumed();
             }
         });
         cx.notify();
@@ -197,5 +238,4 @@ impl PlayerView {
         });
         cx.notify();
     }
-
 }

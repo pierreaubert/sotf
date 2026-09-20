@@ -203,11 +203,43 @@ pub struct PluginUpdateState {
     pub plugin_graph_modified: bool,
     /// Pending plugin update to apply on the next tick.
     pub pending_plugin_update: Option<PluginUpdateType>,
+    /// The actor accepted a structural update; the Player result is still pending.
+    pub pending_ack: Option<PluginUpdateAcknowledgement>,
+    pub acknowledged_processing_graph: Option<serde_json::Value>,
+}
+
+/// Attribution for the graph actually sent to the actor.
+#[derive(Debug, Clone)]
+pub struct PluginUpdateAcknowledgement {
+    pub receipt: crate::app::player_handle::PlayerCommandReceipt,
+    pub submitted_graph: Option<serde_json::Value>,
+    pub submitted_processing_graph: Option<serde_json::Value>,
+    pub correction_revisions: [Option<u64>; 3],
+    pub routing: bool,
+    pub audition: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RoutingConnectionForm {
+    pub endpoints: [Option<(GraphNodeId, usize)>; 2],
+    pub open: Option<usize>,
+    pub highlighted: [Option<usize>; 2],
 }
 
 /// GPUI-specific state for the graph / workflow view.
 #[derive(Debug, Clone, Default)]
 pub struct PluginGraphState {
+    /// Routing edits never replace the playback controller until Apply.
+    pub draft: Option<PluginController>,
+    pub draft_base: Option<serde_json::Value>,
+    pub draft_solo: Option<(GraphNodeId, HashMap<GraphNodeId, bool>)>,
+    pub draft_generation: u64,
+    pub applying_original: Option<sotf_audio_player::PluginGraph>,
+    pub header_details_open: bool,
+    pub connection_list_open: bool,
+    pub connection_form: RoutingConnectionForm,
+    pub palette_open: Option<bool>,
+    pub keyboard_help_open: Option<bool>,
     pub graph_selection: GraphSelection,
     pub graph_connection_drag: Option<ConnectionDrag>,
     pub graph_node_drag: Option<NodeDrag>,
@@ -317,7 +349,10 @@ pub struct ListeningTestState {
     pub trial_mode: sotf_audio_player::controllers::ab_test_session::TrialMode,
     pub level_match_config: sotf_audio_player::controllers::ab_test_session::LevelMatchConfig,
     pub segment_start_ms: u64,
-    pub confidence: u8,
+    /// Optional self-reported confidence (0-100) for the pending trial.
+    /// `None` until the listener supplies a value; a default number must
+    /// never masquerade as a reported judgment.
+    pub confidence: Option<u8>,
     pub notes: String,
     pub status: String,
     pub path_a_canvas: Option<Entity<WorkflowCanvas>>,
@@ -356,7 +391,7 @@ impl Default for ListeningTestState {
             level_match_config:
                 sotf_audio_player::controllers::ab_test_session::LevelMatchConfig::default(),
             segment_start_ms: 0,
-            confidence: 50,
+            confidence: None,
             notes: String::new(),
             status: String::new(),
             path_a_canvas: None,
@@ -366,6 +401,28 @@ impl Default for ListeningTestState {
             editing_path_parameters: String::new(),
             graph_add_menu_target: None,
         }
+    }
+}
+
+impl ListeningTestState {
+    /// UI setup identity for accepting a background comparison measurement.
+    /// Serialization covers nested rack/graph parameters without requiring
+    /// presentation code to duplicate the plugin configuration schema.
+    pub fn preparation_snapshot(
+        &self,
+        media_path: Option<std::path::PathBuf>,
+    ) -> Option<(std::path::PathBuf, serde_json::Value)> {
+        let media_path = media_path?;
+        serde_json::to_value((
+            self.path_a.as_ref()?,
+            self.path_b.as_ref()?,
+            &self.path_a_label,
+            &self.path_b_label,
+            self.segment_start_ms,
+            self.level_match_config,
+        ))
+        .ok()
+        .map(|setup| (media_path, setup))
     }
 }
 
@@ -390,6 +447,16 @@ pub struct EqDragPreview {
 
 #[derive(Debug, Clone, Default)]
 pub struct PluginUiState {
+    /// Last measured rack content-box width, independent of sidebar and panel ratios.
+    pub rack_width: Option<f32>,
+    pub rack_editor_width: Option<f32>,
+    pub listening_width: Option<f32>,
+    /// Comparison workspace presentation; blind assignments remain in the controller.
+    pub listening_workspace: ListeningWorkspaceState,
+    /// Expanded generated-editor sections, keyed by stable plugin instance ID.
+    pub plugin_sections: HashMap<usize, Vec<String>>,
+    /// Open Matrix route selector: plugin instance and whether it selects output.
+    pub matrix_route_menu: Option<(usize, bool)>,
     /// Which plugin UI view mode to show
     pub plugin_ui_view: PluginUiView,
     /// Whether the controller picker dropdown is open
@@ -416,6 +483,116 @@ impl PluginUiState {
             .filter(|preview| preview.plugin_idx == plugin_idx)?;
         self.eq_drag_preview.take()
     }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PracticeWorkspaceState {
+    pub frequency_details_open: bool,
+    pub paused: bool,
+    pub confirm_end: bool,
+    pub resume_playback: bool,
+}
+
+impl PracticeWorkspaceState {
+    pub fn interaction_locked(&self) -> bool {
+        self.paused || self.confirm_end
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ListeningWorkspaceState {
+    pub source_request: Option<std::sync::Arc<()>>,
+    pub preparation_request: Option<std::sync::Arc<()>>,
+    pub practice: PracticeWorkspaceState,
+    pub results_open: bool,
+    pub confirm_end: bool,
+    pub metadata_open: bool,
+    pub trials_open: bool,
+    pub selected_answer: Option<TrialAnswer>,
+    pub auditioned: bool,
+    pub planned_trials: usize,
+    pub paused: bool,
+}
+
+impl Default for ListeningWorkspaceState {
+    fn default() -> Self {
+        Self {
+            source_request: None,
+            preparation_request: None,
+            practice: PracticeWorkspaceState::default(),
+            results_open: false,
+            confirm_end: false,
+            metadata_open: false,
+            trials_open: false,
+            selected_answer: None,
+            auditioned: false,
+            planned_trials: 12,
+            paused: false,
+        }
+    }
+}
+
+impl ListeningWorkspaceState {
+    /// Abandon the result without allowing a late worker to replace a newer request.
+    pub fn cancel_preparation(&mut self) {
+        self.preparation_request = None;
+    }
+
+    pub fn begin_preparation(&mut self) -> std::sync::Arc<()> {
+        let request = std::sync::Arc::new(());
+        self.preparation_request = Some(request.clone());
+        request
+    }
+
+    /// Only the newest worker may consume the pending request and publish state.
+    pub fn finish_preparation(&mut self, request: &std::sync::Arc<()>) -> bool {
+        if !self
+            .preparation_request
+            .as_ref()
+            .is_some_and(|current| std::sync::Arc::ptr_eq(current, request))
+        {
+            return false;
+        }
+        self.preparation_request = None;
+        true
+    }
+
+    pub fn interaction_locked(&self) -> bool {
+        self.paused || self.confirm_end
+    }
+
+    /// A pending blind trial always takes precedence over a stale results view.
+    pub fn phase(&self, pending: Option<TrialMode>, completed: usize) -> ListeningWorkspacePhase {
+        if pending.is_some() {
+            ListeningWorkspacePhase::Listen
+        } else if self.results_open {
+            ListeningWorkspacePhase::Results
+        } else if completed > 0 {
+            ListeningWorkspacePhase::Listen
+        } else {
+            ListeningWorkspacePhase::Setup
+        }
+    }
+
+    pub fn can_submit(&self, mode: TrialMode) -> bool {
+        self.auditioned
+            && !self.interaction_locked()
+            && matches!(
+                (mode, self.selected_answer),
+                (TrialMode::Abx, Some(TrialAnswer::A | TrialAnswer::B))
+                    | (
+                        TrialMode::BlindAb,
+                        Some(TrialAnswer::First | TrialAnswer::Second)
+                    )
+            )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListeningWorkspacePhase {
+    Setup,
+    Listen,
+    Results,
 }
 
 /// GPUI-specific state for the per-plugin preset picker and destructive-action
@@ -466,7 +643,165 @@ impl DerefMut for PluginState {
 }
 
 impl PluginState {
+    /// Resolve custom-editor instance IDs in the same controller as the editor.
+    /// A draft-only node must never fall back to an active playback node.
+    pub fn editor_settings_mut_by_instance_id(
+        &mut self,
+        instance_id: usize,
+    ) -> Option<&mut PluginSettings> {
+        let graph = if self.graph_state.editing_graph_node_uuid.is_some() {
+            &mut self.routing_controller_mut().graph
+        } else {
+            &mut self.ctrl.graph
+        };
+        graph
+            .nodes
+            .values_mut()
+            .find(|node| node.plugin.id == instance_id)
+            .map(|node| &mut node.plugin.settings)
+    }
+
+    pub fn editor_plugin_mut(&mut self, index: usize) -> Option<&mut Plugin> {
+        if let Some(id) = self.graph_state.editing_graph_node_uuid {
+            self.routing_controller_mut()
+                .graph
+                .nodes
+                .get_mut(&id)
+                .map(|node| &mut node.plugin)
+        } else {
+            self.ctrl.graph.get_plugin_mut(index)
+        }
+    }
+
+    pub fn record_editor_effect(&mut self, effect: PluginUpdateEffect) {
+        if self.graph_state.editing_graph_node_uuid.is_some() && self.graph_state.draft.is_some() {
+            return;
+        }
+        self.record_ab_test_effect(effect);
+    }
+    pub fn begin_routing_draft(&mut self) {
+        if self.graph_state.draft.is_none() {
+            self.graph_state.draft_generation = self.graph_state.draft_generation.wrapping_add(1);
+            self.graph_state.draft_base = serde_json::to_value(&self.ctrl.graph).ok();
+            self.graph_state.draft = Some(self.ctrl.clone());
+        }
+    }
+
+    pub fn routing_controller(&self) -> &PluginController {
+        self.graph_state.draft.as_ref().unwrap_or(&self.ctrl)
+    }
+
+    pub fn routing_controller_mut(&mut self) -> &mut PluginController {
+        self.begin_routing_draft();
+        // The fallback keeps this accessor panic-free even if initialization changes.
+        self.graph_state.draft.as_mut().unwrap_or(&mut self.ctrl)
+    }
+
+    pub fn discard_routing_draft(&mut self) {
+        self.graph_state.draft = None;
+        self.graph_state.draft_base = None;
+        self.graph_state.draft_solo = None;
+        self.graph_state.workflow_canvas = None;
+        self.graph_state.clear_editing_context();
+        self.graph_state.graph_selection.clear();
+        self.graph_state.keyboard_connect_source = None;
+    }
+
+    pub fn routing_draft_is_dirty(&self) -> bool {
+        self.graph_state.draft.as_ref().is_some_and(|draft| {
+            let mut current = serde_json::to_value(&draft.graph).ok();
+            let mut base = self.graph_state.draft_base.clone();
+            // Adding then removing a node advances the allocator, but does not
+            // change the routing the user can apply. Keep the full base snapshot
+            // for the separate concurrent-edit guard in apply_routing_draft.
+            for snapshot in [&mut current, &mut base] {
+                if let Some(serde_json::Value::Object(graph)) = snapshot {
+                    graph.remove("next_plugin_id");
+                }
+            }
+            current != base
+        })
+    }
+
+    pub fn apply_routing_draft(&mut self) -> Result<(), String> {
+        if !self.routing_draft_is_dirty() {
+            return Ok(());
+        }
+        if self.graph_state.applying_original.is_some() {
+            return Err("A routing update is already pending.".into());
+        }
+        let Some(draft) = self.graph_state.draft.as_ref() else {
+            return Ok(());
+        };
+        if self.graph_state.draft_base != serde_json::to_value(&self.ctrl.graph).ok() {
+            return Err(
+                "The active processing chain changed. Discard the routing draft and try again."
+                    .into(),
+            );
+        }
+        draft.graph.validate_routing()?;
+        self.graph_state.applying_original = Some(self.ctrl.graph.clone());
+        self.ctrl.graph = draft.graph.clone();
+        self.discard_routing_draft();
+        self.update_state.pending_plugin_update = Some(PluginUpdateType::Structural);
+        self.update_state.plugin_graph_modified = true;
+        Ok(())
+    }
+
+    pub fn finish_routing_apply(&mut self, succeeded: bool) {
+        if let Some(original) = self.graph_state.applying_original.take()
+            && !succeeded
+        {
+            // Editing remains available while the submitted graph is awaiting
+            // acknowledgement. Preserve those newer edits when submission fails.
+            let candidate = self
+                .graph_state
+                .draft
+                .take()
+                .unwrap_or_else(|| self.ctrl.clone());
+            self.ctrl.graph = original;
+            self.graph_state.draft_base = serde_json::to_value(&self.ctrl.graph).ok();
+            self.graph_state.draft = Some(candidate);
+            self.graph_state.workflow_canvas = None;
+        }
+    }
+
+    pub fn toggle_routing_solo(&mut self, node_id: GraphNodeId) {
+        let previous = self.graph_state.draft_solo.take();
+        if let Some((_, saved)) = &previous {
+            for (id, enabled) in saved {
+                if let Some(node) = self.routing_controller_mut().graph.nodes.get_mut(id) {
+                    node.plugin.enabled = *enabled;
+                }
+            }
+        }
+        if previous.as_ref().is_some_and(|(id, _)| *id == node_id) {
+            return;
+        }
+        let graph = &mut self.routing_controller_mut().graph;
+        let saved = graph
+            .nodes
+            .iter()
+            .map(|(id, node)| (*id, node.plugin.enabled))
+            .collect();
+        for (id, node) in &mut graph.nodes {
+            node.plugin.enabled = *id == node_id;
+        }
+        self.graph_state.draft_solo = Some((node_id, saved));
+    }
+
     fn record_ab_test_effect(&mut self, effect: PluginUpdateEffect) {
+        // A cue can arrive before the tick publishes the runtime graph. Never
+        // replace that rebuild with a parameter command for a not-yet-live slot,
+        // or erase teardown work when leaving an already inactive runtime.
+        if matches!(effect, PluginUpdateEffect::None)
+            || matches!(
+                self.update_state.pending_plugin_update,
+                Some(PluginUpdateType::Structural)
+            )
+        {
+            return;
+        }
         self.update_state.pending_plugin_update = match effect {
             PluginUpdateEffect::None => None,
             PluginUpdateEffect::Structural => Some(PluginUpdateType::Structural),

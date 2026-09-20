@@ -1,0 +1,47 @@
+# Search reveals the real controls; keyboard activation preserves audio drafts.
+focus Settings
+resize 600 800
+wait_idle 2s
+click preferences.search
+type "replaygain playback"
+wait_idle 1s
+click preferences.result.ReplayGain
+wait_idle 2s
+assert settings.active_tab == "AudioDevice"
+assert preferences.setting == "ReplayGain"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.ReplayGain
+assert settings.replay_gain_enabled == true
+key enter
+wait_idle 1s
+assert preferences.replay_gain_enabled == false
+assert settings.replay_gain_enabled == true
+assert preferences.audio_dirty == true
+key space
+wait_idle 1s
+assert preferences.audio_dirty == false
+screenshot preferences-replaygain-search
+click preferences.search
+type "music folders"
+wait_idle 1s
+click preferences.result.MusicFolders
+wait_idle 2s
+assert settings.active_tab == "Library"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.MusicFolders
+assert_accessible button Add Directory
+action SettingsSetLibraryPickerFixture {"result":"permission_denied"}
+key enter
+wait_idle 1s
+assert settings.library_folder_error == "PermissionDenied"
+screenshot preferences-folders-search
+click preferences.search
+type "waveform similarity"
+wait_idle 1s
+click preferences.result.AudioAnalysis
+wait_idle 2s
+assert settings.active_tab == "Library"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.AudioAnalysis
+screenshot preferences-analysis-search
+assert playback.is_playing == false

@@ -40,6 +40,14 @@ impl PlayerView {
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
         let theme = state.app.ui_state.theme.clone();
+        let room_eq = &state.app.measurement_state.room_eq_state;
+        let has_result = room_eq.dsp_output.is_some();
+        let result_is_current = has_result && room_eq.result_is_current();
+        let application_pending = state.app.correction_application_status(&room_eq.delivery, result_is_current)
+            == sotf_audio_player::ui_models::correction_delivery::CorrectionApplicationStatus::Pending;
+        let stale_text =
+            crate::app::i18n::DesktopTranslations::for_language(state.app.ui_state.language)
+                .stale_result;
         let has_eq_in_rack = state
             .app
             .plugin_state
@@ -72,6 +80,9 @@ impl PlayerView {
 
         let mut stack = VStack::new()
             .spacing(StackSpacing::Md)
+            .when(has_result && !result_is_current, |stack| {
+                stack.child(Text::body(stale_text).color(theme.warning))
+            })
             .child(
                 Text::new(translations.roomeq_export_and_apply)
                     .weight(TextWeight::Bold)
@@ -82,6 +93,7 @@ impl PlayerView {
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
+            .child(self.render_correction_export_status(cx, &room_eq.delivery, result_is_current))
             .child(
                 Card::new()
                     .background(theme.surface)
@@ -169,6 +181,7 @@ impl PlayerView {
                                 )
                                 .child(dev_track!(
                                     Button::new("export_file", translations.roomeq_export_button)
+                                        .disabled(!result_is_current)
                                         .variant(ButtonVariant::Primary)
                                         .size(ButtonSize::Sm)
                                         .theme(theme.to_button_theme())
@@ -178,6 +191,22 @@ impl PlayerView {
                                     "roomeq.export_file"
                                 )),
                         );
+
+                        // Keep failure feedback beside the action even when the wizard's
+                        // general status banner has scrolled out of view.
+                        if let Some(error) = &room_eq.error_message {
+                            export_content = export_content.child(dev_track!(
+                                Text::body(
+                                    crate::app::i18n::RuntimeMessageTranslations::for_language(
+                                        state.app.ui_state.language,
+                                    )
+                                    .translate(error)
+                                    .into_owned(),
+                                )
+                                .color(theme.error),
+                                "roomeq.export_error"
+                            ));
+                        }
 
                         // Dropdown list (visible when open)
                         if format_dropdown_open {
@@ -269,6 +298,7 @@ impl PlayerView {
                             )
                             .child(dev_track!(
                                 Button::new("apply_to_player", translations.roomeq_apply_to_rack)
+                                    .disabled(!result_is_current || application_pending)
                                     .variant(ButtonVariant::Secondary)
                                     .theme(theme.to_button_theme())
                                     .on_click_event(cx.listener(|view, _, _, cx| {
@@ -300,6 +330,7 @@ impl PlayerView {
                             )
                             .child(
                                 Button::new("apply_as_graph", translations.roomeq_apply_as_graph)
+                                    .disabled(!result_is_current || application_pending)
                                     .variant(ButtonVariant::Secondary)
                                     .theme(theme.to_button_theme())
                                     .on_click_event(cx.listener(|view, _, _, cx| {
@@ -317,7 +348,30 @@ impl PlayerView {
     /// APO, EasyEffects, Wavelet, PipeWire, Roon). Index 0 = SotF JSON
     /// (pretty-printed DspChainOutput); indices 1–6 delegate to
     /// `autoeq::roomeq::export::export_dsp_chain`.
+    fn check_room_result_freshness(&mut self, cx: &mut Context<Self>) -> bool {
+        let state = self.state.read(cx);
+        if state
+            .app
+            .measurement_state
+            .room_eq_state
+            .result_is_current()
+        {
+            return true;
+        }
+        self.state.update(cx, |state, cx| {
+            let text =
+                crate::app::i18n::DesktopTranslations::for_language(state.app.ui_state.language);
+            state.app.ui_state.toast_message =
+                Some(crate::app::ToastMessage::warning(text.stale_result));
+            cx.notify();
+        });
+        false
+    }
+
     pub(super) fn export_room_eq_format(&mut self, cx: &mut Context<Self>) {
+        if !self.check_room_result_freshness(cx) {
+            return;
+        }
         let (dsp_output, format_idx, sample_rate, artifact_dir) = {
             let state = self.state.read(cx);
             let room_eq = &state.app.measurement_state.room_eq_state;
@@ -340,6 +394,14 @@ impl PlayerView {
             return;
         };
 
+        let export_revision = self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .room_eq_state
+            .delivery
+            .revision();
         if format_idx == 0 {
             // SotF JSON — use existing JSON export path
             self.export_room_eq_json(cx);
@@ -370,24 +432,28 @@ impl PlayerView {
         if std::env::var_os("SOTF_QA_DIR").is_some() {
             let path = sotf_audio_player::config::get_app_config_dir()
                 .unwrap_or_else(|| std::env::temp_dir().join("sotf-qa"))
-                .join("qa-room-eq-export.json");
+                .join(format!("qa-{file_name}"));
             let result = (|| -> Result<(), String> {
                 let parent = path
                     .parent()
                     .ok_or_else(|| "missing export parent".to_string())?;
                 std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-                let packaged = autoeq::roomeq::package_convolution_sidecars(
+                autoeq::roomeq::export_dsp_chain_with_convolution_sidecars(
                     &dsp_output,
+                    format,
+                    &path,
+                    sample_rate,
                     &artifact_dir,
-                    parent,
                 )
-                .map_err(|error| error.to_string())?;
-                let json =
-                    serde_json::to_string_pretty(&packaged).map_err(|error| error.to_string())?;
-                std::fs::write(&path, json).map_err(|error| error.to_string())
+                .map_err(|error| error.to_string())
             })();
             self.state.update(cx, |state, _| match result {
                 Ok(()) => {
+                    state.app.measurement_state.room_eq_state.delivery.exported(
+                        export_revision,
+                        format_name.to_string(),
+                        path.clone(),
+                    );
                     // The export destination is shown by the dedicated result row.
                     // Keep transient status text catalog-backed instead of creating
                     // a new, untranslated template around a filesystem path.
@@ -401,7 +467,7 @@ impl PlayerView {
                 }
                 Err(error) => {
                     state.app.measurement_state.room_eq_state.error_message =
-                        Some(format!("Failed to export Room EQ: {error}"));
+                        Some(format!("Export failed: {error}"));
                 }
             });
             cx.notify();
@@ -448,7 +514,14 @@ impl PlayerView {
                                         format_name,
                                         file.path()
                                     );
-                                    state_entity.update(cx, |state, _| {
+                                    state_entity.update(cx, |state, cx| {
+                                        cx.notify();
+                                        state.app.measurement_state.room_eq_state.delivery.exported(
+                                            export_revision,
+                                            format_name.to_string(),
+                                            file.path().to_path_buf(),
+                                        );
+                                        state.app.measurement_state.room_eq_state.error_message = None;
                                         state
                                             .app
                                             .measurement_state
@@ -462,7 +535,8 @@ impl PlayerView {
                                 }
                                 Err(e) => {
                                     log::error!("Export failed: {}", e);
-                                    state_entity.update(cx, |state, _| {
+                                    state_entity.update(cx, |state, cx| {
+                                        cx.notify();
                                         state.app.measurement_state.room_eq_state.error_message =
                                             Some(format!("Export failed: {}", e));
                                     });
@@ -471,7 +545,8 @@ impl PlayerView {
                         }
                         Err(e) => {
                             log::error!("Failed to parse DSP output for export: {}", e);
-                            state_entity.update(cx, |state, _| {
+                            state_entity.update(cx, |state, cx| {
+                                cx.notify();
                                 state.app.measurement_state.room_eq_state.error_message =
                                     Some(format!("Internal error: {}", e));
                             });
@@ -484,6 +559,17 @@ impl PlayerView {
     }
 
     pub(super) fn export_room_eq_json(&mut self, cx: &mut Context<Self>) {
+        if !self.check_room_result_freshness(cx) {
+            return;
+        }
+        let export_revision = self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .room_eq_state
+            .delivery
+            .revision();
         // Get the DSP output from state
         let (dsp_output, artifact_dir) = {
             let state = self.state.read(cx);
@@ -527,6 +613,11 @@ impl PlayerView {
             })();
             self.state.update(cx, |state, _| match result {
                 Ok(()) => {
+                    state.app.measurement_state.room_eq_state.delivery.exported(
+                        export_revision,
+                        "SotF JSON".to_string(),
+                        path.clone(),
+                    );
                     state.app.measurement_state.room_eq_state.status_message = state
                         .app
                         .ui_state
@@ -537,7 +628,7 @@ impl PlayerView {
                 }
                 Err(error) => {
                     state.app.measurement_state.room_eq_state.error_message =
-                        Some(format!("Failed to export Room EQ: {error}"));
+                        Some(format!("Export failed: {error}"));
                 }
             });
             cx.notify();
@@ -567,7 +658,8 @@ impl PlayerView {
                         Ok(output) => output,
                         Err(e) => {
                             log::error!("Failed to package Room EQ sidecars: {}", e);
-                            state_entity.update(cx, |state, _| {
+                            state_entity.update(cx, |state, cx| {
+                                cx.notify();
                                 state.app.measurement_state.room_eq_state.error_message =
                                     Some(format!("Failed to package WAV files: {}", e));
                             });
@@ -582,14 +674,28 @@ impl PlayerView {
                             match std::fs::write(file.path(), &json) {
                                 Ok(()) => {
                                     log::info!("Exported room EQ config to {:?}", file.path());
-                                    state_entity.update(cx, |state, _| {
+                                    state_entity.update(cx, |state, cx| {
+                                        cx.notify();
+                                        state
+                                            .app
+                                            .measurement_state
+                                            .room_eq_state
+                                            .delivery
+                                            .exported(
+                                                export_revision,
+                                                "SotF JSON".to_string(),
+                                                file.path().to_path_buf(),
+                                            );
+                                        state.app.measurement_state.room_eq_state.error_message =
+                                            None;
                                         state.app.measurement_state.room_eq_state.status_message =
                                             format!("Saved to {}", file.path().display());
                                     });
                                 }
                                 Err(e) => {
                                     log::error!("Failed to write room EQ file: {}", e);
-                                    state_entity.update(cx, |state, _| {
+                                    state_entity.update(cx, |state, cx| {
+                                        cx.notify();
                                         state.app.measurement_state.room_eq_state.error_message =
                                             Some(format!("Failed to write: {}", e));
                                     });
@@ -598,7 +704,8 @@ impl PlayerView {
                         }
                         Err(e) => {
                             log::error!("Failed to serialize room EQ JSON: {}", e);
-                            state_entity.update(cx, |state, _| {
+                            state_entity.update(cx, |state, cx| {
+                                cx.notify();
                                 state.app.measurement_state.room_eq_state.error_message =
                                     Some(format!("Failed to serialize: {}", e));
                             });
@@ -672,6 +779,16 @@ impl PlayerView {
     /// TUI's apply behavior so the user only needs one "Apply" button.
     /// The status toast reports which path was taken.
     pub(super) fn apply_room_eq_to_player(&mut self, cx: &mut Context<Self>) {
+        {
+            let app = &self.state.read(cx).app;
+            let correction = &app.measurement_state.room_eq_state;
+            if app.correction_application_status(&correction.delivery, correction.result_is_current())
+                == sotf_audio_player::ui_models::correction_delivery::CorrectionApplicationStatus::Pending
+            { return; }
+        }
+        if !self.check_room_result_freshness(cx) {
+            return;
+        }
         use sotf_audio_player::autoeq::RoomEqApplyOutcome;
 
         let (dsp_output, channel_result_names) = {
@@ -736,69 +853,23 @@ impl PlayerView {
             // Flush the right way for each path: rack → `update_plugins`
             // from the linear-chain projection; graph → `update_plugin_graph`
             // with the routed `PluginGraphConfig`.
-            let flush_result: Result<(String, &'static str), String> = match outcome {
-                RoomEqApplyOutcome::Rack(rack) => {
-                    if rack.total_filters == 0 && rack.total_broadband == 0 {
-                        Err("No EQ filters found in optimization results".to_string())
-                    } else {
-                        let plugins = state.app.plugin_state.graph.to_plugin_configs(sr);
-                        log::info!(
-                            "Flushing {} rack plugins to engine at {:.0} Hz",
-                            plugins.len(),
-                            sr
-                        );
-                            state
-                                .player
-                                .update_plugins(plugins)
-                            .map(|()| {
-                                (
-                                    format!(
-                                        "Room EQ applied to rack: {} ch, {} main filters, {} broadband",
-                                        rack.num_channels, rack.total_filters, rack.total_broadband
-                                    ),
-                                    "rack",
-                                )
-                            })
-                            .map_err(|e| e.to_string())
-                    }
-                }
-                RoomEqApplyOutcome::Graph(graph) => {
-                    log::info!(
-                        "Flushing routed graph to engine: {} nodes, {} edges",
-                        graph.num_nodes,
-                        graph.num_edges
-                    );
-                    // Switch the UI to the plugin-graph view since rack
-                    // cannot represent the routed topology.
-                    state.app.ui_state.current_screen = crate::app::Screen::PluginGraph;
-                    state
-                        .player
-                        .update_plugin_graph(graph.config)
-                        .map(|()| {
-                            (
-                                format!(
-                                    "Room EQ applied as graph: {} nodes, {} edges",
-                                    graph.num_nodes, graph.num_edges
-                                ),
-                                "graph",
-                            )
-                        })
-                        .map_err(|e| e.to_string())
-                }
-            };
-
-            match flush_result {
-                Ok((status, _path)) => {
-                    state.app.measurement_state.room_eq_state.status_message = status.clone();
-                    state.app.ui_state.toast_message =
-                        Some(crate::app::ToastMessage::success(status));
-                }
-                Err(e) => {
-                    log::error!("Failed to apply room EQ: {}", e);
-                    state.app.measurement_state.room_eq_state.error_message =
-                        Some(format!("Failed to apply: {}", e));
-                }
+            if matches!(outcome, RoomEqApplyOutcome::Graph(_)) {
+                state.app.ui_state.current_screen = crate::app::Screen::PluginGraph;
             }
+            if let Some(graph) = state.app.correction_processing_snapshot() {
+                state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .delivery
+                    .request_application(graph);
+            }
+            state.app.plugin_state.update_state.pending_plugin_update =
+                Some(crate::app::types::PluginUpdateType::Structural);
+            let text = crate::app::i18n::CorrectionApplicationTranslations::for_language(
+                state.app.ui_state.language,
+            );
+            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::info(text.pending));
         });
 
         cx.notify();
@@ -811,6 +882,16 @@ impl PlayerView {
     /// the routed `PluginGraphConfig`, replaces the UI plugin graph with a
     /// matching topology, and flushes both to the engine.
     pub(super) fn apply_room_eq_as_graph(&mut self, cx: &mut Context<Self>) {
+        {
+            let app = &self.state.read(cx).app;
+            let correction = &app.measurement_state.room_eq_state;
+            if app.correction_application_status(&correction.delivery, correction.result_is_current())
+                == sotf_audio_player::ui_models::correction_delivery::CorrectionApplicationStatus::Pending
+            { return; }
+        }
+        if !self.check_room_result_freshness(cx) {
+            return;
+        }
         let dsp_output = {
             let state = self.state.read(cx);
             state.app.measurement_state.room_eq_state.dsp_output.clone()
@@ -837,7 +918,7 @@ impl PlayerView {
         };
 
         self.state.update(cx, |state, _| {
-            let outcome = match sotf_audio_player::autoeq::apply_room_eq_graph_to_chain(
+            let _outcome = match sotf_audio_player::autoeq::apply_room_eq_graph_to_chain(
                 &mut state.app.plugin_state.graph,
                 &dsp_output,
                 sample_rate,
@@ -858,20 +939,20 @@ impl PlayerView {
             state.app.plugin_state.update_state.plugin_graph_modified = true;
             state.app.ui_state.current_screen = crate::app::Screen::PluginGraph;
 
-            match state.player.update_plugin_graph(outcome.config) {
-                Ok(()) => {
-                    state.app.measurement_state.room_eq_state.status_message =
-                        "Room EQ applied as graph!".to_string();
-                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
-                        "Room EQ graph applied successfully",
-                    ));
-                }
-                Err(e) => {
-                    log::error!("Failed to apply room EQ graph: {}", e);
-                    state.app.measurement_state.room_eq_state.error_message =
-                        Some(format!("Failed to apply graph: {}", e));
-                }
+            if let Some(graph) = state.app.correction_processing_snapshot() {
+                state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .delivery
+                    .request_application(graph);
             }
+            state.app.plugin_state.update_state.pending_plugin_update =
+                Some(crate::app::types::PluginUpdateType::Structural);
+            let text = crate::app::i18n::CorrectionApplicationTranslations::for_language(
+                state.app.ui_state.language,
+            );
+            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::info(text.pending));
         });
 
         cx.notify();

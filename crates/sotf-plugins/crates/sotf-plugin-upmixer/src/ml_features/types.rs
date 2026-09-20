@@ -1,7 +1,0 @@
-/// Sparse triangular mel filter: (bin_index, weight) pairs for each mel band.
-pub(super) struct MelFilter {
-    /// Start index in the flat weights array.
-    pub(super) offset: usize,
-    /// Number of (bin, weight) pairs.
-    pub(super) len: usize,
-}

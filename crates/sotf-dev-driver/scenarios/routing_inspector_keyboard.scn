@@ -1,0 +1,19 @@
+focus PluginGraph
+wait_idle 2s
+key tab
+wait_idle 2s
+assert input_mode == "EditingPluginNode"
+assert plugins.graph.selection_count == 1
+screenshot routing-keyboard-endpoint
+key tab
+wait_idle 2s
+assert input_mode == "EditingPluginNode"
+screenshot routing-keyboard-next
+assert plugins.graph.selection_count == 1
+assert routing.dirty == false
+key shift-tab
+wait_idle 2s
+assert input_mode == "EditingPluginNode"
+assert plugins.graph.selection_count == 1
+assert routing.dirty == false
+screenshot routing-keyboard-previous

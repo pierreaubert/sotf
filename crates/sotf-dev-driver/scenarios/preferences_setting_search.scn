@@ -1,0 +1,25 @@
+focus Settings
+resize 600 800
+wait_idle 2s
+click preferences.search
+type "text size"
+wait_idle 1s
+screenshot preferences-search-results
+click preferences.result.TextSize
+wait_idle 2s
+assert settings.active_tab == "Theme"
+assert preferences.setting == "TextSize"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.TextSize
+key up
+assert settings.font_scale == 1.05 tolerance=0.001
+click preferences.search
+type "minimum font"
+wait_idle 1s
+click preferences.result.MinimumFont
+wait_idle 2s
+assert preferences.setting == "MinimumFont"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.MinimumFont
+screenshot preferences-minimum-font-search
+assert playback.is_playing == false

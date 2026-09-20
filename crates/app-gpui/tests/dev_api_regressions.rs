@@ -69,3 +69,41 @@ fn merge_restores_only_elements_missing_from_refreshed_scene() {
         image::Rgba([0, 0, 0, 255])
     );
 }
+
+#[test]
+fn tracked_elements_publish_only_complete_frames() {
+    fn publish(window: u64) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        while !registry::finish_frame(window) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "frame publication remained contended"
+            );
+            std::thread::yield_now();
+        }
+    }
+    let window = u64::MAX - 44;
+    let bounds = Bounds {
+        origin: point(px(1.0), px(2.0)),
+        size: size(px(30.0), px(40.0)),
+    };
+    registry::clear(window);
+    registry::record(window, "previous", bounds);
+    registry::begin_frame(window);
+    registry::record(window, "recording.content", bounds);
+    // An HTTP reader between paints must still see the complete previous frame.
+    assert!(registry::lookup(window, "previous").is_some());
+    assert!(registry::lookup(window, "recording.content").is_none());
+    registry::record(window, "recording.save", bounds);
+    publish(window);
+    assert!(registry::lookup(window, "previous").is_none());
+    assert_eq!(registry::snapshot_for(window).len(), 2);
+    assert!(registry::lookup(window, "recording.content").is_some());
+    assert!(registry::lookup(window, "recording.save").is_some());
+    // A completed empty frame must remove stale selectors as well.
+    registry::begin_frame(window);
+    assert_eq!(registry::snapshot_for(window).len(), 2);
+    publish(window);
+    assert!(registry::snapshot_for(window).is_empty());
+    registry::clear(window);
+}

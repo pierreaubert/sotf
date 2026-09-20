@@ -1,0 +1,33 @@
+focus library
+wait_until library.album_count > 0 timeout=10s
+wait_idle 2s
+click library.tab.tracks
+wait_idle 2s
+assert_visible library.track.0.play
+assert_visible library.track.0.add
+assert queue.length == 0
+click library.track.0.add
+wait_until queue.length == 1 timeout=2s
+assert playback.is_playing == false
+key enter
+wait_until queue.length == 2 timeout=2s
+assert playback.is_playing == false
+click library.search_input
+type "Country"
+wait_until library.search_query == "Country" timeout=2s
+# The demo contains separate Country FLAC and WAV files.
+wait_until library.filtered_track_count == 2 timeout=2s
+wait_idle 2s
+assert_visible library.track.0.play
+assert_visible library.track.1.play
+assert_absent library.track.2.play
+click library.track.0.play
+wait_until playback.is_playing == true timeout=10s
+assert playback.current_title == "Country"
+screenshot library-tracks
+resize 600 800
+wait_idle 2s
+assert_in_viewport library.track.0.play
+assert_in_viewport library.track.0.add
+screenshot library-tracks-narrow
+wait_until toast.type == null timeout=10s

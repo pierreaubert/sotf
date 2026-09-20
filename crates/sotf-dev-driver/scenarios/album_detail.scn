@@ -1,0 +1,67 @@
+# Opening an album is browsing; playback and queue mutations need explicit actions.
+focus library
+wait_until library.album_count > 0 timeout=10s
+wait_idle 2s
+assert queue.length == 0
+click library.tab.search
+click library.search_input
+type "Demo"
+wait_until library.search_query == "Demo" timeout=2s
+wait_until library.filtered_album_count > 0 timeout=2s
+click library.album.0
+wait_until library.detail.open == true timeout=2s
+assert input_mode == "Normal"
+assert queue.length == 0
+assert playback.is_playing == false
+wait_idle 250ms
+assert_in_viewport library.detail.play
+assert_visible library.detail.track.0.play
+screenshot album-detail
+click library.detail.track.0.add
+wait_until queue.length == 1 timeout=2s
+assert playback.is_playing == false
+click library.detail.back
+wait_until library.detail.open == false timeout=2s
+assert library.search_query == "Demo"
+wait_idle 250ms
+click library.album.0
+wait_until library.detail.open == true timeout=2s
+assert input_mode == "Normal"
+click library.detail.play
+wait_until playback.is_playing == true timeout=4s
+wait_until queue.length == 2 timeout=2s
+assert playback.current_title == "Country"
+assert playback.current_track_index == 0
+assert queue.current_index == 1
+click library.detail.next
+wait_until queue.length >= 3 timeout=2s
+assert playback.current_title == "Country"
+assert playback.current_track_index == 0
+assert queue.current_index == 1
+wait_idle 2s
+assert queue.current_index == 1
+assert playback.current_title == "Country"
+assert playback.is_playing == true
+key escape
+wait_until library.detail.open == false timeout=2s
+assert library.search_query == "Demo"
+click library.search_input
+key cmd-a
+type "unmatched-album-filter"
+wait_until library.filtered_album_count == 0 timeout=2s
+focus NowPlaying
+wait_until screen.focused == "NowPlaying" timeout=2s
+wait_idle 250ms
+click now-playing.view-album
+wait_until screen.focused == "Library" timeout=2s
+wait_until library.detail.open == true timeout=2s
+assert input_mode == "Normal"
+assert_visible library.detail.track.0.play
+assert library.search_query == "unmatched-album-filter"
+assert library.detail.track_count > 1
+screenshot now-playing-album-detail
+resize 600 800
+wait_idle 500ms
+assert_in_viewport library.detail.back
+assert_in_viewport library.detail.play
+screenshot album-detail-narrow

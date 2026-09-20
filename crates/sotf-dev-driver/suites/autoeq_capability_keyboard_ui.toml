@@ -1,0 +1,35 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+
+[[scenario]]
+name = "capability-keyboard"
+path = "crates/sotf-dev-driver/scenarios/autoeq_capability_keyboard.scn"
+timeout = "60s"
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true
+
+[[scenario]]
+name = "capability-keyboard-german"
+language = "German"
+font_scale = 1.5
+theme = "Light"
+path = "crates/sotf-dev-driver/scenarios/autoeq_capability_keyboard.scn"
+timeout = "60s"
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true

@@ -14,6 +14,7 @@ pub struct MatrixRenderState<'a> {
     pub selected_param: usize,
     /// Currently selected cell (input_idx, output_idx) for editing
     pub selected_cell: Option<(usize, usize)>,
+    pub route_menu: Option<bool>,
 }
 
 #[derive(Clone, Copy)]

@@ -26,7 +26,83 @@ macro_rules! state_method_handler {
 }
 
 impl PlayerView {
+    fn poll_plugin_update_acknowledgement(state: &mut AppState) -> bool {
+        let result = state
+            .app
+            .plugin_state
+            .update_state
+            .pending_ack
+            .as_ref()
+            .and_then(|pending| pending.receipt.poll());
+        if let Some(result) = result
+            && let Some(pending) = state.app.plugin_state.update_state.pending_ack.take()
+        {
+            if let Some(graph) = &pending.submitted_processing_graph {
+                state.app.acknowledge_correction_application(
+                    pending.correction_revisions,
+                    graph,
+                    result.is_ok(),
+                );
+                if result.is_ok() {
+                    state
+                        .app
+                        .plugin_state
+                        .update_state
+                        .acknowledged_processing_graph = Some(graph.clone());
+                }
+            }
+            let current_graph = serde_json::to_value(&state.app.plugin_state.graph).ok();
+            if pending.submitted_graph.is_some() && pending.submitted_graph != current_graph {
+                // A completion for an older graph cannot accept a newer routing
+                // edit or audition transition. Submit the latest desired graph.
+                state.app.plugin_state.update_state.pending_plugin_update =
+                    Some(PluginUpdateType::Structural);
+                return true;
+            }
+            let succeeded = result.is_ok() && pending.submitted_graph.is_some();
+            if pending.routing {
+                state.app.plugin_state.finish_routing_apply(succeeded);
+                if let Err(failure) = &result {
+                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(
+                        format!("Plugin update failed: {}", failure.error),
+                    ));
+                }
+            }
+            if pending.audition {
+                Self::acknowledge_headphone_audition(state, succeeded);
+            }
+            return true;
+        }
+        false
+    }
+
+    fn acknowledge_headphone_audition(state: &mut AppState, succeeded: bool) {
+        if state.app.finish_headphone_audition_update(succeeded) {
+            let stopped = state.player.pause().is_ok() || state.player.stop().is_ok();
+            if stopped {
+                state.app.playback.is_playing = false;
+            }
+            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(if stopped {
+                "Could not restore the audition chain. Playback paused; retry Stop preview."
+            } else {
+                "Could not restore or stop audition playback. Retry Stop preview."
+            }));
+        }
+    }
+
     fn adjust_selected_plugin_param(state: &mut AppState, delta: f64) {
+        if state.app.ui_state.current_screen == crate::app::types::Screen::PluginGraph {
+            if state
+                .app
+                .plugin_state
+                .graph_state
+                .editing_graph_node_uuid
+                .is_some()
+            {
+                state.app.adjust_selected_param(delta);
+            }
+            return;
+        }
         let selected = state.app.plugin_state.selected_plugin_index;
         state.app.plugin_state.editing_plugin_index = state
             .app
@@ -40,6 +116,14 @@ impl PlayerView {
     /// Apply a pending plugin update to the audio engine.
     /// Called from the timer callback when there's a pending update.
     fn apply_plugin_update(state: &mut AppState, update_type: PluginUpdateType) {
+        if !matches!(update_type, PluginUpdateType::Structural) {
+            // Parameter-only submissions are not acknowledged by this path.
+            state
+                .app
+                .plugin_state
+                .update_state
+                .acknowledged_processing_graph = None;
+        }
         let plugin_state_snapshot = match update_type {
             PluginUpdateType::Structural => Some(state.app.plugin_state.clone()),
             PluginUpdateType::Parameter { .. } | PluginUpdateType::ParameterByNodeId { .. } => None,
@@ -160,7 +244,36 @@ impl PlayerView {
                         state.app.plugin_state.graph.output_channels(),
                         sample_rate
                     );
-                    state.player.update_plugins(plugins)
+                    state
+                        .player
+                        .update_plugins_with_receipt(plugins)
+                        .map(|receipt| {
+                            state.app.plugin_state.update_state.pending_ack =
+                                Some(crate::app::state::plugin::PluginUpdateAcknowledgement {
+                                    receipt,
+                                    correction_revisions: state.app.pending_correction_revisions(),
+                                    submitted_processing_graph: state
+                                        .app
+                                        .correction_processing_snapshot(),
+                                    submitted_graph: serde_json::to_value(
+                                        &state.app.plugin_state.graph,
+                                    )
+                                    .ok(),
+                                    routing: state
+                                        .app
+                                        .plugin_state
+                                        .graph_state
+                                        .applying_original
+                                        .is_some(),
+                                    audition: state
+                                        .app
+                                        .measurement_state
+                                        .headphone_eq_state
+                                        .audition
+                                        .as_ref()
+                                        .is_some_and(|audition| audition.is_pending()),
+                                });
+                        })
                 } else {
                     let graph_config = state
                         .app
@@ -173,12 +286,48 @@ impl PlayerView {
                         graph_config.edges.len(),
                         sample_rate
                     );
-                    state.player.update_plugin_graph(graph_config)
+                    state
+                        .player
+                        .update_plugin_graph_with_receipt(graph_config)
+                        .map(|receipt| {
+                            state.app.plugin_state.update_state.pending_ack =
+                                Some(crate::app::state::plugin::PluginUpdateAcknowledgement {
+                                    receipt,
+                                    correction_revisions: state.app.pending_correction_revisions(),
+                                    submitted_processing_graph: state
+                                        .app
+                                        .correction_processing_snapshot(),
+                                    submitted_graph: serde_json::to_value(
+                                        &state.app.plugin_state.graph,
+                                    )
+                                    .ok(),
+                                    routing: state
+                                        .app
+                                        .plugin_state
+                                        .graph_state
+                                        .applying_original
+                                        .is_some(),
+                                    audition: state
+                                        .app
+                                        .measurement_state
+                                        .headphone_eq_state
+                                        .audition
+                                        .as_ref()
+                                        .is_some_and(|audition| audition.is_pending()),
+                                });
+                        })
                 }
             }
         };
 
         if let Err(e) = result {
+            if let Some(graph) = state.app.correction_processing_snapshot() {
+                state.app.acknowledge_correction_application(
+                    state.app.pending_correction_revisions(),
+                    &graph,
+                    false,
+                );
+            }
             log::warn!("Failed to apply plugin update: {}", e);
             if let Some(snapshot) = plugin_state_snapshot {
                 state
@@ -190,6 +339,8 @@ impl PlayerView {
                     e
                 )));
             }
+            state.app.plugin_state.finish_routing_apply(false);
+            Self::acknowledge_headphone_audition(state, false);
         }
     }
 

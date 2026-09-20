@@ -123,10 +123,14 @@ impl PlayerView {
                         .into_any(),
                 )
             })
-            // Two source cards side by side
+            // Stack source choices before their labels would exceed the content width.
             .child(
-                HStack::new()
-                    .spacing(StackSpacing::Md)
+                div()
+                    .grid()
+                    .w_full()
+                    .min_w_0()
+                    .grid_cols(if self.workflow_is_compact(cx) { 1 } else { 2 })
+                    .gap(crate::components::design::Ds::from_cx(cx).gap_md)
                     .child(
                         div().flex_1().child(
                             Card::new()

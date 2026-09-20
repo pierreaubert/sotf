@@ -121,6 +121,7 @@ pub(super) fn load_room_eq_recording_fixture(fixture_dir: &Path) -> Result<Recor
             let mut rec = ChannelRecording::new(idx, name.clone());
             rec.state = ChannelRecordingState::Done;
             rec.result = Some(RecordingResult {
+                sample_rate_hz: None,
                 channel: idx,
                 wav_path: fixture_child_path(fixture_dir, speaker.get("wav_path")),
                 csv_path: fixture_child_path(fixture_dir, speaker.get("csv_path")),

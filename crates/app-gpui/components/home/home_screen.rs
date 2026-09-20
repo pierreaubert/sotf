@@ -2,8 +2,11 @@
 
 mod album;
 mod build;
+mod entrypoints;
 mod home_album_ext;
 mod misc;
 mod types;
 
-pub(crate) use types::{activate_selected_home_album, move_home_album_selection};
+pub(crate) use types::{
+    activate_selected_home_album, move_home_album_selection, queue_selected_home_album,
+};

@@ -2,6 +2,7 @@
 // Appends to block_out. Expects is_iir check done by caller.
 {
     let mut num_filters_input = NumberInput::new((base_id.clone(), "num-filters"))
+        .scroll_requires_alt(true)
         .value(config.eq_design.num_filters as f64)
         .min(ParamLimits::NUM_FILTERS.min)
         .max(ParamLimits::NUM_FILTERS.max)
@@ -21,6 +22,7 @@
 
     if !hide_sample_rate {
         let mut sample_rate_input = NumberInput::new((base_id.clone(), "sample-rate"))
+            .scroll_requires_alt(true)
             .value(config.eq_design.sample_rate as f64)
             .min(ParamLimits::SAMPLE_RATE.min)
             .max(ParamLimits::SAMPLE_RATE.max)

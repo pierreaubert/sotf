@@ -2,10 +2,10 @@
 use super::super::common::{
     render_knob_sized_with_focus, render_midi_badge, render_midi_page_indicator,
 };
-use super::calculate::calculate_band_response;
+use super::calculate::calculate_band_response_at_rate;
 use super::calculate::calculate_dynamic_y_range;
 use super::calculate::calculate_plot_width_without_legend;
-use super::calculate::calculate_response_at_freq;
+use super::calculate::calculate_response_at_rate;
 use super::consts::BAND_COLOR_FALLBACK;
 use super::consts::CHART_BOTTOM_MARGIN;
 use super::consts::CHART_HEIGHT;
@@ -119,6 +119,9 @@ fn commit_eq_drag_preview(
 #[derive(Clone, Copy)]
 pub(crate) enum EqGlobalControl {
     StandardTdf2,
+    StandardAutoGain,
+    StandardOversampling(f64),
+    StandardTopology(f64),
     LpNumFilters,
     LpFirLength,
     LpPhaseMode,
@@ -137,12 +140,11 @@ enum EqBandAction {
 }
 
 /// Per-filter-type Q bounds for the EQ editor: notch filters accept very
-/// narrow bandwidths (up to 40); all other types stay within the classic
-/// 0.1–10 edit range.
+/// narrow bandwidths (up to 40); other types include optimizer values up to 20.
 fn eq_q_bounds(filter_type: BiquadFilterType) -> (f64, f64) {
     (
         sotf_plugins::param_specs::eq::Q_MIN,
-        sotf_plugins::param_specs::eq::q_max_ui(filter_type),
+        sotf_plugins::param_specs::eq::q_max_for(filter_type),
     )
 }
 
@@ -233,20 +235,29 @@ impl EqCurveRenderCache {
         }
     }
 
-    fn get_or_build(&mut self, filters: &[EQFilter], freq_points: &[f64]) -> EqCurveRenderData {
-        let signature = eq_curve_signature(filters, freq_points.len());
+    fn get_or_build(
+        &mut self,
+        filters: &[EQFilter],
+        freq_points: &[f64],
+        sample_rate: f64,
+    ) -> EqCurveRenderData {
+        let signature = format!(
+            "{}:{:x}",
+            eq_curve_signature(filters, freq_points.len()),
+            sample_rate.to_bits()
+        );
         if self.signature != signature {
             self.data = EqCurveRenderData {
                 combined_response: freq_points
                     .iter()
-                    .map(|&freq| calculate_response_at_freq(filters, freq))
+                    .map(|&freq| calculate_response_at_rate(filters, freq, sample_rate))
                     .collect(),
                 band_responses: filters
                     .iter()
                     .map(|filter| {
                         freq_points
                             .iter()
-                            .map(|&freq| calculate_band_response(filter, freq))
+                            .map(|&freq| calculate_band_response_at_rate(filter, freq, sample_rate))
                             .collect()
                     })
                     .collect(),
@@ -269,7 +280,7 @@ fn eq_curve_signature(filters: &[EQFilter], freq_count: usize) -> String {
         use std::fmt::Write;
         let _ = write!(
             signature,
-            "|{:?}:{:x}:{:x}:{:x}:{}:{}:{:?}:{}",
+            "|{:?}:{:x}:{:x}:{:x}:{}:{}:{:?}:{}:{}",
             filter.filter_type,
             filter.frequency.to_bits(),
             filter.q.to_bits(),
@@ -277,6 +288,7 @@ fn eq_curve_signature(filters: &[EQFilter], freq_count: usize) -> String {
             filter.muted,
             filter.solo,
             filter.topology,
+            filter.order,
             filter
                 .lambda
                 .map(|lambda| lambda.to_bits().to_string())
@@ -339,7 +351,14 @@ fn render_band_frequency_guide(
     let label = div()
         .absolute()
         .left(px(label_left))
-        .top(px(geometry.guide_label_top))
+        // Keep the selected band's longer value summary below the frequency
+        // labels, so it cannot overwrite its neighbours when zoomed in.
+        .top(px(geometry.guide_label_top
+            + if selected {
+                geometry.guide_label_text_size + 2.0 * geometry.guide_label_padding_y
+            } else {
+                0.0
+            }))
         .w(px(label_width))
         .text_center()
         .px(px(geometry.guide_label_padding_x))
@@ -786,6 +805,7 @@ pub(crate) fn render_eq_property_strip(
                         plugin_idx,
                         band_idx,
                         filter.topology,
+                        filter.order,
                         text,
                         theme,
                     )
@@ -802,6 +822,46 @@ pub(crate) fn render_eq_property_strip(
                         None,
                         theme,
                     ))
+                })
+                .when(!is_lp_mode, |col| {
+                    use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Text};
+                    let mut row = div()
+                        .flex()
+                        .flex_wrap()
+                        .items_center()
+                        .gap(d.grid)
+                        .child(Text::label(state.order_label).color(theme.text_secondary));
+                    for order in [2, 4, 6, 8] {
+                        let entity = entity.clone();
+                        let disabled =
+                            order != 2 && (state.topology == 1.0 || !can_show_filter_types);
+                        let button = Button::new(
+                            SharedString::from(format!("eq-order-{plugin_idx}-{band_idx}-{order}")),
+                            order.to_string(),
+                        )
+                        .size(ButtonSize::Sm)
+                        .variant(if filter.order == order {
+                            ButtonVariant::Primary
+                        } else {
+                            ButtonVariant::Ghost
+                        })
+                        .disabled(disabled)
+                        .theme(theme.to_button_theme())
+                        .on_click(move |_, cx| {
+                            entity.update(cx, |state, cx| {
+                                if let Err(error) =
+                                    state.app.set_eq_filter_order(plugin_idx, band_idx, order)
+                                {
+                                    log::warn!("Unable to change EQ order: {error}");
+                                }
+                                cx.notify();
+                            });
+                        });
+                        #[cfg(feature = "dev-api")]
+                        let button = button.dev_track(format!("eq.order.{order}"));
+                        row = row.child(button);
+                    }
+                    col.child(row)
                 }),
         )
         .child(
@@ -938,7 +998,7 @@ fn render_eq_band_action_button(
     enabled: bool,
     theme: &Theme,
 ) -> AnyElement {
-    let (id, selector, variant) = match action {
+    let (id, _selector, variant) = match action {
         EqBandAction::Add => ("eq-add-band", "eq.band.add", ButtonVariant::Primary),
         EqBandAction::Remove(_) => (
             "eq-remove-band",
@@ -987,7 +1047,7 @@ fn render_eq_band_action_button(
             });
         });
     #[cfg(feature = "dev-api")]
-    let button = button.dev_track(selector);
+    let button = button.dev_track(_selector);
     button.into_any_element()
 }
 
@@ -1049,6 +1109,7 @@ pub(crate) fn render_eq_visualization(
     theme: &Theme,
     width: f32,
     geometry_scale: f32,
+    sample_rate: f64,
     focus_handle: FocusHandle,
 ) -> impl IntoElement {
     render_eq_visualization_sized(
@@ -1061,6 +1122,7 @@ pub(crate) fn render_eq_visualization(
         width,
         CHART_HEIGHT * geometry_scale,
         geometry_scale,
+        sample_rate,
         focus_handle,
     )
 }
@@ -1077,6 +1139,7 @@ pub(crate) fn render_eq_visualization_sized(
     width: f32,
     chart_height: f32,
     geometry_scale: f32,
+    sample_rate: f64,
     focus_handle: FocusHandle,
 ) -> impl IntoElement {
     let geometry = EqChartGeometry::scaled(geometry_scale);
@@ -1089,7 +1152,7 @@ pub(crate) fn render_eq_visualization_sized(
         let mut cache = eq_curve_cache()
             .lock()
             .unwrap_or_else(|err| err.into_inner());
-        cache.get_or_build(filters, freq_points)
+        cache.get_or_build(filters, freq_points, sample_rate)
     };
 
     // Create chart theme from app theme
@@ -1431,6 +1494,7 @@ pub(crate) fn render_eq_visualization_sized(
             .on_mouse_down(MouseButton::Left, {
                 let entity_click = entity.clone();
                 move |event, window, cx| {
+                    cx.stop_propagation();
                     window.focus(&chart_focus_handle, cx);
                     if event.click_count >= 2 {
                         // Double-click: reset band to default values
@@ -1555,6 +1619,11 @@ pub(crate) fn render_eq_visualization_sized(
         .on_scroll_wheel({
             let entity = entity.clone();
             move |event, _window, cx| {
+                // Ordinary wheel gestures belong to the editor scrollport.
+                // Require an explicit modifier before changing audio settings.
+                if !event.modifiers.alt {
+                    return;
+                }
                 let Some(band_idx) = selected_point.map(|(band_idx, _, _)| band_idx) else {
                     return;
                 };
@@ -1745,6 +1814,7 @@ pub(crate) fn render_eq_visualization_sized(
 
                 entity.update(cx, |state, cx| {
                     state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                    state.app.plugin_state.selected_eq_band = band_idx;
                     if indexing == EqBandIndexing::FIR {
                         state.app.plugin_state.plugin_ui_state.preview_eq_drag(
                             crate::app::state::EqDragPreview {
@@ -1918,16 +1988,15 @@ pub fn render_eq_plugin(
 
     let layout = EqCompactLayout::from_width(state.available_width / state.layout_scale.max(0.01));
 
-    // Compute selected param for editing mode
-    let highlight_band_idx = if state.is_editing {
-        Some(state.selected_param / indexing.stride)
-    } else {
-        Some(selected_band_idx)
-    };
+    // Curve selection can differ from the last knob parameter. Keyboard edits
+    // must target the same selected band as the parameter panel.
+    let highlight_band_idx = Some(selected_band_idx);
 
     // The graph is the primary control surface; band guides render on top of
-    // it instead of reserving a legend column.
-    let graph_width = state.available_width.max(800.0);
+    // it instead of reserving a legend column. ui.md Phase 3 pilot: size the
+    // chart to its container (the solved editor width) with no minimum-width
+    // floor that could overflow a narrow or zoomed editor.
+    let graph_width = state.available_width.max(1.0);
 
     // Build the UI - graph uses most of the horizontal space
     let graph_section = div()
@@ -1943,6 +2012,7 @@ pub fn render_eq_plugin(
             theme,
             graph_width,
             state.layout_scale,
+            state.sample_rate,
             eq_chart_focus_handle.clone(),
         ));
 
@@ -2124,12 +2194,45 @@ pub fn render_eq_plugin(
 
     // Combine sections based on layout mode
 
-    match layout {
+    let wheel_hint = EqViewTranslations::wheel_hint(entity.read(cx).app.ui_state.language);
+    let content = match layout {
         EqCompactLayout::Current => div()
             .flex()
             .flex_col()
             .items_center()
             .gap(ds.section_xl)
+            .when(matches!(state.mode, EqViewMode::Standard), |root| {
+                let open = entity
+                    .read(cx)
+                    .app
+                    .plugin_state
+                    .plugin_ui_state
+                    .eq_compact_config_open;
+                root.child(
+                    div()
+                        .w_full()
+                        .flex()
+                        .flex_col()
+                        .gap(ds.gap)
+                        .child(super::layout_compact::config_toggle_button(
+                            &ds,
+                            entity.clone(),
+                            plugin_idx,
+                            open,
+                            theme,
+                        ))
+                        .when(open, |panel| {
+                            panel.child(super::layout_compact::render_compact_config_panel(
+                                &ds,
+                                entity.clone(),
+                                plugin_idx,
+                                &state,
+                                theme,
+                                cx,
+                            ))
+                        }),
+                )
+            })
             .children(lp_header)
             .children(midi_status)
             .children(wide_band_strip)
@@ -2161,7 +2264,15 @@ pub fn render_eq_plugin(
             cx,
         )
         .into_any_element(),
-    }
+    };
+    div()
+        .flex()
+        .flex_col()
+        .w_full()
+        .gap(ds.gap)
+        .child(content)
+        .child(gpui_ui_kit::Text::caption(wheel_hint).color(theme.text_muted))
+        .into_any_element()
 }
 
 fn render_linear_phase_analysis(
@@ -2263,6 +2374,7 @@ fn render_eq_band_topology_selector(
     plugin_idx: usize,
     band_idx: usize,
     topology: EqFilterTopology,
+    order: usize,
     text: EqViewTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
@@ -2290,6 +2402,7 @@ fn render_eq_band_topology_selector(
             .map(move |candidate| {
                 let entity = entity.clone();
                 let active = candidate == topology;
+                let disabled = order != 2 && !matches!(candidate, EqFilterTopology::Biquad);
                 div()
                     .px(d.pad_y)
                     .py(d.pad_y_half)
@@ -2305,8 +2418,9 @@ fn render_eq_band_topology_selector(
                             .text_color(theme.text_secondary)
                             .hover(|s| s.bg(theme.surface_hover))
                     })
+                    .when(disabled, |el| el.opacity(0.4))
                     .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                        if active {
+                        if active || disabled {
                             return;
                         }
                         entity.update(cx, |state, cx| {
@@ -2380,11 +2494,13 @@ pub(crate) fn render_eq_active_toggle(
 }
 
 fn mark_eq_global_update(state: &mut AppState) {
-    state.app.plugin_state.update_state.pending_plugin_update =
-        Some(crate::app::types::PluginUpdateType::Structural);
+    state
+        .app
+        .plugin_state
+        .record_editor_effect(sotf_audio_player::PluginUpdateEffect::Structural);
 }
 
-fn adjust_eq_global_control(
+pub(crate) fn adjust_eq_global_control(
     entity: &Entity<AppState>,
     plugin_idx: usize,
     control: EqGlobalControl,
@@ -2392,11 +2508,32 @@ fn adjust_eq_global_control(
     cx: &mut App,
 ) {
     entity.update(cx, |state, cx| {
-        let Some(plugin) = state.app.plugin_state.graph.get_plugin_mut(plugin_idx) else {
+        let Some(plugin) = state.app.plugin_state.editor_plugin_mut(plugin_idx) else {
             return;
         };
         match (&mut plugin.settings, control) {
             (PluginSettings::EQ { tdf2, .. }, EqGlobalControl::StandardTdf2) => *tdf2 = !*tdf2,
+            (settings, EqGlobalControl::StandardTopology(value)) => {
+                if sotf_audio_player::controllers::plugin::set_eq_global_topology(settings, value)
+                    .is_err()
+                {
+                    return;
+                }
+            }
+            (
+                PluginSettings::EQ {
+                    auto_gain_enabled, ..
+                },
+                EqGlobalControl::StandardAutoGain,
+            ) => {
+                *auto_gain_enabled = !*auto_gain_enabled;
+            }
+            (
+                PluginSettings::EQ { oversampling, .. },
+                EqGlobalControl::StandardOversampling(factor),
+            ) => {
+                *oversampling = factor;
+            }
             (PluginSettings::LinearPhaseEq { num_filters, .. }, EqGlobalControl::LpNumFilters) => {
                 *num_filters = (*num_filters + delta).clamp(
                     pk(LP_PARAMS, "num_filters").min_f64(),

@@ -1,0 +1,56 @@
+# 2026-09-09: Guided course cards in listening_test.rs rendered English titles
+# and counts in every locale. EarTrainingCourseTranslations in app/i18n/desktop.rs
+# now supplies presentation copy. Captures require visual review of card text.
+# Run: target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/listening_course_localization_ui.toml
+action ListeningResetGuide
+click listening.guide.acknowledge
+wait_until listening.guide_open == false timeout=3s
+click listening.eq.nav.courses
+wait_until listening.surface == "Courses" timeout=3s
+assert settings.language == "English"
+assert_visible listening.eq.course.0
+screenshot courses-english
+scroll listening.eq.course.0 -1400
+wait_idle
+assert_in_viewport listening.eq.course.4
+screenshot courses-english-lower
+scroll listening.eq.course.4 1400
+wait_idle
+assert_in_viewport listening.eq.course.0
+action CycleLanguage
+assert settings.language == "French"
+wait_idle
+screenshot courses-french
+scroll listening.eq.course.0 -1400
+wait_idle
+assert_in_viewport listening.eq.course.4
+screenshot courses-french-lower
+scroll listening.eq.course.4 1400
+wait_idle
+assert_in_viewport listening.eq.course.0
+action CycleLanguage
+assert settings.language == "German"
+wait_idle
+screenshot courses-german
+scroll listening.eq.course.0 -1400
+wait_idle
+assert_in_viewport listening.eq.course.4
+screenshot courses-german-lower
+scroll listening.eq.course.4 1400
+wait_idle
+assert_in_viewport listening.eq.course.0
+action CycleLanguage
+assert settings.language == "Spanish"
+wait_idle
+screenshot courses-spanish
+scroll listening.eq.course.0 -1400
+wait_idle
+assert_in_viewport listening.eq.course.4
+screenshot courses-spanish-lower
+scroll listening.eq.course.4 1400
+wait_idle
+assert_in_viewport listening.eq.course.0
+click listening.eq.course.0
+wait_until listening.surface == "EqBands" timeout=3s
+assert listening.eq.has_session == true
+assert playback.is_playing == false

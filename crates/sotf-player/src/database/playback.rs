@@ -4,6 +4,21 @@ use rusqlite::{Result as SqlResult, params};
 use std::path::{Path, PathBuf};
 
 impl MusicDatabase {
+    /// Load playback recency in one query for library presentation caches.
+    pub fn get_all_track_last_played(&self) -> SqlResult<std::collections::HashMap<PathBuf, u64>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT track_path, MAX(played_at) FROM play_history GROUP BY track_path")?;
+        stmt.query_map([], |row| {
+            let timestamp: i64 = row.get(1)?;
+            Ok((
+                PathBuf::from(row.get::<_, String>(0)?),
+                timestamp.max(0) as u64,
+            ))
+        })?
+        .collect()
+    }
+
     /// Get top tracks by play count
     pub fn get_top_tracks_by_play_count(&self, limit: usize) -> SqlResult<Vec<PathBuf>> {
         let mut stmt = self.conn.prepare(
@@ -27,9 +42,19 @@ impl MusicDatabase {
     /// Record a play event for a track
     /// Only records if duration_played_secs >= 30
     pub fn record_play(&self, track_path: &Path, duration_played_secs: u64) -> SqlResult<()> {
+        self.record_play_timestamp(track_path, duration_played_secs)
+            .map(|_| ())
+    }
+
+    /// Return the exact persisted timestamp so caches need no second query.
+    pub fn record_play_timestamp(
+        &self,
+        track_path: &Path,
+        duration_played_secs: u64,
+    ) -> SqlResult<Option<u64>> {
         // Only record if played for at least 30 seconds
         if duration_played_secs < 30 {
-            return Ok(());
+            return Ok(None);
         }
 
         let now = current_timestamp();
@@ -56,7 +81,7 @@ impl MusicDatabase {
             ],
         )?;
 
-        Ok(())
+        Ok(Some(now.max(0) as u64))
     }
 
     /// Get play count for a specific track

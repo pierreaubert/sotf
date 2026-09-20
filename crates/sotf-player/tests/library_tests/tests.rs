@@ -9,6 +9,110 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
+#[test]
+fn track_view_search_filters_individual_tracks_and_preserves_favorites() {
+    use sotf_audio_player::controllers::LibraryController;
+    let mut first = test_track(PathBuf::from("first.flac"));
+    first.title = Some("First song".into());
+    first.artist = Some("Performer".into());
+    let mut second = test_track(PathBuf::from("second.flac"));
+    second.title = Some("Second song".into());
+    second.artist = Some("Performer".into());
+    let mut library = MusicLibrary::new();
+    library.albums = vec![Album {
+        title: "Collection".into(),
+        tracks: vec![first, second],
+        is_favorite: true,
+        ..Default::default()
+    }];
+    let mut controller = LibraryController::with_library(library);
+    controller.set_search_query("SECOND".into());
+    controller.ensure_cache_valid();
+    let rows = controller.selection_filtered_tracks();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].1, 1);
+    assert_eq!(
+        rows[0].0.tracks[rows[0].1].path,
+        PathBuf::from("second.flac")
+    );
+    controller.set_search_query("Collection".into());
+    controller.ensure_cache_valid();
+    assert_eq!(controller.selection_filtered_tracks().len(), 2);
+    controller.set_sort_order(sotf_audio_player::LibrarySortOrder::Artist);
+    controller.set_search_query_in_current_view("Collection".into());
+    controller.ensure_cache_valid();
+    assert_eq!(
+        controller.sort_order,
+        sotf_audio_player::LibrarySortOrder::Artist
+    );
+    assert_eq!(controller.selection_filtered_tracks().len(), 2);
+    controller.toggle_favorites_filter();
+    controller.ensure_cache_valid();
+    assert_eq!(controller.selection_filtered_tracks().len(), 2);
+    controller.set_search_query("no matching track".into());
+    controller.ensure_cache_valid();
+    assert!(controller.selection_filtered_tracks().is_empty());
+}
+
+#[test]
+fn independent_result_order_preserves_browse_view_and_filters() {
+    use sotf_audio_player::LibrarySortOrder;
+    use sotf_audio_player::controllers::{LibraryController, LibraryResultOrder};
+    let mut library = MusicLibrary::new();
+    for (title, artist, year, favorite) in [
+        ("Zeta", "Alpha", 2000, true),
+        ("Alpha", "Zulu", 2020, true),
+        ("Middle", "Beta", 2010, false),
+    ] {
+        let mut track = test_track(PathBuf::from(format!("{title}.flac")));
+        track.artist = Some(artist.into());
+        library.albums.push(Album {
+            title: title.into(),
+            year: Some(year),
+            tracks: vec![track],
+            is_favorite: favorite,
+            ..Default::default()
+        });
+    }
+    let mut controller = LibraryController::with_library(library);
+    assert_eq!(controller.result_order, None);
+    controller.set_sort_order(LibrarySortOrder::Tracks);
+    for (order, expected) in [
+        (LibraryResultOrder::Title, ["Alpha", "Middle", "Zeta"]),
+        (LibraryResultOrder::Artist, ["Zeta", "Middle", "Alpha"]),
+        (LibraryResultOrder::Recent, ["Alpha", "Middle", "Zeta"]),
+    ] {
+        controller.set_result_order(order);
+        controller.ensure_cache_valid();
+        controller.ensure_selection_cache_valid();
+        assert_eq!(controller.sort_order, LibrarySortOrder::Tracks);
+        assert_eq!(
+            controller
+                .selection_filtered_albums()
+                .iter()
+                .map(|album| album.title.as_str())
+                .collect::<Vec<_>>(),
+            expected
+        );
+    }
+    controller.toggle_favorites_filter();
+    controller.set_search_query_in_current_view("a".into());
+    controller.set_result_order(LibraryResultOrder::Artist);
+    controller.ensure_cache_valid();
+    controller.ensure_selection_cache_valid();
+    assert_eq!(controller.search_query, "a");
+    assert!(controller.show_favorites_only);
+    assert_eq!(controller.sort_order, LibrarySortOrder::Tracks);
+    assert_eq!(
+        controller
+            .selection_filtered_tracks()
+            .iter()
+            .map(|(album, _)| album.title.as_str())
+            .collect::<Vec<_>>(),
+        ["Zeta", "Alpha"]
+    );
+}
+
 fn track_write_times(db_path: &Path) -> Vec<(String, i64, i64)> {
     let conn = Connection::open(db_path).unwrap();
     let mut stmt = conn

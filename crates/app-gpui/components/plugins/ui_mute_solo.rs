@@ -12,7 +12,6 @@
 use super::common::{render_knob, render_section_title, render_toggle};
 use crate::app::AppState;
 use crate::app::i18n::PluginCommonTranslations;
-use crate::app::types::PluginUpdateType;
 use crate::components::design::Ds;
 use crate::components::themed_tooltip;
 use crate::theme::Theme;
@@ -297,7 +296,7 @@ fn toggle_msd_state(
     cx: &mut App,
 ) {
     entity.update(cx, |state, cx| {
-        let Some(plugin) = state.app.plugin_state.graph.get_plugin_mut(plugin_idx) else {
+        let Some(plugin) = state.app.plugin_state.editor_plugin_mut(plugin_idx) else {
             return;
         };
         let PluginSettings::ChannelMuteSolo { channel_states, .. } = &mut plugin.settings else {
@@ -312,8 +311,10 @@ fn toggle_msd_state(
             MsdAction::Solo => channel.soloed = !channel.soloed,
             MsdAction::Dim => channel.dimmed = !channel.dimmed,
         }
-        state.app.plugin_state.update_state.pending_plugin_update =
-            Some(PluginUpdateType::Structural);
+        state
+            .app
+            .plugin_state
+            .record_editor_effect(sotf_audio_player::PluginUpdateEffect::Structural);
         cx.notify();
     });
 }

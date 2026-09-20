@@ -184,6 +184,8 @@ pub(crate) struct MultiMeasurementCallbacks {
 #[derive(Default)]
 pub(crate) struct FormLifecycleCallbacks {
     pub(crate) on_block_focus: Option<StringCallback>,
+    pub(crate) on_stage_change:
+        Option<Box<dyn Fn(super::super::AutoEqStage, &mut Window, &mut App)>>,
     pub(crate) on_detail_level_change: Option<StringCallback>,
     pub(crate) on_preset_change: Option<StringCallback>,
     pub(crate) on_preset_toggle: Option<ToggleCallback>,
@@ -353,6 +355,7 @@ impl AutoEqForm {
             },
             lifecycle: FormLifecycleCallbacks {
                 on_block_focus: None,
+                on_stage_change: None,
                 on_detail_level_change: None,
                 on_preset_change: None,
                 on_preset_toggle: None,
@@ -1375,7 +1378,16 @@ impl AutoEqForm {
         self
     }
 
-    /// Set detail level change handler (called with "simple", "intermediate", or "expert")
+    /// Select a configuration decision without changing parameter values.
+    pub fn on_stage_change(
+        mut self,
+        handler: impl Fn(super::super::AutoEqStage, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.lifecycle.on_stage_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set detail level change handler (called with "simple", "intermediate", or "expert").
     pub fn on_detail_level_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,

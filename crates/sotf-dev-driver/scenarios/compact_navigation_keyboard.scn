@@ -1,0 +1,22 @@
+focus Home
+resize 600 800
+wait_idle 2s
+click navigation.compact
+assert navigation.compact_highlight == 0
+key down
+assert navigation.compact_highlight == 1
+key enter
+assert screen.focused == "Library"
+click navigation.compact
+key up
+key enter
+assert screen.focused == "Home"
+click navigation.compact
+key up
+key enter
+assert screen.focused == "Studio"
+click navigation.compact
+key escape
+assert navigation.compact_open == false
+assert screen.focused == "Studio"
+assert playback.is_playing == false

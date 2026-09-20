@@ -1,0 +1,54 @@
+# Acceptance includes comparing before-reset.json with multiband-reset.json:
+# only bands[0].threshold_db changes (-33 -> null); global stays -25.
+# multiband-reset-reloaded.json must preserve the reset settings.
+# Driver PASS alone does not assert per-band persisted fields.
+# Per-band IDs are not supported by plugin_query. Validate band-checkpoint.json,
+# multiband-expander.json and multiband-expander-reloaded.json: band 1 threshold -33;
+# global threshold -40 at checkpoint, -25 in final/reloaded artifacts.
+resize 1600 1400
+focus Studio
+plugin_clear
+plugin_add MultibandExpander
+action PluginSelectFirstUser
+wait_idle 1s
+# Coordinates grounded in native capture 1788997592 (1600 logical width).
+click_at 815 533
+wait_idle 500ms
+click_at 692 645
+wait_idle 500ms
+assert_accessible spinbutton Threshold value
+click_at 692 892
+key cmd-a
+wait_idle 500ms
+type "-33"
+key enter
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/band-checkpoint.json
+assert plugins.plugin.2.param.6.value == -40 tolerance=0.001
+click_at 735 533
+wait_idle 500ms
+click_at 692 645
+wait_idle 500ms
+click_at 692 892
+key cmd-a
+wait_idle 500ms
+type "-25"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.6.value == -25 tolerance=0.001
+
+click_at 815 533
+wait_idle 500ms
+screenshot multiband-expander-independent-band
+plugin_chain_save $SOTF_QA_DIR/multiband-expander.json
+key escape
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/before-reset.json
+screenshot before-reset
+double_click_at 704 740
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/multiband-reset.json
+screenshot multiband-reset
+plugin_remove 2
+plugin_chain_load $SOTF_QA_DIR/multiband-reset.json
+plugin_chain_save $SOTF_QA_DIR/multiband-reset-reloaded.json

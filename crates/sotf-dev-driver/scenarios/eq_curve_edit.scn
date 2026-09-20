@@ -3,13 +3,13 @@
 action PluginClear
 resize 1600 2000
 wait_idle
-click sidebar.nav-studio-rack
+click sidebar.nav-studiohub
 assert screen.focused == "Studio"
 wait_idle
 click rack.add.open
 wait_idle
 assert_visible rack.add.eq
-scroll rack.add.menu -450
+scroll_into_view rack.add.menu rack.add.eq
 wait_idle
 assert_in_viewport rack.add.eq
 screenshot eq-add-menu
@@ -66,6 +66,31 @@ type "6.5"
 key enter
 assert plugins.plugin.2.param.18.value == 6.5 tolerance=0.01
 screenshot eq-curve-exact-entry
+
+# The editor must represent the full accepted optimizer Q range, above 10.
+click eq.param.17
+wait_idle
+click plugin.param.2.17.exact
+wait_idle
+assert_focused plugin-number-input-2-17
+key cmd-a
+type "15"
+key enter
+assert plugins.plugin.2.param.17.value == 15 tolerance=0.01
+screenshot eq-optimized-q
+
+# Loading an optimized chain must retain values above the old Q=10 UI ceiling.
+plugin_chain_save $SOTF_QA_DIR/eq-optimized.json
+plugin_remove 2
+assert plugins.user_count == 0
+plugin_chain_load $SOTF_QA_DIR/eq-optimized.json
+assert plugins.plugin.2.param.17.value == 15 tolerance=0.01
+action PluginSelectFirstUser
+wait_idle
+click eq.band.4.point
+wait_idle
+assert_in_viewport eq.param.17
+screenshot eq-optimized-q-reloaded
 
 # Reset is a visible, localized action—not an undiscoverable double-click only.
 click eq.band.reset

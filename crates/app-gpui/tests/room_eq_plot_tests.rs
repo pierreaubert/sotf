@@ -1,8 +1,9 @@
 use sotf_audio_player_gpui::{
-    calculate_room_eq_log_trend, room_eq_channel_sort_key, room_eq_passband_trend_fit_domain,
-    room_eq_progress_chart_series, room_eq_report_channel_has_renderable_data,
-    room_eq_report_data_from_dsp_output, room_eq_report_eq_y_range, room_eq_report_y_range,
-    room_eq_trend_fit_domain, sum_room_eq_responses_db,
+    calculate_room_eq_log_trend, room_eq_channel_sort_key, room_eq_chart_width,
+    room_eq_passband_trend_fit_domain, room_eq_progress_chart_series,
+    room_eq_report_channel_has_renderable_data, room_eq_report_data_from_dsp_output,
+    room_eq_report_eq_y_range, room_eq_report_y_range, room_eq_trend_fit_domain,
+    sum_room_eq_responses_db,
 };
 use std::collections::HashMap;
 
@@ -226,4 +227,18 @@ fn curve_data(spl: Vec<f64>) -> autoeq::roomeq::CurveData {
         phase: None,
         norm_range: None,
     }
+}
+
+#[test]
+fn chart_width_tracks_available_and_caps_at_ceiling() {
+    assert_eq!(room_eq_chart_width(900.0, 280.0, 900.0), 900.0);
+    assert_eq!(room_eq_chart_width(500.0, 280.0, 900.0), 500.0);
+    assert_eq!(room_eq_chart_width(2000.0, 280.0, 900.0), 900.0);
+}
+
+#[test]
+fn chart_width_floors_yield_instead_of_overflowing_narrow_windows() {
+    assert_eq!(room_eq_chart_width(500.0, 640.0, 1400.0), 500.0);
+    assert_eq!(room_eq_chart_width(300.0, 420.0, 1100.0), 300.0);
+    assert_eq!(room_eq_chart_width(0.0, 640.0, 1400.0), 1.0);
 }

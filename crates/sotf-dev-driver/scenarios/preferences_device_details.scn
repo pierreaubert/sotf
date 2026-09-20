@@ -1,0 +1,23 @@
+focus Home
+focus Settings
+resize 600 800
+wait_idle 2s
+click preferences.category
+key up
+key enter
+wait_idle 1s
+assert preferences.device_details_expanded == false
+assert_in_viewport settings.output-device
+assert_in_viewport settings.device-details
+click settings.device-details
+wait_idle 1s
+assert preferences.device_details_expanded == true
+scroll preferences.content -300
+wait_idle 1s
+screenshot preferences-device-details-narrow
+scroll preferences.content 1600
+wait_idle 1s
+click settings.device-details
+assert preferences.device_details_expanded == false
+assert preferences.audio_dirty == false
+assert playback.is_playing == false

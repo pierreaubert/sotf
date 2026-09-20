@@ -1,0 +1,63 @@
+# Visible Expander primary controls from ui-plugins.html.
+focus Studio
+plugin_clear
+plugin_add Expander
+action PluginSelectFirstUser
+wait_idle
+screenshot expander-initial
+wait_idle
+scroll_into_view rack.params plugin.param.2.0.exact
+assert_in_viewport plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "-30"
+key enter
+wait_idle
+assert plugins.plugin.2.param.0.value == -30 tolerance=0.001
+wait_idle
+scroll_into_view rack.params plugin.param.2.1.exact
+assert_in_viewport plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "3"
+key enter
+wait_idle
+assert plugins.plugin.2.param.1.value == 3 tolerance=0.001
+wait_idle
+scroll_into_view rack.params plugin.param.2.4.exact
+assert_in_viewport plugin.param.2.4.exact
+click plugin.param.2.4.exact
+key cmd-a
+type "36"
+key enter
+wait_idle
+assert plugins.plugin.2.param.4.value == 36 tolerance=0.001
+wait_idle
+scroll_into_view rack.params plugin.param.2.2.exact
+assert_in_viewport plugin.param.2.2.exact
+click plugin.param.2.2.exact
+key cmd-a
+type "8"
+key enter
+wait_idle
+assert plugins.plugin.2.param.2.value == 8 tolerance=0.001
+wait_idle
+scroll_into_view rack.params plugin.param.2.3.exact
+assert_in_viewport plugin.param.2.3.exact
+click plugin.param.2.3.exact
+key cmd-a
+type "150"
+key enter
+wait_idle
+assert plugins.plugin.2.param.3.value == 150 tolerance=0.001
+wait_idle
+scroll_into_view rack.params plugin.param.2.8.exact
+assert_in_viewport plugin.param.2.8.exact
+click plugin.param.2.8.exact
+key cmd-a
+type "75"
+key enter
+wait_idle
+assert plugins.plugin.2.param.8.value == 0.75 tolerance=0.001
+screenshot expander-primary-controls
+assert playback.is_playing == false

@@ -1,0 +1,22 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+[[scenario]]
+name = "gate-reference"
+path = "crates/sotf-dev-driver/scenarios/gate_primary_controls.scn"
+timeout = "45s"
+
+[[scenario]]
+name = "gate-response-controls"
+path = "crates/sotf-dev-driver/scenarios/gate_response_controls.scn"
+timeout = "45s"
+
+[[scenario]]
+name = "gate-detector-narrow"
+path = "crates/sotf-dev-driver/scenarios/gate_detector_section.scn"
+timeout = "90s"
+viewport = "600x1000"
+language = "German"
+font_scale = 1.5
+theme = "Light"

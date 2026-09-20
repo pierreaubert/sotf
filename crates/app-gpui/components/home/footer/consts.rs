@@ -332,17 +332,19 @@ impl PlayerView {
         let bg_surface = theme.surface;
         let border_color = theme.border;
 
-        // Compute window width in rems for responsive breakpoints
-        let responsive_scale = crate::ui::compute_responsive_scale(window_width, window_height);
-        let effective_rem = 16.0
-            * (font_scale * responsive_scale).clamp(
-                crate::ui::DEFAULT_MIN_FONT_SIZE_PX / 16.0,
-                crate::ui::DEFAULT_MAX_FONT_SIZE_PX / 16.0,
-            );
-        let window_width_rems = window_width / effective_rem;
+        // Breakpoints share the shell's resolved sizing context (configured
+        // font bounds included) so shell and footer agree (ui.md Phase 1 P0).
+        let window_width_rems = crate::ui::resolve_sizing_context(
+            window_width,
+            window_height,
+            font_scale,
+            state.app.ui_state.min_font_size_px,
+            state.app.ui_state.max_font_size_px,
+        )
+        .desktop_content_width_rems(state.app.ui_state.primary_nav_collapsed);
 
-        let force_compact_for_enlarged_text =
-            font_scale >= 2.0 && !footer_shows_track_info(window_width_rems, font_scale);
+        let force_compact_for_enlarged_text = window_width_rems < 48.0
+            || (font_scale >= 2.0 && !footer_shows_track_info(window_width_rems, font_scale));
         if footer_collapsed || force_compact_for_enlarged_text {
             return self
                 .render_footer_collapsed(&translations, !force_compact_for_enlarged_text, cx)
@@ -422,14 +424,16 @@ impl PlayerView {
         let progress_bar_fill = theme.feedback.progress_bar_fill;
         let progress_bar_bg = theme.feedback.progress_bar_bg;
 
-        // Compute window width in rems for responsive breakpoints
-        let responsive_scale = crate::ui::compute_responsive_scale(window_width, window_height);
-        let effective_rem = 16.0
-            * (font_scale * responsive_scale).clamp(
-                crate::ui::DEFAULT_MIN_FONT_SIZE_PX / 16.0,
-                crate::ui::DEFAULT_MAX_FONT_SIZE_PX / 16.0,
-            );
-        let window_width_rems = window_width / effective_rem;
+        // Breakpoints share the shell's resolved sizing context (configured
+        // font bounds included) so shell and footer agree (ui.md Phase 1 P0).
+        let window_width_rems = crate::ui::resolve_sizing_context(
+            window_width,
+            window_height,
+            font_scale,
+            state.app.ui_state.min_font_size_px,
+            state.app.ui_state.max_font_size_px,
+        )
+        .desktop_content_width_rems(state.app.ui_state.primary_nav_collapsed);
 
         // Waveform data for the compact collapsed visualization
         let position_secs = state.app.playback.position_secs;

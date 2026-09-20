@@ -35,7 +35,18 @@ impl PlayerView {
         let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id, cx));
         let spinorama = &state.app.measurement_state.spinorama_eq_state;
         let has_result = spinorama.result.is_some();
+        let result_is_current = spinorama.result_is_current();
+        let can_apply = result_is_current && state.app.correction_application_status(&spinorama.delivery, result_is_current)
+            != sotf_audio_player::ui_models::correction_delivery::CorrectionApplicationStatus::Pending;
+        let stale_text =
+            crate::app::i18n::DesktopTranslations::for_language(state.app.ui_state.language)
+                .stale_result;
         let export_format = spinorama.export_format.clone();
+        let export_error = spinorama.error_message.as_ref().map(|error| {
+            crate::app::i18n::RuntimeMessageTranslations::for_language(state.app.ui_state.language)
+                .translate(error)
+                .into_owned()
+        });
 
         VStack::new()
             .spacing(StackSpacing::Md)
@@ -50,6 +61,10 @@ impl PlayerView {
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
+            .child(self.render_correction_export_status(cx, &spinorama.delivery, result_is_current))
+            .when(has_result && !result_is_current, |stack| {
+                stack.child(Text::body(stale_text).color(theme.warning))
+            })
             .when(has_result, |vstack| {
                 let theme = theme.clone();
                 let button_theme = button_theme.clone();
@@ -58,6 +73,7 @@ impl PlayerView {
                     .child(self.render_apply_to_playback_card(
                         cx,
                         "spinorama",
+                        can_apply,
                         &theme,
                         &button_theme,
                         Self::apply_spinorama_eq_result,
@@ -89,33 +105,44 @@ impl PlayerView {
                                                 .map(|(value, label, _ext)| {
                                                     let is_selected = export_format == *value;
                                                     let value = value.to_string();
+                                                    let selected_format = value.clone();
 
-                                                    Button::new(
-                                                        SharedString::from(format!(
-                                                            "spinorama-export-format-{}",
-                                                            value
+                                                    dev_track!(
+                                                        Button::new(
+                                                            SharedString::from(format!(
+                                                                "spinorama-export-format-{}",
+                                                                value
+                                                            )),
+                                                            *label,
+                                                        )
+                                                        .variant(if is_selected {
+                                                            ButtonVariant::Primary
+                                                        } else {
+                                                            ButtonVariant::Secondary
+                                                        })
+                                                        .size(ButtonSize::Xs)
+                                                        .theme(button_theme.clone())
+                                                        .on_click_event(cx.listener(
+                                                            move |view, _, _, cx| {
+                                                                view.state.update(
+                                                                    cx,
+                                                                    |state, _cx| {
+                                                                        state
+                                                                            .app
+                                                                            .measurement_state
+                                                                            .spinorama_eq_state
+                                                                            .export_format =
+                                                                            selected_format.clone();
+                                                                    },
+                                                                );
+                                                                cx.notify();
+                                                            },
                                                         )),
-                                                        *label,
+                                                        format!(
+                                                            "spinorama.export_format.{}",
+                                                            value
+                                                        )
                                                     )
-                                                    .variant(if is_selected {
-                                                        ButtonVariant::Primary
-                                                    } else {
-                                                        ButtonVariant::Secondary
-                                                    })
-                                                    .size(ButtonSize::Xs)
-                                                    .theme(button_theme.clone())
-                                                    .on_click_event(cx.listener(
-                                                        move |view, _, _, cx| {
-                                                            view.state.update(cx, |state, _cx| {
-                                                                state
-                                                                    .app
-                                                                    .measurement_state
-                                                                    .spinorama_eq_state
-                                                                    .export_format = value.clone();
-                                                            });
-                                                            cx.notify();
-                                                        },
-                                                    ))
                                                 }),
                                         )
                                     })
@@ -124,6 +151,7 @@ impl PlayerView {
                                             "save-spinorama-eq",
                                             discovery_text.save_eq_file,
                                         )
+                                        .disabled(!result_is_current)
                                         .variant(ButtonVariant::Primary)
                                         .size(ButtonSize::Sm)
                                         .theme(button_theme.clone())
@@ -133,7 +161,13 @@ impl PlayerView {
                                             }),
                                         ),
                                         "spinorama.export_save"
-                                    )),
+                                    ))
+                                    .when_some(export_error, |content, error| {
+                                        content.child(dev_track!(
+                                            Text::body(error).color(theme.error),
+                                            "spinorama.export_error"
+                                        ))
+                                    }),
                             ),
                     )
             })

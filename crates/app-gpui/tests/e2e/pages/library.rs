@@ -38,35 +38,44 @@ impl<'a, 'b> LibraryPage<'a, 'b> {
     }
 
     pub fn click_library_search_tab(&mut self) -> Result<(), Box<dyn Error>> {
-        self.click_debug_element("tab-search", "library search tab")
+        self.click_search_input()
     }
 
     pub fn click_library_filter_tab(&mut self) -> Result<(), Box<dyn Error>> {
-        self.click_debug_element("tab-filter", "library filter tab")
+        self.click_debug_element("library-tool-filter", "library filter tab")
     }
 
     pub fn click_library_year_tab(&mut self) -> Result<(), Box<dyn Error>> {
-        self.click_debug_element("tab-year", "library year tab")
+        if !self.is_filter_menu_open() {
+            self.click_library_filter_tab()?;
+        }
+        self.click_debug_element("library-browse-year", "library year filter")
     }
 
     pub fn click_library_genre_tab(&mut self) -> Result<(), Box<dyn Error>> {
-        self.click_debug_element("tab-genre", "library genre tab")
+        if !self.is_filter_menu_open() {
+            self.click_library_filter_tab()?;
+        }
+        self.click_debug_element("library-browse-genre", "library genre filter")
     }
 
     pub fn click_library_artist_tab(&mut self) -> Result<(), Box<dyn Error>> {
-        self.click_debug_element("tab-artist", "library artist tab")
+        self.click_debug_element("library-view-artist", "library artist tab")
     }
 
     pub fn click_library_album_tab(&mut self) -> Result<(), Box<dyn Error>> {
-        self.click_debug_element("tab-album", "library album tab")
+        self.click_debug_element("library-view-album", "library album tab")
     }
 
     pub fn click_library_tracks_tab(&mut self) -> Result<(), Box<dyn Error>> {
-        self.click_debug_element("tab-tracks", "library tracks tab")
+        self.click_debug_element("library-view-tracks", "library tracks tab")
     }
 
     pub fn click_library_composer_tab(&mut self) -> Result<(), Box<dyn Error>> {
-        self.click_debug_element("tab-composer", "library composer tab")
+        if !self.is_filter_menu_open() {
+            self.click_library_filter_tab()?;
+        }
+        self.click_debug_element("library-browse-composer", "library composer filter")
     }
 
     pub fn click_channel_filter_button(

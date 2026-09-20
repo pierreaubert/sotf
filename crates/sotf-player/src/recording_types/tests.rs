@@ -4,6 +4,68 @@ use super::types::MicrophonePreset;
 use super::types::MicrophonePresetsConfig;
 
 #[test]
+fn recording_result_preserves_sample_rate_and_legacy_unknown() {
+    let legacy = serde_json::json!({
+        "channel": 0,
+        "frequencies": [100.0, 1000.0],
+        "magnitude_db": [0.0, 0.0],
+        "phase_deg": [0.0, 0.0]
+    });
+    let mut result: super::RecordingResult = serde_json::from_value(legacy).unwrap();
+    assert_eq!(result.sample_rate_hz, None);
+    assert!(!result.can_reconstruct_impulse());
+    assert!(
+        serde_json::to_value(&result)
+            .unwrap()
+            .get("sample_rate_hz")
+            .is_none()
+    );
+    for rate in [44_100, 48_000, 96_000] {
+        result.sample_rate_hz = Some(rate);
+        let restored: super::RecordingResult =
+            serde_json::from_str(&serde_json::to_string(&result).unwrap()).unwrap();
+        assert_eq!(restored.sample_rate_hz, Some(rate));
+        assert!(restored.can_reconstruct_impulse());
+    }
+    result.phase_deg.clear();
+    assert!(!result.can_reconstruct_impulse());
+    result.phase_deg = vec![0.0, 0.0];
+    result.frequencies = vec![1000.0, 100.0];
+    assert!(!result.can_reconstruct_impulse());
+    result.frequencies = vec![100.0, 1000.0];
+    result.magnitude_db[0] = f32::NAN;
+    assert!(!result.can_reconstruct_impulse());
+}
+
+#[test]
+fn measured_impulse_preserves_legacy_timing_and_rejects_invalid_axes() {
+    let mut result: super::RecordingResult = serde_json::from_value(serde_json::json!({
+        "channel": 0, "frequencies": [], "magnitude_db": [], "phase_deg": [],
+        "impulse_time_ms": [-1.0, 0.0, 1.0],
+        "impulse_response": [0.0, 1.0, 0.25]
+    }))
+    .unwrap();
+    assert_eq!(result.sample_rate_hz, None);
+    assert_eq!(
+        result.measured_impulse(),
+        Some(([-1.0, 0.0, 1.0].as_slice(), [0.0, 1.0, 0.25].as_slice()))
+    );
+    for times in [
+        vec![],
+        vec![0.0],
+        vec![0.0, 0.0, 1.0],
+        vec![1.0, 0.0, -1.0],
+        vec![0.0, f32::NAN, 1.0],
+    ] {
+        result.impulse_time_ms = Some(times);
+        assert!(result.measured_impulse().is_none());
+    }
+    result.impulse_time_ms = Some(vec![-1.0, 0.0, 1.0]);
+    result.impulse_response = Some(vec![0.0, f32::INFINITY, 0.0]);
+    assert!(result.measured_impulse().is_none());
+}
+
+#[test]
 fn test_calibration_for_channel_returns_none_for_out_of_bounds() {
     let config = RecordingDeviceConfig::default();
     assert!(config.calibration_for_channel(5).is_none());

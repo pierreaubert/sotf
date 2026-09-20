@@ -202,7 +202,8 @@ fn documentation_specs() -> Vec<DocumentationSpec> {
             actions::SetFilterSurroundPlus,
         )
         .help_only(),
-        documentation!(Library, "Add to queue", actions::Enter),
+        documentation!(Library, "Add to queue", actions::AddToQueue),
+        documentation!(Library, "Open album details", actions::Enter),
         documentation!(Library, "Add library directory", actions::AddDirectory),
         documentation!(Library, "Scan library", actions::ScanLibrary),
         documentation!(Queue, "Remove item", actions::RemoveItem),
@@ -257,6 +258,18 @@ fn documentation_specs() -> Vec<DocumentationSpec> {
             "Commit the first/A or second/B answer",
             actions::ListeningCommitAnswer1,
             actions::ListeningCommitAnswer2,
+        )
+        .help_only(),
+        documentation!(
+            ListeningTests,
+            "Toggle optional confidence and notes",
+            actions::ListeningToggleMetadata
+        )
+        .help_only(),
+        documentation!(
+            ListeningTests,
+            "Toggle trial details",
+            actions::ListeningToggleTrialDetails
         )
         .help_only(),
         documentation!(
@@ -367,7 +380,8 @@ fn screen_documentation_specs(screen: Screen) -> Vec<DocumentationSpec> {
                 actions::SelectRight,
             ),
             documentation!(Library, "Search albums", actions::ToggleSearch),
-            documentation!(Library, "Add album to queue", actions::Enter),
+            documentation!(Library, "Add album to queue", actions::AddToQueue),
+            documentation!(Library, "Open album details", actions::Enter),
             documentation!(Playback, "Play/Pause", actions::PlayPause),
         ],
         Screen::NowPlaying => vec![
@@ -428,7 +442,8 @@ fn screen_documentation_specs(screen: Screen) -> Vec<DocumentationSpec> {
                 actions::SetFilterSurround71,
                 actions::SetFilterSurroundPlus,
             ),
-            documentation!(Library, "Add album to queue", actions::Enter),
+            documentation!(Library, "Add album to queue", actions::AddToQueue),
+            documentation!(Library, "Open album details", actions::Enter),
             documentation!(ScreenSwitch, "Go to queue screen", actions::SwitchToQueue),
         ],
         Screen::Streams => vec![
@@ -606,6 +621,16 @@ fn screen_documentation_specs(screen: Screen) -> Vec<DocumentationSpec> {
                 "Commit the first/A or second/B answer",
                 actions::ListeningCommitAnswer1,
                 actions::ListeningCommitAnswer2,
+            ),
+            documentation!(
+                ListeningTests,
+                "Toggle optional confidence and notes",
+                actions::ListeningToggleMetadata
+            ),
+            documentation!(
+                ListeningTests,
+                "Toggle trial details",
+                actions::ListeningToggleTrialDetails
             ),
             documentation!(
                 ListeningTests,

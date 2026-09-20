@@ -1,90 +1,46 @@
-// Section 1: Capability — select filter mode (IIR / FIR / Mixed / Mixed Phase)
-// This file is include!()'d from render_body.rs, sharing its scope.
+// Section 1: Capability — select the parent workflow's supported filter mode.
+// Included from render_body.rs and render_body_room_eq.rs.
 {
-    let d = crate::components::design::Ds::from_cx(cx);
-    let mut section = VStack::new().spacing(StackSpacing::Sm);
+    use gpui_ui_kit::{RadioGroup, RadioGroupSize, RadioOption};
 
-    // Header
-    section = section.child(
+    let mut section = VStack::new().spacing(StackSpacing::Sm).child(
         VStack::new()
             .spacing(StackSpacing::None)
             .child(Text::section_header(translations.autoeq_form.capability).color(theme.header_color))
-            .child(
-                Text::new(translations.autoeq_select_filter_engine)
-                    .size(TextSize::Xs)
-                    .color(theme.description_color),
-            ),
+            .child(Text::caption(translations.autoeq_select_filter_engine).color(theme.description_color)),
     );
-
-    // Compute FIR latency string
-    let fir_latency_label = format!("{:.0} ms", fir_latency_ms);
-
-    // Mode definitions: (id, label, latency, description, recommended)
-    let modes: Vec<(&str, &str, String, &str, bool)> = vec![
-        ("iir", "IIR", "<1 ms".to_string(), "Parametric IIR only", true),
-        ("fir", "FIR", fir_latency_label.clone(), "Classical FIR mode", false),
-        ("mixed", "Mixed", fir_latency_label.clone(), "Mix IIR and FIR (lower latency FIR)", false),
-        ("mixed_phase", "Mixed Phase", ">10 ms".to_string(), "Mix IIR and FIR on excess phase only", true),
-    ];
-
-    for (mode_id, label, latency, description, recommended) in &modes {
-        // Skip modes not in allowed list
-        if let Some(ref allowed) = allowed_opt_modes
-            && !allowed.contains(&mode_id.to_string())
-        {
-            continue;
+    let fir_duration_label = format!(
+        "{}: {:.0} ms",
+        translations.autoeq_form.blocks.fir_taps, fir_duration_ms
+    );
+    let modes = ["iir", "fir", "mixed", "mixed_phase"];
+    let options = modes.into_iter().enumerate().filter_map(|(index, mode)| {
+        let label = stage_text.mode_labels[index];
+        let description = stage_text.mode_descriptions[index];
+        if allowed_opt_modes.as_ref().is_some_and(|allowed| !allowed.iter().any(|value| value == mode)) {
+            return None;
         }
-
-        let is_selected = config.eq_design.opt_mode == *mode_id;
-        let on_opt_mode_change = on_opt_mode_change_rc.clone();
-        let mode_id_owned = mode_id.to_string();
-
-        let mut label_text = label.to_string();
-        if *recommended {
-            label_text.push_str(" (recommended)");
-        }
-
-        let row = HStack::new()
-            .spacing(StackSpacing::Md)
-            .align(StackAlign::Center)
-            .child(
-                div()
-                    .flex_shrink_0()
-                    .w(rems(1.0))
-                    .h(rems(1.0))
-                    .rounded(d.r_lg)
-                    .border_1()
-                    .border_color(if is_selected { theme.accent } else { theme.border })
-                    .when(is_selected, |el| el.bg(theme.accent)),
-            )
-            .child(Text::selectable(label_text, is_selected).color(theme.label_color))
-            .child(
-                Text::new(latency.clone())
-                    .size(TextSize::Xs)
-                    .color(theme.description_color),
-            )
-            .child(
-                Text::new(*description)
-                    .size(TextSize::Xs)
-                    .color(theme.description_color),
-            );
-
-        section = section.child(
-            div()
-                .px(d.gap)
-                .py(d.pad_y_half)
-                .rounded(d.r_md)
-                .border_1()
-                .border_color(if is_selected { theme.accent } else { theme.border })
-                .cursor_pointer()
-                .on_mouse_down(MouseButton::Left, move |_event, window, cx| {
-                    if let Some(ref handler) = on_opt_mode_change {
-                        handler(&mode_id_owned, window, cx);
-                    }
-                })
-                .child(row),
-        );
+        let label = if mode == "iir" {
+            format!("{label} · {description}")
+        } else {
+            format!("{label} · {fir_duration_label} · {description}")
+        };
+        Some(RadioOption::new(mode, label))
+    }).collect();
+    let mut choices = RadioGroup::new((base_id.clone(), "capability"))
+        .options(options)
+        .selected(Some(config.eq_design.opt_mode.clone().into()))
+        .size(RadioGroupSize::Sm)
+        .disabled(disabled || on_opt_mode_change_rc.is_none())
+        .aria_label(translations.autoeq_form.capability);
+    if let Some(handler) = on_opt_mode_change_rc.clone() {
+        choices = choices.on_change(move |value, window, cx| handler(value.as_ref(), window, cx));
     }
-
+    #[cfg(feature = "dev-api")]
+    let choices = {
+        use crate::app::dev_api::DevTrackExt;
+        choices.dev_track("autoeq.capability")
+    };
+    section = section.child(choices);
     Card::new().content(section)
 }

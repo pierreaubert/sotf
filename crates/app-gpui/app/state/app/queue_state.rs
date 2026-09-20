@@ -34,6 +34,7 @@ pub struct QueueState {
     pub selected_index: usize,
     last_cleared: Option<ClearedQueueSnapshot>,
     last_removed: Option<RemovedQueueSnapshot>,
+    last_removed_track: Option<sotf_audio_player::controllers::UpcomingTrackRemoval>,
 }
 
 impl Deref for QueueState {
@@ -63,6 +64,7 @@ impl QueueState {
             selected_index: 0,
             last_cleared: None,
             last_removed: None,
+            last_removed_track: None,
         }
     }
 
@@ -70,6 +72,7 @@ impl QueueState {
     /// would discard the newer user action. Only the latest destructive action
     /// remains recoverable.
     fn invalidate_undo(&mut self) {
+        self.last_removed_track = None;
         self.last_cleared = None;
         self.last_removed = None;
     }
@@ -80,6 +83,19 @@ impl QueueState {
         let idx = self.ctrl.add_album(album)?;
         self.expanded.push(false);
         Ok(idx)
+    }
+
+    pub fn enqueue_next(&mut self, album: sotf_audio_player::Album) -> Result<usize, String> {
+        let old_len = self.ctrl.len();
+        let index = self.ctrl.enqueue_next(album)?;
+        self.invalidate_undo();
+        let added = self.ctrl.len() - old_len;
+        self.expanded
+            .splice(index..index, std::iter::repeat_n(false, added));
+        if self.selected_index >= index && old_len > 0 {
+            self.selected_index += added;
+        }
+        Ok(index)
     }
 
     /// Add album and immediately jump to it for playback.
@@ -113,6 +129,7 @@ impl QueueState {
             return (QueuePlaybackEffect::None, false);
         }
         self.last_cleared = None;
+        self.last_removed_track = None;
         self.last_removed = Some(RemovedQueueSnapshot {
             ctrl: self.ctrl.clone(),
             expanded: self.expanded.clone(),
@@ -134,9 +151,13 @@ impl QueueState {
     /// Move an album and its corresponding expansion state together. This is
     /// deliberately not undoable through the destructive-action undo slots.
     pub fn move_item(&mut self, from: usize, to: usize) -> bool {
+        // Bridge the UI selection into the shared controller so its identity
+        // remapping also covers selections changed by pointer navigation.
+        self.ctrl.selected_index = self.selected_index;
         if !self.ctrl.move_item(from, to) {
             return false;
         }
+        self.selected_index = self.ctrl.selected_index;
         let expanded = self.expanded.remove(from);
         self.expanded.insert(to, expanded);
         self.invalidate_undo();
@@ -145,6 +166,7 @@ impl QueueState {
 
     /// Clear all items from the queue.
     pub fn clear(&mut self) {
+        self.last_removed_track = None;
         self.last_removed = None;
         self.last_cleared = (!self.ctrl.is_empty()).then(|| ClearedQueueSnapshot {
             ctrl: self.ctrl.clone(),
@@ -174,13 +196,21 @@ impl QueueState {
     }
 
     pub fn can_undo_remove(&self) -> bool {
-        self.last_removed.is_some()
+        self.last_removed.is_some() || self.last_removed_track.is_some()
     }
 
     /// Restore the exact queue state before the most recent item removal.
     /// Returns whether the removed item was the selected playback item, so the
     /// app can reload audio only when continuing playback requires it.
     pub fn undo_remove(&mut self) -> Option<bool> {
+        if let Some(removal) = self.last_removed_track.take() {
+            if !self.ctrl.undo_upcoming_track_removal(removal) {
+                return None;
+            }
+            self.expanded = vec![false; self.ctrl.len()];
+            self.selected_index = self.ctrl.selected_index;
+            return Some(false);
+        }
         let snapshot = self.last_removed.take()?;
         self.ctrl = snapshot.ctrl;
         self.expanded = snapshot.expanded;
@@ -188,6 +218,27 @@ impl QueueState {
             .selected_index
             .min(self.ctrl.len().saturating_sub(1));
         Some(snapshot.removed_was_current)
+    }
+
+    pub fn remove_upcoming_track(&mut self, index: usize) -> bool {
+        let Some(removal) = self.ctrl.remove_upcoming_track(index) else {
+            return false;
+        };
+        self.invalidate_undo();
+        self.last_removed_track = Some(removal);
+        self.expanded = vec![false; self.ctrl.len()];
+        self.selected_index = self.ctrl.selected_index;
+        true
+    }
+
+    pub fn move_upcoming_track(&mut self, from: usize, to: usize) -> bool {
+        if !self.ctrl.move_upcoming_track(from, to) {
+            return false;
+        }
+        self.invalidate_undo();
+        self.expanded = vec![false; self.ctrl.len()];
+        self.selected_index = self.ctrl.selected_index;
+        true
     }
 
     /// Fill queue with "magic" recommendations.

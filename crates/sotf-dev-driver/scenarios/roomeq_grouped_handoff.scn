@@ -1,0 +1,42 @@
+# Real grouped Recording import, handed to RoomEQ via the visible action.
+focus recording
+wait_until recording.done_count == 8 timeout=10s
+focus room-e-q
+click roomeq.load_from_recording
+assert roomeq.has_multi_driver == true
+assert roomeq.driver_count.L == 2
+assert roomeq.driver_count.R == 2
+assert roomeq.position_count.L == 2
+assert roomeq.position_count.R == 2
+assert roomeq.multi_measurement_enabled == true
+click roomeq.next
+click roomeq.next
+scroll_into_view roomeq.content roomeq.select_full
+click roomeq.select_full
+scroll roomeq.content 10000
+screenshot grouped-stage-navigation
+scroll_into_view roomeq.content autoeq.stage.4
+click autoeq.stage.4
+resize 600 1000
+scroll roomeq.content -10000
+screenshot grouped-review-summary
+scroll_into_view roomeq.content roomeq.channel-summary.0
+screenshot grouped-review-channel-0
+scroll_into_view roomeq.content roomeq.channel-summary.1
+screenshot grouped-review-channel-1
+scroll roomeq.content 10000
+scroll_into_view roomeq.content autoeq.stage.2
+click autoeq.stage.2
+scroll roomeq.content -10000
+screenshot grouped-timing-controls
+scroll_into_view roomeq.content roomeq.channel-controls.0
+screenshot grouped-timing-channel-0
+scroll_into_view roomeq.content roomeq.channel-controls.1
+scroll roomeq.content -180
+screenshot grouped-timing-channel-1
+assert roomeq.driver_count.L == 2
+assert roomeq.driver_count.R == 2
+assert roomeq.position_count.L == 2
+assert roomeq.position_count.R == 2
+assert roomeq.multi_measurement_enabled == true
+assert playback.is_playing == false

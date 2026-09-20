@@ -133,7 +133,7 @@ fn test_room_eq_to_room_config_preserves_imported_system_and_crossovers() {
         speakers,
         subwoofers: Some(autoeq::roomeq::SubwooferSystemConfig {
             config: autoeq::roomeq::SubwooferStrategy::Single,
-            crossover: Some("cli_xover".to_string()),
+            crossover: Some("cli_xover".into()),
             mapping: HashMap::new(),
         }),
         bass_management: Some(autoeq::roomeq::BassManagementConfig {
@@ -216,9 +216,13 @@ fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
         asymmetric_loss_config: None,
         perceptual_policy: None,
         audibility_deadband: None,
+        filter_audibility: None,
+        pruning_budget: None,
         high_frequency_correction: None,
         early_late_correction: None,
         validation_bundle: None,
+        permitted_output_gain_db: HashMap::new(),
+        upper_band_acoustic_bounds: HashMap::new(),
         tolerance: 1e-5,
         atolerance: 1e-5,
         allow_delay: None,
@@ -253,8 +257,11 @@ fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
 
 fn make_dummy_measurement(channel: &str) -> ChannelMeasurement {
     ChannelMeasurement {
+        driver_measurement_sets: Vec::new(),
+        provenance: Vec::new(),
         channel_name: channel.to_string(),
         measurement: RecordingResult {
+            sample_rate_hz: None,
             channel: 0,
             frequencies: vec![100.0, 1000.0, 5000.0],
             magnitude_db: vec![70.0, 75.0, 72.0],

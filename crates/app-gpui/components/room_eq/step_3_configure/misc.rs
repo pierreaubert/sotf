@@ -2,8 +2,8 @@ use super::super::render::render_channel_config_row;
 use crate::app::i18n::RoomEqReportTranslations;
 use crate::app::types::RoomEqOptimizationMode;
 use crate::components::autoeq::{
-    AlgorithmConfig, AutoEqConfig, AutoEqForm, AutoEqFormUiState, AutoEqLayoutMode, EqDesignConfig,
-    GoalsConfig, RoomCorrectionConfig, SystemOptimizationConfig, V2Config,
+    AlgorithmConfig, AutoEqConfig, AutoEqForm, AutoEqFormUiState, AutoEqLayoutMode, AutoEqStage,
+    EqDesignConfig, GoalsConfig, RoomCorrectionConfig, SystemOptimizationConfig, V2Config,
 };
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
@@ -40,6 +40,7 @@ impl PlayerView {
         let release_channel = state.app.ui_state.release_channel;
         let has_phase_data = room_eq.has_phase_data();
         let has_multi_driver = room_eq.has_multi_driver();
+        let stage = room_eq.autoeq_stage;
 
         // Build AutoEqConfig from our RoomEqOptimizerConfig
         let config = &room_eq.optimizer_config;
@@ -164,6 +165,7 @@ impl PlayerView {
 
         // Build AutoEqFormUiState from our dropdowns
         let autoeq_ui_state = AutoEqFormUiState {
+            stage: room_eq.autoeq_stage,
             detail_level: room_eq.detail_level,
             selected_preset: Some(room_eq.selected_preset.clone()),
             opt_mode_open: room_eq.dropdowns.opt_mode_open,
@@ -1736,6 +1738,15 @@ impl PlayerView {
                     });
                 }
             })
+            .on_stage_change({
+                let state = self.state.clone();
+                move |stage, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state.app.measurement_state.room_eq_state.autoeq_stage = stage;
+                        cx.notify();
+                    });
+                }
+            })
             .on_detail_level_change({
                 let state = self.state.clone();
                 move |level, _window, cx| {
@@ -1863,7 +1874,7 @@ impl PlayerView {
             .child(autoeq_form);
 
         // Only show channel configuration for multi-driver measurements
-        if has_multi_driver {
+        if has_multi_driver && matches!(stage, AutoEqStage::Timing | AutoEqStage::Review) {
             content = content.child(
                 Card::new()
                     .background(theme.surface)
@@ -1874,11 +1885,14 @@ impl PlayerView {
                             .color(theme.text_primary)
                             .weight(TextWeight::Semibold),
                     )
-                    .content(self.render_channel_config_list(cx)),
+                    .content(self.render_channel_config_list(stage == AutoEqStage::Review, cx)),
             );
         }
 
-        content = content.child(self.render_epa_temporal_masking_card(cx));
+        if matches!(stage, AutoEqStage::Timing | AutoEqStage::Review) {
+            content = content
+                .child(self.render_epa_temporal_masking_card(stage == AutoEqStage::Review, cx));
+        }
 
         content.child(self.render_room_eq_validation_summary(cx))
     }
@@ -1892,7 +1906,11 @@ impl PlayerView {
     /// autoeq defaults (3 ms / 120 ms) unless a future iteration wires
     /// dedicated numeric editors. The full-detail Step-3 form is already
     /// dense, so the card keeps its inputs as cycling buttons.
-    pub(super) fn render_epa_temporal_masking_card(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn render_epa_temporal_masking_card(
+        &self,
+        read_only: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         use sotf_audio_player::room_eq_types::{EpaTemporalMaskingConfig, EpaTemporalProfile};
         let state = self.state.read(cx);
         let d = Ds::from_cx(cx);
@@ -1955,6 +1973,40 @@ impl PlayerView {
         let profile = cfg.profile;
         let ir_enabled = cfg.ir_enabled;
         let ir_weight = cfg.ir_weight;
+
+        if read_only {
+            let labels = crate::app::i18n::AutoEqStageTranslations::for_language(
+                self.state.read(cx).app.ui_state.language,
+            );
+            return Card::new()
+                .header(header)
+                .content(
+                    VStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .child(Text::body(format!(
+                            "{}: {} · {} · {}",
+                            text.modal,
+                            if enabled {
+                                labels.enabled
+                            } else {
+                                labels.disabled
+                            },
+                            weight,
+                            profile.as_str()
+                        )))
+                        .child(Text::body(format!(
+                            "{}: {} · {}",
+                            text.fir_ir,
+                            if ir_enabled {
+                                labels.enabled
+                            } else {
+                                labels.disabled
+                            },
+                            ir_weight
+                        ))),
+                )
+                .into_any_element();
+        }
 
         let row_modal = HStack::new()
             .spacing(StackSpacing::Md)
@@ -2170,11 +2222,15 @@ impl PlayerView {
             content = content.child(
                 HStack::new()
                     .spacing(StackSpacing::Xs)
+                    .align(gpui_ui_kit::stack::StackAlign::Start)
+                    .width(gpui_ui_kit::stack::StackSize::Full)
                     .child(Text::new("!").color(theme.error).weight(TextWeight::Bold))
                     .child(
-                        Text::new(error.clone())
-                            .size(TextSize::Xs)
-                            .color(theme.error),
+                        div().flex_1().min_w_0().child(
+                            Text::new(error.clone())
+                                .size(TextSize::Xs)
+                                .color(theme.error),
+                        ),
                     ),
             );
         }
@@ -2183,11 +2239,15 @@ impl PlayerView {
             content = content.child(
                 HStack::new()
                     .spacing(StackSpacing::Xs)
+                    .align(gpui_ui_kit::stack::StackAlign::Start)
+                    .width(gpui_ui_kit::stack::StackSize::Full)
                     .child(Text::new("?").color(theme.warning).weight(TextWeight::Bold))
                     .child(
-                        Text::new(warning.clone())
-                            .size(TextSize::Xs)
-                            .color(theme.warning),
+                        div().flex_1().min_w_0().child(
+                            Text::new(warning.clone())
+                                .size(TextSize::Xs)
+                                .color(theme.warning),
+                        ),
                     ),
             );
         }
@@ -2210,7 +2270,11 @@ impl PlayerView {
     }
 
     /// Render the list of channel configurations
-    pub(super) fn render_channel_config_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_channel_config_list(
+        &self,
+        read_only: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
@@ -2248,7 +2312,54 @@ impl PlayerView {
             .iter()
             .enumerate()
             .map(|(idx, config)| {
-                render_channel_config_row(
+                if read_only {
+                    let summary = VStack::new()
+                        .spacing(StackSpacing::Xs)
+                        .child(Text::label(config.channel_name.clone()))
+                        .child(Text::body(config.driver_names.join(", ")))
+                        .when(
+                            config.config_type == crate::app::types::SpeakerConfigType::MultiDriver,
+                            |summary| {
+                                summary
+                                    .child(Text::body(config.crossover_type.as_str()))
+                                    .when(!config.crossover_freq_hints.is_empty(), |summary| {
+                                        summary.child(Text::body(format!(
+                                            "{} Hz",
+                                            config
+                                                .crossover_freq_hints
+                                                .iter()
+                                                .map(|value| value.to_string())
+                                                .collect::<Vec<_>>()
+                                                .join(", ")
+                                        )))
+                                    })
+                                    .when(
+                                        matches!(
+                                            config.crossover_type,
+                                            crate::app::types::CrossoverType::LinearPhase
+                                        ),
+                                        |summary| {
+                                            summary.child(Text::body(format!(
+                                                "{} taps · {:.1} ms",
+                                                config.linear_phase_fir_taps,
+                                                config.linear_phase_fir_taps.saturating_sub(1)
+                                                    as f64
+                                                    / 2.0
+                                                    / sample_rate_hz
+                                                    * 1000.0
+                                            )))
+                                        },
+                                    )
+                            },
+                        )
+                        .into_any_element();
+                    return dev_track!(
+                        div().w_full().min_w_0().child(summary),
+                        format!("roomeq.channel-summary.{idx}")
+                    )
+                    .into_any_element();
+                }
+                let controls = render_channel_config_row(
                     idx,
                     config,
                     text,
@@ -2258,6 +2369,12 @@ impl PlayerView {
                     d,
                     sample_rate_hz,
                 )
+                .into_any_element();
+                dev_track!(
+                    div().w_full().min_w_0().child(controls),
+                    format!("roomeq.channel-controls.{idx}")
+                )
+                .into_any_element()
             })
             .collect();
 

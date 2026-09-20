@@ -1,0 +1,25 @@
+# Routing exact entry: the draft remains isolated until acknowledged Apply.
+# Run with routing_numeric_apply_ui.toml; the suite runner isolates QA state.
+focus PluginGraph
+wait_idle 2s
+click routing.node.2
+action GraphEditSelectedNode
+wait_idle
+assert plugins.plugin.1.param.0.value == 0 tolerance=0.001
+click plugin.param.1.0.exact
+key cmd-a
+type "-6"
+key enter
+wait_idle
+assert routing.dirty == true
+assert routing.active_matches_base == true
+assert plugins.plugin.1.param.0.value == 0 tolerance=0.001
+screenshot routing-numeric-inspector
+click routing.inspector.close
+assert routing.inspector_close_pending == true
+click routing.inspector.keep
+click routing-apply
+wait_until routing.applying == false timeout=5s
+assert routing.dirty == false
+assert plugins.plugin.1.param.0.value == -6 tolerance=0.001
+assert playback.is_playing == false

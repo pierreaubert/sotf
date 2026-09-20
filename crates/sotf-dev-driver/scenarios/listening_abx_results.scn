@@ -1,0 +1,62 @@
+action ListeningResetGuide
+click listening.guide.acknowledge
+click listening.tab-comparison
+action ListeningSetSourceFixture {"mode":"comparison"}
+assert playback.is_playing == false
+wait_idle 1s
+screenshot listening-setup-header
+scroll_into_view listening.comparison.content listening.planned-trials
+click listening.planned-trials
+key cmd-a
+type "25"
+key enter
+wait_until listening.planned_trials == 25 timeout=3s
+scroll_into_view listening.comparison.content listening.capture.a
+assert_in_viewport listening.capture.a
+click listening.capture.a
+wait_idle 500ms
+scroll_into_view listening.comparison.content listening.capture.b
+assert_in_viewport listening.capture.b
+click listening.capture.b
+wait_until listening.paths_ready == true timeout=3s
+wait_idle 1s
+scroll_into_view listening.comparison.content listening.session.prepare
+click listening.session.prepare
+wait_until listening.session_ready == true timeout=20s
+key ctrl-x
+wait_until listening.pending_mode == "Abx" timeout=3s
+key alt-3
+wait_idle 500ms
+assert playback.is_playing == false
+key alt-a
+wait_until listening.completed_trials == 1 timeout=3s
+assert listening.completed_trials == 1
+assert listening.results_open == false
+assert_absent listening.preference-totals
+scroll_into_view listening.workspace.content listening.view-results
+click listening.view-results
+wait_until listening.results_open == true timeout=3s
+resize 600 1000
+wait_idle 1s
+assert listening.abx_total == 1
+screenshot listening-abx-results
+assert playback.is_playing == false
+scroll_into_view listening.workspace.content listening.session.comparison-save-results
+click listening.session.comparison-save-results
+wait_until listening.session_file_exists == true timeout=5s
+action ListeningClearSession
+assert listening.session_exists == false
+wait_idle 1s
+scroll_into_view listening.comparison.content listening.session.listening-load-session
+click listening.session.listening-load-session
+wait_until listening.completed_trials == 1 timeout=5s
+assert listening.planned_trials == 25
+assert listening.abx_total == 1
+assert listening.pending_mode == null
+wait_idle 1s
+scroll_into_view listening.workspace.content listening.view-results
+click listening.view-results
+wait_until listening.results_open == true timeout=3s
+assert listening.abx_total == 1
+screenshot listening-abx-results-reloaded
+assert playback.is_playing == false

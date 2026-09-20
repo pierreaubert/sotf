@@ -1,0 +1,225 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+size = "1440x900"
+
+[[scenario]]
+name = "editor-AAE"
+path = "crates/sotf-dev-driver/scenarios/plugins/AAE.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-ABCompare"
+path = "crates/sotf-dev-driver/scenarios/plugins/ABCompare.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Aec"
+path = "crates/sotf-dev-driver/scenarios/plugins/Aec.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-AmbisonicsDecoder"
+path = "crates/sotf-dev-driver/scenarios/plugins/AmbisonicsDecoder.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-BandMerge"
+path = "crates/sotf-dev-driver/scenarios/plugins/BandMerge.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-BandSplit"
+path = "crates/sotf-dev-driver/scenarios/plugins/BandSplit.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Beamformer"
+path = "crates/sotf-dev-driver/scenarios/plugins/Beamformer.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-BinauralDecoder"
+path = "crates/sotf-dev-driver/scenarios/plugins/BinauralDecoder.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-ChannelMuteSolo"
+path = "crates/sotf-dev-driver/scenarios/plugins/ChannelMuteSolo.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Compressor"
+path = "crates/sotf-dev-driver/scenarios/plugins/Compressor.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Convolution"
+path = "crates/sotf-dev-driver/scenarios/plugins/Convolution.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Crossfeed"
+path = "crates/sotf-dev-driver/scenarios/plugins/Crossfeed.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Crossover"
+path = "crates/sotf-dev-driver/scenarios/plugins/Crossover.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-DeEsser"
+path = "crates/sotf-dev-driver/scenarios/plugins/DeEsser.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Declick"
+path = "crates/sotf-dev-driver/scenarios/plugins/Declick.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Delay"
+path = "crates/sotf-dev-driver/scenarios/plugins/Delay.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Denoiser"
+path = "crates/sotf-dev-driver/scenarios/plugins/Denoiser.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Dither"
+path = "crates/sotf-dev-driver/scenarios/plugins/Dither.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Downmix"
+path = "crates/sotf-dev-driver/scenarios/plugins/Downmix.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-DynamicEq"
+path = "crates/sotf-dev-driver/scenarios/plugins/DynamicEq.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-EQ"
+path = "crates/sotf-dev-driver/scenarios/plugins/EQ.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Expander"
+path = "crates/sotf-dev-driver/scenarios/plugins/Expander.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-FletcherMunson"
+path = "crates/sotf-dev-driver/scenarios/plugins/FletcherMunson.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Gain"
+path = "crates/sotf-dev-driver/scenarios/plugins/Gain.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Gate"
+path = "crates/sotf-dev-driver/scenarios/plugins/Gate.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-HissReducer"
+path = "crates/sotf-dev-driver/scenarios/plugins/HissReducer.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Limiter"
+path = "crates/sotf-dev-driver/scenarios/plugins/Limiter.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-LinearPhaseEq"
+path = "crates/sotf-dev-driver/scenarios/plugins/LinearPhaseEq.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-LoudnessCompensation"
+path = "crates/sotf-dev-driver/scenarios/plugins/LoudnessCompensation.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-LoudnessMonitor"
+path = "crates/sotf-dev-driver/scenarios/plugins/LoudnessMonitor.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Matrix"
+path = "crates/sotf-dev-driver/scenarios/plugins/Matrix.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-MonoToStereo"
+path = "crates/sotf-dev-driver/scenarios/plugins/MonoToStereo.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-MultibandCompressor"
+path = "crates/sotf-dev-driver/scenarios/plugins/MultibandCompressor.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-MultibandExpander"
+path = "crates/sotf-dev-driver/scenarios/plugins/MultibandExpander.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Pnd"
+path = "crates/sotf-dev-driver/scenarios/plugins/Pnd.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Saturation"
+path = "crates/sotf-dev-driver/scenarios/plugins/Saturation.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-SpectralCompressor"
+path = "crates/sotf-dev-driver/scenarios/plugins/SpectralCompressor.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-SpectrumAnalyzer"
+path = "crates/sotf-dev-driver/scenarios/plugins/SpectrumAnalyzer.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-SpeechDenoiser"
+path = "crates/sotf-dev-driver/scenarios/plugins/SpeechDenoiser.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-StereoImager"
+path = "crates/sotf-dev-driver/scenarios/plugins/StereoImager.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-TransientShaper"
+path = "crates/sotf-dev-driver/scenarios/plugins/TransientShaper.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-Upmixer"
+path = "crates/sotf-dev-driver/scenarios/plugins/Upmixer.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "editor-XTC"
+path = "crates/sotf-dev-driver/scenarios/plugins/XTC.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "matrix-rack-controls"
+path = "crates/sotf-dev-driver/scenarios/matrix_rack_controls.scn"
+timeout = "60s"

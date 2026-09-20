@@ -1,0 +1,104 @@
+action ListeningResetGuide
+click listening.guide.acknowledge
+wait_until listening.guide_open == false timeout=3s
+wait_idle 1s
+scroll_into_view listening.eq.content listening.eq.config.bands
+sleep 250ms
+screenshot practice-band-input-ready
+click listening.eq.config.bands
+key cmd-a
+type "7"
+key enter
+sleep 250ms
+screenshot practice-band-input-edited
+wait_until listening.eq.config.bands == 7 timeout=3s
+scroll_into_view listening.eq.content listening.eq.config.gain
+click listening.eq.config.gain
+key cmd-a
+type "4.5"
+key enter
+wait_until listening.eq.config.gain == 4.5 timeout=3s
+scroll listening.eq.config.gain -100
+assert listening.eq.config.gain == 4.5
+scroll_into_view listening.eq.content listening.eq.config.trials
+click listening.eq.config.trials
+key cmd-a
+type "500"
+key enter
+wait_until listening.eq.config.trials == 500 timeout=3s
+scroll_into_view listening.eq.content listening.eq.config.trials
+click listening.eq.config.trials
+key cmd-a
+type "1"
+key enter
+wait_until listening.eq.config.trials == 1 timeout=3s
+scroll_into_view listening.eq.content listening.eq.exercise
+click listening.eq.exercise
+click listening.eq.exercise
+scroll_into_view listening.eq.content listening.eq.gain-choices
+assert_visible listening.eq.gain-choices
+sleep 250ms
+screenshot practice-gain-choices
+scroll_into_view listening.eq.content listening.eq.exercise
+click listening.eq.exercise
+scroll_into_view listening.eq.content listening.eq.frequency-details
+click listening.eq.frequency-details
+wait_until listening.eq.frequency_details_open == true timeout=3s
+scroll_into_view listening.eq.content listening.eq.config.min-frequency
+click listening.eq.config.min-frequency
+key cmd-a
+type "80"
+key enter
+wait_until listening.eq.config.min-frequency == 80 timeout=3s
+scroll_into_view listening.eq.content listening.eq.config.max-frequency
+click listening.eq.config.max-frequency
+key cmd-a
+type "12000"
+key enter
+wait_until listening.eq.config.max-frequency == 12000 timeout=3s
+scroll_into_view listening.eq.content listening.eq.config.q
+click listening.eq.config.q
+key cmd-a
+type "0.8"
+key enter
+wait_until listening.eq.config.q == 0.8 timeout=3s
+scroll_into_view listening.eq.content listening.eq.config.q
+assert_in_viewport listening.eq.config.q
+sleep 250ms
+screenshot practice-frequency-settings
+scroll_into_view listening.eq.content listening.eq.start
+click listening.eq.start
+wait_until listening.eq.has_question == true timeout=3s
+assert listening.eq.session_gain == 4.5
+assert listening.eq.session_q == 0.8
+assert listening.eq.session_trials == 1
+assert listening.eq.session_min_frequency == 80
+assert listening.eq.session_max_frequency == 12000
+assert playback.is_playing == false
+sleep 250ms
+screenshot practice-configured-question
+resize 600 1000
+scroll_into_view listening.eq.content listening.eq.submit
+screenshot practice-configured-question-narrow
+assert_in_viewport listening.eq.submit
+scroll_into_view listening.eq.content listening.eq.pause
+click listening.eq.pause
+wait_until listening.eq.paused == true timeout=2s
+key enter
+assert listening.eq.submitted == 0
+assert playback.is_playing == false
+click listening.eq.pause
+wait_until listening.eq.paused == false timeout=2s
+key enter
+wait_until listening.eq.submitted == 1 timeout=2s
+assert playback.is_playing == false
+screenshot practice-configured-result-narrow
+scroll_into_view listening.eq.content listening.eq.next
+click listening.eq.next
+wait_until listening.eq.has_question == false timeout=2s
+assert listening.eq.submitted == 1
+assert listening.eq.progress_sessions == 1
+scroll_into_view listening.eq.content listening.eq.retry
+assert_in_viewport listening.eq.retry
+screenshot practice-completed-summary-narrow
+assert playback.is_playing == false

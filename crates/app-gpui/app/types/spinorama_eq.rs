@@ -81,10 +81,13 @@ impl Default for SpinoramaEqDropdowns {
 pub struct SpinoramaEqState {
     /// Shared, UI-agnostic Spinorama EQ wizard domain model.
     pub model: SpinoramaEqScreenModel,
+    pub result_inputs: Option<serde_json::Value>,
+    pub delivery: sotf_audio_player::ui_models::correction_delivery::CorrectionDelivery,
 
     /// Dropdown open states and edit buffers.
     pub dropdowns: SpinoramaEqDropdowns,
     /// Detail level for the configuration form (Simple / Intermediate / Expert).
+    pub autoeq_stage: crate::components::autoeq::AutoEqStage,
     pub detail_level: sotf_audio_player::autoeq::DetailLevel,
     /// Currently selected preset id.
     pub selected_preset: String,
@@ -133,7 +136,10 @@ impl Default for SpinoramaEqState {
     fn default() -> Self {
         Self {
             model: SpinoramaEqScreenModel::default(),
+            result_inputs: None,
+            delivery: Default::default(),
             dropdowns: SpinoramaEqDropdowns::default(),
+            autoeq_stage: Default::default(),
             detail_level: sotf_audio_player::autoeq::DetailLevel::Simple,
             selected_preset: "balanced".to_string(),
             expanded_sections: vec!["speaker".into(), "options".into()],
@@ -160,6 +166,11 @@ impl DerefMut for SpinoramaEqState {
 }
 
 impl SpinoramaEqState {
+    pub fn result_is_current(&self) -> bool {
+        self.model.result.is_some()
+            && self.result_inputs.as_ref() == Some(&self.model.optimization_input_snapshot())
+    }
+
     /// Start a catalog fetch and return its generation token.
     pub fn begin_speaker_list_request(&mut self) -> u64 {
         self.speaker_list_request_id = self.speaker_list_request_id.wrapping_add(1);

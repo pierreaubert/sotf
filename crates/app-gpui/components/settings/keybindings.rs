@@ -8,6 +8,7 @@ use crate::app::keybindings::{
     get_documented_keybindings_with_overrides, get_keybindings_with_overrides, keybinding_conflict,
     set_custom_keybinding,
 };
+use crate::app::types::PreferencesSetting;
 use crate::app::{AppState, DocumentedKeybinding};
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
@@ -137,6 +138,15 @@ impl PlayerView {
             KeybindingCategory::LevelMeters => 7,
             KeybindingCategory::System => 8,
         });
+        // Search opens the playback shortcut at the start of the scrollable list.
+        // Preserve the usual category order for ordinary navigation.
+        if state.app.settings.navigation.setting == Some(PreferencesSetting::Shortcuts) {
+            editable_bindings.sort_by_key(|binding| {
+                binding
+                    .action_name
+                    .is_none_or(|name| keybinding_selector_id(name) != "playpause")
+            });
+        }
         let effective_bindings =
             get_documented_keybindings_with_overrides(current_preset, &custom_overrides);
 
@@ -179,6 +189,9 @@ impl PlayerView {
                     .selected(selected)
                     .theme(theme.to_button_theme())
                     .build()
+                    .text_size(d.text_sm)
+                    .px(d.pad_x)
+                    .py(d.pad_y_half)
                     .track_focus(&focus_handle)
                     .track_focus_element(&focus_handle)
                     .on_click(move |_: &ClickEvent, _window, cx| {
@@ -273,6 +286,7 @@ impl PlayerView {
                     ),
             )
             .child(render_custom_keybinding_editor(
+                self,
                 &d,
                 &theme,
                 text,
@@ -340,6 +354,7 @@ impl PlayerView {
 
 #[allow(clippy::too_many_arguments)]
 fn render_custom_keybinding_editor(
+    view: &PlayerView,
     d: &Ds,
     theme: &crate::app::Theme,
     text: KeybindingTranslations,
@@ -385,7 +400,13 @@ fn render_custom_keybinding_editor(
             let is_custom = custom_actions.contains(action_name);
             let edit_id =
                 ElementId::from(SharedString::from(format!("keybinding-edit-{selector_id}")));
-            let edit_focus = keymap_preset_focus_handle(&edit_id, cx);
+            let is_search_target = selector_id == "playpause";
+            let edit_focus = if is_search_target {
+                view.preference_focus_handle(PreferencesSetting::Shortcuts, cx)
+                    .unwrap_or_else(|| keymap_preset_focus_handle(&edit_id, cx))
+            } else {
+                keymap_preset_focus_handle(&edit_id, cx)
+            };
             cx.register_accessible(AccessibilityNode {
                 element_id: edit_id.clone(),
                 label: format!("{}: {}", text.edit, action_label).into(),
@@ -403,6 +424,9 @@ fn render_custom_keybinding_editor(
                 .size(ButtonSize::Sm)
                 .theme(theme.to_button_theme())
                 .build()
+                .text_size(d.text_sm)
+                .px(d.pad_x)
+                .py(d.pad_y_half)
                 .track_focus(&edit_focus)
                 .track_focus_element(&edit_focus)
                 .on_click(move |_: &ClickEvent, window, cx| {
@@ -434,6 +458,11 @@ fn render_custom_keybinding_editor(
             #[cfg(feature = "dev-api")]
             let edit_button =
                 edit_button.dev_track(format!("settings.keybinding.edit.{selector_id}"));
+            let edit_button = if is_search_target {
+                view.preference_control(PreferencesSetting::Shortcuts, edit_button, cx)
+            } else {
+                edit_button.into_any_element()
+            };
 
             let reset_button = is_custom.then(|| {
                 let reset_id = ElementId::from(SharedString::from(format!(
@@ -454,6 +483,9 @@ fn render_custom_keybinding_editor(
                     .size(ButtonSize::Sm)
                     .theme(theme.to_button_theme())
                     .build()
+                    .text_size(d.text_sm)
+                    .px(d.pad_x)
+                    .py(d.pad_y_half)
                     .track_focus(&reset_focus)
                     .track_focus_element(&reset_focus)
                     .on_click(move |_: &ClickEvent, _window, cx| {
@@ -555,6 +587,9 @@ fn render_custom_keybinding_editor(
             .size(ButtonSize::Sm)
             .theme(theme.to_button_theme())
             .build()
+            .text_size(d.text_sm)
+            .px(d.pad_x)
+            .py(d.pad_y_half)
             .track_focus(&focus)
             .track_focus_element(&focus)
             .on_click(move |_: &ClickEvent, _window, cx| {
@@ -591,6 +626,9 @@ fn render_custom_keybinding_editor(
             .size(ButtonSize::Sm)
             .theme(theme.to_button_theme())
             .build()
+            .text_size(d.text_sm)
+            .px(d.pad_x)
+            .py(d.pad_y_half)
             .on_click(move |_: &ClickEvent, _window, cx| {
                 cancel_state.update(cx, |state, cx| {
                     state.app.settings.keybindings.confirm_reset_all = false;
@@ -605,6 +643,9 @@ fn render_custom_keybinding_editor(
             .size(ButtonSize::Sm)
             .theme(theme.to_button_theme())
             .build()
+            .text_size(d.text_sm)
+            .px(d.pad_x)
+            .py(d.pad_y_half)
             .on_click(move |_: &ClickEvent, _window, cx| {
                 confirm_state.update(cx, |state, cx| {
                     state.app.settings.keybindings.overrides.clear();
@@ -762,6 +803,9 @@ fn render_custom_keybinding_editor(
             .size(ButtonSize::Sm)
             .theme(theme.to_button_theme())
             .build()
+            .text_size(d.text_sm)
+            .px(d.pad_x)
+            .py(d.pad_y_half)
             .on_click(move |_: &ClickEvent, _window, cx| {
                 cancel_state.update(cx, |state, cx| {
                     state.app.settings.keybindings.editing_action = None;
@@ -792,6 +836,9 @@ fn render_custom_keybinding_editor(
                 .size(ButtonSize::Sm)
                 .theme(theme.to_button_theme())
                 .build()
+                .text_size(d.text_sm)
+                .px(d.pad_x)
+                .py(d.pad_y_half)
                 .on_click(move |_: &ClickEvent, _window, cx| {
                     save_state.update(cx, |state, cx| {
                         set_custom_keybinding(

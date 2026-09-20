@@ -31,6 +31,39 @@ pub struct Album {
 }
 
 impl Album {
+    /// Read one local audio file without scanning or importing its directory.
+    /// Call from a worker: probing metadata performs filesystem I/O.
+    pub fn from_audio_file(path: &Path) -> Result<Self, String> {
+        let path = path.canonicalize().map_err(|error| error.to_string())?;
+        if !path.is_file() {
+            return Err("Select an audio file".into());
+        }
+        let metadata = extract_metadata(&path).map_err(|error| error.to_string())?;
+        if metadata.channels.is_none_or(|channels| channels == 0)
+            || metadata.sample_rate.is_none_or(|rate| rate == 0)
+        {
+            return Err("The file has no supported audio track".into());
+        }
+        let title = metadata
+            .album
+            .clone()
+            .filter(|title| !title.trim().is_empty())
+            .or_else(|| metadata.title.clone())
+            .unwrap_or_else(|| {
+                path.file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned()
+            });
+        Ok(Self {
+            title,
+            year: metadata.year,
+            edition: metadata.edition.clone(),
+            tracks: vec![Track::from_metadata(path, metadata)],
+            ..Self::default()
+        })
+    }
+
     /// Determine the channel configuration of this album
     pub fn channel_type(&self) -> Option<AlbumChannelType> {
         if self.tracks.is_empty() {

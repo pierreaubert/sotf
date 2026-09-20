@@ -23,7 +23,7 @@ use super::form::{
     AutoEqForm, AutoEqLayoutMode, is_narrow_default_layout, is_narrow_room_eq_layout,
 };
 use super::theme::AutoEqFormTheme;
-use super::ui_state::DetailLevel;
+use super::ui_state::{AutoEqStage, DetailLevel};
 use crate::i18n::Translations;
 
 #[allow(clippy::too_many_lines)]
@@ -66,6 +66,9 @@ impl RenderOnce for AutoEqForm {
         let loss_type_options_override = self.visibility.loss_type_options_override;
         let available_width = self.meta.available_width;
         let translations = Translations::for_language(self.meta.language);
+        let stage_text =
+            crate::app::i18n::AutoEqStageTranslations::for_language(self.meta.language);
+        let stage = ui_state.stage;
         let layout_mode = self.meta.layout_mode;
         // Wrap callbacks in Rc for sharing
         let on_opt_mode_change_rc = self.eq_design.on_opt_mode_change.map(std::rc::Rc::new);
@@ -336,25 +339,86 @@ impl RenderOnce for AutoEqForm {
             .on_optimization_goal_change
             .map(std::rc::Rc::new);
 
+        let on_stage_change_rc = self.lifecycle.on_stage_change.map(std::rc::Rc::new);
+        let navigation =
+            div()
+                .w_full()
+                .min_w_0()
+                .flex()
+                .flex_wrap()
+                .children(AutoEqStage::ALL.into_iter().map(|target| {
+                    let mut button = Button::new(
+                        (id.clone(), format!("stage-{}", target.index())),
+                        format!(
+                            "{}. {}",
+                            target.index() + 1,
+                            stage_text.stages[target.index()]
+                        ),
+                    )
+                    .variant(if stage == target {
+                        ButtonVariant::Primary
+                    } else {
+                        ButtonVariant::Ghost
+                    })
+                    .size(ButtonSize::Sm);
+                    if let Some(handler) = on_stage_change_rc.clone() {
+                        button = button.on_click(move |window, cx| handler(target, window, cx));
+                    }
+                    #[cfg(feature = "dev-api")]
+                    let button = {
+                        use crate::app::dev_api::DevTrackExt;
+                        button.dev_track(format!("autoeq.stage.{}", target.index()))
+                    };
+                    div().flex_shrink_0().child(button)
+                }));
+        let detail_controls = include!("render_detail_controls.rs");
+
         // Build the form body - branch on detail level
         let detail_level = ui_state.detail_level;
-        let form_body = match detail_level {
-            // Simple and Intermediate: simplified render with preset selector
-            DetailLevel::Simple | DetailLevel::Intermediate => {
-                include!("render_body_simple.rs")
+        let form_body = if stage == AutoEqStage::Review {
+            include!("render_review.rs")
+        } else if stage == AutoEqStage::Timing && hide_room_sections && hide_multi_measurement {
+            div()
+                .id(id)
+                .child(Text::body(stage_text.no_timing).color(theme.description_color))
+        } else if stage == AutoEqStage::Timing && layout_mode == AutoEqLayoutMode::Default {
+            include!("render_body.rs")
+        } else {
+            match detail_level {
+                // Simple and Intermediate: simplified render with preset selector
+                DetailLevel::Simple | DetailLevel::Intermediate => {
+                    include!("render_body_simple.rs")
+                }
+                // Expert: full parameter form
+                DetailLevel::Expert => match layout_mode {
+                    AutoEqLayoutMode::Default => {
+                        include!("render_body.rs")
+                    }
+                    AutoEqLayoutMode::RoomEq => {
+                        include!("render_body_room_eq.rs")
+                    }
+                },
             }
-            // Expert: full parameter form
-            DetailLevel::Expert => match layout_mode {
-                AutoEqLayoutMode::Default => {
-                    include!("render_body.rs")
-                }
-                AutoEqLayoutMode::RoomEq => {
-                    include!("render_body_room_eq.rs")
-                }
-            },
         };
-
-        // Full-width layout (no docs panel)
-        div().w_full().h_full().child(form_body)
+        div()
+            .w_full()
+            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                if let Some(handler) = &on_block_focus_rc {
+                    let block = match stage {
+                        AutoEqStage::Goals => docs::BLOCK_TARGET_TILT,
+                        AutoEqStage::FilterDesign => docs::BLOCK_EQ_DESIGN,
+                        AutoEqStage::Timing => docs::BLOCK_PHASE_ALIGNMENT,
+                        AutoEqStage::Algorithm | AutoEqStage::Review => docs::BLOCK_OPTIMIZER,
+                    };
+                    handler(block, window, cx);
+                }
+            })
+            .child(
+                VStack::new()
+                    .spacing(StackSpacing::Md)
+                    .child(navigation)
+                    .child(detail_controls)
+                    .child(form_body),
+            )
     }
 }

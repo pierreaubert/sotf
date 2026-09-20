@@ -1,0 +1,58 @@
+action SettingsSetMaintenanceFixture {"mode":"seed"}
+focus Settings
+action SettingsSetTab {"tab":"Library"}
+resize 600 800
+wait_idle 2s
+scroll preferences.content -5000
+wait_idle 1s
+click settings.library.analysis-disclosure
+wait_idle 1s
+scroll preferences.content -5000
+wait_idle 1s
+click settings.library.maintenance-review
+wait_idle 3s
+assert preferences.maintenance_busy == false
+assert preferences.maintenance_error == null
+assert preferences.maintenance_ready == true
+assert preferences.maintenance_count == 3
+assert preferences.maintenance_removed == null
+scroll preferences.content -5000
+wait_idle 1s
+screenshot maintenance-populated-review
+click settings.library.maintenance-cancel
+wait_idle 1s
+assert preferences.maintenance_ready == false
+assert preferences.maintenance_removed == null
+scroll preferences.content -5000
+wait_idle 1s
+click settings.library.maintenance-review
+wait_idle 3s
+assert preferences.maintenance_count == 3
+action SettingsSetMaintenanceFixture {"mode":"restore"}
+scroll preferences.content -5000
+wait_idle 1s
+action SettingsSetMaintenanceFixture {"mode":"concurrent_change"}
+click settings.library.maintenance-confirm
+wait_idle 3s
+assert preferences.maintenance_busy == false
+assert preferences.maintenance_error == "The library changed. Retry the refresh."
+assert preferences.maintenance_ready == false
+assert preferences.maintenance_removed == 2
+scroll preferences.content -5000
+wait_idle 1s
+screenshot maintenance-refresh-error
+action SettingsSetMaintenanceFixture {"mode":"concurrent_change"}
+click settings.library.maintenance-review
+wait_idle 3s
+assert preferences.maintenance_error == "The library changed. Retry the refresh."
+assert preferences.maintenance_removed == 2
+click settings.library.maintenance-review
+wait_idle 3s
+assert preferences.maintenance_error == null
+assert preferences.maintenance_removed == 2
+assert preferences.maintenance_ready == false
+screenshot maintenance-refresh-recovered
+click settings.library.maintenance-review
+wait_idle 3s
+assert preferences.maintenance_count == 0
+assert playback.is_playing == false

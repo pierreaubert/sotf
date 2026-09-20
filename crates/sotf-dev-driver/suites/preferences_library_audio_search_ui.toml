@@ -1,0 +1,19 @@
+# Isolated settings actions; no audio playback or analysis job is started.
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+size = "1440x1000"
+
+[[scenario]]
+name = "preferences-library-audio-search"
+path = "crates/sotf-dev-driver/scenarios/preferences_library_audio_search.scn"
+timeout = "60s"
+
+[[scenario]]
+name = "preferences-library-audio-search-light-scale"
+path = "crates/sotf-dev-driver/scenarios/preferences_library_audio_search.scn"
+timeout = "60s"
+theme = "Light"
+font_scale = 2.0
+reduced_motion = true

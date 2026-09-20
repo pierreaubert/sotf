@@ -6,6 +6,19 @@ readiness_timeout = "20s"
 size = "1440x900"
 
 [[scenario]]
+name = "now-playing-information"
+path = "crates/sotf-dev-driver/scenarios/now_playing_information.scn"
+seed_demo_audio = true
+timeout = "45s"
+tags = ["now-playing", "information", "ui"]
+
+[[scenario]]
+name = "now-playing-station"
+path = "crates/sotf-dev-driver/scenarios/now_playing_station.scn"
+timeout = "30s"
+tags = ["now-playing", "streams", "ui"]
+
+[[scenario]]
 name = "now-playing-transport"
 path = "crates/sotf-dev-driver/scenarios/now_playing_transport_seek.scn"
 seed_demo_audio = true

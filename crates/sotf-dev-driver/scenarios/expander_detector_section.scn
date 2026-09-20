@@ -1,0 +1,60 @@
+# German Light 150%, 600x1000; disclosure coordinates measured from screenshot.
+focus Studio
+plugin_clear
+plugin_add Expander
+action PluginSelectFirstUser
+wait_idle
+scroll_at 15 700 -800
+wait_idle
+screenshot detector-section
+click_at 300 708
+wait_idle
+scroll_into_view rack.params plugin.choice.2.13.1
+click plugin.choice.2.13.1
+assert plugins.plugin.2.param.13.value == 1
+scroll_into_view rack.params plugin.choice.2.10.0
+click plugin.choice.2.10.0
+assert plugins.plugin.2.param.10.value == 0
+scroll_into_view rack.params plugin.control.2.11
+click plugin.control.2.11
+wait_idle
+scroll_into_view rack.params plugin.param.2.11.exact
+assert_in_viewport plugin.param.2.11.exact
+click plugin.param.2.11.exact
+key cmd-a
+type "120"
+key enter
+wait_idle
+assert plugins.plugin.2.param.11.value == 120 tolerance=0.001
+screenshot detector-section-open
+scroll_into_view rack.params plugin.control.2.5
+click plugin.control.2.5
+wait_idle
+scroll_into_view rack.params plugin.param.2.5.exact
+click plugin.param.2.5.exact
+key cmd-a
+type "4"
+key enter
+wait_idle
+assert plugins.plugin.2.param.5.value == 4 tolerance=0.001
+scroll_into_view rack.params plugin.control.2.6
+click plugin.control.2.6
+wait_idle
+scroll_into_view rack.params plugin.param.2.6.exact
+click plugin.param.2.6.exact
+key cmd-a
+type "2"
+key enter
+wait_idle
+assert plugins.plugin.2.param.6.value == 2 tolerance=0.001
+screenshot expander-knee-hysteresis
+plugin_chain_save $SOTF_QA_DIR/expander-detector-section.json
+plugin_remove 2
+plugin_chain_load $SOTF_QA_DIR/expander-detector-section.json
+assert plugins.plugin.2.type == "Expander"
+assert plugins.plugin.2.param.13.value == 1
+assert plugins.plugin.2.param.10.value == 0
+assert plugins.plugin.2.param.11.value == 120 tolerance=0.001
+assert plugins.plugin.2.param.5.value == 4 tolerance=0.001
+assert plugins.plugin.2.param.6.value == 2 tolerance=0.001
+assert playback.is_playing == false

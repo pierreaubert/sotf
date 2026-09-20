@@ -1,6 +1,0 @@
-/// Number of frequency bands for display/monitoring
-pub(super) const NUM_DISPLAY_BANDS: usize = 30;
-
-/// Host audio callbacks commonly use 4096-frame blocks. Low-latency mode uses
-/// a smaller FFT, but should still accept one full callback safely.
-pub(super) const MIN_IN_PLACE_BLOCK_FRAMES: usize = 4096;

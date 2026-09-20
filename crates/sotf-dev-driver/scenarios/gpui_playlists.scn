@@ -15,7 +15,7 @@ assert_visible playlist.create
 resize      700 600
 sleep       200ms
 assert_in_viewport playlist.create
-assert_non_overlapping sidebar.nav-home playlist.create
+assert_non_overlapping navigation.compact playlist.create
 assert_accessible button New playlist
 screenshot  playlists-empty-compact
 
@@ -82,9 +82,31 @@ click       playlist.queue_active
 wait_until  queue.length > 0 timeout=3s
 assert      playback.is_playing == false
 click       sidebar.nav-queue
-assert_visible queue.clear
-click       queue.clear
-wait_until  queue.length == 0 timeout=2s
+wait_idle 2s
+assert queue.upcoming_count == 11
+click queue.upcoming.0.remove
+wait_until queue.upcoming_count == 10 timeout=2s
+click queue.upcoming.0.remove
+wait_until queue.upcoming_count == 9 timeout=2s
+click queue.upcoming.0.remove
+wait_until queue.upcoming_count == 8 timeout=2s
+click queue.upcoming.0.remove
+wait_until queue.upcoming_count == 7 timeout=2s
+click queue.upcoming.0.remove
+wait_until queue.upcoming_count == 6 timeout=2s
+click queue.upcoming.0.remove
+wait_until queue.upcoming_count == 5 timeout=2s
+click queue.upcoming.0.remove
+wait_until queue.upcoming_count == 4 timeout=2s
+click queue.upcoming.0.remove
+wait_until queue.upcoming_count == 3 timeout=2s
+click queue.upcoming.0.remove
+wait_until queue.upcoming_count == 2 timeout=2s
+click queue.upcoming.0.remove
+wait_until queue.upcoming_count == 1 timeout=2s
+click queue.upcoming.0.remove
+wait_until queue.upcoming_count == 0 timeout=2s
+wait_until queue.length == 0 timeout=2s
 click       sidebar.nav-playlists
 click       playlist.play_active
 wait_until  playback.is_playing == true timeout=3s
@@ -123,14 +145,24 @@ assert      playlists.undo_available == false
 assert      playlists.active_name == "SOTF QA Playlist Renamed"
 assert      playlists.active_track_count == 11
 
+# Regression: closing Playlist controls restores page focus, so keyboard
+# navigation still works after save, delete, and undo (playlists.rs callbacks).
 # Pairwise locale/responsive evidence on the populated surface.
-click       sidebar.nav-preferences-button
-wait_until  screen.focused == "Settings" timeout=2s
-click       settings.tab.Language
-wait_until  settings.active_tab == "Language" timeout=2s
-action      CycleLanguage
-sleep       100ms
-assert      settings.language == "French"
+key S
+wait_until screen.focused == "Settings" timeout=2s
+wait_idle 2s
+click preferences.search
+type "language"
+wait_idle 1s
+click preferences.result.Language
+wait_idle 2s
+assert settings.active_tab == "Language"
+assert_in_viewport preferences.control.Language
+key tab
+key enter
+wait_until settings.language == "French" timeout=2s
+click preferences.done
+wait_idle 1s
 click       sidebar.nav-playlists
 wait_until  screen.focused == "Playlists" timeout=2s
 resize      700 600
@@ -144,3 +176,23 @@ sleep       200ms
 assert_in_viewport playlist.play_active
 assert_in_viewport playlist.track.0
 screenshot  playlists-populated-french-compact-tracks
+wait_idle 1s
+assert_in_viewport playlist.track.0
+click navigation.compact
+key up
+key up
+key up
+key up
+key enter
+wait_until screen.focused == "Home" timeout=2s
+wait_idle 1s
+click navigation.compact
+key down
+key down
+key down
+key down
+key enter
+wait_until screen.focused == "Playlists" timeout=2s
+wait_idle 1s
+assert_in_viewport playlist.track.0
+screenshot playlists-scroll-retained

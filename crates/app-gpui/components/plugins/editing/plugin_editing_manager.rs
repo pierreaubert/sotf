@@ -7,7 +7,13 @@ use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
 
 fn active_eq_edit_target(app: &App, plugin_idx: usize) -> Option<EqEditTarget> {
     let settings = if let Some(node_id) = app.plugin_state.graph_state.editing_graph_node_uuid {
-        &app.plugin_state.graph.nodes.get(&node_id)?.plugin.settings
+        &app.plugin_state
+            .routing_controller()
+            .graph
+            .nodes
+            .get(&node_id)?
+            .plugin
+            .settings
     } else {
         &app.plugin_state.graph.get_plugin(plugin_idx)?.settings
     };
@@ -63,6 +69,12 @@ pub trait PluginEditingManager {
     fn remove_eq_band(&mut self, band_idx: usize) -> Result<(), String>;
     fn toggle_eq_band_mute(&mut self, band_idx: usize) -> Result<(), String>;
     fn toggle_eq_band_solo(&mut self, band_idx: usize) -> Result<(), String>;
+    fn set_eq_filter_order(
+        &mut self,
+        plugin_idx: usize,
+        band_idx: usize,
+        order: usize,
+    ) -> Result<(), String>;
     fn set_eq_per_channel_mode(&mut self, plugin_idx: usize, per_channel: bool);
     fn copy_eq_global_to_selected(&mut self, plugin_idx: usize) -> Result<(), String>;
     fn copy_eq_selected_to_all(&mut self, plugin_idx: usize) -> Result<(), String>;
@@ -110,11 +122,24 @@ impl PluginEditingManager for App {
 
     fn add_plugin(&mut self, plugin_type: &sotf_audio_player::PluginType) {
         let effect = self.plugin_state.add_plugin(plugin_type);
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
         self.sync_spectrum_visible();
     }
 
     fn toggle_plugin(&mut self, index: usize) {
+        if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid
+            && self.plugin_state.graph_state.draft.is_some()
+        {
+            if let Err(error) = self
+                .plugin_state
+                .routing_controller_mut()
+                .graph
+                .toggle_plugin(node_id)
+            {
+                self.ui_state.toast_message = Some(ToastMessage::error(error));
+            }
+            return;
+        }
         self.plugin_state.clear_confirmations();
         let effect = match self.plugin_state.toggle_plugin(index) {
             Ok(effect) => effect,
@@ -123,7 +148,7 @@ impl PluginEditingManager for App {
                 return;
             }
         };
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
         self.sync_spectrum_visible();
     }
 
@@ -141,7 +166,7 @@ impl PluginEditingManager for App {
                 .rack_theme_state
                 .swap_overrides(index, index - 1);
         }
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
     }
 
     fn move_plugin_down(&mut self, index: usize) {
@@ -158,7 +183,7 @@ impl PluginEditingManager for App {
                 .rack_theme_state
                 .swap_overrides(index, index + 1);
         }
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
     }
 
     fn select_next_plugin(&mut self) {
@@ -180,6 +205,17 @@ impl PluginEditingManager for App {
     }
 
     fn remove_plugin(&mut self, index: usize) {
+        if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid
+            && self.plugin_state.graph_state.draft.is_some()
+        {
+            self.plugin_state
+                .routing_controller_mut()
+                .graph
+                .remove_node(node_id);
+            self.plugin_state.graph_state.clear_editing_context();
+            self.plugin_state.graph_state.workflow_canvas = None;
+            return;
+        }
         let effect = self.plugin_state.remove_plugin(index);
         // Only compact overrides when the removal actually happened — the
         // controller returns `None` for invalid / permanent / out-of-range
@@ -187,15 +223,33 @@ impl PluginEditingManager for App {
         if matches!(effect, sotf_audio_player::PluginUpdateEffect::Structural) {
             self.plugin_state.rack_theme_state.on_plugin_removed(index);
         }
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
         self.sync_spectrum_visible();
     }
 
     fn get_editing_plugin(&self) -> Option<&sotf_audio_player::Plugin> {
+        if let Some(id) = self.plugin_state.graph_state.editing_graph_node_uuid {
+            return self
+                .plugin_state
+                .routing_controller()
+                .graph
+                .nodes
+                .get(&id)
+                .map(|node| &node.plugin);
+        }
         self.plugin_state.get_editing_plugin()
     }
 
     fn get_editing_plugin_mut(&mut self) -> Option<&mut sotf_audio_player::Plugin> {
+        if let Some(id) = self.plugin_state.graph_state.editing_graph_node_uuid {
+            return self
+                .plugin_state
+                .routing_controller_mut()
+                .graph
+                .nodes
+                .get_mut(&id)
+                .map(|node| &mut node.plugin);
+        }
         self.plugin_state.get_editing_plugin_mut()
     }
 
@@ -218,9 +272,16 @@ impl PluginEditingManager for App {
     }
 
     fn adjust_selected_param(&mut self, delta: f64) -> bool {
+        if let Some(id) = self.plugin_state.graph_state.editing_graph_node_uuid {
+            let param = self.plugin_state.plugin_param_selection;
+            return self
+                .plugin_state
+                .routing_controller_mut()
+                .adjust_param_by_node_id(id, param, delta);
+        }
         let (adjusted, effect) = self.plugin_state.adjust_selected_param(delta);
         if adjusted {
-            self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+            self.plugin_state.record_editor_effect(effect);
         }
         adjusted
     }
@@ -232,12 +293,14 @@ impl PluginEditingManager for App {
         if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             let effect = if let Some(target) = eq_target {
                 self.plugin_state
+                    .routing_controller_mut()
                     .set_eq_param_by_node_id(node_id, target, param_idx, value)
             } else {
                 self.plugin_state
+                    .routing_controller_mut()
                     .set_plugin_param_by_node_id(node_id, param_idx, value)
             };
-            self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+            self.plugin_state.record_editor_effect(effect);
             return;
         }
         let effect = if let Some(target) = eq_target {
@@ -247,7 +310,7 @@ impl PluginEditingManager for App {
             self.plugin_state
                 .set_plugin_param(plugin_idx, param_idx, value)
         };
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
     }
 
     fn set_plugin_param_string(
@@ -259,14 +322,15 @@ impl PluginEditingManager for App {
         if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             let effect = self
                 .plugin_state
+                .routing_controller_mut()
                 .set_plugin_param_string_by_node_id(node_id, param_idx, value)?;
-            self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+            self.plugin_state.record_editor_effect(effect);
             return Ok(());
         }
         let effect = self
             .plugin_state
             .set_plugin_param_string(plugin_idx, param_idx, value)?;
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
         Ok(())
     }
 
@@ -275,20 +339,50 @@ impl PluginEditingManager for App {
         plugin_idx: usize,
         correction: SpectralTiltCorrection,
     ) {
+        if self
+            .plugin_state
+            .graph_state
+            .editing_graph_node_uuid
+            .is_some()
+        {
+            if let Some(plugin) = self.get_editing_plugin_mut()
+                && let sotf_audio_player::PluginSettings::SpectrumAnalyzer {
+                    tilt_correction, ..
+                } = &mut plugin.settings
+            {
+                *tilt_correction = correction;
+            }
+            return;
+        }
         // Spectrum tilt is always a structural update — node-ID redirect not needed
         // because `set_spectrum_tilt_correction` returns Structural which uses a full
         // chain rebuild (no per-plugin engine index needed).
         let effect = self
             .plugin_state
             .set_spectrum_tilt_correction(plugin_idx, correction);
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
     }
 
     fn set_spectrum_tilt_reference(&mut self, plugin_idx: usize, reference: TiltReferenceFreq) {
+        if self
+            .plugin_state
+            .graph_state
+            .editing_graph_node_uuid
+            .is_some()
+        {
+            if let Some(plugin) = self.get_editing_plugin_mut()
+                && let sotf_audio_player::PluginSettings::SpectrumAnalyzer {
+                    tilt_reference, ..
+                } = &mut plugin.settings
+            {
+                *tilt_reference = reference;
+            }
+            return;
+        }
         let effect = self
             .plugin_state
             .set_spectrum_tilt_reference(plugin_idx, reference);
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
     }
 
     fn reset_plugin_param(&mut self, plugin_idx: usize, param_idx: usize) {
@@ -296,12 +390,14 @@ impl PluginEditingManager for App {
         if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             let effect = if let Some(target) = eq_target {
                 self.plugin_state
+                    .routing_controller_mut()
                     .reset_eq_param_by_node_id(node_id, target, param_idx)
             } else {
                 self.plugin_state
+                    .routing_controller_mut()
                     .reset_plugin_param_by_node_id(node_id, param_idx)
             };
-            self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+            self.plugin_state.record_editor_effect(effect);
             return;
         }
         let effect = if let Some(target) = eq_target {
@@ -310,20 +406,32 @@ impl PluginEditingManager for App {
         } else {
             self.plugin_state.reset_plugin_param(plugin_idx, param_idx)
         };
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
     }
 
     fn load_apo_file(&mut self) -> Result<(), String> {
         let path = std::path::Path::new(&self.input_state.apo_file_input);
+        if let Some(id) = self.plugin_state.graph_state.editing_graph_node_uuid {
+            self.plugin_state
+                .routing_controller_mut()
+                .load_apo_filters_by_node_id(id, path)?;
+            return Ok(());
+        }
         let effect = self.plugin_state.load_apo_filters(path)?;
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
         Ok(())
     }
 
     fn load_sofa_file(&mut self) -> Result<(), String> {
         let sofa_file_path = self.input_state.sofa_file_input.clone();
+        if let Some(id) = self.plugin_state.graph_state.editing_graph_node_uuid {
+            self.plugin_state
+                .routing_controller_mut()
+                .load_sofa_path_by_node_id(id, sofa_file_path)?;
+            return Ok(());
+        }
         let effect = self.plugin_state.load_sofa_path(sofa_file_path)?;
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
         Ok(())
     }
 
@@ -339,9 +447,12 @@ impl PluginEditingManager for App {
         let effect = if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             if let Some(target) = target {
                 self.plugin_state
+                    .routing_controller_mut()
                     .add_eq_band_for_target_by_node_id(node_id, target)?
             } else {
-                self.plugin_state.add_eq_band_by_node_id(node_id)?
+                self.plugin_state
+                    .routing_controller_mut()
+                    .add_eq_band_by_node_id(node_id)?
             }
         } else if let Some(target) = target {
             self.plugin_state
@@ -349,7 +460,7 @@ impl PluginEditingManager for App {
         } else {
             self.plugin_state.add_eq_band()?
         };
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
         Ok(())
     }
 
@@ -362,9 +473,11 @@ impl PluginEditingManager for App {
         let effect = if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             if let Some(target) = target {
                 self.plugin_state
+                    .routing_controller_mut()
                     .remove_eq_band_for_target_by_node_id(node_id, target, band_idx)?
             } else {
                 self.plugin_state
+                    .routing_controller_mut()
                     .remove_eq_band_by_node_id(node_id, band_idx)?
             }
         } else if let Some(target) = target {
@@ -373,7 +486,7 @@ impl PluginEditingManager for App {
         } else {
             self.plugin_state.remove_eq_band(band_idx)?
         };
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
         Ok(())
     }
 
@@ -386,9 +499,11 @@ impl PluginEditingManager for App {
         let effect = if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             if let Some(target) = target {
                 self.plugin_state
+                    .routing_controller_mut()
                     .toggle_eq_band_mute_for_target_by_node_id(node_id, target, band_idx)?
             } else {
                 self.plugin_state
+                    .routing_controller_mut()
                     .toggle_eq_band_mute_by_node_id(node_id, band_idx)?
             }
         } else if let Some(target) = target {
@@ -397,7 +512,7 @@ impl PluginEditingManager for App {
         } else {
             self.plugin_state.toggle_eq_band_mute(band_idx)?
         };
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
         Ok(())
     }
 
@@ -410,9 +525,11 @@ impl PluginEditingManager for App {
         let effect = if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             if let Some(target) = target {
                 self.plugin_state
+                    .routing_controller_mut()
                     .toggle_eq_band_solo_for_target_by_node_id(node_id, target, band_idx)?
             } else {
                 self.plugin_state
+                    .routing_controller_mut()
                     .toggle_eq_band_solo_by_node_id(node_id, band_idx)?
             }
         } else if let Some(target) = target {
@@ -421,7 +538,7 @@ impl PluginEditingManager for App {
         } else {
             self.plugin_state.toggle_eq_band_solo(band_idx)?
         };
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
         Ok(())
     }
 
@@ -429,19 +546,20 @@ impl PluginEditingManager for App {
         let effect = self
             .plugin_state
             .set_eq_per_channel_mode(plugin_idx, per_channel);
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
     }
 
     fn copy_eq_global_to_selected(&mut self, plugin_idx: usize) -> Result<(), String> {
         let channel = self.plugin_state.selected_eq_channel;
         let effect = if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             self.plugin_state
+                .routing_controller_mut()
                 .copy_eq_global_to_channel_by_node_id(node_id, channel)?
         } else {
             self.plugin_state
                 .copy_eq_global_to_channel(plugin_idx, channel)?
         };
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
         Ok(())
     }
 
@@ -449,12 +567,13 @@ impl PluginEditingManager for App {
         let channel = self.plugin_state.selected_eq_channel;
         let effect = if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             self.plugin_state
+                .routing_controller_mut()
                 .copy_eq_channel_to_all_by_node_id(node_id, channel)?
         } else {
             self.plugin_state
                 .copy_eq_channel_to_all(plugin_idx, channel)?
         };
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
         Ok(())
     }
 
@@ -465,6 +584,7 @@ impl PluginEditingManager for App {
             target,
         ) {
             self.plugin_state
+                .routing_controller_mut()
                 .cycle_eq_filter_topology_for_target_by_node_id(node_id, target, band_idx)
         } else if let Some(target) = target {
             self.plugin_state
@@ -473,7 +593,7 @@ impl PluginEditingManager for App {
             self.plugin_state
                 .cycle_eq_filter_topology(plugin_idx, band_idx)
         };
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
     }
 
     fn set_eq_filter_topology(
@@ -487,12 +607,33 @@ impl PluginEditingManager for App {
         };
         let effect = if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
             self.plugin_state
+                .routing_controller_mut()
                 .set_eq_filter_topology_for_target_by_node_id(node_id, target, band_idx, topology)
         } else {
             self.plugin_state
                 .set_eq_filter_topology_for_target(plugin_idx, target, band_idx, topology)
         };
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
+    }
+
+    fn set_eq_filter_order(
+        &mut self,
+        plugin_idx: usize,
+        band_idx: usize,
+        order: usize,
+    ) -> Result<(), String> {
+        let target = active_eq_edit_target(self, plugin_idx)
+            .ok_or_else(|| "Selected plugin is not a standard EQ".to_string())?;
+        let effect = if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
+            self.plugin_state
+                .routing_controller_mut()
+                .set_eq_filter_order_for_target_by_node_id(node_id, target, band_idx, order)?
+        } else {
+            self.plugin_state
+                .set_eq_filter_order_for_target(plugin_idx, target, band_idx, order)?
+        };
+        self.plugin_state.record_editor_effect(effect);
+        Ok(())
     }
 
     fn cycle_eq_filter_lambda(&mut self, plugin_idx: usize, band_idx: usize) {
@@ -502,6 +643,7 @@ impl PluginEditingManager for App {
             target,
         ) {
             self.plugin_state
+                .routing_controller_mut()
                 .cycle_eq_filter_lambda_for_target_by_node_id(node_id, target, band_idx)
         } else if let Some(target) = target {
             self.plugin_state
@@ -510,7 +652,7 @@ impl PluginEditingManager for App {
             self.plugin_state
                 .cycle_eq_filter_lambda(plugin_idx, band_idx)
         };
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
     }
 
     fn add_eq_kautz_section(
@@ -527,6 +669,7 @@ impl PluginEditingManager for App {
             target,
         ) {
             self.plugin_state
+                .routing_controller_mut()
                 .add_eq_kautz_section_for_target_by_node_id(
                     node_id, target, band_idx, pole_freq, q, gain,
                 )
@@ -537,7 +680,7 @@ impl PluginEditingManager for App {
             self.plugin_state
                 .add_eq_kautz_section(plugin_idx, band_idx, pole_freq, q, gain)
         };
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
     }
 
     fn pop_eq_kautz_section(&mut self, plugin_idx: usize, band_idx: usize) {
@@ -547,6 +690,7 @@ impl PluginEditingManager for App {
             target,
         ) {
             self.plugin_state
+                .routing_controller_mut()
                 .pop_eq_kautz_section_for_target_by_node_id(node_id, target, band_idx)
         } else if let Some(target) = target {
             self.plugin_state
@@ -554,7 +698,7 @@ impl PluginEditingManager for App {
         } else {
             self.plugin_state.pop_eq_kautz_section(plugin_idx, band_idx)
         };
-        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+        self.plugin_state.record_editor_effect(effect);
     }
 
     fn refresh_plugin_presets(&mut self) {
@@ -575,6 +719,10 @@ impl PluginEditingManager for App {
             return;
         };
 
+        if let Err(error) = self.stop_headphone_audition() {
+            self.ui_state.toast_message = Some(ToastMessage::error(error));
+            return;
+        }
         match self
             .plugin_state
             .save_to_file(&presets_dir, &self.input_state.plugin_file_input)
@@ -598,6 +746,10 @@ impl PluginEditingManager for App {
             return;
         };
 
+        if let Err(error) = self.stop_headphone_audition() {
+            self.ui_state.toast_message = Some(ToastMessage::error(error));
+            return;
+        }
         match self.plugin_state.save_selected_preset(&presets_dir) {
             Ok(filename) => {
                 self.ui_state.toast_message = Some(ToastMessage::success(format!(
@@ -725,6 +877,12 @@ impl PluginEditingManager for App {
     }
 
     fn toggle_plugin_solo(&mut self, index: usize) {
+        if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid
+            && self.plugin_state.graph_state.draft.is_some()
+        {
+            self.plugin_state.toggle_routing_solo(node_id);
+            return;
+        }
         let plugins = self.plugin_state.graph.plugins();
 
         if self.plugin_state.chain_state.soloed_plugin_index == Some(index) {

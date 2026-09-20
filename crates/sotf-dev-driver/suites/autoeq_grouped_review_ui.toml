@@ -1,0 +1,25 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+
+[[scenario]]
+name = "roomeq-grouped-autoeq-review"
+path = "crates/sotf-dev-driver/scenarios/roomeq_grouped_handoff.scn"
+timeout = "45s"
+[scenario.fake_recording]
+channels = 2
+points = 48
+import_json = "{\"version\": \"1.1.0\", \"speakers\": {\"L\": {\"name\": \"Left speaker\", \"crossover\": \"main\", \"measurements\": [{\"speaker_name\": \"Woofer\", \"measurements\": [{\"name\": \"Seat 1\", \"frequencies\": [100, 1000], \"magnitude_db\": [-3, 0], \"wav_path\": \"Woofer-0.wav\"}, {\"name\": \"Seat 2\", \"frequencies\": [100, 1000], \"magnitude_db\": [-4, -1], \"wav_path\": \"Woofer-1.wav\"}]}, {\"speaker_name\": \"Tweeter\", \"measurements\": [{\"name\": \"Seat 1\", \"frequencies\": [100, 1000], \"magnitude_db\": [-4, -1], \"wav_path\": \"Tweeter-0.wav\"}, {\"name\": \"Seat 2\", \"frequencies\": [100, 1000], \"magnitude_db\": [-5, -2], \"wav_path\": \"Tweeter-1.wav\"}]}]}, \"R\": {\"name\": \"Right speaker\", \"crossover\": \"main\", \"measurements\": [{\"speaker_name\": \"Woofer\", \"measurements\": [{\"name\": \"Seat 1\", \"frequencies\": [100, 1000], \"magnitude_db\": [-3, 0], \"wav_path\": \"Woofer-0.wav\"}, {\"name\": \"Seat 2\", \"frequencies\": [100, 1000], \"magnitude_db\": [-4, -1], \"wav_path\": \"Woofer-1.wav\"}]}, {\"speaker_name\": \"Tweeter\", \"measurements\": [{\"name\": \"Seat 1\", \"frequencies\": [100, 1000], \"magnitude_db\": [-4, -1], \"wav_path\": \"Tweeter-0.wav\"}, {\"name\": \"Seat 2\", \"frequencies\": [100, 1000], \"magnitude_db\": [-5, -2], \"wav_path\": \"Tweeter-1.wav\"}]}]}}}"
+
+[[scenario]]
+name = "roomeq-grouped-autoeq-review-german"
+path = "crates/sotf-dev-driver/scenarios/roomeq_grouped_handoff.scn"
+timeout = "45s"
+language = "German"
+font_scale = 1.5
+theme = "Light"
+[scenario.fake_recording]
+channels = 2
+points = 48
+import_json = "{\"version\": \"1.1.0\", \"speakers\": {\"L\": {\"name\": \"Left speaker\", \"crossover\": \"main\", \"measurements\": [{\"speaker_name\": \"Woofer\", \"measurements\": [{\"name\": \"Seat 1\", \"frequencies\": [100, 1000], \"magnitude_db\": [-3, 0], \"wav_path\": \"Woofer-0.wav\"}, {\"name\": \"Seat 2\", \"frequencies\": [100, 1000], \"magnitude_db\": [-4, -1], \"wav_path\": \"Woofer-1.wav\"}]}, {\"speaker_name\": \"Tweeter\", \"measurements\": [{\"name\": \"Seat 1\", \"frequencies\": [100, 1000], \"magnitude_db\": [-4, -1], \"wav_path\": \"Tweeter-0.wav\"}, {\"name\": \"Seat 2\", \"frequencies\": [100, 1000], \"magnitude_db\": [-5, -2], \"wav_path\": \"Tweeter-1.wav\"}]}]}, \"R\": {\"name\": \"Right speaker\", \"crossover\": \"main\", \"measurements\": [{\"speaker_name\": \"Woofer\", \"measurements\": [{\"name\": \"Seat 1\", \"frequencies\": [100, 1000], \"magnitude_db\": [-3, 0], \"wav_path\": \"Woofer-0.wav\"}, {\"name\": \"Seat 2\", \"frequencies\": [100, 1000], \"magnitude_db\": [-4, -1], \"wav_path\": \"Woofer-1.wav\"}]}, {\"speaker_name\": \"Tweeter\", \"measurements\": [{\"name\": \"Seat 1\", \"frequencies\": [100, 1000], \"magnitude_db\": [-4, -1], \"wav_path\": \"Tweeter-0.wav\"}, {\"name\": \"Seat 2\", \"frequencies\": [100, 1000], \"magnitude_db\": [-5, -2], \"wav_path\": \"Tweeter-1.wav\"}]}]}}}"

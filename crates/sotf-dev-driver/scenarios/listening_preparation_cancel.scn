@@ -1,0 +1,24 @@
+# Real offline preparation: abandon its result, then retry without playback.
+action ListeningResetGuide
+click listening.guide.acknowledge
+wait_until listening.guide_open == false timeout=3s
+click listening.tab-comparison
+wait_until listening.surface == "BlindComparison" timeout=3s
+action ListeningSetSourceFixture {"mode":"comparison"}
+wait_until playback.current_filename == "comparison-source-stereo.wav" timeout=10s
+assert playback.is_playing == false
+click listening.capture.a
+click listening.capture.b
+wait_until listening.paths_ready == true timeout=3s
+scroll_into_view listening.comparison.content listening.session.prepare
+click listening.session.prepare
+click listening.session.cancel_preparation
+assert listening.session_ready == false
+wait_idle 2s
+assert listening.session_ready == false
+assert_absent listening.session.cancel_preparation
+screenshot listening-preparation-cancelled
+click listening.session.prepare
+wait_until listening.session_ready == true timeout=20s
+screenshot listening-preparation-retried
+assert playback.is_playing == false

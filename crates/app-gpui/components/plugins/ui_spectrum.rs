@@ -4,12 +4,16 @@
 
 use std::sync::Arc;
 
+use crate::app::state::ui::SpectrumViewState;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_audio_kit::{
     SpectrumAxisTheme, SpectrumColors, SpectrumElement, render_spectrum_frequency_axis,
 };
-use gpui_ui_kit::{Select, SelectOption, SelectSize, Toggle, ToggleStyle};
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, NumberInput, NumberInputSize, Select, SelectOption,
+    SelectSize, Text, Toggle, ToggleStyle,
+};
 use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
 
 use super::common::render_knob;
@@ -537,157 +541,4 @@ mod spectrum_tilt_tests {
     }
 }
 
-impl PlayerView {
-    /// Render the full-screen spectrum analyzer display
-    /// Uses GPU-accelerated SpectrumElement for high-performance rendering
-    pub(crate) fn render_spectrum_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let d = Ds::from_cx(cx);
-        let state = self.state.read(cx);
-        let theme = state.app.ui_state.theme.clone();
-        let text = SpectrumTranslations::for_language(state.app.ui_state.language);
-        let spectrum_state = self.state.clone();
-        let hold_state = spectrum_state.clone();
-        let phone_hold = state.app.ui_state.phone_spectrum_hold;
-        let phone_hold_magnitudes = state.app.ui_state.phone_spectrum_hold_magnitudes.clone();
-        let phone_smoothing = if state.app.ui_state.phone_spectrum_smoothed {
-            0.65
-        } else {
-            0.3
-        };
-        let combined_scale = crate::ui::compute_combined_scale(
-            state.app.ui_state.window_width,
-            state.app.ui_state.window_height,
-            state.app.ui_state.font_scale,
-            state.app.ui_state.min_font_size_px,
-            state.app.ui_state.max_font_size_px,
-        );
-        let chart_height =
-            (state.app.ui_state.window_height - 160.0 * combined_scale).max(200.0 * combined_scale);
-        let max_frequency = state
-            .app
-            .playback
-            .sample_rate
-            .map(|sample_rate| (sample_rate as f32 * 0.5).max(20.0))
-            .unwrap_or(20_000.0);
-
-        let content = if let Some(info) = &state.app.playback.spectrum_info {
-            // Convert magnitudes to Arc for the GPU element
-            let magnitudes: Arc<[f32]> = if phone_hold && let Some(held) = phone_hold_magnitudes {
-                Arc::from(held.into_boxed_slice())
-            } else {
-                Arc::from(info.magnitudes.as_ref())
-            };
-
-            div()
-                .flex()
-                .flex_col()
-                .size_full()
-                // Main spectrum area with axes
-                .child(
-                    div()
-                        .flex()
-                        .flex_1()
-                        .gap(d.grid)
-                        // dB axis (vertical, left side)
-                        .child(render_spectrum_db_axis(spectrum_axis_theme(&d, &theme)))
-                        // GPU-accelerated spectrum visualization
-                        .child(
-                            div().flex_1().child(
-                                SpectrumElement::new(magnitudes)
-                                    .height(px(chart_height))
-                                    .frequency_range(20.0, max_frequency)
-                                    .smoothing(phone_smoothing)
-                                    .colors(spectrum_colors_from_theme(
-                                        &theme.plugin_palette.spectrum_colors,
-                                    )),
-                            ),
-                        ),
-                )
-                // Frequency axis (horizontal, below spectrum)
-                .child(
-                    div()
-                        .flex()
-                        .child(spectrum_db_axis_spacer(&d, &theme))
-                        .child(render_spectrum_frequency_axis(
-                            20.0,
-                            max_frequency,
-                            spectrum_axis_theme(&d, &theme),
-                        )),
-                )
-        } else {
-            div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .size_full()
-                .child(dev_track!(
-                    render_empty_state(IconName::AudioWaveform, text.data_unavailable, &theme),
-                    "spectrum.unavailable"
-                ))
-        };
-
-        div()
-            .flex()
-            .flex_col()
-            .size_full()
-            .p(d.card)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .mb(d.section)
-                    .child(
-                        div()
-                            .text_size(d.text_base)
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(text.analyzer),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(d.grid)
-                            .child(dev_track!(
-                                Toggle::new("spectrum-screen-hold")
-                                    .checked(phone_hold)
-                                    .label(text.hold)
-                                    .style(ToggleStyle::Segmented)
-                                    .theme(theme.to_toggle_theme())
-                                    .aria_label(text.hold)
-                                    .on_change(move |hold, _, cx| {
-                                        hold_state.update(cx, |state, _| {
-                                            state.app.ui_state.phone_spectrum_hold = hold;
-                                            state.app.ui_state.phone_spectrum_hold_magnitudes =
-                                                hold.then(|| {
-                                                    state
-                                                        .app
-                                                        .playback
-                                                        .spectrum_info
-                                                        .as_ref()
-                                                        .map(|info| info.magnitudes.to_vec())
-                                                })
-                                                .flatten();
-                                        });
-                                    }),
-                                "spectrum.hold"
-                            ))
-                            .child(dev_track!(
-                                Toggle::new("spectrum-screen-smoothing")
-                                    .checked(state.app.ui_state.phone_spectrum_smoothed)
-                                    .label(text.smoothing)
-                                    .style(ToggleStyle::Segmented)
-                                    .theme(theme.to_toggle_theme())
-                                    .aria_label(text.smoothing)
-                                    .on_change(move |smoothed, _, cx| {
-                                        spectrum_state.update(cx, |state, _| {
-                                            state.app.ui_state.phone_spectrum_smoothed = smoothed;
-                                        });
-                                    }),
-                                "spectrum.smoothing"
-                            )),
-                    ),
-            )
-            .child(content)
-    }
-}
+include!("ui_spectrum_screen.rs");

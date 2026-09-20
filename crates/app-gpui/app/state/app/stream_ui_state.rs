@@ -1,5 +1,6 @@
 #[derive(Debug, Clone)]
 pub struct StreamUiState {
+    pub editor_open: bool,
     pub store: sotf_audio_player::SavedStreamStore,
     pub selected_index: usize,
     pub name_input: String,
@@ -13,6 +14,7 @@ pub struct StreamUiState {
 impl Default for StreamUiState {
     fn default() -> Self {
         Self {
+            editor_open: false,
             store: sotf_audio_player::load_saved_streams().unwrap_or_default(),
             selected_index: 0,
             name_input: String::new(),
@@ -26,6 +28,21 @@ impl Default for StreamUiState {
 }
 
 impl StreamUiState {
+    pub fn begin_add(&mut self) {
+        self.clear_editor();
+        self.editor_open = true;
+        self.last_status = None;
+    }
+
+    pub fn clear_editor(&mut self) {
+        self.editor_open = false;
+        self.name_input.clear();
+        self.url_input.clear();
+        self.format_hint_input.clear();
+        self.seekable_input = false;
+        self.last_error = None;
+    }
+
     pub fn format_hint(&self) -> Option<String> {
         let hint = self.format_hint_input.trim();
         (!hint.is_empty()).then(|| hint.to_string())

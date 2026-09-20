@@ -1,0 +1,32 @@
+# macOS formats, including Apple AUNBandEQ. PASS does not establish format fidelity.
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "/tmp/sotf-spinorama-other-formats"
+demo_audio_dir = "data_tests/audio"
+readiness_timeout = "20s"
+size = "1440x900"
+
+[[scenario]]
+name = "spinorama-export-rme-channel"
+path = "crates/sotf-dev-driver/scenarios/spinorama_export_rme_channel.scn"
+timeout = "30s"
+
+[[scenario]]
+name = "spinorama-export-rme-room"
+path = "crates/sotf-dev-driver/scenarios/spinorama_export_rme_room.scn"
+timeout = "30s"
+
+[[scenario]]
+name = "spinorama-export-aupreset"
+path = "crates/sotf-dev-driver/scenarios/spinorama_export_aupreset.scn"
+timeout = "30s"
+
+[[scenario]]
+name = "spinorama-export-wavelet"
+path = "crates/sotf-dev-driver/scenarios/spinorama_export_wavelet.scn"
+timeout = "30s"
+
+[[scenario]]
+name = "spinorama-export-roon"
+path = "crates/sotf-dev-driver/scenarios/spinorama_export_roon.scn"
+timeout = "30s"

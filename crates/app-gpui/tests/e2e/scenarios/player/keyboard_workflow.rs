@@ -189,12 +189,17 @@ impl TestScenario for KeyboardLibraryQueueScenario {
                 app.library_state.home_album_selection.shelf_id.clone(),
                 app.library_state.home_album_selection.album_index,
             )),
-            (Some("favorite".to_string()), 0),
+            (Some("recommended".to_string()), 0),
             "Right did not select the first visible Home album"
         );
-        driver.simulate_keystrokes("enter");
+        driver.simulate_keystrokes("shift-enter");
         driver.run_until_parked();
         assert_eq!(driver.read_app(|app| app.queue_state.len()), 1);
+        assert_eq!(
+            driver.read_app(|app| app.ui_state.current_screen),
+            Screen::Home
+        );
+        assert!(!driver.read_app(|app| app.playback.is_playing));
 
         driver.simulate_keystrokes("right");
         driver.run_until_parked();
@@ -203,7 +208,7 @@ impl TestScenario for KeyboardLibraryQueueScenario {
             1,
             "Right did not select the next visible Home album"
         );
-        driver.simulate_keystrokes("enter");
+        driver.simulate_keystrokes("shift-enter");
         driver.run_until_parked();
         assert_eq!(driver.read_app(|app| app.queue_state.len()), 2);
 
@@ -220,7 +225,7 @@ impl TestScenario for KeyboardLibraryQueueScenario {
         driver.run_until_parked();
         assert_eq!(driver.read_app(|app| app.queue_state.selected_index), 1);
 
-        driver.simulate_keystrokes("enter");
+        driver.simulate_keystrokes("a");
         driver.run_until_parked();
         assert_eq!(
             driver.read_app(|app| app.playback.current_queue_index),
@@ -263,7 +268,7 @@ impl TestScenario for KeyboardWizardScenario {
         let mut driver = AppDriver::new(cx, window);
 
         driver.update_app(|app, _| {
-            app.ui_state.last_screen = Screen::Library;
+            app.ui_state.navigation.last_screen = Screen::Library;
             app.ui_state.current_screen = Screen::Recording;
             app.measurement_state.recording_state.step = RecordingStep::Saving;
         });
@@ -275,7 +280,7 @@ impl TestScenario for KeyboardWizardScenario {
         );
 
         driver.update_app(|app, _| {
-            app.ui_state.last_screen = Screen::Library;
+            app.ui_state.navigation.last_screen = Screen::Library;
             app.ui_state.current_screen = Screen::RoomEq;
             app.measurement_state.room_eq_state.step = RoomEqStep::Export;
         });
@@ -287,7 +292,7 @@ impl TestScenario for KeyboardWizardScenario {
         );
 
         driver.update_app(|app, _| {
-            app.ui_state.last_screen = Screen::Library;
+            app.ui_state.navigation.last_screen = Screen::Library;
             app.ui_state.current_screen = Screen::HeadphoneEq;
             app.measurement_state.headphone_eq_state.model.step = HeadphoneEqStep::Export;
         });
@@ -299,7 +304,7 @@ impl TestScenario for KeyboardWizardScenario {
         );
 
         driver.update_app(|app, _| {
-            app.ui_state.last_screen = Screen::Library;
+            app.ui_state.navigation.last_screen = Screen::Library;
             app.ui_state.current_screen = Screen::Spinorama;
             app.measurement_state.spinorama_eq_state.model.step = SpinoramaStep::Export;
         });

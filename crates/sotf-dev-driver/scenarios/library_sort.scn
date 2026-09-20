@@ -1,0 +1,39 @@
+focus library
+wait_until library.album_count > 0 timeout=10s
+wait_idle 2s
+click library.tab.tracks
+assert library.result_order == "Recent"
+click library-result-order
+assert library.sort_menu_open == true
+key down
+assert library.sort_highlight == 1
+key enter
+wait_until library.result_order == "Title" timeout=2s
+assert library.sort_order == "Tracks"
+assert library.sort_menu_open == false
+click library.tab.artist
+assert library.result_order == "Title"
+click library-result-order
+key down
+key enter
+wait_until library.result_order == "Artist" timeout=2s
+assert library.sort_order == "Artist"
+click library.search_input
+type "Demo"
+assert library.result_order == "Artist"
+click library.tab.album
+assert library.result_order == "Artist"
+assert library.search_query == "Demo"
+click library-result-order
+key escape
+assert library.sort_menu_open == false
+assert library.search_query == "Demo"
+assert library.result_order == "Artist"
+resize 600 800
+wait_idle 2s
+assert_in_viewport library-result-order
+assert_in_viewport library.tab.album
+assert_in_viewport library.search_input
+screenshot library-independent-sort-narrow
+assert queue.length == 0
+assert toast.type == null

@@ -1,0 +1,27 @@
+assert screen.focused == "HeadphoneEq"
+wait_idle 2s
+scroll headphone.content -400
+wait_idle 1s
+assert_in_viewport headphone.refresh
+click headphone.refresh
+wait_until headphone.loading == false timeout=5s
+assert_in_viewport headphone.content
+scroll headphone.content -250
+wait_idle 1s
+click headphone.select.Fixture One
+wait_until headphone.loading == false timeout=5s
+assert headphone.identity_expanded == false
+assert headphone.curve_point_count == 3
+resize 600 800
+wait_idle 1s
+assert_in_viewport headphone.content
+scroll headphone.content -5000
+wait_idle 1s
+assert_in_viewport headphone.measurement-identity
+click headphone.measurement-identity
+wait_idle 1s
+assert headphone.identity_expanded == true
+scroll headphone.content -5000
+wait_idle 1s
+screenshot headphone-measurement-identity
+assert playback.is_playing == false

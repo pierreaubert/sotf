@@ -547,32 +547,39 @@ pub fn render_vertical_slider_sized(
     let min = control_range.min;
     let max = control_range.max;
 
-    if is_selected {
-        return NumberInput::new(SharedString::from(format!(
-            "plugin-number-input-{plugin_idx}-{idx}"
-        )))
-        .value(value)
-        .min(min)
-        .max(max)
-        .step(((max - min) / 1000.0).max(0.0001))
-        .decimals(3)
-        .unit(unit)
-        .size(NumberInputSize::Xs)
-        .width(104.0)
-        .aria_label(format!("{label} value"))
-        .on_change({
-            let entity = entity.clone();
-            move |new_value, _window, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.set_plugin_param(plugin_idx, idx, new_value);
-                });
-            }
-        })
-        .into_any_element();
-    }
+    // Keep the slider mounted while selected so mouse-down cannot discard
+    // its pending drag or double-click reset event.
+    let number_input = if is_selected {
+        Some(
+            NumberInput::new(SharedString::from(format!(
+                "plugin-number-input-{plugin_idx}-{idx}"
+            )))
+            .value(value)
+            .min(min)
+            .max(max)
+            .step(((max - min) / 1000.0).max(0.0001))
+            .decimals(3)
+            .unit(unit)
+            .size(NumberInputSize::Xs)
+            .width(104.0)
+            .aria_label(format!("{label} value"))
+            .on_change({
+                let entity = entity.clone();
+                move |new_value, _window, cx| {
+                    entity.update(cx, |state, _| {
+                        state.app.set_plugin_param(plugin_idx, idx, new_value);
+                    });
+                }
+            })
+            .into_any_element(),
+        )
+    } else {
+        None
+    };
 
     let slider = VerticalSlider::new(("slider", plugin_idx * 1000 + idx));
     let mut slider = configure_vertical_slider_range(slider, min, max)
+        .scroll_requires_alt(true)
         .value(value)
         .unit(unit.to_string())
         .label(label.to_string())
@@ -629,8 +636,8 @@ pub fn render_vertical_slider_sized(
     }
 
     div()
-        .key_context("plugin-control")
-        .child(slider)
+        .child(div().key_context("plugin-control").child(slider))
+        .children(number_input.map(|input| div().child(input)))
         .into_any_element()
 }
 
@@ -694,32 +701,39 @@ pub fn render_vertical_slider_with_ticks_enabled(
     let min = control_range.min;
     let max = control_range.max;
 
-    if interactive && is_selected {
-        return NumberInput::new(SharedString::from(format!(
-            "plugin-number-input-{plugin_idx}-{idx}"
-        )))
-        .value(value)
-        .min(min)
-        .max(max)
-        .step(((max - min) / 1000.0).max(0.0001))
-        .decimals(3)
-        .unit(unit)
-        .label(label)
-        .size(NumberInputSize::Xs)
-        .aria_label(format!("{label} value"))
-        .on_change({
-            let entity = entity.clone();
-            move |new_value, _window, cx| {
-                entity.update(cx, |state, _| {
-                    state.app.set_plugin_param(plugin_idx, idx, new_value);
-                });
-            }
-        })
-        .into_any_element();
-    }
+    // Keep the slider mounted while selected so mouse-down cannot discard
+    // its pending drag or double-click reset event.
+    let number_input = if interactive && is_selected {
+        Some(
+            NumberInput::new(SharedString::from(format!(
+                "plugin-number-input-{plugin_idx}-{idx}"
+            )))
+            .value(value)
+            .min(min)
+            .max(max)
+            .step(((max - min) / 1000.0).max(0.0001))
+            .decimals(3)
+            .unit(unit)
+            .label(label)
+            .size(NumberInputSize::Xs)
+            .aria_label(format!("{label} value"))
+            .on_change({
+                let entity = entity.clone();
+                move |new_value, _window, cx| {
+                    entity.update(cx, |state, _| {
+                        state.app.set_plugin_param(plugin_idx, idx, new_value);
+                    });
+                }
+            })
+            .into_any_element(),
+        )
+    } else {
+        None
+    };
 
     let slider = VerticalSlider::new(("slider-ticks", plugin_idx * 1000 + idx));
     let mut slider = configure_vertical_slider_range(slider, min, max)
+        .scroll_requires_alt(true)
         .value(value)
         .unit(unit.to_string())
         .label(label.to_string())
@@ -776,8 +790,8 @@ pub fn render_vertical_slider_with_ticks_enabled(
     }
 
     div()
-        .key_context("plugin-control")
-        .child(slider)
+        .child(div().key_context("plugin-control").child(slider))
+        .children(number_input.map(|input| div().child(input)))
         .into_any_element()
 }
 
@@ -1352,7 +1366,9 @@ fn render_knob_sized_enabled_with_focus(
         PotentiometerScale::Linear
     };
 
-    let knob = Potentiometer::new(("knob", plugin_idx * 1000 + idx)).value(value);
+    let knob = Potentiometer::new(("knob", plugin_idx * 1000 + idx))
+        .value(value)
+        .scroll_requires_alt(true);
     // Potentiometer reformats after every range setter and starts at 0..100.
     // Set the bound that keeps the intermediate range valid first.
     let knob = if min > 100.0 {

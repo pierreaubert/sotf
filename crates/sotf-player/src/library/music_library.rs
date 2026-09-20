@@ -35,6 +35,7 @@ use walkdir::WalkDir;
 pub struct MusicLibrary {
     pub directories: Vec<DirectoryInfo>,
     pub albums: Vec<Album>,
+    last_played_by_track: HashMap<PathBuf, u64>,
     pub(super) db: Option<MusicDatabase>,
     /// Cached directory stats for lazy loading of subdirectories.
     /// Per directory we store `(track_count, album_keys)` — the set of unique
@@ -53,6 +54,66 @@ impl MusicLibrary {
 
     pub fn album_count(&self) -> usize {
         self.albums.len()
+    }
+
+    /// Playback-recency order, independent of popularity and release year.
+    /// This uses cached history only; callers may use it during presentation.
+    pub fn recently_played_albums(&self) -> Vec<&Album> {
+        let mut albums = self
+            .albums
+            .iter()
+            .filter_map(|album| {
+                album
+                    .tracks
+                    .iter()
+                    .filter_map(|track| self.last_played_by_track.get(&track.path))
+                    .max()
+                    .copied()
+                    .map(|timestamp| (timestamp, album))
+            })
+            .collect::<Vec<_>>();
+        albums.sort_by(|(a_time, a), (b_time, b)| {
+            b_time
+                .cmp(a_time)
+                .then_with(|| a.title.cmp(&b.title))
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        albums.into_iter().map(|(_, album)| album).collect()
+    }
+
+    #[cfg(feature = "dev-api")]
+    pub fn set_playback_history_fixture(&mut self, history: HashMap<PathBuf, u64>) {
+        self.last_played_by_track = history;
+    }
+
+    /// Persist a qualified listen and update the in-memory presentation data.
+    /// Returns false when no database is attached or the listen is too short.
+    pub fn record_play(&mut self, path: &Path, duration_secs: u64) -> rusqlite::Result<bool> {
+        if duration_secs < 30 {
+            return Ok(false);
+        }
+        let Some(db) = &self.db else {
+            return Ok(false);
+        };
+        let Some(timestamp) = db.record_play_timestamp(path, duration_secs)? else {
+            return Ok(false);
+        };
+        self.last_played_by_track
+            .insert(path.to_path_buf(), timestamp);
+        for album in &mut self.albums {
+            let mut matched = false;
+            for track in &mut album.tracks {
+                if track.path == path {
+                    track.play_count = track.play_count.saturating_add(1);
+                    matched = true;
+                }
+            }
+            if matched {
+                album.play_count = album.play_count.saturating_add(1);
+            }
+        }
+        self.invalidate_stats_cache();
+        Ok(true)
     }
 
     pub fn stats(&mut self) -> &LibraryStats {
@@ -170,6 +231,7 @@ impl MusicLibrary {
         if let Some(db) = &self.db {
             // Load albums
             self.albums = db.load_library()?;
+            self.last_played_by_track = db.get_all_track_last_played()?;
             self.stats_cache = LibraryStats::compute(&self.albums);
             let t_after_albums = std::time::Instant::now();
 
@@ -1055,35 +1117,7 @@ impl MusicLibrary {
                                 }
                             });
 
-                            let track = Track {
-                                path: path.to_path_buf(),
-                                title: metadata.title,
-                                artist: metadata.artist,
-                                track_number: metadata.track_number,
-                                duration_secs: metadata.duration_secs,
-                                channels: metadata.channels,
-                                sample_rate: metadata.sample_rate,
-                                bit_depth: metadata.bit_depth,
-                                replay_gain: None,
-                                replay_peak: None,
-                                album_gain: None,
-                                album_peak: None,
-                                waveform: None, // Will be computed separately
-                                genre: metadata.genre,
-                                composer: metadata.composer,
-                                disc_number: metadata.disc_number,
-                                conductor: metadata.conductor,
-                                performer: metadata.performer,
-                                isrc: metadata.isrc,
-                                album_artist: metadata.album_artist,
-                                ensemble: metadata.ensemble,
-                                edition: metadata.edition.clone(),
-                                is_favorite: false,
-                                play_count: 0,
-                                source: None,
-                                uuid: None,
-                            };
-
+                            let track = Track::from_metadata(path.to_path_buf(), metadata);
                             album.tracks.push(track);
                         }
                         Err(e) => {

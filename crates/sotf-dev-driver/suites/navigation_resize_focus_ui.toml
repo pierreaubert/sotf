@@ -1,0 +1,28 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+size = "1440x900"
+
+[[scenario]]
+name = "navigation-resize-focus"
+path = "crates/sotf-dev-driver/scenarios/navigation_resize_focus.scn"
+timeout = "45s"
+tags = ["navigation", "keyboard", "responsive", "focus"]
+
+[[scenario]]
+name = "navigation-resize-focus-light-200"
+path = "crates/sotf-dev-driver/scenarios/navigation_resize_focus.scn"
+timeout = "45s"
+theme = "Light"
+ui_scale = 2.0
+tags = ["navigation", "keyboard", "responsive", "focus", "scale"]
+
+[[scenario]]
+name = "navigation-resize-focus-german-150"
+path = "crates/sotf-dev-driver/scenarios/navigation_resize_focus.scn"
+timeout = "45s"
+theme = "BlackAndWhite"
+language = "German"
+ui_scale = 1.5
+tags = ["navigation", "keyboard", "responsive", "focus", "locale"]

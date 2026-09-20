@@ -197,6 +197,7 @@ pub(super) fn adjust_plugin_param(
         }
         // === MultibandCompressor band-level params (idx >= 100) ===
         PluginSettings::MultibandCompressor {
+            num_bands,
             threshold_db,
             ratio,
             attack_ms,
@@ -227,6 +228,13 @@ pub(super) fn adjust_plugin_param(
             }
             let band_idx = (param_idx / 100) - 1;
             let local_idx = param_idx % 100;
+            if band_idx >= *num_bands
+                || !matches!(local_idx, 6..=10 | 13..=17)
+                || !delta.is_finite()
+            {
+                return false;
+            }
+            bands.resize_with(bands.len().max(band_idx + 1), Default::default);
             if let Some(band) = bands.get_mut(band_idx) {
                 match local_idx {
                     6 => band_adj!(band.threshold_db, threshold_db, "threshold", delta as f32),
@@ -264,6 +272,7 @@ pub(super) fn adjust_plugin_param(
         }
         // === MultibandExpander band-level params (idx >= 100) ===
         PluginSettings::MultibandExpander {
+            num_bands,
             threshold_db,
             ratio,
             attack_ms,
@@ -297,6 +306,10 @@ pub(super) fn adjust_plugin_param(
             }
             let band_idx = (param_idx / 100) - 1;
             let local_idx = param_idx % 100;
+            if band_idx >= *num_bands || !matches!(local_idx, 6..=17) || !delta.is_finite() {
+                return false;
+            }
+            bands.resize_with(bands.len().max(band_idx + 1), Default::default);
             if let Some(band) = bands.get_mut(band_idx) {
                 match local_idx {
                     6 => band_adj!(band.threshold_db, threshold_db, "threshold", delta as f32),

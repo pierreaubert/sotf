@@ -637,3 +637,53 @@ fn library_clear_all_filters() {
     assert!(controller.selected_genre.is_none());
     assert!(controller.selected_year.is_none());
 }
+
+#[test]
+fn preset_reload_preserves_active_source_channel_layout() {
+    for (channels, plugin_type) in [
+        (1, PluginType::MonoToStereo),
+        (4, PluginType::AmbisonicsDecoder),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut graph = PluginGraph::with_default_rack();
+        graph.adapt_matrix_to_input(channels);
+        let user_index = graph.user_plugin_insert_index();
+        graph.add_plugin(&plugin_type).unwrap();
+        graph
+            .save_to_file(directory.path(), "source-layout")
+            .unwrap();
+        graph.remove_plugin_by_index(user_index).unwrap();
+        assert_eq!(graph.input_channel_count(), channels);
+
+        let warnings = graph
+            .load_from_file(directory.path(), "source-layout")
+            .unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(graph.input_channel_count(), channels);
+        assert_eq!(
+            graph.get_plugin(user_index).unwrap().plugin_type(),
+            plugin_type
+        );
+        assert!(graph.find_channel_conflicts(channels).is_empty());
+    }
+}
+
+#[test]
+fn preset_source_layout_does_not_override_incompatible_active_source() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut source = PluginGraph::with_default_rack();
+    source.adapt_matrix_to_input(1);
+    source.add_plugin(&PluginType::MonoToStereo).unwrap();
+    source
+        .save_to_file(directory.path(), "mono-source")
+        .unwrap();
+
+    let mut current = PluginGraph::with_default_rack();
+    current.add_plugin(&PluginType::Gain).unwrap();
+    let before = serde_json::to_value(&current).unwrap();
+    let error = current
+        .load_from_file(directory.path(), "mono-source")
+        .unwrap_err();
+    assert!(error.to_string().contains("upstream provides 2"), "{error}");
+    assert_eq!(serde_json::to_value(&current).unwrap(), before);
+}

@@ -7,10 +7,7 @@ use crate::app::AppState;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
 use crate::theme::Theme;
-use crate::ui::{
-    ALBUM_CARD_WIDTH_REMS, DEFAULT_MIN_FONT_SIZE_PX, combined_scale_bounds,
-    compute_responsive_scale,
-};
+use crate::ui::{ALBUM_CARD_WIDTH_REMS, DEFAULT_MIN_FONT_SIZE_PX, compute_combined_scale};
 use gpui::prelude::*;
 use gpui::*;
 use sotf_audio_player::Album;
@@ -81,11 +78,14 @@ impl RenderOnce for AlbumCard {
             .map(|state| {
                 let state = state.read(cx);
                 let ui = &state.app.ui_state;
-                let responsive_scale = compute_responsive_scale(ui.window_width, ui.window_height);
-                let (scale_min, scale_max) =
-                    combined_scale_bounds(ui.min_font_size_px, ui.max_font_size_px);
-                let effective_rem_px =
-                    16.0 * (ui.font_scale * responsive_scale).clamp(scale_min, scale_max);
+                let effective_rem_px = 16.0
+                    * compute_combined_scale(
+                        ui.window_width,
+                        ui.window_height,
+                        ui.font_scale,
+                        ui.min_font_size_px,
+                        ui.max_font_size_px,
+                    );
                 (
                     ui.min_font_size_px.unwrap_or(DEFAULT_MIN_FONT_SIZE_PX),
                     effective_rem_px,

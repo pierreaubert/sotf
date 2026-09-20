@@ -1151,6 +1151,7 @@ fn test_recording_state_review_needed_accept_flow() {
     state.channel_recordings[0].state = ChannelRecordingState::Done;
     state.channel_recordings[0].result = Some(workflow_recording_result());
     state.channel_recordings[1].state = ChannelRecordingState::ReviewNeeded;
+    state.channel_recordings[1].result = Some(workflow_recording_result());
 
     // Position 0 is not complete while a take is parked for review.
     assert!(!state.position_complete(0));
@@ -1227,6 +1228,7 @@ fn test_plugin_view_mode_variants() {
 
 fn workflow_recording_result() -> RecordingResult {
     RecordingResult {
+        sample_rate_hz: None,
         channel: 0,
         wav_path: None,
         csv_path: None,
@@ -1273,7 +1275,7 @@ fn workflow_spinorama_result() -> SpinoramaEqResult {
 }
 
 fn start_workflow(app: &mut App, screen: Screen) {
-    app.ui_state.last_screen = Screen::Library;
+    app.ui_state.navigation.last_screen = Screen::Library;
     app.ui_state.current_screen = screen;
 }
 
@@ -1313,16 +1315,23 @@ fn recording_workflow_navigation_validates_and_initializes_channels() {
 
     for recording in &mut app.measurement_state.recording_state.channel_recordings {
         recording.state = ChannelRecordingState::Done;
+        recording.result = Some(workflow_recording_result());
     }
     for expected in [
         RecordingStep::Probe,
         RecordingStep::BassAnchor,
         RecordingStep::Evaluating,
-        RecordingStep::Saving,
     ] {
         assert!(app.move_workflow_step(true));
         assert_eq!(app.measurement_state.recording_state.step, expected);
     }
+    assert!(!app.move_workflow_step(true));
+    assert!(app.measurement_state.recording_state.accept_take(0));
+    assert!(app.move_workflow_step(true));
+    assert_eq!(
+        app.measurement_state.recording_state.step,
+        RecordingStep::Saving
+    );
     assert!(app.move_workflow_step(true));
     assert_eq!(app.ui_state.current_screen, Screen::Library);
 }
@@ -1342,6 +1351,8 @@ fn room_eq_workflow_navigation_enforces_each_data_gate() {
         .room_eq_state
         .channel_measurements
         .push(ChannelMeasurement {
+            driver_measurement_sets: Vec::new(),
+            provenance: Vec::new(),
             channel_name: "L".to_string(),
             measurement: workflow_recording_result(),
             is_group: false,

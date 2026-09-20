@@ -13,6 +13,152 @@ use sotf_audio_player_gpui::{
 use std::path::PathBuf;
 
 #[test]
+fn audio_preferences_default_for_legacy_configuration() {
+    let config: Config = serde_json::from_str(r#"{"directories":[]}"#).unwrap();
+    assert_eq!(config.audio, Default::default());
+}
+
+#[test]
+fn audio_preferences_save_replaces_complete_config_and_rejects_invalid_values() {
+    use sotf_audio_player::ReplayGainMode;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("preferences.json");
+    let mut config: Config = serde_json::from_str(r#"{"directories":[]}"#).unwrap();
+    config.audio.output_device = Some("Studio DAC".into());
+    config.audio.sample_rate_hz = 96000;
+    config.audio.channel_count = 6;
+    config.audio.buffer_frames = 512;
+    config.audio.replay_gain_mode = ReplayGainMode::Album;
+    config.audio.replay_gain_enabled = false;
+    config.save_to_path(&path).unwrap();
+    let previous = std::fs::read(&path).unwrap();
+    let loaded: Config = serde_json::from_slice(&previous).unwrap();
+    assert_eq!(loaded.audio, config.audio);
+    config.audio.sample_rate_hz = 0;
+    assert!(config.save_to_path(&path).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), previous);
+    config.audio.sample_rate_hz = 48000;
+    config.audio.buffer_frames = 0;
+    assert!(config.save_to_path(&path).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), previous);
+    config.audio.buffer_frames = 512;
+    config.save_to_path(&path).unwrap();
+    let loaded: Config = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(loaded.audio.sample_rate_hz, 48000);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+}
+
+#[test]
+fn audio_preferences_restore_and_snapshot_exclude_pending_edits() {
+    use sotf_audio_player::ReplayGainMode;
+    use sotf_audio_player_gpui::app::App;
+    let mut config: Config = serde_json::from_str(r#"{"directories":[]}"#).unwrap();
+    config.audio.sample_rate_hz = 96000;
+    config.audio.channel_count = 6;
+    config.audio.buffer_frames = 512;
+    config.audio.replay_gain_enabled = false;
+    config.audio.replay_gain_mode = ReplayGainMode::Album;
+    let expected = config.audio.clone();
+    let mut app = App::new();
+    app.load_config_from(config).unwrap();
+    assert_eq!(app.audio_preferences(), expected);
+    app.audio_device_state
+        .output_draft
+        .set_sample_rate_hz(192000, 96000);
+    app.audio_device_state
+        .output_draft
+        .set_replay_gain_enabled(true, false);
+    assert_eq!(app.audio_preferences(), expected);
+    let mut invalid = expected.clone();
+    invalid.channel_count = 0;
+    assert!(app.restore_audio_preferences(&invalid).is_err());
+    assert_eq!(app.audio_preferences(), expected);
+    let mut invalid_config: Config = serde_json::from_str(r#"{"directories":[]}"#).unwrap();
+    invalid_config.audio = invalid;
+    invalid_config.muted = true;
+    assert!(app.load_config_from(invalid_config).is_err());
+    assert!(!app.playback.muted);
+}
+
+#[test]
+fn audio_preferences_pending_target_is_not_committed() {
+    use sotf_audio_player_gpui::app::state::audio_device::PendingAudioApply;
+    use sotf_audio_player_gpui::app::{App, player_handle::PlayerHandle};
+    let mut app = App::new();
+    let committed = app.audio_preferences();
+    let mut target = committed.clone();
+    target.sample_rate_hz = 192000;
+    target.replay_gain_enabled = !committed.replay_gain_enabled;
+    app.audio_device_state
+        .output_draft
+        .set_sample_rate_hz(192000, committed.sample_rate_hz);
+    let handle = PlayerHandle::new(sotf_audio_player::Player::new());
+    app.audio_device_state.audio_apply.pending = Some(PendingAudioApply {
+        receipt: handle.stop_with_receipt().unwrap(),
+        target,
+        target_index: 0,
+        draft: app.audio_device_state.output_draft.clone(),
+        previous_graph_gain: None,
+        recovery: None,
+    });
+    assert_eq!(app.audio_preferences(), committed);
+    assert!(app.audio_device_state.output_draft.is_dirty());
+}
+
+#[test]
+fn transport_receipt_identity_distinguishes_a_newer_stop() {
+    use sotf_audio_player_gpui::app::player_handle::PlayerHandle;
+    let player = PlayerHandle::new(sotf_audio_player::Player::new());
+    let original = player.stop_with_receipt().unwrap();
+    assert!(original.is_same_command(&original.clone()));
+    let newer = player.stop_with_receipt().unwrap();
+    assert!(!original.is_same_command(&newer));
+    assert!(newer.is_same_command(&player.last_transport_receipt().unwrap()));
+}
+
+#[test]
+fn audio_preferences_restore_output_after_device_discovery() {
+    use sotf_audio::devices::AudioDevice;
+    use sotf_audio_player_gpui::app::state::audio_device::AudioDeviceState;
+    let device = |name: &str, is_default: bool| AudioDevice {
+        device_id: None,
+        name: name.into(),
+        display_info: None,
+        is_input: false,
+        is_default,
+        supported_configs: Vec::new(),
+        default_config: None,
+        available_sample_rates: Vec::new(),
+    };
+    let mut state = AudioDeviceState {
+        current_output_device_name: Some("Saved DAC".into()),
+        ..Default::default()
+    };
+    state.set_output_devices_with_smart_default(vec![
+        device("Built-in", true),
+        device("Saved DAC", false),
+    ]);
+    assert_eq!(state.selected_output_device_index, 1);
+    assert_eq!(
+        state.current_output_device_name.as_deref(),
+        Some("Saved DAC")
+    );
+    state.set_output_devices_with_smart_default(vec![device("Built-in", true)]);
+    assert_eq!(state.selected_output_device_index, 0);
+    assert_eq!(
+        state.current_output_device_name.as_deref(),
+        Some("Built-in")
+    );
+}
+
+#[test]
 fn test_recording_config_state_default() {
     let config = RecordingConfigState::default();
     assert_eq!(config.signal_duration_secs, 5.0);
@@ -179,6 +325,7 @@ fn test_config_serialization() {
 
     let schedule = ThemeSchedule::new(TimeOfDay::new(6, 30), TimeOfDay::new(21, 15));
     let config = Config {
+        audio: Default::default(),
         directories: Vec::new(),
         last_loaded_plugin_preset: Some("test_preset".to_string()),
         theme: ThemeId::default(),
@@ -759,4 +906,42 @@ fn test_save_and_load_config_persists_language_and_tutorial_flag() {
     assert!(loaded.tutorial_completed);
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn explicit_system_default_survives_refresh_and_config_restore() {
+    use sotf_audio::devices::AudioDevice;
+    use sotf_audio_player_gpui::app::state::audio_device::AudioDeviceState;
+    let device = |name: &str, is_default: bool| AudioDevice {
+        device_id: None,
+        name: name.into(),
+        display_info: None,
+        is_input: false,
+        is_default,
+        supported_configs: vec![],
+        default_config: None,
+        available_sample_rates: vec![],
+    };
+    let mut state = AudioDeviceState {
+        follow_system_default: true,
+        ..Default::default()
+    };
+    state.set_output_devices_with_smart_default(vec![
+        device("DAC", false),
+        device("Speakers", true),
+    ]);
+    assert_eq!(state.selected_output_device_index, 1);
+    assert_eq!(state.current_output_device_name, None);
+    state.set_output_devices_with_smart_default(vec![
+        device("DAC", true),
+        device("Speakers", false),
+    ]);
+    assert_eq!(state.selected_output_device_index, 0);
+    assert_eq!(state.current_output_device_name, None);
+    let mut app = sotf_audio_player_gpui::app::App::new();
+    let mut preferences = app.audio_preferences();
+    preferences.follow_system_default = true;
+    preferences.output_device = None;
+    app.restore_audio_preferences(&preferences).unwrap();
+    assert_eq!(app.audio_preferences(), preferences);
 }

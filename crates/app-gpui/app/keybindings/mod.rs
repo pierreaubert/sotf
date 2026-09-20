@@ -392,6 +392,16 @@ pub fn get_documented_keybindings_for_screen(
     catalog::documented_keybindings_for_screen_from_runtime(screen, &runtime_bindings)
 }
 
+/// Contextual shortcut labels with the same overrides as the active keymap.
+pub fn get_documented_keybindings_for_screen_with_overrides(
+    screen: crate::app::Screen,
+    preset: KeymapPreset,
+    overrides: &[CustomKeybinding],
+) -> Vec<DocumentedKeybinding> {
+    let runtime_bindings = get_keybindings_with_overrides(preset, overrides);
+    catalog::documented_keybindings_for_screen_from_runtime(screen, &runtime_bindings)
+}
+
 /// Search executable command-palette rows using gpui-keybinding's discovery
 /// backend. Copy and categories are localized before indexing, so queries work
 /// in the language currently shown by the application.

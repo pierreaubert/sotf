@@ -1,0 +1,47 @@
+# 2026-09-08: MeasurementTarget lacked target selection; Flat fell through to
+# the custom-file loader. Fixed in headphone_eq/target_controls.rs and the
+# shared player autoeq/headphone.rs loader. Also exercises clipped-scrollport
+# targeting at 200% text scale and the app's Escape handler.
+# Run: target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/headphone_target_ui.toml -v
+action HeadphoneSetFileFixture {"mode":"valid"}
+wait_until headphone.loading == false timeout=5s
+assert headphone.target_preset == "harman-over-ear-2018"
+resize 600 800
+wait_idle 1s
+scroll headphone.content -5000
+wait_idle 1s
+assert_in_viewport headphone.target
+scroll_into_view headphone.content headphone.target
+click headphone.target
+assert headphone.target_open == true
+screenshot headphone-target-options
+key up
+key enter
+assert headphone.target_preset == "flat"
+assert headphone.can_advance == true
+click headphone.target
+key up
+key enter
+assert headphone.target_preset == "custom"
+assert headphone.can_advance == false
+screenshot headphone-custom-target-required
+click headphone.target
+key escape
+assert headphone.target_open == false
+click headphone.target
+key down
+key enter
+assert headphone.target_preset == "flat"
+assert headphone.can_advance == true
+click headphone.next
+assert headphone.step == "Optimization"
+assert headphone.target_preset == "flat"
+resize 1440 900
+wait_idle 1s
+scroll headphone.content -5000
+wait_idle 1s
+click headphone.optimize_start
+wait_until headphone.optimization_status != "Running" timeout=25s
+assert headphone.optimization_status == "Completed"
+assert playback.is_playing == false
+screenshot headphone-flat-target-result

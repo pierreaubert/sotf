@@ -5,6 +5,25 @@ use crate::{
 };
 use std::path::PathBuf;
 
+/// Ordering independent of the selected library browse view.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum LibraryResultOrder {
+    #[default]
+    Recent,
+    Title,
+    Artist,
+}
+
+impl LibraryResultOrder {
+    fn album_order(self) -> LibrarySortOrder {
+        match self {
+            Self::Recent => LibrarySortOrder::Year,
+            Self::Title => LibrarySortOrder::Album,
+            Self::Artist => LibrarySortOrder::Artist,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct LibraryController {
     /// The underlying music library (albums, directories)
@@ -12,6 +31,8 @@ pub struct LibraryController {
 
     /// Current sort order
     pub sort_order: LibrarySortOrder,
+    /// Optional independent ordering. None preserves legacy browse/sort coupling.
+    pub result_order: Option<LibraryResultOrder>,
 
     /// Current channel filter
     pub filter: ChannelFilter,
@@ -82,6 +103,7 @@ impl LibraryController {
         Self {
             library,
             sort_order: LibrarySortOrder::default(),
+            result_order: None,
             filter: ChannelFilter::default(),
             search_query: String::new(),
             selected_index: 0,
@@ -163,7 +185,9 @@ impl LibraryController {
     pub(super) fn recompute_cache(&mut self) {
         self.cached_albums = self.library.get_filtered_albums(
             &self.search_query,
-            self.sort_order,
+            self.result_order
+                .map(LibraryResultOrder::album_order)
+                .unwrap_or(self.sort_order),
             self.filter,
             self.show_favorites_only,
         );
@@ -308,6 +332,41 @@ impl LibraryController {
             .collect()
     }
 
+    /// Track rows retain album filters, but a track-title search must not expose
+    /// every other track in the matching album. Indices refer to the returned album.
+    pub fn selection_filtered_tracks(&self) -> Vec<(&Album, usize)> {
+        let query = self.search_query.trim().to_lowercase();
+        self.selection_filtered_albums()
+            .into_iter()
+            .flat_map(|album| {
+                let album_matches = query.is_empty()
+                    || album.title.to_lowercase().contains(&query)
+                    || album.artist().to_lowercase().contains(&query);
+                let query = &query;
+                album
+                    .tracks
+                    .iter()
+                    .enumerate()
+                    .filter_map(move |(index, track)| {
+                        let matches = album_matches
+                            || track
+                                .title
+                                .as_deref()
+                                .unwrap_or_default()
+                                .to_lowercase()
+                                .contains(query)
+                            || track
+                                .artist
+                                .as_deref()
+                                .unwrap_or_default()
+                                .to_lowercase()
+                                .contains(query);
+                        matches.then_some((album, index))
+                    })
+            })
+            .collect()
+    }
+
     /// Populate `cached_selection_indices` so subsequent `selection_filtered_albums`
     /// calls are O(n) over a tighter list rather than O(n) over all cached
     /// albums. Safe to call from any code that already holds `&mut self`.
@@ -322,6 +381,16 @@ impl LibraryController {
             }
         }
         self.cached_selection_indices = Some(indices);
+    }
+
+    /// Reorder results while retaining the current view, query and filters.
+    pub fn set_result_order(&mut self, order: LibraryResultOrder) {
+        if self.result_order != Some(order) {
+            self.result_order = Some(order);
+            self.selected_index = 0;
+            self.current_page = 0;
+            self.invalidate_cache();
+        }
     }
 
     /// Set sort order, clear selection filters, and reset selection.
@@ -365,6 +434,13 @@ impl LibraryController {
             ChannelFilter::SurroundPlus => ChannelFilter::Mixed,
             ChannelFilter::Mixed | ChannelFilter::Specific(_) => ChannelFilter::All,
         };
+        self.selected_index = 0;
+        self.invalidate_cache();
+    }
+
+    /// Filter the explicitly selected view without navigating to another view.
+    pub fn set_search_query_in_current_view(&mut self, query: String) {
+        self.search_query = query;
         self.selected_index = 0;
         self.invalidate_cache();
     }
@@ -681,6 +757,13 @@ impl LibraryController {
         self.invalidate_cache();
 
         result
+    }
+
+    /// Publish albums loaded by a background database worker and refresh derived caches.
+    pub fn replace_loaded_albums(&mut self, albums: Vec<Album>) {
+        self.library.albums = albums;
+        self.library.refresh_dir_stats_cache();
+        self.invalidate_cache();
     }
 
     /// Load library from database.

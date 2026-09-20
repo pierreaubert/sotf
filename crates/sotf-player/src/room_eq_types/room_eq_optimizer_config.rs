@@ -437,6 +437,7 @@ impl RoomEqOptimizerConfig {
                     threshold_db: pr.threshold_db,
                     max_time_s: pr.max_time_s,
                 }),
+            ..Default::default()
         });
 
         let mixed_phase = if self.mode == RoomEqOptimizationMode::MixedPhase {
@@ -583,6 +584,8 @@ impl RoomEqOptimizerConfig {
                     .continuous_area
                     .as_ref()
                     .map(continuous_area_to_backend),
+                seat_identity: None,
+                search: None,
             })
         } else {
             None

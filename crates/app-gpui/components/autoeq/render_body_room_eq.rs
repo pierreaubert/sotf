@@ -69,6 +69,7 @@
 
                 if config.room_correction.tilt_type == "custom" || config.room_correction.tilt_type == "harman" {
                     let mut slope_input = NumberInput::new((base_id.clone(), "tilt-slope"))
+                        .scroll_requires_alt(true)
                         .value(config.room_correction.tilt_slope)
                         .min(ParamLimits::TILT_SLOPE.min)
                         .max(ParamLimits::TILT_SLOPE.max)
@@ -84,6 +85,7 @@
                     }
 
                     let mut ref_freq_input = NumberInput::new((base_id.clone(), "tilt-ref-freq"))
+                        .scroll_requires_alt(true)
                         .value(config.room_correction.tilt_reference_freq)
                         .min(20.0)
                         .max(20000.0)
@@ -110,6 +112,7 @@
                     };
 
                     let mut shelf_db_input = NumberInput::new((base_id.clone(), "tilt-shelf-db"))
+                        .scroll_requires_alt(true)
                         .value(config.room_correction.tilt_bass_shelf_db)
                         .min(ParamLimits::BASS_SHELF.min)
                         .max(ParamLimits::BASS_SHELF.max)
@@ -126,6 +129,7 @@
 
                     let mut shelf_freq_input =
                         NumberInput::new((base_id.clone(), "tilt-shelf-freq"))
+                            .scroll_requires_alt(true)
                             .value(config.room_correction.tilt_bass_shelf_freq)
                             .min(20.0)
                             .max(1000.0)
@@ -289,6 +293,7 @@
 
             if config.algorithm.smooth {
                 let mut smooth_n_input = NumberInput::new((base_id.clone(), "smooth-n"))
+                    .scroll_requires_alt(true)
                     .value(config.algorithm.smooth_n as f64)
                     .min(ParamLimits::SMOOTH_N.min)
                     .max(ParamLimits::SMOOTH_N.max)
@@ -398,6 +403,7 @@
 
                 if !config.room_correction.excursion_auto_detect_f3 {
                     let mut f3_input = NumberInput::new((base_id.clone(), "excursion-manual-f3"))
+                        .scroll_requires_alt(true)
                         .value(config.room_correction.excursion_manual_f3)
                         .min(10.0)
                         .max(500.0)
@@ -437,6 +443,7 @@
                 }
 
                 let mut order_input = NumberInput::new((base_id.clone(), "excursion-order"))
+                    .scroll_requires_alt(true)
                     .value(config.room_correction.excursion_filter_order as f64)
                     .min(2.0)
                     .max(8.0)
@@ -464,6 +471,7 @@
                 };
 
                 let mut margin_input = NumberInput::new((base_id.clone(), "excursion-margin"))
+                    .scroll_requires_alt(true)
                     .value(config.room_correction.excursion_margin_octaves)
                     .min(0.0)
                     .max(1.0)
@@ -505,6 +513,7 @@
 
             if config.room_correction.use_schroeder_split {
                 let mut s_freq_input = NumberInput::new((base_id.clone(), "schroeder-freq"))
+                    .scroll_requires_alt(true)
                     .value(config.room_correction.schroeder_freq)
                     .min(ParamLimits::SCHROEDER_FREQ.min)
                     .max(ParamLimits::SCHROEDER_FREQ.max)
@@ -522,6 +531,7 @@
                 options_col = options_col.child(s_freq_input);
 
                 let mut low_q_input = NumberInput::new((base_id.clone(), "schroeder-low-q"))
+                    .scroll_requires_alt(true)
                     .value(config.room_correction.schroeder_low_max_q)
                     .min(1.0)
                     .max(20.0)
@@ -537,6 +547,7 @@
                 }
 
                 let mut high_q_input = NumberInput::new((base_id.clone(), "schroeder-high-q"))
+                    .scroll_requires_alt(true)
                     .value(config.room_correction.schroeder_high_max_q)
                     .min(0.5)
                     .max(5.0)
@@ -781,6 +792,7 @@
 
                 if config.system_optimization.use_phase_alignment {
                     let mut min_freq_input = NumberInput::new((base_id.clone(), "phase-min-freq"))
+                        .scroll_requires_alt(true)
                         .value(config.system_optimization.phase_min_freq)
                         .min(20.0)
                         .max(1000.0)
@@ -796,6 +808,7 @@
                     }
 
                     let mut max_freq_input = NumberInput::new((base_id.clone(), "phase-max-freq"))
+                        .scroll_requires_alt(true)
                         .value(config.system_optimization.phase_max_freq)
                         .min(20.0)
                         .max(1000.0)
@@ -843,6 +856,7 @@
                     );
 
                     let mut p_max_delay = NumberInput::new((base_id.clone(), "phase-max-delay"))
+                        .scroll_requires_alt(true)
                         .value(config.system_optimization.phase_max_delay_ms)
                         .min(ParamLimits::DELAY_MS.min)
                         .max(ParamLimits::DELAY_MS.max)
@@ -912,6 +926,7 @@
                     if config.system_optimization.multi_seat_strategy == "primary" {
                         let mut primary_seat_input =
                             NumberInput::new((base_id.clone(), "multi-seat-primary"))
+                                .scroll_requires_alt(true)
                                 .value(config.system_optimization.multi_seat_primary_seat as f64)
                                 .min(0.0)
                                 .max(16.0)
@@ -930,6 +945,7 @@
                     }
 
                     let mut dev_input = NumberInput::new((base_id.clone(), "multi-seat-max-dev"))
+                        .scroll_requires_alt(true)
                         .value(config.system_optimization.multi_seat_max_deviation_db)
                         .min(1.0)
                         .max(12.0)
@@ -1014,6 +1030,7 @@
 
                             let mut weight_input =
                                 NumberInput::new((base_id.clone(), SharedString::from(format!("multi-meas-weight-{}", i))))
+                                    .scroll_requires_alt(true)
                                     .value(weight)
                                     .min(ParamLimits::WEIGHT.min)
                                     .max(ParamLimits::WEIGHT.max)
@@ -1036,6 +1053,7 @@
                     if config.system_optimization.multi_measurement_strategy == "variance_penalized" {
                         let mut lambda_input =
                             NumberInput::new((base_id.clone(), "multi-meas-lambda"))
+                                .scroll_requires_alt(true)
                                 .value(config.system_optimization.multi_measurement_variance_lambda)
                                 .min(ParamLimits::VARIANCE_LAMBDA.min)
                                 .max(ParamLimits::VARIANCE_LAMBDA.max)

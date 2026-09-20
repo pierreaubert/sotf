@@ -1,0 +1,27 @@
+focus Settings
+action SettingsSetTab {"tab":"Library"}
+resize 600 800
+wait_idle 2s
+assert preferences.analysis_expanded == false
+assert_absent preferences.control.AudioAnalysis
+scroll preferences.content -5000
+wait_idle 1s
+assert_in_viewport settings.library.analysis-disclosure
+screenshot preferences-library-collapsed
+click settings.library.analysis-disclosure
+wait_idle 1s
+assert preferences.analysis_expanded == true
+key space
+wait_idle 1s
+assert preferences.analysis_expanded == false
+assert_absent preferences.control.AudioAnalysis
+click preferences.search
+type "waveform similarity"
+wait_idle 1s
+click preferences.result.AudioAnalysis
+wait_idle 2s
+assert preferences.analysis_expanded == true
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.AudioAnalysis
+screenshot preferences-library-analysis-revealed
+assert playback.is_playing == false

@@ -1,0 +1,25 @@
+# Stage, discard, apply and persist the explicit system-default route.
+action PreferencesSetOutputFixture
+wait_idle 500ms
+assert audio.follow_system_default == false
+assert audio.output_device == "QA DAC"
+click settings.output-device
+key down
+key enter
+assert preferences.output_default_draft == true
+assert preferences.audio_dirty == true
+assert audio.output_device == "QA DAC"
+click settings.audio-discard
+assert preferences.audio_dirty == false
+assert audio.follow_system_default == false
+click settings.output-device
+key down
+key enter
+click settings.audio-apply
+wait_until preferences.audio_dirty == false timeout=5s
+assert audio.follow_system_default == true
+assert audio.output_device == null
+assert settings.persisted_audio.follow_system_default == true
+assert settings.persisted_audio.output_device == null
+assert playback.is_playing == false
+screenshot preferences-system-default-applied

@@ -53,6 +53,7 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
     let is_bo_algorithm =
         args.algo.eq_ignore_ascii_case("autoeq:bo") || args.algo.eq_ignore_ascii_case("bo");
     OptimizerConfig {
+        upper_band_acoustic_bounds: Default::default(),
         loss_type: format!("{:?}", args.loss).to_lowercase(),
         algorithm: args.algo.clone(),
         strategy: args.strategy.clone(),
@@ -90,6 +91,8 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         asymmetric_loss_config: None,
         perceptual_policy: None,
         audibility_deadband: None,
+        filter_audibility: None,
+        pruning_budget: None,
         high_frequency_correction: None,
         early_late_correction: None,
         validation_bundle: None,
@@ -119,5 +122,7 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         auto_optimizer: None,
         smoothness_penalty: None,
         from_measurement_slope_override: None,
+        // Keep evolving RoomEQ acceptance/protection settings at their defaults.
+        ..Default::default()
     }
 }

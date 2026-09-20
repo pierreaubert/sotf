@@ -1,0 +1,16 @@
+action MetersSetFixture {"active":false}
+focus Studio
+plugin_clear
+plugin_add LoudnessMonitor
+action PluginSelectFirstUser
+wait_idle 1s
+assert plugins.plugin.2.enabled == true
+screenshot plugin-active-label
+assert_in_viewport plugin.shell.2.bypass
+click plugin.shell.2.bypass
+wait_until plugins.plugin.2.enabled == false timeout=3s
+wait_idle 500ms
+screenshot plugin-bypassed-label
+click plugin.shell.2.bypass
+wait_until plugins.plugin.2.enabled == true timeout=3s
+assert playback.is_playing == false

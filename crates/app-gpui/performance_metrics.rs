@@ -51,6 +51,7 @@ pub(crate) fn duration_ms(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1_000.0
 }
 
+#[cfg(feature = "dev-api")]
 pub(crate) fn rate(value: u64, elapsed_seconds: f64) -> f64 {
     if elapsed_seconds > 0.0 {
         value as f64 / elapsed_seconds
@@ -59,6 +60,7 @@ pub(crate) fn rate(value: u64, elapsed_seconds: f64) -> f64 {
     }
 }
 
+#[cfg(feature = "dev-api")]
 pub(crate) fn ratio(numerator: u64, denominator: u64) -> f64 {
     if denominator > 0 {
         numerator as f64 / denominator as f64

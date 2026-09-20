@@ -70,9 +70,14 @@ pub struct HomeAlbumSelection {
 #[derive(Debug)]
 pub struct LibraryState {
     ctrl: LibraryController,
+    pub album_detail: Option<std::sync::Arc<sotf_audio_player::Album>>,
 
     /// Number of columns in grid layout (UI-specific, not in controller)
     pub library_columns: usize,
+    /// Presentation only; switching does not alter library filters or playback.
+    pub album_list_view: bool,
+    pub sort_menu_open: bool,
+    pub sort_highlighted_index: Option<usize>,
     /// Keyboard selection for the local or remote Home discovery shelves.
     pub home_album_selection: HomeAlbumSelection,
     /// Bumped when the underlying local album/track data changes.
@@ -99,10 +104,19 @@ impl Default for LibraryState {
 }
 
 impl LibraryState {
+    fn desktop_controller(mut controller: LibraryController) -> LibraryController {
+        controller.set_result_order(sotf_audio_player::controllers::LibraryResultOrder::Recent);
+        controller
+    }
+
     pub fn new() -> Self {
         Self {
-            ctrl: LibraryController::new(),
+            ctrl: Self::desktop_controller(LibraryController::new()),
+            album_detail: None,
             library_columns: 4,
+            album_list_view: false,
+            sort_menu_open: false,
+            sort_highlighted_index: None,
             home_album_selection: HomeAlbumSelection::default(),
             content_generation: 0,
         }
@@ -110,8 +124,12 @@ impl LibraryState {
 
     pub fn with_library(library: MusicLibrary) -> Self {
         Self {
-            ctrl: LibraryController::with_library(library),
+            ctrl: Self::desktop_controller(LibraryController::with_library(library)),
+            album_detail: None,
             library_columns: 4,
+            album_list_view: false,
+            sort_menu_open: false,
+            sort_highlighted_index: None,
             home_album_selection: HomeAlbumSelection::default(),
             content_generation: 0,
         }
@@ -119,8 +137,12 @@ impl LibraryState {
 
     pub fn new_for_test() -> Self {
         Self {
-            ctrl: LibraryController::new_for_test(),
+            ctrl: Self::desktop_controller(LibraryController::new_for_test()),
+            album_detail: None,
             library_columns: 4,
+            album_list_view: false,
+            sort_menu_open: false,
+            sort_highlighted_index: None,
             home_album_selection: HomeAlbumSelection::default(),
             content_generation: 0,
         }
@@ -181,6 +203,24 @@ impl LibraryState {
             self.bump_content_generation();
         }
         result
+    }
+
+    pub fn replace_loaded_albums(&mut self, albums: Vec<sotf_audio_player::Album>) {
+        self.ctrl.replace_loaded_albums(albums);
+        self.bump_content_generation();
+    }
+
+    /// Accept a worker snapshot only if no newer library change or active scan supersedes it.
+    pub fn replace_loaded_albums_if_current(
+        &mut self,
+        generation: u64,
+        albums: Vec<sotf_audio_player::Album>,
+    ) -> bool {
+        if self.scan_in_progress || self.content_generation() != generation {
+            return false;
+        }
+        self.replace_loaded_albums(albums);
+        true
     }
 
     pub fn clean_database(&mut self) -> Result<usize, Box<dyn std::error::Error>> {

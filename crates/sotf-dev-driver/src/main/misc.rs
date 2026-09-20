@@ -34,8 +34,15 @@ pub(super) fn strip_comment(line: &str) -> &str {
     line
 }
 
-pub fn expand_env_vars(line: &str) -> String {
-    expand_env_vars_with(line, |name| std::env::var(name))
+pub fn expand_env_vars_in_qa(line: &str, qa_directory: Option<&str>) -> String {
+    expand_env_vars_with(line, |name| {
+        if name == "SOTF_QA_DIR"
+            && let Some(directory) = qa_directory
+        {
+            return Ok(directory.to_owned());
+        }
+        std::env::var(name)
+    })
 }
 
 pub fn expand_env_vars_with(

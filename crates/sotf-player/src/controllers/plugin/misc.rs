@@ -55,8 +55,9 @@ pub(super) fn apply_structural_side_effects(
         PluginSettings::MultibandCompressor {
             num_bands, bands, ..
         } if param_idx == 0 => {
+            let retained_bands = bands.len().min(*num_bands);
             bands.resize_with(*num_bands, Default::default);
-            for (i, band) in bands.iter_mut().enumerate() {
+            for (i, band) in bands.iter_mut().enumerate().skip(retained_bands) {
                 band.active = match *num_bands {
                     4 => i < 3,
                     5 => i < 3,
@@ -68,8 +69,9 @@ pub(super) fn apply_structural_side_effects(
         PluginSettings::MultibandExpander {
             num_bands, bands, ..
         } if param_idx == 0 => {
+            let retained_bands = bands.len().min(*num_bands);
             bands.resize_with(*num_bands, Default::default);
-            for (i, band) in bands.iter_mut().enumerate() {
+            for (i, band) in bands.iter_mut().enumerate().skip(retained_bands) {
                 band.active = match *num_bands {
                     4 => i < 3,
                     5 => i < 3,
@@ -94,5 +96,71 @@ pub(super) fn apply_structural_side_effects(
             });
         }
         _ => {}
+    }
+}
+
+/// Reset a multiband override without changing other bands or global defaults.
+/// None means this is not a multiband field; Some(false) means an invalid field.
+pub(super) fn reset_multiband_override(
+    settings: &mut PluginSettings,
+    index: usize,
+) -> Option<bool> {
+    if index < 100 {
+        return None;
+    }
+    let band_index = index / 100 - 1;
+    let field = index % 100;
+    match settings {
+        PluginSettings::MultibandCompressor {
+            num_bands, bands, ..
+        } => {
+            if band_index >= *num_bands || !matches!(field, 6..=10 | 13..=17) {
+                return Some(false);
+            }
+            let Some(band) = bands.get_mut(band_index) else {
+                return Some(true);
+            };
+            match field {
+                6 => band.threshold_db = None,
+                7 => band.ratio = None,
+                8 => band.attack_ms = None,
+                9 => band.release_ms = None,
+                10 => band.knee_db = None,
+                13 => band.makeup_gain_db = 0.0,
+                14 => band.bypass = false,
+                15 => band.solo = false,
+                16 => band.auto_makeup = false,
+                17 => band.active = band_index < 3 || *num_bands < 4,
+                _ => return Some(false),
+            }
+            Some(true)
+        }
+        PluginSettings::MultibandExpander {
+            num_bands, bands, ..
+        } => {
+            if band_index >= *num_bands || !matches!(field, 6..=17) {
+                return Some(false);
+            }
+            let Some(band) = bands.get_mut(band_index) else {
+                return Some(true);
+            };
+            match field {
+                6 => band.threshold_db = None,
+                7 => band.ratio = None,
+                8 => band.attack_ms = None,
+                9 => band.release_ms = None,
+                10 => band.range_db = None,
+                11 => band.knee_db = None,
+                12 => band.hysteresis_db = None,
+                13 => band.hold_ms = None,
+                14 => band.bypass = false,
+                15 => band.solo = false,
+                16 => band.auto_makeup = false,
+                17 => band.active = band_index < 3 || *num_bands < 4,
+                _ => return Some(false),
+            }
+            Some(true)
+        }
+        _ => None,
     }
 }

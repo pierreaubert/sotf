@@ -1,3 +1,4 @@
+pub use library::{MissingFileEntry, MissingFileReview};
 pub use schema::Migration;
 
 mod analysis;

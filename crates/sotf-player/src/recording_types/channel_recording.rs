@@ -10,6 +10,9 @@ pub struct ChannelRecording {
     /// Speaker/output channel index (into playback_config.channel_mappings)
     pub channel_index: usize,
     pub channel_name: String,
+    /// Stable source address for imported takes without capture indices.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imported_source: Option<super::RecordingSourceIdentity>,
     /// Microphone input index (into recording_config.channel_mappings)
     #[serde(default)]
     pub mic_index: usize,
@@ -58,6 +61,7 @@ impl ChannelRecording {
         Self {
             channel_index,
             channel_name,
+            imported_source: None,
             mic_index,
             mic_position_index,
             state: ChannelRecordingState::Empty,

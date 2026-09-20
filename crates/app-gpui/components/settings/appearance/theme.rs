@@ -10,7 +10,11 @@ use super::types::ScheduleBoundary;
 #[cfg(feature = "dev-api")]
 use crate::app::dev_api::{DevElementState, DevTrackExt};
 use crate::app::types::DensityMode;
+use crate::app::types::PreferencesSetting;
 use crate::components::design::Ds;
+use crate::components::settings::search::{
+    focus_settings_choice_relative, settings_choice_focus_handle,
+};
 use crate::i18n::{AppearanceTranslations, Language};
 use crate::theme::{CommunityThemeId, ThemeAccentPreference, ThemeId};
 use crate::ui::PlayerView;
@@ -28,7 +32,6 @@ use gpui_ui_kit::{
     Button, ButtonSet, ButtonSetOption, ButtonSetSize, ButtonSize, ButtonVariant, Input, InputSize,
     NumberInput, NumberInputSize, Toggle, ToggleSize, ToggleStyle,
 };
-use std::collections::HashMap;
 
 macro_rules! dev_track {
     ($element:expr, $selector:expr) => {{
@@ -41,42 +44,6 @@ macro_rules! dev_track {
             $element
         }
     }};
-}
-
-thread_local! {
-    static LANGUAGE_FOCUS_HANDLES: std::cell::RefCell<HashMap<ElementId, FocusHandle>> =
-        std::cell::RefCell::new(HashMap::new());
-}
-
-fn language_focus_handle(id: &ElementId, cx: &mut App) -> FocusHandle {
-    LANGUAGE_FOCUS_HANDLES.with(|handles| {
-        handles
-            .borrow_mut()
-            .entry(id.clone())
-            .or_insert_with(|| cx.focus_handle())
-            .clone()
-    })
-}
-
-fn focus_language_relative(
-    handles: &[FocusHandle],
-    window: &mut Window,
-    cx: &mut App,
-    backwards: bool,
-) -> bool {
-    let Some(current) = handles.iter().position(|handle| handle.is_focused(window)) else {
-        return false;
-    };
-    let next = if backwards {
-        current.checked_sub(1)
-    } else {
-        (current + 1 < handles.len()).then_some(current + 1)
-    };
-    let Some(next) = next else {
-        return false;
-    };
-    window.focus(&handles[next], cx);
-    true
 }
 
 fn theme_mode_value(preference: &ThemeModePreference) -> &'static str {
@@ -109,6 +76,28 @@ pub(super) fn theme_appearance_from_window(window: &Window) -> ThemeAppearance {
 }
 
 impl PlayerView {
+    fn select_theme_mode(
+        &mut self,
+        value: &str,
+        schedule: ThemeSchedule,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(preference) = theme_mode_preference_from_value(&value.into(), schedule) else {
+            return;
+        };
+        self.state.update(cx, |state, _cx| {
+            state.app.set_theme_mode_preference_with_system(
+                preference,
+                theme_appearance_from_window(window),
+            );
+        });
+        // The selected option reuses the search focus handle on the next paint.
+        if let Some(focus) = self.preference_focus_handle(PreferencesSetting::ThemeMode, cx) {
+            focus.focus(window, cx);
+        }
+        cx.notify();
+    }
     /// Render theme settings content
     pub(crate) fn render_theme_settings_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
@@ -286,7 +275,12 @@ impl PlayerView {
                                                     log::error!("Failed to save config: {error}");
                                                 }
                                             });
-                                        }),
+                                        })
+                                        .map(|input| self.preference_number_input(
+                                            PreferencesSetting::TextSize,
+                                            input,
+                                            cx
+                                        )),
                                     "settings.appearance.font-scale"
                                 )
                             }),
@@ -334,6 +328,13 @@ impl PlayerView {
                                             }
                                         });
                                     })
+                                    .map(|input| {
+                                        self.preference_number_input(
+                                            PreferencesSetting::MinimumFont,
+                                            input,
+                                            cx,
+                                        )
+                                    })
                             })
                             .child({
                                 let state_entity = self.state.clone();
@@ -365,6 +366,13 @@ impl PlayerView {
                                                 log::error!("Failed to save config: {error}");
                                             }
                                         });
+                                    })
+                                    .map(|input| {
+                                        self.preference_number_input(
+                                            PreferencesSetting::MaximumFont,
+                                            input,
+                                            cx,
+                                        )
                                     })
                             }),
                     )
@@ -398,31 +406,91 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap(d.gap)
-                    .child(render_settings_heading(d, theme.clone(), "Mode"))
+                    .child(render_settings_heading(
+                        d,
+                        theme.clone(),
+                        translations.settings_mode,
+                    ))
                     .child({
-                        let state_entity = self.state.clone();
-                        ButtonSet::new("theme-mode-select")
-                            .size(ButtonSetSize::Sm)
-                            .options(vec![
-                                ButtonSetOption::new("follow_system", text.system),
-                                ButtonSetOption::new("light", text.light),
-                                ButtonSetOption::new("dark", text.dark),
-                                ButtonSetOption::new("scheduled", text.scheduled),
-                            ])
-                            .selected(theme_mode_value(&theme_mode_preference))
-                            .theme(theme.to_button_set_theme())
-                            .on_change(move |value, window, cx| {
-                                if let Some(preference) =
-                                    theme_mode_preference_from_value(value, schedule)
+                        let current = theme_mode_value(&theme_mode_preference);
+                        let controls = [
+                            ("follow_system", text.system),
+                            ("light", text.light),
+                            ("dark", text.dark),
+                            ("scheduled", text.scheduled),
+                        ]
+                        .into_iter()
+                        .map(|(value, label)| {
+                            let selected = value == current;
+                            let id =
+                                ElementId::from(SharedString::from(format!("theme-mode-{value}")));
+                            let focus = if selected {
+                                self.preference_focus_handle(PreferencesSetting::ThemeMode, cx)
+                                    .unwrap_or_else(|| settings_choice_focus_handle(&id, cx))
+                            } else {
+                                settings_choice_focus_handle(&id, cx)
+                            };
+                            cx.register_accessible(AccessibilityNode {
+                                element_id: id.clone(),
+                                label: label.into(),
+                                props: AriaProps::with_role(AriaRole::Button)
+                                    .maybe_state(selected, AriaState::Pressed(true)),
+                            });
+                            let button = Button::new(id, label)
+                                .size(ButtonSize::Sm)
+                                .selected(selected)
+                                .variant(if selected {
+                                    ButtonVariant::Primary
+                                } else {
+                                    ButtonVariant::Secondary
+                                })
+                                .theme(theme.to_button_theme())
+                                .build()
+                                .text_size(d.text_sm)
+                                .px(d.pad_x)
+                                .py(d.pad_y_half)
+                                .track_focus(&focus)
+                                .track_focus_element(&focus)
+                                .on_click(cx.listener(move |view, _, window, cx| {
+                                    view.select_theme_mode(value, schedule, window, cx);
+                                }))
+                                .on_key_down(cx.listener(
+                                    move |view, event: &KeyDownEvent, window, cx| {
+                                        if matches!(event.keystroke.key.as_str(), "space" | "enter")
+                                        {
+                                            view.select_theme_mode(value, schedule, window, cx);
+                                            cx.stop_propagation();
+                                        }
+                                    },
+                                ));
+                            let button =
+                                dev_track!(button, format!("settings.appearance.mode.{value}"));
+                            (button.into_any_element(), focus)
+                        })
+                        .collect::<Vec<_>>();
+                        let handles = controls
+                            .iter()
+                            .map(|(_, focus)| focus.clone())
+                            .collect::<Vec<_>>();
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .gap(d.grid)
+                            .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                                if event.keystroke.key == "tab"
+                                    && focus_settings_choice_relative(
+                                        &handles,
+                                        window,
+                                        cx,
+                                        event.keystroke.modifiers.shift,
+                                    )
                                 {
-                                    let system_appearance = theme_appearance_from_window(window);
-                                    state_entity.update(cx, |state, _cx| {
-                                        state.app.set_theme_mode_preference_with_system(
-                                            preference,
-                                            system_appearance,
-                                        );
-                                    });
+                                    cx.stop_propagation();
                                 }
+                            })
+                            .children(controls.into_iter().map(|(button, _)| button))
+                            .map(|group| {
+                                self.preference_control(PreferencesSetting::ThemeMode, group, cx)
                             })
                     })
                     .when(is_scheduled, |section| {
@@ -481,33 +549,51 @@ impl PlayerView {
                     .gap(d.gap)
                     .child(render_settings_heading(d, theme.clone(), "Accessibility"))
                     .child({
-                        let state_entity = self.state.clone();
-                        ButtonSet::new("theme-accessibility-select")
-                            .size(ButtonSetSize::Sm)
-                            .options(
-                                AccessibilityPalette::all()
-                                    .iter()
-                                    .map(|palette| {
-                                        ButtonSetOption::new(
-                                            accessibility_value(*palette),
-                                            palette.name(),
-                                        )
+                        div()
+                            .id("theme-accessibility-select")
+                            .flex()
+                            .flex_wrap()
+                            .gap(d.grid)
+                            .children(AccessibilityPalette::all().iter().map(|palette| {
+                                let value = SharedString::from(accessibility_value(*palette));
+                                let selected = *palette == accessibility_palette;
+                                dev_track!(
+                                    Button::new(
+                                        format!("theme-accessibility-{value}"),
+                                        palette.name(),
+                                    )
+                                    .size(ButtonSize::Sm)
+                                    .selected(selected)
+                                    .variant(if selected {
+                                        ButtonVariant::Primary
+                                    } else {
+                                        ButtonVariant::Secondary
                                     })
-                                    .collect(),
-                            )
-                            .selected(accessibility_value(accessibility_palette))
-                            .theme(theme.to_button_set_theme())
-                            .on_change(move |value, window, cx| {
-                                if let Some(palette) = accessibility_palette_from_value(value) {
-                                    let system_appearance = theme_appearance_from_window(window);
-                                    state_entity.update(cx, |state, _cx| {
-                                        state.app.set_accessibility_palette_with_system(
-                                            palette,
-                                            system_appearance,
-                                        );
-                                    });
-                                }
-                            })
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event(
+                                        cx.listener(move |view, _, window, cx| {
+                                            if let Some(palette) =
+                                                accessibility_palette_from_value(&value)
+                                            {
+                                                let appearance =
+                                                    theme_appearance_from_window(window);
+                                                view.state.update(cx, |state, _cx| {
+                                                    state
+                                                        .app
+                                                        .set_accessibility_palette_with_system(
+                                                            palette, appearance,
+                                                        );
+                                                });
+                                                cx.notify();
+                                            }
+                                        })
+                                    ),
+                                    format!(
+                                        "settings.appearance.palette.{}",
+                                        accessibility_value(*palette)
+                                    )
+                                )
+                            }))
                     })
                     .child(
                         div()
@@ -523,12 +609,25 @@ impl PlayerView {
                                     .style(ToggleStyle::Segmented)
                                     .theme(theme.to_toggle_theme())
                                     .on_change({
-                                        let state_entity = self.state.clone();
+                                        let view = cx.entity().downgrade();
                                         move |enabled, _window, cx| {
-                                            state_entity.update(cx, |state, _cx| {
-                                                state.app.set_reduce_motion(enabled);
+                                            let Some(view) = view.upgrade() else {
+                                                return;
+                                            };
+                                            view.update(cx, |view, cx| {
+                                                view.state.update(cx, |state, _cx| {
+                                                    state.app.set_reduce_motion(enabled);
+                                                });
+                                                cx.notify();
                                             });
                                         }
+                                    })
+                                    .map(|toggle| {
+                                        self.preference_toggle(
+                                            PreferencesSetting::ReduceMotion,
+                                            toggle,
+                                            cx,
+                                        )
                                     }),
                                 "settings.appearance.reduce-motion"
                             )),
@@ -701,7 +800,12 @@ impl PlayerView {
                     "settings-language-{}",
                     candidate.code()
                 )));
-                let focus_handle = language_focus_handle(&element_id, cx);
+                let focus_handle = if selected {
+                    self.preference_focus_handle(PreferencesSetting::Language, cx)
+                        .unwrap_or_else(|| settings_choice_focus_handle(&element_id, cx))
+                } else {
+                    settings_choice_focus_handle(&element_id, cx)
+                };
                 cx.register_accessible(AccessibilityNode {
                     element_id: element_id.clone(),
                     label: label.into(),
@@ -753,7 +857,12 @@ impl PlayerView {
                     DevElementState::default().selected(selected),
                 );
 
-                (button.into_any_element(), focus_handle)
+                let button = if selected {
+                    self.preference_control(PreferencesSetting::Language, button, cx)
+                } else {
+                    button.into_any_element()
+                };
+                (button, focus_handle)
             })
             .collect::<Vec<_>>();
         let language_focus_handles = language_controls
@@ -783,7 +892,7 @@ impl PlayerView {
                         .gap(d.gap_md)
                         .on_key_down(move |event: &KeyDownEvent, window, cx| {
                             if event.keystroke.key.as_str() == "tab"
-                                && focus_language_relative(
+                                && focus_settings_choice_relative(
                                     &language_focus_handles,
                                     window,
                                     cx,

@@ -54,23 +54,18 @@ pub(super) fn solve_main_groups(
     let groups = mode_visible_groups(layout, values, mode);
     // Render-path hardening: a bad generated layout must never crash the
     // desktop. Fall back to showing every mode-visible group inline.
-    let solved = match solve_control_groups_scaled(&groups, main_width, layout_scale) {
-        Ok(solved) => solved,
+    match solve_control_groups_scaled(&groups, main_width, layout_scale) {
+        Ok(_) => {}
         Err(error) => {
             log::error!("invalid generated plugin group layout ({error}); showing all groups");
             return (groups, Vec::new());
         }
     };
-    let visible = groups
-        .iter()
-        .copied()
-        .filter(|group| solved.find(group.id).is_some_and(|node| node.visible()))
-        .collect();
-    let overflow = groups
-        .iter()
-        .copied()
-        .filter(|group| solved.find(group.id).is_some_and(|node| !node.visible()))
-        .collect();
+    // Roles stay stable across resize and active editing. Explicit secondary
+    // groups use inline disclosure; primary groups wrap instead of vanishing.
+    let (overflow, visible) = groups.into_iter().partition(|group| {
+        group.layout.overflow == GroupOverflow::Auto && group.layout.collapse_priority < 0.5
+    });
 
     (visible, overflow)
 }

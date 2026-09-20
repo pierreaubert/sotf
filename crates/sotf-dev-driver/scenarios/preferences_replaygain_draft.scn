@@ -1,0 +1,117 @@
+focus Home
+focus Settings
+resize 600 800
+wait_idle 2s
+click preferences.category
+key up
+key enter
+resize 1440 900
+wait_idle 1s
+assert settings.active_tab == "AudioDevice"
+assert settings.replay_gain_enabled == true
+assert settings.persisted_audio.replay_gain_enabled == true
+assert settings.replay_gain_mode == "Track"
+assert settings.persisted_audio.replay_gain_mode == "Track"
+scroll preferences.content -1600
+wait_idle 1s
+scroll preferences.content -1600
+wait_idle 1s
+assert_in_viewport settings.rg-mode-album
+click settings.rg-mode-album
+wait_idle 1s
+click settings.replay-gain-toggle
+wait_idle 1s
+assert preferences.replay_gain_enabled == false
+assert settings.replay_gain_enabled == true
+assert settings.persisted_audio.replay_gain_enabled == true
+assert preferences.audio_dirty == true
+assert_absent settings.rg-mode-album
+click settings.replay-gain-toggle
+wait_idle 1s
+assert_visible settings.rg-mode-album
+assert preferences.replay_gain_mode == "Album"
+click settings.replay-gain-toggle
+wait_idle 1s
+assert_absent settings.rg-mode-album
+assert preferences.replay_gain_mode == "Album"
+assert settings.replay_gain_mode == "Track"
+assert settings.persisted_audio.replay_gain_mode == "Track"
+click preferences.done
+assert preferences.close_pending == true
+click preferences.close.keep
+assert preferences.close_pending == false
+assert preferences.replay_gain_enabled == false
+click settings.audio-discard
+wait_idle 1s
+assert preferences.audio_dirty == false
+assert settings.replay_gain_enabled == true
+assert settings.persisted_audio.replay_gain_enabled == true
+assert settings.replay_gain_mode == "Track"
+assert settings.persisted_audio.replay_gain_mode == "Track"
+scroll preferences.content -1600
+wait_idle 1s
+assert_in_viewport settings.rg-mode-album
+click settings.rg-mode-album
+wait_idle 1s
+click settings.replay-gain-toggle
+wait_idle 1s
+assert_absent settings.rg-mode-album
+click preferences.done
+click preferences.close.discard
+assert screen.focused == "Home"
+assert preferences.audio_dirty == false
+assert settings.replay_gain_enabled == true
+assert settings.persisted_audio.replay_gain_enabled == true
+assert settings.replay_gain_mode == "Track"
+assert settings.persisted_audio.replay_gain_mode == "Track"
+focus Settings
+wait_idle 1s
+scroll preferences.content -1600
+wait_idle 1s
+scroll preferences.content -1600
+wait_idle 1s
+assert_in_viewport settings.rg-mode-album
+click settings.rg-mode-album
+wait_idle 1s
+click settings.replay-gain-toggle
+wait_idle 1s
+assert_absent settings.rg-mode-album
+action PreferencesDraftUnavailableOutput
+click preferences.done
+click preferences.close.apply
+assert preferences.close_pending == true
+assert preferences.output_error != null
+assert settings.replay_gain_enabled == true
+assert settings.persisted_audio.replay_gain_enabled == true
+assert settings.replay_gain_mode == "Track"
+assert settings.persisted_audio.replay_gain_mode == "Track"
+assert preferences.replay_gain_enabled == false
+assert preferences.replay_gain_mode == "Album"
+click preferences.close.discard
+focus Settings
+wait_idle 1s
+scroll preferences.content -1600
+wait_idle 1s
+scroll preferences.content -1600
+wait_idle 1s
+assert_in_viewport settings.rg-mode-album
+click settings.rg-mode-album
+wait_idle 1s
+click settings.replay-gain-toggle
+wait_idle 1s
+assert_absent settings.rg-mode-album
+click settings.audio-apply
+wait_idle 1s
+assert preferences.audio_dirty == false
+assert settings.replay_gain_enabled == false
+assert settings.persisted_audio.replay_gain_enabled == false
+assert settings.replay_gain_mode == "Album"
+assert settings.persisted_audio.replay_gain_mode == "Album"
+click preferences.done
+assert screen.focused == "Home"
+assert preferences.audio_dirty == false
+assert settings.replay_gain_enabled == false
+assert settings.persisted_audio.replay_gain_enabled == false
+assert settings.replay_gain_mode == "Album"
+assert settings.persisted_audio.replay_gain_mode == "Album"
+assert playback.is_playing == false

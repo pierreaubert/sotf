@@ -239,6 +239,17 @@ impl Default for SpinoramaEqScreenModel {
 }
 
 impl SpinoramaEqScreenModel {
+    /// Dataset and optimizer identity captured at dispatch, excluding view state.
+    pub fn optimization_input_snapshot(&self) -> serde_json::Value {
+        serde_json::json!({
+            "speaker": self.selected_speaker,
+            "version": self.selected_version,
+            "measurement": self.selected_measurement,
+            "curve": self.selected_curve,
+            "config": self.optimizer_config,
+        })
+    }
+
     /// Check if we can proceed from the current step.
     pub fn can_advance(&self) -> bool {
         match self.step {

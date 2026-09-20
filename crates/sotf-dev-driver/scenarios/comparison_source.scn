@@ -1,0 +1,38 @@
+# 2026-09-08: Comparison setup lacked the local source chooser in ui-listening.html.
+# listening_test.rs and eq_training_controller.rs now share its production loader.
+# This drives the post-picker path, not the operating-system file dialog.
+# Run: target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/comparison_source_ui.toml -v
+# Build first: cargo build -p sotf-gpui --bin sotf-desktop --features qa,dev-api
+
+action ListeningResetGuide
+click listening.guide.acknowledge
+wait_until listening.guide_open == false timeout=3s
+click listening.tab-comparison
+wait_until listening.surface == "BlindComparison" timeout=3s
+wait_idle 1s
+screenshot comparison-path-layout
+scroll_into_view listening.comparison.content listening.comparison.source.browse
+assert_in_viewport listening.comparison.source.browse
+assert queue.length == 0
+action ListeningSetSourceFixture {"mode":"first"}
+wait_until playback.current_filename == "practice-source-mono.wav" timeout=10s
+assert playback.current_channels == 1
+assert queue.length == 1
+assert listening.eq.source.count == 0
+action ListeningSetSourceFixture {"mode":"second"}
+wait_until playback.current_filename == "practice-source-stereo.wav" timeout=10s
+assert playback.current_channels == 2
+assert queue.length == 2
+action ListeningSetSourceFixture {"mode":"second"}
+wait_until listening.eq.source.loading == false timeout=10s
+assert queue.length == 2
+action ListeningSetSourceFixture {"mode":"invalid"}
+wait_until listening.eq.source.loading == false timeout=10s
+assert toast.type == "Error"
+assert playback.current_filename == "practice-source-stereo.wav"
+assert playback.current_channels == 2
+assert queue.length == 2
+assert listening.eq.source.count == 0
+screenshot comparison-source-preserved
+action Stop
+wait_until playback.is_playing == false timeout=5s

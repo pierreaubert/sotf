@@ -55,7 +55,7 @@ impl App {
 
     /// Set the library search query and make the result available immediately.
     pub fn set_library_search_query(&mut self, query: String) {
-        self.library_state.set_search_query(query);
+        self.library_state.set_search_query_in_current_view(query);
         self.refresh_library_filter_cache();
         self.reset_page();
     }

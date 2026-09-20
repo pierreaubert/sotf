@@ -2,11 +2,43 @@
 
 pub use sotf_audio_player::autoeq::DetailLevel;
 
+/// The five configuration decisions, independent of parameter detail level.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AutoEqStage {
+    #[default]
+    Goals,
+    FilterDesign,
+    Timing,
+    Algorithm,
+    Review,
+}
+
+impl AutoEqStage {
+    pub const ALL: [Self; 5] = [
+        Self::Goals,
+        Self::FilterDesign,
+        Self::Timing,
+        Self::Algorithm,
+        Self::Review,
+    ];
+
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Goals => 0,
+            Self::FilterDesign => 1,
+            Self::Timing => 2,
+            Self::Algorithm => 3,
+            Self::Review => 4,
+        }
+    }
+}
+
 /// UI state for AutoEQ form dropdowns
 #[derive(Debug, Clone, Default)]
 pub struct AutoEqFormUiState {
     /// How much detail to show (Simple / Intermediate / Expert).
     pub detail_level: DetailLevel,
+    pub stage: AutoEqStage,
     /// Preset selector dropdown open state.
     pub preset_open: bool,
     /// Currently selected preset id (e.g. "balanced", "custom").

@@ -233,6 +233,161 @@ impl Default for RecordingScreenModel {
 }
 
 impl RecordingScreenModel {
+    /// Restore editable session metadata without selecting historical audio devices.
+    pub fn restore_session_metadata(
+        &mut self,
+        configuration: Option<&autoeq::roomeq::RecordingConfiguration>,
+        channel_names: &[String],
+    ) -> Result<(), String> {
+        let dimensions = configuration.and_then(|config| config.room_dimensions.as_ref());
+        let values = dimensions.map_or([0.0; 3], |room| [room.width, room.length, room.height]);
+        if dimensions.is_some()
+            && values
+                .iter()
+                .any(|value| !value.is_finite() || *value <= 0.0)
+        {
+            return Err("Imported room dimensions must be finite and positive".into());
+        }
+        let values = values.map(|value| self.room_dimension_unit.from_meters(value));
+        if values.iter().any(|value| !value.is_finite()) {
+            return Err("Imported room dimensions exceed the display unit range".into());
+        }
+        [
+            self.room_width_input,
+            self.room_depth_input,
+            self.room_height_input,
+        ] = values;
+        self.setup_description = configuration
+            .and_then(|config| config.setup_description.clone())
+            .unwrap_or_default();
+        self.channel_speakers = channel_names
+            .iter()
+            .map(|name| {
+                configuration
+                    .and_then(|config| config.channel_speakers.as_ref())
+                    .and_then(|speakers| speakers.get(name))
+                    .cloned()
+                    .unwrap_or_default()
+            })
+            .collect();
+        Ok(())
+    }
+
+    /// Overlay only user-editable metadata, retaining capture and calibration evidence.
+    pub fn apply_session_metadata(
+        &self,
+        configuration: &mut autoeq::roomeq::RecordingConfiguration,
+        channel_names: &[String],
+    ) {
+        configuration.room_dimensions = self.room_dimensions_for_save();
+        configuration.setup_description = (!self.setup_description.trim().is_empty())
+            .then(|| self.setup_description.trim().to_owned());
+        let mut speakers = configuration.channel_speakers.take().unwrap_or_default();
+        for (index, name) in channel_names.iter().enumerate() {
+            let value = self
+                .channel_speakers
+                .get(index)
+                .map(String::as_str)
+                .unwrap_or("")
+                .trim();
+            if value.is_empty() {
+                speakers.remove(name);
+            } else {
+                speakers.insert(name.clone(), value.to_owned());
+            }
+        }
+        configuration.channel_speakers = (!speakers.is_empty()).then_some(speakers);
+    }
+
+    pub fn session_metadata_is_valid(&self) -> bool {
+        let values = [
+            self.room_width_input,
+            self.room_depth_input,
+            self.room_height_input,
+        ];
+        values.iter().all(|value| *value == 0.0)
+            || values.iter().all(|value| value.is_finite() && *value > 0.0)
+    }
+
+    /// Change display units without changing the physical room dimensions.
+    pub fn set_room_dimension_unit(&mut self, unit: RoomDimensionUnit) {
+        let values = [
+            self.room_width_input,
+            self.room_depth_input,
+            self.room_height_input,
+        ]
+        .map(|value| unit.from_meters(self.room_dimension_unit.to_meters(value)));
+        if values.iter().all(|value| value.is_finite()) {
+            [
+                self.room_width_input,
+                self.room_depth_input,
+                self.room_height_input,
+            ] = values;
+            self.room_dimension_unit = unit;
+        }
+    }
+
+    pub fn workflow_is_busy(&self) -> bool {
+        self.capture_in_progress()
+            || matches!(
+                self.probe_capture.status,
+                crate::recording_types::ProbeCaptureStatus::Running { .. }
+            )
+            || matches!(
+                self.bass_anchor_capture.status,
+                crate::recording_types::BassAnchorCaptureStatus::Running { .. }
+            )
+            || matches!(
+                self.spl_calibration_capture.status,
+                crate::recording_types::SplCalibrationCaptureStatus::Running { .. }
+            )
+    }
+
+    /// Capture-affecting input identity, excluding progress, review and save metadata.
+    pub fn capture_input_snapshot(&self) -> serde_json::Value {
+        serde_json::json!({
+            "playback": self.playback_config,
+            "recording": self.recording_config,
+            "calibration": self.mic_calibration_path,
+            "calibrations": self.mic_calibration_paths,
+            "signal": format!("{:?}", self.signal_type),
+            "duration": self.signal_duration_secs,
+            "level": self.signal_level_db,
+            "start_hz": self.sweep_start_freq,
+            "end_hz": self.sweep_end_freq,
+            "bass_duration": self.bass_octave_duration_s,
+            "pre_silence": self.pre_silence_s,
+            "post_silence": self.post_silence_s,
+            "sweeps": self.num_sweeps,
+            "take_ranges": self.channel_recordings.iter().map(|take| (
+                take.channel_index, take.mic_index, take.mic_position_index,
+                take.sweep_start_freq, take.sweep_end_freq,
+            )).collect::<Vec<_>>(),
+        })
+    }
+
+    /// Identity of the session metadata and file references written by Save.
+    /// Captures invalidate review receipts before replacing measurement data;
+    /// do not serialize large waveform buffers on the UI render path.
+    pub fn save_input_snapshot(&self) -> serde_json::Value {
+        serde_json::json!({
+            "capture": self.capture_input_snapshot(),
+            "configuration": self.build_recording_configuration(self.recording_directory.as_deref()),
+            "name": self.safe_save_name(),
+            "room_dimension_inputs_m": ([self.room_width_input, self.room_depth_input, self.room_height_input]
+                .map(|value| self.room_dimension_unit.to_meters(value))),
+            "base_directory": self.recording_base_directory,
+            "takes": self.channel_recordings.iter().map(|take| (
+                take.channel_index, &take.channel_name, take.mic_index, take.mic_position_index,
+                take.result.as_ref().and_then(|result| result.csv_path.as_ref()),
+                take.result.as_ref().and_then(|result| result.wav_path.as_ref()),
+            )).collect::<Vec<_>>(),
+            "loopbacks": self.transfer_matrix_loopbacks,
+            "ctc_reference": self.ctc_reference_sweep_path,
+            "ctc_duration": self.ctc_reference_sweep_duration_s,
+        })
+    }
+
     /// Filesystem-safe name used for the saved recording directory and
     /// session-level file names.
     pub fn safe_save_name(&self) -> String {
@@ -247,10 +402,42 @@ impl RecordingScreenModel {
             .map(|base| std::path::Path::new(base).join(self.safe_save_name()))
     }
 
-    /// Initialize channel recordings from playback × recording × position
-    /// configuration. Order is `position-major, speaker-mid, mic-minor` so
-    /// every (speaker, mic) pair at position 0 comes before any entry at
-    /// position 1.
+    /// Clear stale captures while retaining sweep ranges for unchanged take identities.
+    pub fn reinitialize_channel_recordings_preserving_ranges(&mut self) {
+        // Per-take sweep ranges are user configuration. Rebuild stale
+        // captures without replacing those edits with channel defaults.
+        let ranges: Vec<_> = self
+            .channel_recordings
+            .iter()
+            .map(|take| {
+                (
+                    take.channel_index,
+                    take.mic_index,
+                    take.mic_position_index,
+                    take.channel_name.clone(),
+                    take.sweep_start_freq,
+                    take.sweep_end_freq,
+                )
+            })
+            .collect();
+        self.init_channel_recordings();
+        for take in &mut self.channel_recordings {
+            if let Some((_, _, _, _, start_hz, end_hz)) = ranges.iter().find(|entry| {
+                (entry.0, entry.1, entry.2, entry.3.as_str())
+                    == (
+                        take.channel_index,
+                        take.mic_index,
+                        take.mic_position_index,
+                        take.channel_name.as_str(),
+                    )
+            }) {
+                take.sweep_start_freq = *start_hz;
+                take.sweep_end_freq = *end_hz;
+            }
+        }
+    }
+
+    /// Initialize recordings in position-major, speaker-mid, mic-minor order.
     pub fn init_channel_recordings(&mut self) {
         let raw_num_mics = self.recording_config.channel_mappings.len();
         let num_mics = raw_num_mics.max(1);
@@ -498,10 +685,7 @@ impl RecordingScreenModel {
     /// `RecordingConfiguration`. Returns `None` when the user left any
     /// dimension blank (zero).
     pub fn room_dimensions_for_save(&self) -> Option<autoeq::roomeq::RoomDimensions> {
-        if self.room_width_input <= 0.0
-            || self.room_depth_input <= 0.0
-            || self.room_height_input <= 0.0
-        {
+        if !self.session_metadata_is_valid() || self.room_width_input == 0.0 {
             return None;
         }
         let unit = self.room_dimension_unit;
@@ -779,6 +963,126 @@ mod tests {
     };
 
     #[test]
+    fn imported_metadata_edits_preserve_capture_evidence() {
+        let mut configuration = autoeq::roomeq::RecordingConfiguration {
+            room_dimensions: Some(autoeq::roomeq::RoomDimensions {
+                width: 3.048,
+                length: 6.096,
+                height: 2.4384,
+            }),
+            setup_description: Some("Original setup".into()),
+            channel_speakers: Some(HashMap::from([
+                ("Center".into(), "Old model".into()),
+                ("Other".into(), "Retained model".into()),
+            ])),
+            playback_device_name: Some("Original interface".into()),
+            signal_level_db: Some(-12.0),
+            mic_calibration_path: Some("original.cal".into()),
+            ..Default::default()
+        };
+        let names = vec!["Center".to_owned()];
+        let mut model = RecordingScreenModel {
+            room_dimension_unit: RoomDimensionUnit::Imperial,
+            ..Default::default()
+        };
+        model
+            .restore_session_metadata(Some(&configuration), &names)
+            .unwrap();
+        assert!((model.room_width_input - 10.0).abs() < 1e-10);
+        assert!((model.room_depth_input - 20.0).abs() < 1e-10);
+        assert_eq!(model.setup_description, "Original setup");
+        assert_eq!(model.channel_speakers, ["Old model"]);
+        model.room_width_input = 12.0;
+        model.setup_description = " Edited setup ".into();
+        model.channel_speakers[0] = " New model ".into();
+        model.signal_level_db = -50.0;
+        model.apply_session_metadata(&mut configuration, &names);
+        let restored: autoeq::roomeq::RecordingConfiguration =
+            serde_json::from_str(&serde_json::to_string(&configuration).unwrap()).unwrap();
+        assert!((restored.room_dimensions.unwrap().width - 3.6576).abs() < 1e-10);
+        assert_eq!(restored.setup_description.as_deref(), Some("Edited setup"));
+        let speakers = restored.channel_speakers.unwrap();
+        assert_eq!(speakers["Center"], "New model");
+        assert_eq!(speakers["Other"], "Retained model");
+        assert_eq!(
+            restored.playback_device_name.as_deref(),
+            Some("Original interface")
+        );
+        assert_eq!(restored.signal_level_db, Some(-12.0));
+        assert_eq!(
+            restored.mic_calibration_path.as_deref(),
+            Some("original.cal")
+        );
+    }
+
+    #[test]
+    fn room_unit_changes_preserve_physical_dimensions_and_reject_partial_metadata() {
+        let mut model = RecordingScreenModel {
+            room_width_input: 4.25,
+            room_depth_input: 5.5,
+            room_height_input: 2.6,
+            ..Default::default()
+        };
+        model.set_room_dimension_unit(RoomDimensionUnit::Imperial);
+        let room = model.room_dimensions_for_save().unwrap();
+        assert!((room.width - 4.25).abs() < 1e-10);
+        assert!((room.length - 5.5).abs() < 1e-10);
+        model.set_room_dimension_unit(RoomDimensionUnit::Metric);
+        assert!((model.room_height_input - 2.6).abs() < 1e-10);
+        model.room_height_input = 0.0;
+        assert!(!model.session_metadata_is_valid());
+        assert!(model.room_dimensions_for_save().is_none());
+        model.room_width_input = f64::NAN;
+        assert!(!model.session_metadata_is_valid());
+    }
+
+    #[test]
+    fn invalid_imported_dimensions_leave_existing_metadata_intact() {
+        let mut model = RecordingScreenModel {
+            room_width_input: 4.0,
+            setup_description: "Existing".into(),
+            ..Default::default()
+        };
+        let configuration = autoeq::roomeq::RecordingConfiguration {
+            room_dimensions: Some(autoeq::roomeq::RoomDimensions {
+                width: -1.0,
+                length: 5.0,
+                height: 2.5,
+            }),
+            setup_description: Some("Incoming".into()),
+            ..Default::default()
+        };
+        assert!(
+            model
+                .restore_session_metadata(Some(&configuration), &[])
+                .is_err()
+        );
+        assert_eq!(model.room_width_input, 4.0);
+        assert_eq!(model.setup_description, "Existing");
+        model.restore_session_metadata(None, &[]).unwrap();
+        assert_eq!(model.room_width_input, 0.0);
+        assert!(model.setup_description.is_empty());
+    }
+
+    #[test]
+    fn saved_session_identity_tracks_metadata_without_view_state() {
+        let mut model = RecordingScreenModel::default();
+        let original = model.save_input_snapshot();
+        model.step = RecordingStep::Saving;
+        assert_eq!(original, model.save_input_snapshot());
+        model.save_name = "Another room".into();
+        assert_ne!(original, model.save_input_snapshot());
+        let renamed = model.save_input_snapshot();
+        model.setup_description = "Main listening position".into();
+        assert_ne!(renamed, model.save_input_snapshot());
+        let described = model.save_input_snapshot();
+        model.room_width_input = 4.0;
+        model.room_depth_input = 5.0;
+        model.room_height_input = 2.5;
+        assert_ne!(described, model.save_input_snapshot());
+    }
+
+    #[test]
     fn build_recording_configuration_persists_devices_and_signal() {
         let mut model = RecordingScreenModel::default();
         model.playback_config.device_name = "DAC".to_string();
@@ -1043,6 +1347,7 @@ mod tests {
         let mut ch = ChannelRecording::new(channel_index, name.to_string());
         ch.state = state;
         ch.result = Some(RecordingResult {
+            sample_rate_hz: None,
             channel: channel_index,
             wav_path: None,
             csv_path: None,

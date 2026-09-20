@@ -1,0 +1,11 @@
+resize 600 1000
+focus Studio
+plugin_clear
+plugin_add Expander
+action PluginSelectFirstUser
+wait_idle 1s
+scroll_at 25 650 -3000
+wait_idle 1s
+screenshot expander-fresh-narrow-bottom
+assert_in_viewport plugin.control.2.5
+assert_in_viewport plugin.control.2.6

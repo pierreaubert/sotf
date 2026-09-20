@@ -1,0 +1,19 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui/listening-incompatible-session"
+readiness_timeout = "20s"
+size = "600x1000"
+
+[[scenario]]
+name = "incompatible-session"
+path = "crates/sotf-dev-driver/scenarios/listening_incompatible_session.scn"
+timeout = "45s"
+
+[[scenario]]
+name = "incompatible-session-german"
+path = "crates/sotf-dev-driver/scenarios/listening_incompatible_session.scn"
+timeout = "45s"
+language = "German"
+theme = "Light"
+font_scale = 1.5
+reduced_motion = true

@@ -1,0 +1,18 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+
+[[scenario]]
+name = "roomeq-autoeq-mode-review"
+path = "crates/sotf-dev-driver/scenarios/roomeq_autoeq_mode_review.scn"
+timeout = "35s"
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true

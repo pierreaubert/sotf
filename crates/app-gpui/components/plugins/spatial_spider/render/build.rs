@@ -50,7 +50,7 @@ pub(super) fn build_header(
                 .text_size(d.text_sm)
                 .font_weight(FontWeight::BOLD)
                 .text_color(theme.text_muted)
-                .child(text.spatial_view_label),
+                .child(text.spatial.view_label),
         )
         .child(
             // TODO: this widget today reflects the *chain output* (the last
@@ -69,7 +69,7 @@ pub(super) fn build_header(
                 .checked(view_mode == SpiderViewMode::Disc2D)
                 .style(ToggleStyle::Segmented)
                 .theme(theme.to_toggle_theme())
-                .aria_label(text.spatial_view_2d)
+                .aria_label(text.spatial.view_2d)
                 .on_change(move |checked, _, cx| {
                     if checked {
                         e_2d.update(cx, |st, cx| {
@@ -94,7 +94,7 @@ pub(super) fn build_header(
                 .checked(view_mode == SpiderViewMode::View3D)
                 .style(ToggleStyle::Segmented)
                 .theme(theme.to_toggle_theme())
-                .aria_label(text.spatial_view_3d)
+                .aria_label(text.spatial.view_3d)
                 .on_change(move |checked, _, cx| {
                     if checked {
                         e_3d.update(cx, |st, cx| {
@@ -119,12 +119,12 @@ pub(super) fn build_header(
                 div()
                     .text_size(d.text_xs)
                     .text_color(theme.text_muted)
-                    .child(text.spatial_orbit_hint),
+                    .child(text.spatial.orbit_hint),
             )
             .child(
                 Button::new(
                     ("spider-reset-camera", plugin_idx),
-                    text.spatial_reset_camera,
+                    text.spatial.reset_camera,
                 )
                 .variant(ButtonVariant::Ghost)
                 .size(ButtonSize::Xs)
@@ -151,7 +151,7 @@ pub(super) fn build_header(
                 .checked(matches!(spider_mode, SpiderMode::Spl))
                 .style(ToggleStyle::Segmented)
                 .theme(theme.to_toggle_theme())
-                .aria_label(text.spatial_spl_mode)
+                .aria_label(text.spatial.spl_mode)
                 .on_change(move |checked, _, cx| {
                     if checked {
                         e_spl.update(cx, |st, cx| {
@@ -173,7 +173,7 @@ pub(super) fn build_header(
                 .checked(matches!(spider_mode, SpiderMode::CorrelationFromRef { .. }))
                 .style(ToggleStyle::Segmented)
                 .theme(theme.to_toggle_theme())
-                .aria_label(text.spatial_correlation_mode)
+                .aria_label(text.spatial.correlation_mode)
                 .on_change({
                     let ref_ch = ref_channel;
                     move |checked, _, cx| {
@@ -194,7 +194,7 @@ pub(super) fn build_header(
                 .flex_none()
                 .text_size(d.text_sm)
                 .text_color(theme.text_secondary)
-                .child(text.spatial_correlation_label),
+                .child(text.spatial.correlation_label),
         )
         .child(build_ref_channel_select(
             d,
@@ -255,7 +255,7 @@ pub(super) fn build_ref_channel_select(
             div()
                 .text_size(d.text_sm)
                 .text_color(theme.text_secondary)
-                .child(text.spatial_reference_channel),
+                .child(text.spatial.reference_channel),
         )
         .child(
             Select::new(("spider-ref-channel", plugin_idx))
@@ -265,7 +265,7 @@ pub(super) fn build_ref_channel_select(
                 .is_open(is_open)
                 .size(SelectSize::Xs)
                 .theme(theme.to_select_theme())
-                .aria_label(text.spatial_reference_channel)
+                .aria_label(text.spatial.reference_channel)
                 .on_toggle({
                     let entity = entity.downgrade();
                     move |open, _window, cx| {
@@ -330,7 +330,7 @@ pub(super) fn build_body(
                     div()
                         .text_size(d.text_xs)
                         .text_color(theme.text_muted)
-                        .child(text.spatial_no_layout),
+                        .child(text.spatial.no_layout),
                 )
                 .into_any_element();
         }
@@ -347,7 +347,7 @@ pub(super) fn build_body(
             .justify_center()
             .text_size(d.text_xs)
             .text_color(theme.text_muted)
-            .child(text.spatial_waiting_data)
+            .child(text.spatial.waiting_data)
             .into_any_element();
     }
     // A live LoudnessData object can exist before its first peak query has
@@ -367,7 +367,7 @@ pub(super) fn build_body(
             .justify_center()
             .text_size(d.text_xs)
             .text_color(theme.text_muted)
-            .child(text.spatial_waiting_data)
+            .child(text.spatial.waiting_data)
             .into_any_element();
     }
     if matches!(spider_mode, SpiderMode::CorrelationFromRef { .. })
@@ -389,7 +389,7 @@ pub(super) fn build_body(
             .justify_center()
             .text_size(d.text_xs)
             .text_color(theme.text_muted)
-            .child(text.spatial_waiting_correlation)
+            .child(text.spatial.waiting_correlation)
             .into_any_element();
     }
 

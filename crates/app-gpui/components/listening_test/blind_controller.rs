@@ -154,10 +154,12 @@ impl PlayerView {
         id: &'static str,
         label: &'static str,
         load: bool,
+        disabled: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let theme = self.state.read(cx).app.ui_state.theme.clone();
         let button = Button::new(id, label)
+            .disabled(disabled)
             .size(ButtonSize::Sm)
             .variant(ButtonVariant::Secondary)
             .theme(theme.to_button_theme())
@@ -165,7 +167,10 @@ impl PlayerView {
                 view.pick_listening_session_file(load, cx);
             }));
         #[cfg(feature = "dev-api")]
-        let button = button.dev_track(format!("listening.session.{id}"));
+        let button = button.dev_track_with_state(
+            format!("listening.session.{id}"),
+            crate::app::dev_api::DevElementState::default().enabled(!disabled),
+        );
         button
     }
 
@@ -174,6 +179,9 @@ impl PlayerView {
         target: ListeningPathTarget,
         cx: &mut Context<Self>,
     ) {
+        if self.comparison_setup_locked(cx) {
+            return;
+        }
         self.state.update(cx, |state, _| {
             let sample_rate = f64::from(state.app.audio_device_state.hal_config.sample_rate);
             let result = path_config_from_plugin_graph(&state.app.plugin_state.graph, sample_rate);
@@ -214,7 +222,26 @@ impl PlayerView {
         cx.notify();
     }
 
-    pub(super) fn start_listening_trial(&mut self, mode: TrialMode, cx: &mut Context<Self>) {
+    pub(super) fn start_listening_trial(
+        &mut self,
+        mode: TrialMode,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let state = self.state.read(cx);
+        let workspace = &state.app.plugin_state.plugin_ui_state.listening_workspace;
+        if workspace.results_open
+            || state
+                .app
+                .plugin_state
+                .listening_test_state
+                .ab_test
+                .view()
+                .completed_trials
+                >= workspace.planned_trials
+        {
+            return;
+        }
         self.state.update(cx, |state, _| {
             let load_or_prepare = state
                 .app
@@ -231,6 +258,14 @@ impl PlayerView {
                 .status
                 .trial_started;
             let result = state.app.plugin_state.start_ab_test_trial(mode);
+            if result.is_ok() {
+                let workspace = &mut state.app.plugin_state.plugin_ui_state.listening_workspace;
+                workspace.results_open = false;
+                workspace.selected_answer = None;
+                workspace.auditioned = false;
+                workspace.paused = false;
+                state.app.plugin_state.listening_test_state.trial_mode = mode;
+            }
             let listening = &mut state.app.plugin_state.listening_test_state;
             match result {
                 Ok(index) => listening.status = format!("{trial_started} · #{}", index + 1),
@@ -238,10 +273,35 @@ impl PlayerView {
                 Err(error) => listening.status = error.to_string(),
             }
         });
+        self.focus_handle.focus(window, cx);
+        cx.notify();
+    }
+
+    pub(crate) fn cancel_listening_preparation(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, cx| {
+            state
+                .app
+                .plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .cancel_preparation();
+            state.app.plugin_state.listening_test_state.status = state
+                .app
+                .ui_state
+                .translations
+                .listening_test
+                .status
+                .load_or_prepare
+                .into();
+            cx.notify();
+        });
         cx.notify();
     }
 
     pub(super) fn prepare_current_listening_session(&mut self, cx: &mut Context<Self>) {
+        if self.comparison_setup_locked(cx) {
+            return;
+        }
         let request_data = {
             let state = self.state.read(cx);
             let listening = &state.app.plugin_state.listening_test_state;
@@ -278,8 +338,20 @@ impl PlayerView {
             cx.notify();
             return;
         };
-        self.state.update(cx, |state, _| {
-            state.app.plugin_state.listening_test_state.status = state
+        let expected_inputs = self
+            .state
+            .read(cx)
+            .app
+            .plugin_state
+            .listening_test_state
+            .preparation_snapshot(Some(media_path.clone()));
+        let Some(expected_inputs) = expected_inputs else {
+            return;
+        };
+        let request = self.state.update(cx, |state, _| {
+            let listening = &mut state.app.plugin_state.listening_test_state;
+            let _ = listening.ab_test.clear_session();
+            listening.status = state
                 .app
                 .ui_state
                 .translations
@@ -287,8 +359,14 @@ impl PlayerView {
                 .status
                 .measuring
                 .into();
+            state
+                .app
+                .plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .begin_preparation()
         });
-
+        cx.notify();
         let weak_state = self.state.downgrade();
         cx.spawn(async move |_, cx| {
             let timestamp = std::time::SystemTime::now()
@@ -321,6 +399,38 @@ impl PlayerView {
                 return;
             };
             entity.update(&mut cx.clone(), |state, cx| {
+                if !state
+                    .app
+                    .plugin_state
+                    .plugin_ui_state
+                    .listening_workspace
+                    .finish_preparation(&request)
+                {
+                    return;
+                }
+                let listening = &state.app.plugin_state.listening_test_state;
+                let view = listening.ab_test.view();
+                let unlocked = !view.runtime_active && view.completed_trials == 0;
+                let visible = state.app.ui_state.current_screen
+                    == crate::app::Screen::ListeningTest
+                    && listening.surface == EarTrainingSurface::BlindComparison;
+                let current_inputs =
+                    listening.preparation_snapshot(state.app.get_current_track_path());
+                if !visible || !unlocked || current_inputs.as_ref() != Some(&expected_inputs) {
+                    if visible && unlocked {
+                        state.app.plugin_state.listening_test_state.status = state
+                            .app
+                            .ui_state
+                            .translations
+                            .listening_test
+                            .status
+                            .load_or_prepare
+                            .into();
+                    }
+                    cx.notify();
+                    return;
+                }
+
                 let prepared_label = state
                     .app
                     .ui_state
@@ -349,6 +459,17 @@ impl PlayerView {
     }
 
     pub(super) fn activate_listening_cue(&mut self, cue: TrialCue, cx: &mut Context<Self>) {
+        if self
+            .state
+            .read(cx)
+            .app
+            .plugin_state
+            .plugin_ui_state
+            .listening_workspace
+            .interaction_locked()
+        {
+            return;
+        }
         self.state.update(cx, |state, _| {
             let localized = state
                 .app
@@ -362,6 +483,14 @@ impl PlayerView {
                 .plugin_state
                 .activate_ab_test_cue(cue)
                 .map_err(|error| error.to_string());
+            if result.is_ok() {
+                state
+                    .app
+                    .plugin_state
+                    .plugin_ui_state
+                    .listening_workspace
+                    .auditioned = true;
+            }
             state.app.plugin_state.listening_test_state.status = match result {
                 Ok(()) => localized.cue_active.into(),
                 Err(error) => error,
@@ -371,6 +500,16 @@ impl PlayerView {
     }
 
     pub(super) fn commit_listening_answer(&mut self, answer: TrialAnswer, cx: &mut Context<Self>) {
+        let workspace = &self
+            .state
+            .read(cx)
+            .app
+            .plugin_state
+            .plugin_ui_state
+            .listening_workspace;
+        if !workspace.auditioned || workspace.interaction_locked() {
+            return;
+        }
         self.state.update(cx, |state, _| {
             let answer_committed = state
                 .app
@@ -387,9 +526,15 @@ impl PlayerView {
                 state
                     .app
                     .plugin_state
-                    .commit_ab_test_answer(answer, Some(confidence), Some(notes));
+                    .commit_ab_test_answer(answer, confidence, Some(notes));
             match result {
                 Ok(_) => {
+                    state
+                        .app
+                        .plugin_state
+                        .plugin_ui_state
+                        .listening_workspace
+                        .selected_answer = None;
                     let completed_trials = state
                         .app
                         .plugin_state
@@ -400,6 +545,7 @@ impl PlayerView {
                     {
                         let listening = &mut state.app.plugin_state.listening_test_state;
                         listening.notes.clear();
+                        listening.confidence = None;
                         listening.status = answer_committed.into();
                     }
                     let tutorial = &mut state.app.tutorial;
@@ -498,7 +644,7 @@ impl PlayerView {
             .listening_test
             .setup
             .session_filter;
-        let session = self
+        let mut session = self
             .state
             .read(cx)
             .app
@@ -507,6 +653,18 @@ impl PlayerView {
             .ab_test
             .session()
             .cloned();
+        if let Some(session) = session.as_mut() {
+            session.planned_trials = u32::try_from(
+                self.state
+                    .read(cx)
+                    .app
+                    .plugin_state
+                    .plugin_ui_state
+                    .listening_workspace
+                    .planned_trials,
+            )
+            .ok();
+        }
         #[cfg(feature = "dev-api")]
         let qa_path = std::env::var_os("SOTF_QA_DIR")
             .map(std::path::PathBuf::from)
@@ -551,16 +709,32 @@ impl PlayerView {
                 let listening = &mut state.app.plugin_state.listening_test_state;
                 match result {
                     Ok(Some(session)) => {
-                        listening.path_a = Some(session.setup.path_a.config.clone());
-                        listening.path_b = Some(session.setup.path_b.config.clone());
-                        listening.path_a_label = session.setup.path_a.label.clone();
-                        listening.path_b_label = session.setup.path_b.label.clone();
-                        listening.path_a_canvas = None;
-                        listening.path_b_canvas = None;
-                        listening.level_match_config = session.setup.level_match.config();
-                        listening.segment_start_ms = session.setup.media.start_ms;
+                        let setup = session.setup.clone();
+                        let planned_trials = session.planned_trials.map(|count| count as usize);
                         match listening.ab_test.replace_session(session) {
-                            Ok(()) => listening.status = localized.session_loaded.into(),
+                            Ok(()) => {
+                                // A running comparison can reject replacement. Publish
+                                // its setup only after the controller accepts the session.
+                                listening.path_a = Some(setup.path_a.config);
+                                listening.path_b = Some(setup.path_b.config);
+                                listening.path_a_label = setup.path_a.label;
+                                listening.path_b_label = setup.path_b.label;
+                                listening.path_a_canvas = None;
+                                listening.path_b_canvas = None;
+                                listening.level_match_config = setup.level_match.config();
+                                listening.segment_start_ms = setup.media.start_ms;
+                                listening.status = localized.session_loaded.into();
+                                state.app.plugin_state.plugin_ui_state.listening_workspace =
+                                    crate::app::state::plugin::ListeningWorkspaceState::default();
+                                if let Some(planned_trials) = planned_trials {
+                                    state
+                                        .app
+                                        .plugin_state
+                                        .plugin_ui_state
+                                        .listening_workspace
+                                        .planned_trials = planned_trials;
+                                }
+                            }
                             Err(error) => listening.status = error.to_string(),
                         }
                     }
@@ -613,22 +787,22 @@ impl PlayerView {
     pub(crate) fn listening_start_blind_ab(
         &mut self,
         _: &ListeningStartBlindAb,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.is_listening_test_active(cx) {
-            self.start_listening_trial(TrialMode::BlindAb, cx);
+            self.start_listening_trial(TrialMode::BlindAb, window, cx);
         }
     }
 
     pub(crate) fn listening_start_abx(
         &mut self,
         _: &ListeningStartAbx,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.is_listening_test_active(cx) {
-            self.start_listening_trial(TrialMode::Abx, cx);
+            self.start_listening_trial(TrialMode::Abx, window, cx);
         }
     }
 

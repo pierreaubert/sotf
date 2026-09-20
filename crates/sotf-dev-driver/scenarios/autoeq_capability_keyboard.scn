@@ -1,0 +1,34 @@
+# Capability RadioGroup keyboard navigation (arrows + wrap).
+# If the container-center click below lands on an option row instead of
+# padding, the first mode assertion fails loudly (no silent pass): keys only
+# change the mode when the focused group consumes them, because the group
+# stops propagation and the PlayerView SelectDown binding never fires.
+resize 1200 1000
+# Room EQ Advanced mode: user selects the full control surface explicitly.
+focus room-e-q
+click roomeq.load_from_recording
+click roomeq.next
+click roomeq.next
+assert roomeq.step == "Process"
+assert_visible roomeq.select_full
+click roomeq.select_full
+assert roomeq.wizard_mode == "Full"
+assert roomeq.step == "Configure"
+click autoeq.stage.1
+wait_idle 500ms
+scroll_into_view roomeq.content autoeq.capability
+wait_idle 500ms
+click autoeq.capability
+wait_idle 500ms
+assert roomeq.config.opt_mode == "iir"
+key down
+wait_idle 500ms
+assert roomeq.config.opt_mode == "fir"
+key down
+wait_idle 500ms
+assert roomeq.config.opt_mode == "mixed"
+key up
+wait_idle 500ms
+assert roomeq.config.opt_mode == "fir"
+screenshot autoeq-capability-keyboard
+assert playback.is_playing == false

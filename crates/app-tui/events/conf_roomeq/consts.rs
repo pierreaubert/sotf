@@ -133,8 +133,11 @@ mod tests {
 
     fn measurement(channel: usize, name: &str) -> ChannelMeasurement {
         ChannelMeasurement {
+            driver_measurement_sets: Vec::new(),
+            provenance: Vec::new(),
             channel_name: name.to_string(),
             measurement: RecordingResult {
+                sample_rate_hz: None,
                 channel,
                 wav_path: None,
                 csv_path: None,

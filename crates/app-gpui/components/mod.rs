@@ -17,6 +17,7 @@ pub mod room_eq;
 mod settings;
 mod spinorama_eq;
 pub mod streams;
+mod workflow;
 pub use plugins::{
     LevelMeterElement, MeterColors, MeterData, SpectrumColors, SpectrumElement, get_param_count,
     render_plugin_content,
@@ -26,59 +27,17 @@ use crate::app::SettingsTab;
 use crate::app::i18n::{Language, PlaybackApplyTranslations, WizardNavigationTranslations};
 use crate::app::types::PluginUpdateType;
 use crate::components::design::Ds;
-use crate::components::icons::{Icon, IconName, IconSize};
+use crate::components::icons::IconName;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::i18n::Translations;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::accessibility::{
-    AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState,
-};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize,
     TextWeight, VStack,
 };
-use std::collections::HashMap;
-
-thread_local! {
-    static SETTINGS_TAB_FOCUS_HANDLES: std::cell::RefCell<HashMap<ElementId, FocusHandle>> =
-        std::cell::RefCell::new(HashMap::new());
-}
-
-const SETTINGS_COMPACT_TAB_HEADER_EFFECTIVE_WIDTH: f32 = 800.0;
-
-fn settings_tab_focus_handle(id: &ElementId, cx: &mut App) -> FocusHandle {
-    SETTINGS_TAB_FOCUS_HANDLES.with(|handles| {
-        handles
-            .borrow_mut()
-            .entry(id.clone())
-            .or_insert_with(|| cx.focus_handle())
-            .clone()
-    })
-}
-
-fn focus_settings_tab_relative(
-    handles: &[FocusHandle],
-    window: &mut Window,
-    cx: &mut App,
-    backwards: bool,
-) -> bool {
-    let Some(current) = handles.iter().position(|handle| handle.is_focused(window)) else {
-        return false;
-    };
-    let next = if backwards {
-        current.checked_sub(1)
-    } else {
-        (current + 1 < handles.len()).then_some(current + 1)
-    };
-    let Some(next) = next else {
-        return false;
-    };
-    window.focus(&handles[next], cx);
-    true
-}
 
 pub fn settings_tab_icon_name(tab: SettingsTab) -> IconName {
     match tab {
@@ -89,7 +48,7 @@ pub fn settings_tab_icon_name(tab: SettingsTab) -> IconName {
         SettingsTab::AudioDevice => IconName::Speaker,
         SettingsTab::Misc => IconName::SlidersHorizontal,
         SettingsTab::Federation => IconName::Plug,
-        SettingsTab::Servers => IconName::Plug,
+        SettingsTab::Servers => IconName::Cog,
         SettingsTab::Metadata => IconName::Album,
         SettingsTab::ReleaseChannel => IconName::AudioWaveform,
     }
@@ -159,27 +118,12 @@ pub fn wizard_continue_label(language: Language, next_step: Option<&str>) -> Str
 }
 
 impl PlayerView {
-    pub(crate) fn render_settings_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let d = Ds::from_cx(cx);
-        let state = self.state.read(cx);
-        let theme = state.app.ui_state.theme.clone();
-        let visible_tabs = SettingsTab::visible_tabs();
-        let stored_active_tab = state.app.ui_state.active_settings_tab;
-        let active_tab = if visible_tabs.contains(&stored_active_tab) {
-            stored_active_tab
-        } else {
-            SettingsTab::fallback_for_platform()
-        };
-        let translations = state.app.ui_state.translations.clone();
-        // Full translated labels can consume the content area well before the
-        // phone breakpoint once text scaling is applied. Use icon tabs while
-        // there is still enough room for a useful settings viewport below.
-        let compact_tab_header = state.app.ui_state.window_width
-            / state.app.ui_state.font_scale.max(1.0)
-            < SETTINGS_COMPACT_TAB_HEADER_EFFECTIVE_WIDTH;
-
-        // Content area based on active tab
-        let content = match active_tab {
+    pub(crate) fn render_settings_tab_content(
+        &self,
+        active_tab: SettingsTab,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        match active_tab {
             crate::app::SettingsTab::Library => {
                 self.render_library_settings_content(cx).into_any_element()
             }
@@ -192,8 +136,12 @@ impl PlayerView {
             crate::app::SettingsTab::Keybindings => self
                 .render_keybindings_settings_content(cx)
                 .into_any_element(),
-            crate::app::SettingsTab::AudioDevice => self
-                .render_audio_device_settings_content(cx)
+            crate::app::SettingsTab::AudioDevice => div()
+                .flex()
+                .flex_col()
+                .child(self.render_audio_device_settings_content(cx))
+                .child(self.render_audio_output_draft(cx))
+                .child(self.render_replay_gain_settings(true, cx))
                 .into_any_element(),
             crate::app::SettingsTab::Misc => {
                 self.render_plugins_settings_content(cx).into_any_element()
@@ -210,177 +158,7 @@ impl PlayerView {
             crate::app::SettingsTab::ReleaseChannel => self
                 .render_release_channel_settings_content(cx)
                 .into_any_element(),
-        };
-
-        // Tabs are now custom-rendered to avoid context issues
-
-        let text_secondary = theme.text_secondary;
-
-        div()
-            .id("settings-screen")
-            .flex()
-            .flex_col()
-            .size_full()
-            .bg(theme.background)
-            .text_color(theme.text_primary)
-            .child(
-                // Tab Header with centered tabs
-                div()
-                    .w_full()
-                    .bg(theme.surface)
-                    .border_b_1()
-                    .border_color(theme.border)
-                    .px(d.card)
-                    .py(d.pad_y)
-                    .flex()
-                    .items_center()
-                    .gap(d.gap)
-                    .child(div().flex_1().min_w_0().child({
-                        // Custom tab rendering to avoid context issues
-                        let state_entity = self.state.clone();
-                        let tab_data = visible_tabs;
-
-                        let mut tabs_container = div()
-                            .flex()
-                            .flex_wrap()
-                            .items_center()
-                            .justify_center()
-                            .gap(d.grid);
-                        let mut tab_focus_handles = Vec::with_capacity(tab_data.len());
-
-                        for tab_variant in tab_data {
-                            let label = settings_tab_label(tab_variant, &translations);
-                            let is_selected = active_tab == tab_variant;
-                            let entity_clone = state_entity.clone();
-                            let accent = theme.accent;
-                            let border = theme.border;
-                            let surface = theme.surface;
-                            let surface_hover = theme.surface_hover;
-                            let surface_selected = theme.surface_selected;
-                            let text_selected = theme.text_primary;
-                            let text_unselected = theme.text_muted;
-                            let text_hover = text_secondary;
-                            let icon_color = if is_selected {
-                                theme.accent
-                            } else {
-                                text_unselected
-                            };
-                            let icon_name = settings_tab_icon_name(tab_variant);
-                            let element_id = ElementId::from(SharedString::from(format!(
-                                "settings-tab-{tab_variant:?}"
-                            )));
-                            let focus_handle = settings_tab_focus_handle(&element_id, cx);
-                            cx.register_accessible(AccessibilityNode {
-                                element_id: element_id.clone(),
-                                label: label.into(),
-                                props: AriaProps::with_role(AriaRole::Button)
-                                    .maybe_state(is_selected, AriaState::Pressed(true)),
-                            });
-                            let entity_for_key = state_entity.clone();
-                            let tooltip_theme = theme.clone();
-
-                            let tab = div()
-                                .id(element_id)
-                                .flex()
-                                .items_center()
-                                .gap(d.grid)
-                                .flex_shrink_0()
-                                .px(if compact_tab_header {
-                                    d.pad_y_half
-                                } else {
-                                    d.pad_x
-                                })
-                                .py(d.pad_y_half)
-                                .rounded(d.r_md)
-                                .border_1()
-                                .border_color(if is_selected { accent } else { border })
-                                .bg(if is_selected {
-                                    surface_selected
-                                } else {
-                                    surface
-                                })
-                                .text_size(d.text_sm)
-                                .text_color(if is_selected {
-                                    text_selected
-                                } else {
-                                    text_unselected
-                                })
-                                .whitespace_nowrap()
-                                .cursor_pointer()
-                                .focusable()
-                                .track_focus(&focus_handle)
-                                .track_focus_element(&focus_handle)
-                                .focus_visible(|style| style.border_color(accent).bg(surface_hover))
-                                .child(Icon::new(icon_name).size(IconSize::Xs).color(icon_color))
-                                .when(!compact_tab_header, |el| el.child(label))
-                                .when(compact_tab_header, |el| {
-                                    el.tooltip(move |_window, cx| {
-                                        themed_tooltip(label, &tooltip_theme, cx)
-                                    })
-                                })
-                                .when(!is_selected, |el| {
-                                    el.hover(move |s| s.bg(surface_hover).text_color(text_hover))
-                                })
-                                .when(is_selected, |el| el.font_weight(FontWeight::SEMIBOLD))
-                                .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                                    entity_clone.update(cx, |state, _cx| {
-                                        state.app.ui_state.active_settings_tab = tab_variant;
-                                    });
-                                })
-                                .on_key_down(move |event: &KeyDownEvent, _window, cx| {
-                                    if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                                        entity_for_key.update(cx, |state, cx| {
-                                            state.app.ui_state.active_settings_tab = tab_variant;
-                                            cx.notify();
-                                        });
-                                        cx.stop_propagation();
-                                    }
-                                });
-
-                            #[cfg(feature = "dev-api")]
-                            let tab = {
-                                use crate::app::dev_api::DevTrackExt;
-                                tab.dev_track_with_state(
-                                    format!("settings.tab.{:?}", tab_variant),
-                                    crate::app::dev_api::DevElementState::default()
-                                        .selected(is_selected),
-                                )
-                            };
-
-                            tab_focus_handles.push(focus_handle);
-                            tabs_container = tabs_container.child(tab);
-                        }
-
-                        tabs_container.on_key_down(move |event: &KeyDownEvent, window, cx| {
-                            if event.keystroke.key.as_str() == "tab"
-                                && focus_settings_tab_relative(
-                                    &tab_focus_handles,
-                                    window,
-                                    cx,
-                                    event.keystroke.modifiers.shift,
-                                )
-                            {
-                                cx.stop_propagation();
-                            }
-                        })
-                    })),
-            )
-            // Content with vertical scroll
-            .child({
-                let content_scroll = div()
-                    .id("settings-content-scroll")
-                    .overflow_y_scroll()
-                    .flex_1()
-                    .min_h_0()
-                    .p(d.card)
-                    .child(div().w_full().max_w(rems(78.0)).child(content));
-                #[cfg(feature = "dev-api")]
-                let content_scroll = {
-                    use crate::app::dev_api::DevTrackExt;
-                    content_scroll.dev_track("settings.content")
-                };
-                content_scroll
-            })
+        }
     }
 
     /// Clear all EQ plugins from the playback chain.
@@ -421,10 +199,87 @@ impl PlayerView {
 
     /// Render the "Apply to Playback" card used in export steps.
     /// `apply_fn` and `clear_fn` are method pointers for applying/clearing EQ.
+    pub(crate) fn render_correction_export_status(
+        &self,
+        cx: &Context<Self>,
+        delivery: &sotf_audio_player::ui_models::correction_delivery::CorrectionDelivery,
+        result_is_current: bool,
+    ) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = &state.app.ui_state.theme;
+        let text = crate::app::i18n::CorrectionDeliveryTranslations::for_language(
+            state.app.ui_state.language,
+        );
+        let current = delivery.current_result_exported(result_is_current);
+        let description = match delivery.last_export() {
+            None => text.not_exported,
+            Some(_) if current => text.current_export,
+            Some(_) => text.previous_export,
+        };
+        use sotf_audio_player::ui_models::correction_delivery::CorrectionApplicationStatus;
+        let application_text = crate::app::i18n::CorrectionApplicationTranslations::for_language(
+            state.app.ui_state.language,
+        );
+        let application = state
+            .app
+            .correction_application_status(delivery, result_is_current);
+        let application_label = match application {
+            CorrectionApplicationStatus::NotApplied => application_text.not_applied,
+            CorrectionApplicationStatus::Pending => application_text.pending,
+            CorrectionApplicationStatus::Applied => application_text.applied,
+            CorrectionApplicationStatus::PreviousResult => application_text.previous,
+            CorrectionApplicationStatus::ChangedGraph => application_text.changed,
+            CorrectionApplicationStatus::Failed => application_text.failed,
+        };
+        let application_status = VStack::new()
+            .spacing(StackSpacing::Xs)
+            .child(Text::section_header(application_text.title))
+            .child(Text::body(application_label).color(
+                if application == CorrectionApplicationStatus::Applied {
+                    theme.success
+                } else if application == CorrectionApplicationStatus::Failed {
+                    theme.error
+                } else {
+                    theme.text_secondary
+                },
+            ));
+        #[cfg(feature = "dev-api")]
+        let application_status = {
+            use crate::app::dev_api::DevTrackExt;
+            application_status.dev_track("correction.application_status")
+        };
+        let status = VStack::new()
+            .spacing(StackSpacing::Sm)
+            .child(Text::section_header(text.title))
+            .child(Text::body(description).color(if current {
+                theme.success
+            } else {
+                theme.text_secondary
+            }))
+            .when_some(delivery.last_export(), |stack, export| {
+                stack.child(
+                    div().w_full().min_w_0().whitespace_normal().child(
+                        Text::caption(format!("{} · {}", export.format, export.path.display()))
+                            .color(theme.text_secondary),
+                    ),
+                )
+            });
+        #[cfg(feature = "dev-api")]
+        let status = {
+            use crate::app::dev_api::DevTrackExt;
+            status.dev_track("correction.export_status")
+        };
+        VStack::new()
+            .spacing(StackSpacing::Sm)
+            .child(application_status)
+            .child(status)
+    }
+
     pub(crate) fn render_apply_to_playback_card(
         &self,
         cx: &mut Context<Self>,
         id_prefix: &str,
+        result_is_current: bool,
         theme: &crate::theme::Theme,
         button_theme: &ButtonTheme,
         apply_fn: fn(&mut Self, &mut Context<Self>),
@@ -434,6 +289,20 @@ impl PlayerView {
             PlaybackApplyTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let apply_id = SharedString::from(format!("apply-{}-eq", id_prefix));
         let clear_id = SharedString::from(format!("clear-{}-eq", id_prefix));
+
+        let apply_button = Button::new(apply_id, text.title)
+            .disabled(!result_is_current)
+            .variant(ButtonVariant::Primary)
+            .size(ButtonSize::Sm)
+            .theme(button_theme.clone())
+            .on_click_event(cx.listener(move |view, _, _, cx| {
+                apply_fn(view, cx);
+            }));
+        #[cfg(feature = "dev-api")]
+        let apply_button = {
+            use crate::app::dev_api::DevTrackExt;
+            apply_button.dev_track(format!("{id_prefix}.apply"))
+        };
 
         Card::new()
             .background(theme.surface)
@@ -455,15 +324,7 @@ impl PlayerView {
                     .child(
                         HStack::new()
                             .spacing(StackSpacing::Xs)
-                            .child(
-                                Button::new(apply_id, text.title)
-                                    .variant(ButtonVariant::Primary)
-                                    .size(ButtonSize::Sm)
-                                    .theme(button_theme.clone())
-                                    .on_click_event(cx.listener(move |view, _, _, cx| {
-                                        apply_fn(view, cx);
-                                    })),
-                            )
+                            .child(apply_button)
                             .child(
                                 Button::new(clear_id, text.clear_eq)
                                     .variant(ButtonVariant::Secondary)

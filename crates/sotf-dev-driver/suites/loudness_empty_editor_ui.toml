@@ -1,0 +1,17 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "/tmp/sotf-loudness-empty"
+readiness_timeout = "20s"
+size = "600x1000"
+[[scenario]]
+name = "loudness-empty"
+path = "crates/sotf-dev-driver/scenarios/loudness_empty_editor.scn"
+timeout = "30s"
+[[scenario]]
+name = "loudness-empty-german"
+path = "crates/sotf-dev-driver/scenarios/loudness_empty_editor.scn"
+timeout = "30s"
+language = "German"
+theme = "Light"
+font_scale = 1.5
+reduced_motion = true

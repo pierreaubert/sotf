@@ -285,6 +285,8 @@ pub enum CoordinateInput {
         x: f64,
         y: f64,
         button: u8,
+        #[serde(default = "default_click_count")]
+        click_count: usize,
         viewport_revision: u64,
     },
     Touch {
@@ -307,10 +309,23 @@ pub enum CoordinateInput {
     },
 }
 
+fn default_click_count() -> usize {
+    1
+}
+
 impl CoordinateInput {
     pub fn validate(&self, limits: &InputLimits) -> Result<(), InputError> {
         match self {
-            Self::Pointer { x, y, button, .. } => {
+            Self::Pointer {
+                x,
+                y,
+                button,
+                click_count,
+                ..
+            } => {
+                if !(1..=3).contains(click_count) {
+                    return Err(InputError::ClickCount(*click_count));
+                }
                 validate_point(*x, *y, limits)?;
                 if *button > limits.max_button {
                     return Err(InputError::Button(*button));
@@ -381,6 +396,8 @@ pub enum InputError {
     Coordinate,
     #[error("pointer button {0} is outside the advertised range")]
     Button(u8),
+    #[error("click count {0} must be between 1 and 3")]
+    ClickCount(usize),
     #[error("touch ID {0} is outside the advertised range")]
     TouchId(u8),
     #[error("scroll delta is non-finite or outside the advertised range")]
@@ -453,9 +470,34 @@ mod tests {
             x: 100.0,
             y: 0.0,
             button: 0,
+            click_count: 1,
             viewport_revision: 1,
         };
         assert_eq!(valid.validate(&limits), Ok(()));
+        let mut legacy = serde_json::to_value(&valid).unwrap();
+        legacy.as_object_mut().unwrap().remove("click_count");
+        let decoded: CoordinateInput = serde_json::from_value(legacy).unwrap();
+        assert!(matches!(
+            decoded,
+            CoordinateInput::Pointer { click_count: 1, .. }
+        ));
+        for count in [0, 2, 4] {
+            let mut input = valid.clone();
+            if let CoordinateInput::Pointer { click_count, .. } = &mut input {
+                *click_count = count;
+            }
+            let round_trip: CoordinateInput =
+                serde_json::from_value(serde_json::to_value(&input).unwrap()).unwrap();
+            assert_eq!(
+                round_trip.validate(&limits),
+                if count == 2 {
+                    Ok(())
+                } else {
+                    Err(InputError::ClickCount(count))
+                }
+            );
+        }
+
         let invalid = CoordinateInput::Scroll {
             delta_x: f64::NAN,
             delta_y: 0.0,

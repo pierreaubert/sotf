@@ -1,0 +1,13 @@
+# Fresh multiband settings have no explicit band overrides.
+resize 1600 1400
+focus Studio
+plugin_clear
+plugin_add MultibandCompressor
+action PluginSelectFirstUser
+wait_idle 1s
+assert_inaccessible slider Makeup
+# Band 1 tab grounded in native capture 1788993911.
+click_at 815 533
+wait_idle 500ms
+assert_accessible slider Makeup
+screenshot multiband-band-one

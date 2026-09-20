@@ -11,6 +11,25 @@ Supported apps:
 
 ## Run a scenario
 
+Suite scenarios can create a real directory-name collision with
+`qa_empty_dir create recordings/Collision`, then remove that empty fixture with
+`qa_empty_dir remove recordings/Collision` before retrying. These commands require
+an isolated QA directory, accept only relative paths within it, reject symlink
+escapes, and never remove files or non-empty directories.
+
+For controls clipped by a scroll container's fixed header or footer, use
+`scroll_into_view <container> <target>` before clicking. It checks the
+container's viewport bounds and brings the target's click point inside it.
+The target must already be rendered; use `scroll` first to reach its region
+in a virtualized list. For example:
+
+```text
+scroll headphone.content -5000
+wait_idle 1s
+scroll_into_view headphone.content headphone.target
+click headphone.target
+```
+
 ```bash
 # Terminal 1: launch SotF with the debug-only dev API + an isolated QA config dir.
 QA_DIR=$(mktemp -d)

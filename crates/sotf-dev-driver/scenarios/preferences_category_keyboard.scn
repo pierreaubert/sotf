@@ -1,0 +1,22 @@
+focus Settings
+resize 600 800
+wait_idle 2s
+assert settings.active_tab == "Library"
+screenshot preferences-category-before-open
+click preferences.category
+assert preferences.category_open == true
+key down
+key enter
+assert settings.active_tab == "Theme"
+assert preferences.category_open == false
+wait_idle 2s
+click preferences.category
+key up
+key enter
+assert settings.active_tab == "Library"
+wait_idle 2s
+click preferences.category
+key escape
+assert preferences.category_open == false
+assert screen.focused == "Settings"
+assert playback.is_playing == false

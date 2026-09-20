@@ -25,6 +25,7 @@ assert      listening.eq.filtered == false
 assert_accessible button Original
 assert_accessible button Filtered
 screenshot  listening-eq-feedback
+wait_idle
 assert_visible listening.eq.next
 click       listening.eq.next
 wait_until  listening.eq.answered == false timeout=2s

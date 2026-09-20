@@ -1,0 +1,37 @@
+# German Light150, 600x1000; timing disclosure measured from native screenshot.
+focus Studio
+plugin_clear
+plugin_add Expander
+action PluginSelectFirstUser
+wait_idle
+scroll_at 15 700 -800
+wait_idle
+click_at 300 648
+wait_idle
+screenshot expander-timing-open
+scroll_into_view rack.params plugin.control.2.7
+click plugin.control.2.7
+wait_idle
+scroll_into_view rack.params plugin.param.2.7.exact
+click plugin.param.2.7.exact
+key cmd-a
+type "25"
+key enter
+wait_idle
+assert plugins.plugin.2.param.7.value == 25 tolerance=0.001
+scroll_into_view rack.params plugin.control.2.12
+click plugin.control.2.12
+wait_idle
+scroll_into_view rack.params plugin.param.2.12.exact
+click plugin.param.2.12.exact
+key cmd-a
+type "5"
+key enter
+wait_idle
+assert plugins.plugin.2.param.12.value == 5 tolerance=0.001
+plugin_chain_save $SOTF_QA_DIR/expander-timing.json
+plugin_remove 2
+plugin_chain_load $SOTF_QA_DIR/expander-timing.json
+assert plugins.plugin.2.param.7.value == 25 tolerance=0.001
+assert plugins.plugin.2.param.12.value == 5 tolerance=0.001
+assert playback.is_playing == false

@@ -94,24 +94,6 @@ pub fn requires_room_eq_graph(output: &DspChainOutput) -> bool {
             .is_some_and(|graph| !graph.routes.is_empty())
 }
 
-pub(super) fn routed_graph_channel_count(
-    output: &DspChainOutput,
-    graph: &autoeq::roomeq::BassManagementRoutingGraph,
-) -> usize {
-    let route_max = graph
-        .routes
-        .iter()
-        .flat_map(|route| [route.source_index, route.destination_index])
-        .max()
-        .map(|idx| idx + 1)
-        .unwrap_or(0);
-    route_max
-        .max(graph.input_channels.len())
-        .max(graph.output_channels.len())
-        .max(output.channels.len())
-        .max(1)
-}
-
 pub(super) fn sorted_channel_names(output: &DspChainOutput) -> Vec<String> {
     let mut names: Vec<_> = output.channels.keys().cloned().collect();
     names.sort();

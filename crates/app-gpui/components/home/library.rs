@@ -1,4 +1,6 @@
 //! Library screen rendering functions
 
-mod misc;
+mod artists;
+mod toolbar;
+mod tracks;
 mod types;

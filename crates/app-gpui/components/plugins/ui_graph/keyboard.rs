@@ -1,12 +1,11 @@
 use super::consts::convert_plugin_graph;
-use crate::app::types::PluginUpdateType;
 use crate::app::{InputMode, ToastMessage};
 use crate::components::design::Ds;
 use crate::i18n::PluginGraphTranslations;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::{Context, IntoElement, KeyDownEvent, Keystroke, Window, div};
-use gpui_ui_kit::{HStack, StackSpacing, Text, TextSize, TextWeight, VStack};
+use gpui_ui_kit::{StackSpacing, Text, TextSize, TextWeight, VStack};
 use sotf_audio_player::{GraphNodeId, NodePosition, PluginGraph, PluginType};
 
 fn keyboard_node_ids(graph: &PluginGraph) -> Vec<GraphNodeId> {
@@ -54,10 +53,9 @@ fn mark_graph_changed(state: &mut crate::app::AppState) {
     state
         .app
         .plugin_state
+        .routing_controller_mut()
         .graph
         .update_channel_dependent_plugins();
-    state.app.plugin_state.update_state.pending_plugin_update = Some(PluginUpdateType::Structural);
-    state.app.plugin_state.update_state.plugin_graph_modified = true;
 }
 
 macro_rules! graph_action_handler {
@@ -75,14 +73,8 @@ impl PlayerView {
     fn refresh_workflow_canvas(&self, cx: &mut Context<Self>) {
         let (canvas, workflow_graph) = {
             let state = self.state.read(cx);
-            if !matches!(
-                state.app.plugin_state.update_state.pending_plugin_update,
-                Some(PluginUpdateType::Structural)
-            ) {
-                return;
-            }
 
-            let plugin_graph = state.app.plugin_state.graph.clone();
+            let plugin_graph = state.app.plugin_state.routing_controller().graph.clone();
             let canvas = state.app.plugin_state.graph_state.workflow_canvas.clone();
             (canvas, convert_plugin_graph(&plugin_graph))
         };
@@ -104,7 +96,8 @@ impl PlayerView {
             is_held: false,
             prefer_character_input: false,
         };
-        debug_assert!(self.handle_plugin_graph_keyboard(&event, cx));
+        let handled = self.handle_plugin_graph_keyboard(&event, cx);
+        debug_assert!(handled);
     }
 
     pub(crate) fn handle_plugin_graph_keyboard(
@@ -118,7 +111,8 @@ impl PlayerView {
         match key {
             "tab" => {
                 self.state.update(cx, |state, _cx| {
-                    let order = keyboard_node_ids(&state.app.plugin_state.graph);
+                    let order =
+                        keyboard_node_ids(&state.app.plugin_state.routing_controller().graph);
                     if order.is_empty() {
                         return;
                     }
@@ -131,7 +125,10 @@ impl PlayerView {
                         .iter()
                         .copied()
                         .collect::<Vec<_>>();
-                    let current = selected_node_id(&state.app.plugin_state.graph, &selected);
+                    let current = selected_node_id(
+                        &state.app.plugin_state.routing_controller().graph,
+                        &selected,
+                    );
                     let next_index = current
                         .and_then(|id| order.iter().position(|candidate| *candidate == id))
                         .map(|index| {
@@ -149,6 +146,7 @@ impl PlayerView {
                         .graph_selection
                         .select_node(order[next_index], false);
                 });
+                self.dispatch_plugin_graph_key("enter", cx);
                 cx.notify();
                 true
             }
@@ -180,8 +178,10 @@ impl PlayerView {
                         .iter()
                         .copied()
                         .collect::<Vec<_>>();
-                    let Some(node_id) = selected_node_id(&state.app.plugin_state.graph, &selected)
-                    else {
+                    let Some(node_id) = selected_node_id(
+                        &state.app.plugin_state.routing_controller().graph,
+                        &selected,
+                    ) else {
                         return;
                     };
                     let channel_count = if state
@@ -191,9 +191,19 @@ impl PlayerView {
                         .keyboard_connect_source
                         .is_some()
                     {
-                        state.app.plugin_state.graph.node_input_channels(node_id)
+                        state
+                            .app
+                            .plugin_state
+                            .routing_controller()
+                            .graph
+                            .node_input_channels(node_id)
                     } else {
-                        state.app.plugin_state.graph.node_output_channels(node_id)
+                        state
+                            .app
+                            .plugin_state
+                            .routing_controller()
+                            .graph
+                            .node_output_channels(node_id)
                     };
                     if channel_count == 0 {
                         state.app.plugin_state.graph_state.keyboard_target_port = 0;
@@ -224,13 +234,15 @@ impl PlayerView {
                     else {
                         return;
                     };
-                    let order = keyboard_node_ids(&state.app.plugin_state.graph);
+                    let order =
+                        keyboard_node_ids(&state.app.plugin_state.routing_controller().graph);
                     let x = order
                         .iter()
                         .filter_map(|id| {
                             state
                                 .app
                                 .plugin_state
+                                .routing_controller()
                                 .graph
                                 .nodes
                                 .get(id)
@@ -239,6 +251,7 @@ impl PlayerView {
                                     state
                                         .app
                                         .plugin_state
+                                        .routing_controller()
                                         .graph
                                         .special_nodes
                                         .get(id)
@@ -247,10 +260,20 @@ impl PlayerView {
                         })
                         .fold(100.0_f32, f32::max)
                         + 220.0;
-                    let y = 100.0 + (state.app.plugin_state.graph.nodes.len() % 5) as f32 * 110.0;
+                    let y = 100.0
+                        + (state
+                            .app
+                            .plugin_state
+                            .routing_controller()
+                            .graph
+                            .nodes
+                            .len()
+                            % 5) as f32
+                            * 110.0;
                     let node_id = match state
                         .app
                         .plugin_state
+                        .routing_controller_mut()
                         .graph
                         .add_plugin_node(&plugin_type, NodePosition::new(x, y))
                     {
@@ -285,7 +308,14 @@ impl PlayerView {
                         .selected_nodes
                         .iter()
                         .copied()
-                        .find(|id| state.app.plugin_state.graph.nodes.contains_key(id));
+                        .find(|id| {
+                            state
+                                .app
+                                .plugin_state
+                                .routing_controller()
+                                .graph
+                                .node_exists(*id)
+                        });
                     let workflow_node = selected.and_then(|selected| {
                         state
                             .app
@@ -295,26 +325,46 @@ impl PlayerView {
                             .as_ref()
                             .and_then(|canvas| {
                                 canvas.read(cx).graph().nodes.iter().find_map(|(id, node)| {
-                                    (node
-                                        .user_data
-                                        .get("plugin_node_id")
-                                        .and_then(|value| value.as_str())
-                                        .and_then(|value| GraphNodeId::parse_str(value).ok())
-                                        == Some(selected))
+                                    (*id == selected
+                                        || node
+                                            .user_data
+                                            .get("plugin_node_id")
+                                            .and_then(|value| value.as_str())
+                                            .and_then(|value| GraphNodeId::parse_str(value).ok())
+                                            == Some(selected))
                                     .then_some(*id)
                                 })
                             })
                     });
                     (selected, workflow_node)
                 };
+                if workflow_node.is_some()
+                    && self
+                        .state
+                        .read(cx)
+                        .app
+                        .plugin_state
+                        .graph_state
+                        .editing_plugin_node
+                        == workflow_node
+                {
+                    return true;
+                }
                 self.state.update(cx, |state, _cx| {
                     let text = PluginGraphTranslations::for_language(state.app.ui_state.language);
                     if let (Some(selected), Some(workflow_node)) = (selected, workflow_node) {
-                        let original_plugin = state.app.plugin_state.graph.nodes.get(&selected);
+                        let original_plugin = state
+                            .app
+                            .plugin_state
+                            .routing_controller()
+                            .graph
+                            .nodes
+                            .get(&selected);
                         let original_settings = original_plugin
                             .and_then(|node| serde_json::to_string(&node.plugin.settings).ok());
                         let original_enabled = original_plugin.map(|node| node.plugin.enabled);
-                        state.app.plugin_state.graph_state.editing_graph_node_uuid = Some(selected);
+                        state.app.plugin_state.graph_state.editing_graph_node_uuid =
+                            original_plugin.map(|_| selected);
                         state.app.plugin_state.graph_state.editing_plugin_node =
                             Some(workflow_node);
                         state
@@ -346,13 +396,21 @@ impl PlayerView {
                         .iter()
                         .copied()
                         .collect::<Vec<_>>();
-                    let Some(node_id) = selected_node_id(&state.app.plugin_state.graph, &selected)
-                    else {
+                    let Some(node_id) = selected_node_id(
+                        &state.app.plugin_state.routing_controller().graph,
+                        &selected,
+                    ) else {
                         state.app.ui_state.toast_message =
                             Some(ToastMessage::info(text.select_node_first));
                         return;
                     };
-                    if let Err(error) = state.app.plugin_state.graph.toggle_plugin(node_id) {
+                    if let Err(error) = state
+                        .app
+                        .plugin_state
+                        .routing_controller_mut()
+                        .graph
+                        .toggle_plugin(node_id)
+                    {
                         state.app.ui_state.toast_message = Some(ToastMessage::error(error));
                         return;
                     }
@@ -374,8 +432,10 @@ impl PlayerView {
                         .iter()
                         .copied()
                         .collect::<Vec<_>>();
-                    let Some(node_id) = selected_node_id(&state.app.plugin_state.graph, &selected)
-                    else {
+                    let Some(node_id) = selected_node_id(
+                        &state.app.plugin_state.routing_controller().graph,
+                        &selected,
+                    ) else {
                         state.app.ui_state.toast_message =
                             Some(ToastMessage::info(text.select_node_first));
                         return;
@@ -384,7 +444,12 @@ impl PlayerView {
                     if let Some((source, source_port)) =
                         state.app.plugin_state.graph_state.keyboard_connect_source
                     {
-                        let input_count = state.app.plugin_state.graph.node_input_channels(node_id);
+                        let input_count = state
+                            .app
+                            .plugin_state
+                            .routing_controller()
+                            .graph
+                            .node_input_channels(node_id);
                         if input_count == 0 {
                             state.app.ui_state.toast_message =
                                 Some(ToastMessage::error(text.connection_failed));
@@ -394,6 +459,7 @@ impl PlayerView {
                         if state
                             .app
                             .plugin_state
+                            .routing_controller_mut()
                             .graph
                             .add_connection(source, source_port, node_id, target_port)
                             .is_ok()
@@ -408,8 +474,12 @@ impl PlayerView {
                                 Some(ToastMessage::error(text.connection_failed));
                         }
                     } else {
-                        let output_count =
-                            state.app.plugin_state.graph.node_output_channels(node_id);
+                        let output_count = state
+                            .app
+                            .plugin_state
+                            .routing_controller()
+                            .graph
+                            .node_output_channels(node_id);
                         if output_count == 0 {
                             state.app.ui_state.toast_message =
                                 Some(ToastMessage::error(text.connection_failed));
@@ -436,22 +506,39 @@ impl PlayerView {
                         .iter()
                         .copied()
                         .collect::<Vec<_>>();
-                    let Some(node_id) = selected_node_id(&state.app.plugin_state.graph, &selected)
-                    else {
+                    let Some(node_id) = selected_node_id(
+                        &state.app.plugin_state.routing_controller().graph,
+                        &selected,
+                    ) else {
                         state.app.ui_state.toast_message =
                             Some(ToastMessage::info(text.select_node_first));
                         return;
                     };
-                    let before = state.app.plugin_state.graph.connections.len();
+                    let before = state
+                        .app
+                        .plugin_state
+                        .routing_controller()
+                        .graph
+                        .connections
+                        .len();
                     state
                         .app
                         .plugin_state
+                        .routing_controller_mut()
                         .graph
                         .connections
                         .retain(|connection| {
                             connection.from_node != node_id && connection.to_node != node_id
                         });
-                    if state.app.plugin_state.graph.connections.len() != before {
+                    if state
+                        .app
+                        .plugin_state
+                        .routing_controller()
+                        .graph
+                        .connections
+                        .len()
+                        != before
+                    {
                         mark_graph_changed(state);
                         state.app.ui_state.toast_message =
                             Some(ToastMessage::success(text.disconnected));
@@ -473,18 +560,32 @@ impl PlayerView {
                         .iter()
                         .copied()
                         .collect::<Vec<_>>();
-                    let Some(node_id) = selected_node_id(&state.app.plugin_state.graph, &selected)
-                    else {
+                    let Some(node_id) = selected_node_id(
+                        &state.app.plugin_state.routing_controller().graph,
+                        &selected,
+                    ) else {
                         state.app.ui_state.toast_message =
                             Some(ToastMessage::info(text.select_node_first));
                         return;
                     };
-                    if !state.app.plugin_state.graph.nodes.contains_key(&node_id) {
+                    if !state
+                        .app
+                        .plugin_state
+                        .routing_controller()
+                        .graph
+                        .nodes
+                        .contains_key(&node_id)
+                    {
                         state.app.ui_state.toast_message =
                             Some(ToastMessage::info(text.special_node_read_only));
                         return;
                     }
-                    state.app.plugin_state.graph.remove_node(node_id);
+                    state
+                        .app
+                        .plugin_state
+                        .routing_controller_mut()
+                        .graph
+                        .remove_node(node_id);
                     state.app.plugin_state.graph_state.graph_selection.clear();
                     if state
                         .app
@@ -514,8 +615,10 @@ impl PlayerView {
                         .iter()
                         .copied()
                         .collect::<Vec<_>>();
-                    let Some(node_id) = selected_node_id(&state.app.plugin_state.graph, &selected)
-                    else {
+                    let Some(node_id) = selected_node_id(
+                        &state.app.plugin_state.routing_controller().graph,
+                        &selected,
+                    ) else {
                         return;
                     };
                     let distance = if event.keystroke.modifiers.shift {
@@ -530,11 +633,23 @@ impl PlayerView {
                         "down" => (0.0, distance),
                         _ => unreachable!(),
                     };
-                    if let Some(node) = state.app.plugin_state.graph.nodes.get_mut(&node_id) {
+                    if let Some(node) = state
+                        .app
+                        .plugin_state
+                        .routing_controller_mut()
+                        .graph
+                        .nodes
+                        .get_mut(&node_id)
+                    {
                         node.position.x += dx;
                         node.position.y += dy;
-                    } else if let Some(node) =
-                        state.app.plugin_state.graph.special_nodes.get_mut(&node_id)
+                    } else if let Some(node) = state
+                        .app
+                        .plugin_state
+                        .routing_controller_mut()
+                        .graph
+                        .special_nodes
+                        .get_mut(&node_id)
                     {
                         node.position.x += dx;
                         node.position.y += dy;
@@ -681,9 +796,12 @@ impl PlayerView {
             .iter()
             .copied()
             .collect::<Vec<_>>();
-        let selected_label = selected_node_id(&state.app.plugin_state.graph, &selected)
-            .and_then(|node_id| node_label(&state.app.plugin_state.graph, node_id))
-            .unwrap_or_else(|| text.none_selected.to_string());
+        let selected_label = selected_node_id(
+            &state.app.plugin_state.routing_controller().graph,
+            &selected,
+        )
+        .and_then(|node_id| node_label(&state.app.plugin_state.routing_controller().graph, node_id))
+        .unwrap_or_else(|| text.none_selected.to_string());
         let all = PluginType::all();
         let palette_label = all
             .get(state.app.plugin_state.graph_state.keyboard_palette_index % all.len().max(1))
@@ -695,7 +813,7 @@ impl PlayerView {
             .graph_state
             .keyboard_connect_source
             .and_then(|(node_id, port)| {
-                node_label(&state.app.plugin_state.graph, node_id)
+                node_label(&state.app.plugin_state.routing_controller().graph, node_id)
                     .map(|label| format!("{label} · {}", port + 1))
             })
             .unwrap_or_else(|| text.no_connect_source.to_string());
@@ -711,8 +829,10 @@ impl PlayerView {
                 VStack::new()
                     .spacing(StackSpacing::Xs)
                     .child(
-                        HStack::new()
-                            .spacing(StackSpacing::Lg)
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .gap(d.gap)
                             .child(
                                 Text::new(text.keyboard_editor)
                                     .size(TextSize::Xs)

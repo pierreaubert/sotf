@@ -240,6 +240,7 @@ pub fn render_ab_compare(
             ctx.plugin_data.as_ref(),
             ctx.available_width,
             ctx.layout_scale,
+            common_text,
             ctx.theme,
         ))
         .child(ui_layout_renderer::render_tabs_from_layout(

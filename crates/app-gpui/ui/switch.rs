@@ -37,6 +37,21 @@ impl PlayerView {
         self.switch_screen_with_trigger(Screen::Library, "SwitchToLibrary", cx);
     }
 
+    fn switch_to_home(&mut self, _: &SwitchToHome, window: &mut Window, cx: &mut Context<Self>) {
+        self.switch_screen_with_trigger(Screen::Home, "SwitchToHome", cx);
+        self.focus_handle.focus(window, cx);
+    }
+
+    fn switch_to_now_playing(
+        &mut self,
+        _: &SwitchToNowPlaying,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.switch_screen_with_trigger(Screen::NowPlaying, "SwitchToNowPlaying", cx);
+        self.focus_handle.focus(window, cx);
+    }
+
     fn switch_to_queue(&mut self, _: &SwitchToQueue, _: &mut Window, cx: &mut Context<Self>) {
         self.switch_screen_with_trigger(Screen::Queue, "SwitchToQueue", cx);
     }

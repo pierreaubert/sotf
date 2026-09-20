@@ -100,6 +100,7 @@
 
     // Slope input
     let mut slope_input = NumberInput::new((base_id.clone(), "target-slope"))
+        .scroll_requires_alt(true)
         .value(config.room_correction.tilt_slope)
         .min(ParamLimits::TILT_SLOPE.min)
         .max(ParamLimits::TILT_SLOPE.max)
@@ -119,6 +120,7 @@
 
     // Reference frequency and bass shelf
     let mut ref_freq_input = NumberInput::new((base_id.clone(), "target-ref-freq"))
+        .scroll_requires_alt(true)
         .value(config.room_correction.tilt_reference_freq)
         .min(20.0)
         .max(20000.0)
@@ -135,6 +137,7 @@
     }
 
     let mut shelf_db_input = NumberInput::new((base_id.clone(), "target-shelf-db"))
+        .scroll_requires_alt(true)
         .value(config.room_correction.tilt_bass_shelf_db)
         .min(ParamLimits::BASS_SHELF.min)
         .max(ParamLimits::BASS_SHELF.max)
@@ -151,6 +154,7 @@
     }
 
     let mut shelf_freq_input = NumberInput::new((base_id.clone(), "target-shelf-freq"))
+        .scroll_requires_alt(true)
         .value(config.room_correction.tilt_bass_shelf_freq)
         .min(20.0)
         .max(1000.0)

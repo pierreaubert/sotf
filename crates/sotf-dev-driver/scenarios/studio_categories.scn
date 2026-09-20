@@ -1,0 +1,34 @@
+focus Home
+wait_idle 2s
+click sidebar.nav-studiohub
+assert screen.focused == "Studio"
+click studio.category.1
+assert screen.focused == "Recording"
+click studio.category.2
+assert screen.focused == "RoomEq"
+click studio.subtool.HeadphoneEq
+assert screen.focused == "HeadphoneEq"
+click studio.subtool.Spinorama
+assert screen.focused == "Spinorama"
+click studio.category.3
+assert screen.focused == "ListeningTest"
+click studio.category.0
+assert screen.focused == "Studio"
+click studio.subtool.PluginGraph
+assert screen.focused == "PluginGraph"
+click studio.subtool.Spectrum
+assert screen.focused == "Spectrum"
+click studio.category.2
+assert screen.focused == "Spinorama"
+click studio.category.0
+assert screen.focused == "Spectrum"
+focus Home
+click sidebar.nav-studiohub
+assert screen.focused == "Spectrum"
+click studio.subtool.Studio
+assert screen.focused == "Studio"
+resize 600 800
+wait_idle 2s
+assert_in_viewport studio.workspace-picker
+screenshot studio-categories-narrow
+assert playback.is_playing == false

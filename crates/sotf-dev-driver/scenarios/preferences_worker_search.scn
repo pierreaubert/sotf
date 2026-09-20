@@ -1,0 +1,26 @@
+focus Settings
+resize 600 800
+wait_idle 2s
+click preferences.search
+type "scan workers"
+wait_idle 1s
+click preferences.result.ScanWorkers
+wait_idle 2s
+assert settings.active_tab == "Library"
+assert preferences.setting == "ScanWorkers"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.ScanWorkers
+key down
+assert settings.scanner_threads != null
+screenshot preferences-scanner-search
+click preferences.search
+type "cpu limit"
+wait_idle 1s
+click preferences.result.CpuLimit
+wait_idle 2s
+assert settings.active_tab == "Misc"
+assert preferences.setting == "CpuLimit"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.CpuLimit
+screenshot preferences-cpu-search
+assert playback.is_playing == false

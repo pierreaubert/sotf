@@ -1,0 +1,23 @@
+focus home
+wait_idle 2s
+assert library.album_count == 0
+assert_visible library.empty.add-folder
+assert_visible library.empty.connect
+click library.empty.add-folder
+wait_until input_mode == "AddDirectory" timeout=2s
+key escape
+focus home
+wait_idle 2s
+click library.empty.connect
+assert screen.focused == "Settings"
+assert settings.active_tab == "Servers"
+focus library
+wait_idle 2s
+assert_visible library.empty.add-folder
+assert_visible library.empty.connect
+focus home
+resize 600 800
+wait_idle 2s
+assert_in_viewport library.empty.add-folder
+assert_in_viewport library.empty.connect
+screenshot home-empty-narrow

@@ -1,0 +1,66 @@
+# Gate response and Timing disclosure controls through native input.
+resize 1600 1200
+focus Studio
+plugin_clear
+plugin_add Gate
+action PluginSelectFirstUser
+wait_idle 1s
+scroll_at 200 700 -1200
+wait_idle 500ms
+screenshot gate-secondary-region
+scroll_into_view rack.params plugin.control.2.1
+click plugin.control.2.1
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "4"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.1.value == 4 tolerance=0.001
+scroll_into_view rack.params plugin.control.2.12
+click plugin.control.2.12
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.12.exact
+click plugin.param.2.12.exact
+key cmd-a
+type "6"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.12.value == 6 tolerance=0.001
+scroll_into_view rack.params plugin.control.2.13
+click plugin.control.2.13
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.13.exact
+click plugin.param.2.13.exact
+key cmd-a
+type "8"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.13.value == 8 tolerance=0.001
+assert plugins.plugin.2.param.1.value == 4 tolerance=0.001
+assert plugins.plugin.2.param.12.value == 6 tolerance=0.001
+assert plugins.plugin.2.param.13.value == 8 tolerance=0.001
+screenshot gate-response-controls
+
+scroll_at 200 700 -3000
+wait_idle 500ms
+accessibility
+screenshot gate-timing-disclosure
+
+# Timing header measured at y≈989 in the 1600×1200 viewport.
+click_at 800 989
+wait_idle 500ms
+scroll_at 200 700 -500
+wait_idle 500ms
+scroll_into_view rack.params plugin.control.2.14
+click plugin.control.2.14
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.14.exact
+click plugin.param.2.14.exact
+key cmd-a
+type "3"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.14.value == 3 tolerance=0.001
+screenshot gate-lookahead-edited

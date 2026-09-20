@@ -1,0 +1,119 @@
+# ABX session: prepare from real local media, exercise concealed cues and two
+# committed trials, save through the visible control, clear, and visibly reload.
+focus       library
+wait_until  library.album_count > 0 timeout=10s
+wait_idle   2s
+action      AddToQueue
+wait_until  queue.length > 0 timeout=3s
+action      PlayPause
+wait_until  playback.is_playing == true timeout=3s
+action      ListeningResetGuide
+click       listening.guide.acknowledge
+wait_until listening.guide_open == false timeout=2s
+wait_idle 2s
+click       listening.tab-comparison
+wait_until  listening.surface == "BlindComparison" timeout=2s
+click       listening.capture.a
+click       listening.capture.b
+wait_until  listening.paths_ready == true timeout=2s
+scroll_into_view listening.comparison.content listening.session.prepare
+wait_idle 2s
+assert_in_viewport listening.session.prepare
+screenshot listening-prepare-visible
+click       listening.session.prepare
+wait_until  listening.session_ready == true timeout=20s
+key         ctrl-x
+wait_until  listening.pending_mode == "Abx" timeout=2s
+wait_idle 2s
+assert listening.metadata_open == false
+assert_absent listening.metadata-fields
+scroll_into_view listening.workspace.content listening.metadata
+assert_in_viewport listening.metadata
+click listening.metadata
+wait_until listening.metadata_open == true timeout=2s
+wait_idle 2s
+assert_visible listening.metadata-fields
+key ctrl-alt-n
+wait_until listening.metadata_open == false timeout=2s
+wait_idle 2s
+assert_absent listening.metadata-fields
+key         alt-1
+key         alt-2
+key         alt-3
+wait_idle 2s
+query listening.status
+assert toast.type == null
+key         alt-a
+wait_until  listening.completed_trials == 1 timeout=2s
+key         ctrl-x
+wait_until  listening.pending_mode == "Abx" timeout=2s
+wait_idle 2s
+key         alt-3
+wait_idle 2s
+query listening.status
+assert toast.type == null
+key         alt-b
+wait_until  listening.completed_trials == 2 timeout=2s
+assert      listening.abx_total == 2
+assert      listening.pending_mode == null
+# Ending is a separate decision and never submits the pending trial.
+resize 600 1000
+wait_idle 2s
+key ctrl-x
+wait_until listening.pending_mode == "Abx" timeout=2s
+key alt-3
+wait_idle 2s
+scroll_into_view listening.workspace.content listening.end
+assert_in_viewport listening.end
+click listening.end
+wait_until listening.confirm_end == true timeout=2s
+wait_idle 2s
+assert_visible listening.keep-listening
+assert_visible listening.confirm-end
+assert_accessible button Keep listening
+screenshot listening-end-confirmation
+assert listening.completed_trials == 2
+assert listening.pending_mode == "Abx"
+key alt-a
+assert listening.completed_trials == 2
+assert listening.pending_mode == "Abx"
+assert_in_viewport listening.keep-listening
+click listening.keep-listening
+wait_until listening.confirm_end == false timeout=2s
+assert listening.pending_mode == "Abx"
+wait_idle 2s
+key alt-3
+key alt-a
+wait_until listening.completed_trials == 3 timeout=2s
+key ctrl-x
+wait_until listening.pending_mode == "Abx" timeout=2s
+wait_idle 2s
+scroll_into_view listening.workspace.content listening.end
+assert_in_viewport listening.end
+click listening.end
+wait_until listening.confirm_end == true timeout=2s
+wait_idle 2s
+assert_in_viewport listening.confirm-end
+click listening.confirm-end
+wait_until listening.results_open == true timeout=2s
+assert listening.confirm_end == false
+assert listening.pending_mode == null
+assert listening.completed_trials == 3
+assert listening.runtime_active == false
+assert listening.status == ""
+wait_idle 1s
+assert toast.type == null
+accessibility
+assert listening.trials_open == false
+assert_absent listening.trial-records
+scroll_into_view listening.workspace.content listening.trials
+assert_in_viewport listening.trials
+click listening.trials
+wait_until listening.trials_open == true timeout=2s
+wait_idle 2s
+assert_visible listening.trial-records
+screenshot listening-confirmed-partial-results
+key ctrl-alt-t
+wait_until listening.trials_open == false timeout=2s
+wait_idle 2s
+assert_absent listening.trial-records

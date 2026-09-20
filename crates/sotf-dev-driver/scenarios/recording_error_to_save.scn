@@ -1,0 +1,131 @@
+# Capture failure through retry, acceptance and save recovery.
+resize 600 1000
+focus       recording
+assert      screen.focused == "Recording"
+assert      recording.step == "Capture"
+assert      recording.all_done == false
+assert      recording.error_count == 0
+assert_visible recording.capture_all
+
+# The injected device loss, clipping, or I/O failure is surfaced by the real
+# Capture control rather than by a direct state mutation from the scenario.
+scroll_into_view recording.content recording.capture_all
+click recording.capture_all
+wait_idle   2s
+assert      recording.all_done == false
+assert      recording.done_count == 0
+assert      recording.error_count == 2
+assert      recording.status_severity == "Error"
+screenshot  recording-capture-error
+
+# Presentation severity must remain typed while translated display text
+# changes. This guards against the former English-substring color heuristic.
+action      CycleLanguage
+assert      settings.language == "French"
+assert      recording.status_severity == "Error"
+screenshot  recording-capture-error-french
+action      CycleLanguage
+assert      settings.language == "German"
+assert      recording.status_severity == "Error"
+screenshot  recording-capture-error-german
+
+# Leave the failed take, then return and retry with the same production action.
+assert_visible recording.back
+click       recording.back
+assert      recording.step == "SplCalibration"
+scroll_into_view recording.content recording.spl_start
+click recording.spl_start
+wait_idle   2s
+scroll_into_view recording.content recording.spl_meter
+click recording.spl_meter
+key         cmd-a
+type        "75"
+key         enter
+assert      recording.spl_ready == true
+click       recording.next
+assert      recording.step == "Capture"
+scroll_into_view recording.content recording.capture_all
+click recording.capture_all
+wait_idle   2s
+assert      recording.error_count == 0
+assert      recording.done_count == 2
+assert      recording.all_done == true
+assert      recording.status_severity == "Success"
+screenshot  recording-capture-retry
+
+assert_visible recording.next
+click       recording.next
+assert      recording.step == "Probe"
+scroll_into_view recording.content recording.probe_run
+assert_visible recording.probe_run
+click       recording.probe_run
+wait_idle   2s
+assert      recording.probe_complete == true
+click       recording.next
+assert      recording.step == "BassAnchor"
+scroll_into_view recording.content recording.bass_anchor_run
+assert_visible recording.bass_anchor_run
+click       recording.bass_anchor_run
+wait_idle   2s
+assert      recording.bass_anchor_complete == true
+click       recording.next
+assert      recording.step == "Evaluating"
+screenshot  recording-evaluating
+scroll_into_view recording.content recording.accept.0
+assert_visible recording.accept.0
+scroll_into_view recording.content recording.accept.1
+assert_visible recording.accept.1
+assert_enabled recording.next == false
+scroll_into_view recording.content recording.accept.0
+click       recording.accept.0
+assert_enabled recording.next == false
+scroll_into_view recording.content recording.accept.1
+click       recording.accept.1
+assert_enabled recording.next == true
+click       recording.next
+assert      recording.step == "Saving"
+wait_idle 1s
+assert_visible recording.content
+
+# Save the reviewed session, edit its identity, then replace the saved revision.
+scroll_into_view recording.content recording.save
+screenshot recording-save-ready
+click recording.save
+wait_until recording.save_status == "Current" timeout=5s
+scroll_into_view recording.content recording.save_status
+screenshot recording-current-save
+scroll_into_view recording.content recording.save_name
+click recording.save_name
+key cmd-a
+type "Revised QA session"
+assert recording.save_name == "Revised QA session"
+assert recording.save_status == "Previous"
+scroll_into_view recording.content recording.save_status
+screenshot recording-previous-save
+scroll_into_view recording.content recording.save
+screenshot recording-save-ready
+click recording.save
+wait_until recording.save_status == "Current" timeout=5s
+scroll_into_view recording.content recording.save_status
+screenshot recording-replaced-save
+# A real destination-name collision must preserve accepted takes and the
+# previous receipt, then allow a retry when the empty collision is removed.
+scroll_into_view recording.content recording.save_name
+click recording.save_name
+key cmd-a
+type "Save collision"
+assert recording.save_status == "Previous"
+qa_empty_dir create recordings/Save_collision
+scroll_into_view recording.content recording.save
+click recording.save
+assert recording.status_severity == "Error"
+assert recording.save_status == "Previous"
+assert recording.done_count == 2
+screenshot recording-save-collision
+qa_empty_dir remove recordings/Save_collision
+click recording.save
+wait_until recording.save_status == "Current" timeout=5s
+assert recording.status_severity == "Success"
+assert recording.done_count == 2
+screenshot recording-save-recovered
+assert playback.is_playing == false

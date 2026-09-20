@@ -24,6 +24,7 @@ pub use sotf_audio_player::headphone_eq_types::{
 #[derive(Debug, Clone, Default)]
 pub struct HeadphoneEqDropdowns {
     pub target_open: bool,
+    pub target_highlight: Option<usize>,
     pub algorithm_open: bool,
     pub peq_model_open: bool,
     pub export_format_open: bool,
@@ -46,10 +47,18 @@ pub struct HeadphoneEqDropdowns {
 pub struct HeadphoneEqState {
     /// Shared, UI-agnostic Headphone EQ wizard domain model.
     pub model: HeadphoneEqScreenModel,
+    /// Run inputs captured before dispatch, retained while reviewing results.
+    pub result_inputs: Option<serde_json::Value>,
+    pub delivery: sotf_audio_player::ui_models::correction_delivery::CorrectionDelivery,
+    /// File preview cache; only exposed while its source path is selected.
+    pub file_preview:
+        Option<std::sync::Arc<sotf_audio_player::autoeq::headphone::HeadphoneMeasurementPreview>>,
+    pub audition: Option<sotf_audio_player::controllers::eq_audition::EqAudition>,
 
     // === UI State ===
     pub dropdowns: HeadphoneEqDropdowns,
     /// Detail level for the configuration form (Simple / Intermediate / Expert)
+    pub autoeq_stage: crate::components::autoeq::AutoEqStage,
     pub detail_level: sotf_audio_player::autoeq::DetailLevel,
     /// Currently selected preset id
     pub selected_preset: String,
@@ -98,7 +107,12 @@ impl Default for HeadphoneEqState {
     fn default() -> Self {
         Self {
             model: HeadphoneEqScreenModel::default(),
+            result_inputs: None,
+            delivery: Default::default(),
+            file_preview: None,
+            audition: None,
             dropdowns: HeadphoneEqDropdowns::default(),
+            autoeq_stage: Default::default(),
             detail_level: sotf_audio_player::autoeq::DetailLevel::Simple,
             selected_preset: "balanced".to_string(),
             expanded_sections: vec!["measurement".into(), "target".into(), "eq-design".into()],
@@ -129,6 +143,27 @@ impl DerefMut for HeadphoneEqState {
 }
 
 impl HeadphoneEqState {
+    pub fn active_file_preview(
+        &self,
+    ) -> Option<&std::sync::Arc<sotf_audio_player::autoeq::headphone::HeadphoneMeasurementPreview>>
+    {
+        self.file_preview.as_ref().filter(|preview| {
+            self.model.measurement_source == HeadphoneMeasurementSource::File
+                && preview.path() == std::path::Path::new(&self.model.measurement_path)
+        })
+    }
+
+    pub fn measurement_frequency_bounds(&self) -> Option<(f64, f64)> {
+        self.active_file_preview()
+            .map(|preview| preview.bounds_hz())
+            .or_else(|| self.model.measurement_frequency_bounds())
+    }
+
+    pub fn result_is_current(&self) -> bool {
+        self.model.result.is_some()
+            && self.result_inputs.as_ref() == Some(&self.model.optimization_input_snapshot())
+    }
+
     pub fn begin_headphone_list_request(&mut self) -> u64 {
         self.headphone_list_request_id = self.headphone_list_request_id.wrapping_add(1);
         self.headphone_list_request_id
@@ -141,7 +176,7 @@ impl HeadphoneEqState {
 
     /// Check if we can proceed from the current step.
     pub fn can_advance(&self) -> bool {
-        self.model.can_advance()
+        !self.model.loading_download && self.model.can_advance()
     }
 
     /// Check if optimization is running.

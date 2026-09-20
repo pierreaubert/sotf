@@ -1,0 +1,69 @@
+# 2026-09-08: Listening source navigation previously played a raw file path
+# without selecting its queue position, leaving current track metadata stale.
+# eq_training_controller.rs::load_eq_training_source now loads through the shared
+# queue controller. This scenario exercises that post-picker worker and visible
+# Previous/Next controls; it does not automate the operating-system file dialog
+# or deterministically reproduce completion after session start/end.
+# Run: cargo build -p sotf-gpui --bin sotf-desktop --features qa,dev-api
+# Then: target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/practice_source_ui.toml -v
+# The suite runner creates isolated QA directories for each scenario.
+
+action ListeningResetGuide
+click listening.guide.acknowledge
+wait_until listening.guide_open == false timeout=3s
+assert queue.length == 0
+assert listening.eq.source.count == 0
+wait_idle 1s
+scroll_into_view listening.eq.content listening.eq.source.browse
+assert_in_viewport listening.eq.source.browse
+screenshot practice-source-empty
+
+action ListeningSetSourceFixture {"mode":"first"}
+wait_until listening.eq.source.count == 1 timeout=10s
+wait_until playback.is_playing == true timeout=10s
+assert listening.eq.source.loading == false
+assert listening.eq.source.filename == "practice-source-mono.wav"
+assert playback.current_filename == "practice-source-mono.wav"
+assert playback.current_channels == 1
+assert queue.length == 1
+
+action ListeningSetSourceFixture {"mode":"second"}
+wait_until listening.eq.source.count == 2 timeout=10s
+assert listening.eq.source.index == 1
+assert playback.current_filename == "practice-source-stereo.wav"
+assert playback.current_channels == 2
+assert queue.length == 2
+
+action ListeningSetSourceFixture {"mode":"second"}
+wait_until listening.eq.source.loading == false timeout=10s
+assert listening.eq.source.count == 2
+assert queue.length == 2
+assert playback.current_filename == "practice-source-stereo.wav"
+
+action ListeningSetSourceFixture {"mode":"invalid"}
+wait_until listening.eq.source.loading == false timeout=10s
+assert toast.type == "Error"
+assert listening.eq.source.count == 2
+assert listening.eq.source.index == 1
+assert queue.length == 2
+assert playback.current_filename == "practice-source-stereo.wav"
+assert playback.current_channels == 2
+sleep 250ms
+screenshot practice-source-invalid-preserved
+
+scroll_into_view listening.eq.content listening.eq.source.previous
+click listening.eq.source.previous
+wait_until listening.eq.source.index == 0 timeout=10s
+assert playback.current_filename == "practice-source-mono.wav"
+assert playback.current_channels == 1
+assert queue.length == 2
+scroll_into_view listening.eq.content listening.eq.source.next
+click listening.eq.source.next
+wait_until listening.eq.source.index == 1 timeout=10s
+assert playback.current_filename == "practice-source-stereo.wav"
+assert playback.current_channels == 2
+assert queue.length == 2
+sleep 250ms
+screenshot practice-source-switched
+action Stop
+wait_until playback.is_playing == false timeout=5s

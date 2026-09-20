@@ -24,7 +24,7 @@ macro_rules! dev_track {
         }
     }};
 }
-use crate::app::state::plugin::{ABPathTarget, EarTrainingSurface};
+use crate::app::state::plugin::{ABPathTarget, EarTrainingSurface, ListeningWorkspacePhase};
 use crate::components::design::Ds;
 use crate::components::graphs::response_graphs::{
     ChartConfig, Series, channel_color, render_line_chart,
@@ -35,8 +35,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::workflow::{Position, WorkflowCanvas, WorkflowGraph, WorkflowNodeData};
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Input, InputSize, NumberInput, NumberInputSize, Text,
-    TextWeight, Toggle, ToggleSize,
+    Accordion, AccordionItem, Button, ButtonSize, ButtonVariant, Input, InputSize, NumberInput,
+    NumberInputSize, Text, TextWeight, Toggle, ToggleSize,
 };
 use sotf_audio::plugins::PluginType;
 use sotf_audio_player::controllers::ab_compare_path::{
@@ -55,6 +55,7 @@ use sotf_plugins::param_specs::ParamType;
 
 mod blind_controller;
 mod eq_training_controller;
+mod workspace;
 
 use blind_controller::{BlindComparisonSnapshot, PreparedMeasurementSnapshot};
 
@@ -71,6 +72,8 @@ enum EqConfigField {
     Gain,
     Q,
     Trials,
+    MinFrequency,
+    MaxFrequency,
 }
 
 impl PlayerView {
@@ -82,13 +85,7 @@ impl PlayerView {
                 state.app.ui_state.theme.clone(),
                 state.app.ui_state.translations.clone(),
                 state.app.plugin_state.listening_test_state.surface,
-                state.app.tutorial.listening_guide_open
-                    || !state
-                        .app
-                        .plugin_state
-                        .listening_test_state
-                        .eq_progress
-                        .how_to_listen_completed,
+                state.app.tutorial.listening_guide_open,
                 state.app.plugin_state.listening_test_state.surface
                     == EarTrainingSurface::BlindComparison
                     && state.app.tutorial.listening_break_prompt_open,
@@ -109,11 +106,48 @@ impl PlayerView {
             EarTrainingSurface::Progress => self.render_eq_progress(cx),
             EarTrainingSurface::BlindComparison => self.render_blind_comparison_screen(cx),
         };
+        let measured_state = self.state.downgrade();
 
         div()
             .id("ear-training-screen")
+            .relative()
             .size_full()
+            .min_h_0()
+            .min_w_0()
+            .overflow_hidden()
             .bg(theme.background)
+            .child(
+                canvas(
+                    move |bounds, _window, cx| {
+                        let width = f32::from(bounds.size.width);
+                        let Some(state) = measured_state.upgrade() else {
+                            return;
+                        };
+                        if !width.is_finite()
+                            || width <= 0.0
+                            || state
+                                .read(cx)
+                                .app
+                                .plugin_state
+                                .plugin_ui_state
+                                .listening_width
+                                .is_some_and(|old| (old - width).abs() < 0.5)
+                        {
+                            return;
+                        }
+                        cx.defer(move |cx| {
+                            state.update(cx, |state, cx| {
+                                state.app.plugin_state.plugin_ui_state.listening_width =
+                                    Some(width);
+                                cx.notify();
+                            })
+                        });
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
             .flex()
             .flex_col()
             .child(dev_track!(
@@ -189,7 +223,7 @@ impl PlayerView {
                                         ),
                                         "listening.guide.reopen"
                                     ))
-                                    .child(
+                                    .child(dev_track!(
                                         Button::new("ear-training-ab-app", eq_text.mode_blind)
                                             .size(ButtonSize::Sm)
                                             .variant(if is_learning {
@@ -204,7 +238,8 @@ impl PlayerView {
                                                     cx,
                                                 );
                                             })),
-                                    ),
+                                        "listening.tab-comparison"
+                                    )),
                             )
                     )
                     .when(show_listening_guide, |header| {
@@ -276,7 +311,16 @@ impl PlayerView {
                 "listening.header"
             ))
             .when(!show_listening_guide, |screen| {
-                screen.child(div().flex_1().min_h_0().child(body))
+                screen.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_h_0()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .child(body),
+                )
             })
     }
 
@@ -437,17 +481,20 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let eq_text = &state.app.ui_state.translations.listening_test.eq;
         let progress = &state.app.plugin_state.listening_test_state.eq_progress;
-        let mut courses = div().flex().flex_wrap().gap(d.section);
+        let course_text =
+            crate::app::i18n::EarTrainingCourseTranslations::new(state.app.ui_state.language);
+        let mut courses = div().flex().flex_col().gap(d.gap);
         for course in EarTrainingCourse::ALL {
             let config = course.config();
             let completed = progress
                 .sessions
                 .iter()
-                .filter(|session| session.course == Some(course))
+                .filter(|session| session.course == Some(course) && !session.ended_early)
                 .count();
             courses = courses.child(
                 div()
-                    .min_w(rems(16.))
+                    .min_w_0()
+                    .w_full()
                     .flex_1()
                     .p(d.pad_x)
                     .rounded(d.r_md)
@@ -457,12 +504,23 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap(d.gap)
-                    .child(Text::section_header(course.label()))
+                    .child(Text::section_header(course_text.title(course)))
                     .child(Text::caption(format!(
-                        "{} bands · {:+.0} dB · {} trials",
-                        config.band_count, config.gain_db, config.trial_count
+                        "{} {} · {} {:.0} dB · {} {}",
+                        config.band_count,
+                        course_text.bands,
+                        crate::app::i18n::EarTrainingCourseTranslations::change(
+                            state.app.ui_state.language,
+                            config.change_mode
+                        ),
+                        config.gain_db,
+                        config.trial_count,
+                        course_text.trials
                     )))
-                    .child(Text::caption(format!("{completed} sessions completed")))
+                    .child(Text::caption(format!(
+                        "{completed} {}",
+                        course_text.completed
+                    )))
                     .child(dev_track!(
                         Button::new(
                             ("ear-course-start", course as usize),
@@ -480,6 +538,7 @@ impl PlayerView {
         }
         div()
             .id("eq-training-courses-screen")
+            .track_scroll(&self.scroll.listening_courses)
             .size_full()
             .overflow_y_scroll()
             .p(d.card)
@@ -498,108 +557,212 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let eq_text = &state.app.ui_state.translations.listening_test.eq;
         let progress = &state.app.plugin_state.listening_test_state.eq_progress;
-        let recent = progress.sessions.iter().rev().take(8).fold(
+        let language = state.app.ui_state.language;
+        let history_text = crate::app::i18n::EarTrainingHistoryTranslations::new(language);
+        let course_text = crate::app::i18n::EarTrainingCourseTranslations::new(language);
+        let recent = progress.sessions.iter().enumerate().rev().fold(
             div().flex().flex_col().gap(d.grid),
-            |list, session| {
-                list.child(
+            |list, (index, session)| {
+                let exercise = history_text.exercise(session.exercise);
+                let title = session.course.map_or_else(
+                    || exercise.to_owned(),
+                    |course| format!("{} · {exercise}", course_text.title(course)),
+                );
+                let details = session
+                    .config
+                    .as_ref()
+                    .map(|config| {
+                        let gain = if config.exercise == EqTrainingExercise::GainIdentification {
+                            sotf_audio_player::ear_training::GAIN_CHOICES_DB
+                                .iter()
+                                .map(|gain| format!("{gain:.0}"))
+                                .collect::<Vec<_>>()
+                                .join("/")
+                        } else {
+                            format!("{:.1}", config.gain_db)
+                        };
+                        format!(
+                            "{} {} · {} {} dB · {:.0}–{:.0} Hz · Q {:.1}",
+                            config.band_count,
+                            course_text.bands,
+                            crate::app::i18n::EarTrainingCourseTranslations::change(
+                                language,
+                                config.change_mode
+                            ),
+                            gain,
+                            config.min_frequency_hz,
+                            config.max_frequency_hz,
+                            config.q
+                        )
+                    })
+                    .unwrap_or_else(|| history_text.unavailable.to_owned());
+                list.child(dev_track!(
                     div()
+                        .id(("listening-history-session", index))
+                        .min_w_0()
                         .flex()
-                        .justify_between()
-                        .child(Text::body(session.exercise.label()))
+                        .flex_col()
+                        .gap(d.gap)
+                        .child(Text::body(title))
+                        .when(session.ended_early, |row| {
+                            row.child(Text::caption(format!(
+                                "{} ({}/{})",
+                                state
+                                    .app
+                                    .ui_state
+                                    .translations
+                                    .listening_test
+                                    .practice_lifecycle()[3],
+                                session.attempts,
+                                session.planned_trials.unwrap_or(session.attempts)
+                            )))
+                        })
                         .child(Text::caption(format!(
                             "{}/{} · {:.0}%",
                             session.correct,
                             session.attempts,
                             session.accuracy * 100.0
-                        ))),
-                )
+                        )))
+                        .child(Text::caption(details)),
+                    format!("listening.history.session.{index}")
+                ))
             },
         );
-        div()
-            .id("eq-training-progress-screen")
-            .size_full()
-            .overflow_y_scroll()
-            .p(d.card)
-            .flex()
-            .flex_col()
-            .gap(d.section)
-            .child(Text::section_header(eq_text.learning.training_progress))
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap(d.section)
-                    .child(
-                        div()
-                            .min_w(rems(10.))
-                            .p(d.pad_x)
-                            .rounded(d.r_md)
-                            .border_1()
-                            .border_color(theme.border)
-                            .bg(theme.surface)
-                            .child(Text::caption(format!(
-                                "Sessions  {}",
-                                progress.sessions.len()
-                            ))),
-                    )
-                    .child(
-                        div()
-                            .min_w(rems(10.))
-                            .p(d.pad_x)
-                            .rounded(d.r_md)
-                            .border_1()
-                            .border_color(theme.border)
-                            .bg(theme.surface)
-                            .child(Text::caption(format!(
-                                "Accuracy  {:.0}%",
-                                progress.accuracy() * 100.0
-                            ))),
-                    )
-                    .child(
-                        div()
-                            .min_w(rems(10.))
-                            .p(d.pad_x)
-                            .rounded(d.r_md)
-                            .border_1()
-                            .border_color(theme.border)
-                            .bg(theme.surface)
-                            .child(Text::caption(format!("70% streak  {}", progress.streak()))),
-                    ),
-            )
-            .child(
-                div()
-                    .p(d.pad_x)
-                    .rounded(d.r_md)
-                    .border_1()
-                    .border_color(theme.border)
-                    .bg(theme.surface)
-                    .flex()
-                    .flex_col()
-                    .gap(d.gap)
-                    .child(Text::section_header(eq_text.learning.coach_recommendation))
-                    .child(Text::body(progress.recommendation())),
-            )
-            .child(
-                div()
-                    .p(d.pad_x)
-                    .rounded(d.r_md)
-                    .border_1()
-                    .border_color(theme.border)
-                    .bg(theme.surface)
-                    .flex()
-                    .flex_col()
-                    .gap(d.gap)
-                    .child(Text::section_header(eq_text.learning.recent_sessions))
-                    .child(recent),
-            )
-            .into_any_element()
+        dev_track!(
+            div()
+                .id("eq-training-progress-screen")
+                .track_scroll(&self.scroll.listening_history)
+                .size_full()
+                .overflow_y_scroll()
+                .p(d.card)
+                .flex()
+                .flex_col()
+                .gap(d.section)
+                .child(Text::section_header(eq_text.learning.training_progress))
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap(d.section)
+                        .child(
+                            div()
+                                .min_w(rems(10.))
+                                .p(d.pad_x)
+                                .rounded(d.r_md)
+                                .border_1()
+                                .border_color(theme.border)
+                                .bg(theme.surface)
+                                .child(Text::caption(format!(
+                                    "{}  {}",
+                                    history_text.sessions,
+                                    progress.sessions.len()
+                                ))),
+                        )
+                        .child(
+                            div()
+                                .min_w(rems(10.))
+                                .p(d.pad_x)
+                                .rounded(d.r_md)
+                                .border_1()
+                                .border_color(theme.border)
+                                .bg(theme.surface)
+                                .child(Text::caption(format!(
+                                    "{}  {:.0}%",
+                                    history_text.accuracy,
+                                    progress.accuracy() * 100.0
+                                ))),
+                        )
+                        .child(
+                            div()
+                                .min_w(rems(10.))
+                                .p(d.pad_x)
+                                .rounded(d.r_md)
+                                .border_1()
+                                .border_color(theme.border)
+                                .bg(theme.surface)
+                                .child(Text::caption(format!(
+                                    "{}  {}",
+                                    history_text.streak,
+                                    progress.streak()
+                                ))),
+                        ),
+                )
+                .child(
+                    div()
+                        .p(d.pad_x)
+                        .rounded(d.r_md)
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.surface)
+                        .flex()
+                        .flex_col()
+                        .gap(d.gap)
+                        .child(Text::section_header(eq_text.learning.coach_recommendation))
+                        .child(Text::body(
+                            crate::app::i18n::EarTrainingHistoryTranslations::recommendation(
+                                language,
+                                progress.recommendation_details()
+                            )
+                        )),
+                )
+                .child(
+                    div()
+                        .p(d.pad_x)
+                        .rounded(d.r_md)
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.surface)
+                        .flex()
+                        .flex_col()
+                        .gap(d.gap)
+                        .child(Text::section_header(history_text.heading))
+                        .child(Text::caption(history_text.compare))
+                        .when(progress.sessions.is_empty(), |list| {
+                            list.child(Text::body(history_text.empty))
+                        })
+                        .child(recent),
+                ),
+            "listening.history.content"
+        )
+        .into_any_element()
     }
 
     fn render_blind_comparison_screen(&self, cx: &mut Context<Self>) -> AnyElement {
+        let phase = {
+            let state = self.state.read(cx);
+            let view = state.app.plugin_state.listening_test_state.ab_test.view();
+            state
+                .app
+                .plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .phase(
+                    state
+                        .app
+                        .plugin_state
+                        .listening_test_state
+                        .ab_test
+                        .session()
+                        .and_then(|session| session.pending_mode()),
+                    view.completed_trials,
+                )
+        };
+        if phase != ListeningWorkspacePhase::Setup {
+            return self.render_comparison_workspace(phase, cx);
+        }
         self.ensure_listening_path_canvas(ListeningPathTarget::A, cx);
         self.ensure_listening_path_canvas(ListeningPathTarget::B, cx);
 
         let d = Ds::from_cx(cx);
+        let preparing = self
+            .state
+            .read(cx)
+            .app
+            .plugin_state
+            .plugin_ui_state
+            .listening_workspace
+            .preparation_request
+            .is_some();
         let BlindComparisonSnapshot {
             theme,
             translations,
@@ -614,6 +777,11 @@ impl PlayerView {
             status,
             prepared_measurement,
         } = BlindComparisonSnapshot::capture(self.state.read(cx));
+        let status = crate::app::i18n::RuntimeMessageTranslations::for_language(
+            self.state.read(cx).app.ui_state.language,
+        )
+        .translate(&status)
+        .into_owned();
         let level_text = translations.setup.level.clone();
         let prepared_evidence = prepared_measurement.map(
             |PreparedMeasurementSnapshot {
@@ -725,6 +893,7 @@ impl PlayerView {
             };
         div()
             .id("listening-test-screen")
+            .track_scroll(&self.scroll.listening_comparison)
             .size_full()
             .overflow_y_scroll()
             .bg(theme.background)
@@ -741,6 +910,8 @@ impl PlayerView {
                     .gap(d.gap)
                     .child(
                         div()
+                            .w_full()
+                            .min_w_0()
                             .flex()
                             .flex_col()
                             .gap(d.grid)
@@ -763,12 +934,14 @@ impl PlayerView {
                                 "listening-load-session",
                                 translations.setup.load_session,
                                 true,
+                                false,
                                 cx,
                             ))
                             .when(has_session, |row| {
                                 row.child(self.listening_test_file_button(
                                     "listening-save-session",
                                     translations.setup.save_session,
+                                    false,
                                     false,
                                     cx,
                                 ))
@@ -803,6 +976,7 @@ impl PlayerView {
                         trial_ready,
                     )),
             )
+            .child(self.render_comparison_plan(cx))
             .child(
                 div()
                     .flex()
@@ -824,8 +998,9 @@ impl PlayerView {
                     .child(
                         div()
                             .flex()
+                            .flex_wrap()
+                            .gap(d.gap)
                             .items_center()
-                            .justify_between()
                             .child(
                                 div()
                                     .flex()
@@ -835,15 +1010,27 @@ impl PlayerView {
                                         Text::new(translations.setup.level_title)
                                             .weight(TextWeight::Semibold),
                                     )
-                                    .child(Text::caption(translations.setup.level_description)),
+                                    .w_full()
+                                    .min_w_0()
+                                    .child(
+                                        div()
+                                            .text_size(d.text_sm)
+                                            .text_color(theme.text_secondary)
+                                            .child(translations.setup.level_description),
+                                    ),
                             )
                             .when(paths_ready, |row| {
                                 row.child(dev_track!(
                                     Button::new(
                                         "prepare-listening-session",
-                                        translations.setup.measure_prepare,
+                                        if preparing {
+                                            translations.preparing_label()
+                                        } else {
+                                            translations.setup.measure_prepare
+                                        },
                                     )
                                     .size(ButtonSize::Sm)
+                                    .disabled(preparing)
                                     .variant(ButtonVariant::Primary)
                                     .theme(theme.to_button_theme())
                                     .on_click_event(
@@ -853,8 +1040,69 @@ impl PlayerView {
                                     ),
                                     "listening.session.prepare"
                                 ))
+                            })
+                            .when(preparing, |row| {
+                                row.child(dev_track!(
+                                    Button::new(
+                                        "cancel-listening-preparation",
+                                        translations.setup.cancel
+                                    )
+                                    .size(ButtonSize::Sm)
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event(
+                                        cx.listener(|view, _, _, cx| {
+                                            view.cancel_listening_preparation(cx);
+                                        })
+                                    ),
+                                    "listening.session.cancel_preparation"
+                                ))
                             }),
                     )
+                    .child({
+                        let state = self.state.read(cx);
+                        let source = state
+                            .app
+                            .get_current_track_path()
+                            .and_then(|path| {
+                                path.file_name()
+                                    .map(|name| name.to_string_lossy().into_owned())
+                            })
+                            .unwrap_or_else(|| translations.eq.no_track.into());
+                        let loading = state
+                            .app
+                            .plugin_state
+                            .plugin_ui_state
+                            .listening_workspace
+                            .source_request
+                            .is_some();
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap(d.gap)
+                            .child(Text::caption(source))
+                            .when(!cfg!(any(target_os = "ios", target_os = "tvos")), |row| {
+                                row.child(dev_track!(
+                                    Button::new(
+                                        "comparison-source-browse",
+                                        translations.eq.choose_source()
+                                    )
+                                    .size(ButtonSize::Sm)
+                                    .variant(ButtonVariant::Secondary)
+                                    .disabled(loading || self.comparison_setup_locked(cx))
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event(
+                                        cx.listener(|view, _, _, cx| {
+                                            view.browse_listening_source(
+                                                EarTrainingSurface::BlindComparison,
+                                                cx,
+                                            );
+                                        })
+                                    ),
+                                    "listening.comparison.source.browse"
+                                ))
+                            })
+                    })
                     .child(
                         div()
                             .flex()
@@ -1108,13 +1356,32 @@ impl PlayerView {
                             status
                         })
                         .color(theme.text_secondary),
-                    ),
+                    )
+                    .map(|el| dev_track!(el, "listening.comparison.status")),
             )
+            .map(|el| dev_track!(el, "listening.comparison.content"))
             .into_any_element()
     }
 
     fn render_eq_training_workbench(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let ui_state = &self.state.read(cx).app.ui_state;
+        let scale = crate::ui::compute_combined_scale(
+            ui_state.window_width,
+            ui_state.window_height,
+            ui_state.font_scale,
+            ui_state.min_font_size_px,
+            ui_state.max_font_size_px,
+        );
+        let workspace_width = self
+            .state
+            .read(cx)
+            .app
+            .plugin_state
+            .plugin_ui_state
+            .listening_width
+            .unwrap_or(480.0);
+        let chart_width = (workspace_width - 2.0 * (d.card.0 + d.pad_x.0) * 16.0 * scale).max(1.0);
         let (
             theme,
             eq_text,
@@ -1162,7 +1429,7 @@ impl PlayerView {
                         .map(|name| name.to_string_lossy().into_owned())
                 }),
                 answered,
-                session.is_some_and(EqTrainingSession::is_complete),
+                session.is_some_and(EqTrainingSession::is_finished),
                 session.is_some_and(|session| session.current_question.is_some()),
                 session
                     .and_then(|session| session.current_question.as_ref())
@@ -1216,13 +1483,59 @@ impl PlayerView {
                 x_range: (20.0, 20_000.0),
                 y_range: (-16.0, 16.0),
                 x_scale: gpui_px::ScaleType::Log,
-                width: 760.0,
+                width: chart_width,
                 height: 220.0,
             },
             &theme,
             None,
         );
 
+        let practice = &self
+            .state
+            .read(cx)
+            .app
+            .plugin_state
+            .plugin_ui_state
+            .listening_workspace
+            .practice;
+        let paused = practice.paused;
+        let confirming = practice.confirm_end;
+        let locked = practice.interaction_locked();
+        let lifecycle = self
+            .state
+            .read(cx)
+            .app
+            .ui_state
+            .translations
+            .listening_test
+            .practice_lifecycle();
+        let early = self
+            .state
+            .read(cx)
+            .app
+            .plugin_state
+            .listening_test_state
+            .eq_session
+            .as_ref()
+            .is_some_and(|session| session.ended_early);
+        let submitted = self
+            .state
+            .read(cx)
+            .app
+            .plugin_state
+            .listening_test_state
+            .eq_session
+            .as_ref()
+            .map_or(0, |session| session.trials.len());
+        let planned = self
+            .state
+            .read(cx)
+            .app
+            .plugin_state
+            .listening_test_state
+            .eq_session
+            .as_ref()
+            .map_or(0, |session| session.config.trial_count);
         let mut answers = div().flex().flex_wrap().gap(d.gap);
         for (index, (answer_label, is_answer)) in answer_labels.iter().enumerate() {
             let is_selected = index == selected_band;
@@ -1234,6 +1547,7 @@ impl PlayerView {
                 answer_label.clone()
             };
             let button = Button::new(("eq-training-band", index), label)
+                .disabled(locked || answered)
                 .size(ButtonSize::Sm)
                 .variant(if is_selected || *is_answer {
                     ButtonVariant::Primary
@@ -1271,7 +1585,10 @@ impl PlayerView {
 
         div()
             .id("eq-training-workbench")
+            .track_scroll(&self.scroll.listening_practice)
             .size_full()
+            .min_h_0()
+            .min_w_0()
             .overflow_y_scroll()
             .p(d.card)
             .flex()
@@ -1287,126 +1604,160 @@ impl PlayerView {
                             .flex()
                             .flex_col()
                             .gap(d.grid)
+                            .min_w_0()
+                            .flex_1()
                             .child(Text::section_header(eq_text.title))
                             .child(Text::caption(eq_text.subtitle)),
                     )
-                    .child(Text::caption(format!(
-                        "Trial {trial_number}/{} · Accuracy {accuracy:.0}%",
-                        eq_config.trial_count
+                    .child(Text::caption(eq_text.trial_progress(
+                        trial_number,
+                        eq_config.trial_count,
+                        accuracy,
                     ))),
             )
             .child(
                 div()
                     .flex()
-                    .flex_wrap()
+                    .flex_col()
                     .gap(d.section)
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w(rems(18.0))
-                            .p(d.pad_x)
-                            .rounded(d.r_md)
-                            .border_1()
-                            .border_color(theme.border)
-                            .bg(theme.surface)
-                            .flex()
-                            .flex_col()
-                            .gap(d.gap)
-                            .child(Text::section_header(eq_text.session_setup))
-                            .child(self.render_eq_source_row(eq_text.source, &current_track, cx))
-                            .child(
-                                Button::new(
-                                    "eq-training-exercise",
-                                    eq_text.exercise_display(eq_config.exercise),
-                                )
-                                .size(ButtonSize::Sm)
-                                .variant(ButtonVariant::Secondary)
-                                .theme(theme.to_button_theme())
-                                .on_click_event(
-                                    cx.listener(|view, _, _, cx| {
+                    .when(!has_session, |row| {
+                        row.child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .w_full()
+                                .p(d.pad_x)
+                                .rounded(d.r_md)
+                                .border_1()
+                                .border_color(theme.border)
+                                .bg(theme.surface)
+                                .flex()
+                                .flex_col()
+                                .gap(d.gap)
+                                .max_w(rems(64.0))
+                                .items_start()
+                                .child(Text::section_header(eq_text.session_setup))
+                                .child(self.render_eq_source_row(
+                                    eq_text.source,
+                                    &current_track,
+                                    cx,
+                                ))
+                                .child(
+                                    Button::new(
+                                        "eq-training-exercise",
+                                        eq_text.exercise_display(eq_config.exercise),
+                                    )
+                                    .size(ButtonSize::Sm)
+                                    .variant(ButtonVariant::Secondary)
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event(cx.listener(|view, _, _, cx| {
                                         view.cycle_eq_training_exercise(cx)
-                                    }),
-                                ),
-                            )
-                            .child(
-                                Button::new(
-                                    "eq-training-adaptive",
-                                    eq_text.adaptive_status(eq_adaptive),
+                                    }))
+                                    .map(|button| dev_track!(button, "listening.eq.exercise")),
                                 )
-                                .size(ButtonSize::Sm)
-                                .variant(if eq_adaptive {
-                                    ButtonVariant::Primary
-                                } else {
-                                    ButtonVariant::Secondary
-                                })
-                                .theme(theme.to_button_theme())
-                                .on_click_event(cx.listener(|view, _, _, cx| {
-                                    view.toggle_eq_training_adaptive(cx)
-                                })),
-                            )
-                            .child(self.render_eq_config_row(
-                                eq_text.bands,
-                                eq_config.band_count.to_string(),
-                                EqConfigField::Bands,
-                                cx,
-                            ))
-                            .child(self.render_eq_config_row(
-                                eq_text.gain,
-                                format!("±{:.0} dB", eq_config.gain_db),
-                                EqConfigField::Gain,
-                                cx,
-                            ))
-                            .child(self.render_eq_config_row(
-                                "Q",
-                                format!("{:.1}", eq_config.q),
-                                EqConfigField::Q,
-                                cx,
-                            ))
-                            .child(self.render_eq_config_row(
-                                eq_text.trials,
-                                eq_config.trial_count.to_string(),
-                                EqConfigField::Trials,
-                                cx,
-                            ))
-                            .child(
-                                Button::new(
-                                    "eq-training-change-mode",
-                                    format!(
-                                        "{}: {}",
-                                        eq_text.change,
-                                        eq_change_mode_symbol(eq_config.change_mode)
+                                .child(
+                                    Button::new(
+                                        "eq-training-adaptive",
+                                        eq_text.adaptive_status(eq_adaptive),
+                                    )
+                                    .size(ButtonSize::Sm)
+                                    .variant(if eq_adaptive {
+                                        ButtonVariant::Primary
+                                    } else {
+                                        ButtonVariant::Secondary
+                                    })
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event(
+                                        cx.listener(|view, _, _, cx| {
+                                            view.toggle_eq_training_adaptive(cx)
+                                        }),
                                     ),
                                 )
-                                .size(ButtonSize::Sm)
-                                .variant(ButtonVariant::Secondary)
-                                .theme(theme.to_button_theme())
-                                .on_click_event(cx.listener(|view, _, _, cx| {
-                                    view.cycle_eq_training_change_mode(cx);
-                                })),
-                            )
-                            .child(dev_track!(
-                                Button::new(
-                                    "eq-training-start",
-                                    if has_session {
-                                        eq_text.restart
+                                .child(self.render_eq_config_row(
+                                    eq_text.bands,
+                                    EqConfigField::Bands,
+                                    cx,
+                                ))
+                                .child(
+                                    if eq_config.exercise == EqTrainingExercise::GainIdentification
+                                    {
+                                        let choices =
+                                            sotf_audio_player::ear_training::GAIN_CHOICES_DB
+                                                .iter()
+                                                .map(|gain| format!("{gain} dB"))
+                                                .collect::<Vec<_>>()
+                                                .join(", ");
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .gap(d.gap)
+                                            .child(Text::label(eq_text.gain_choices()))
+                                            .child(dev_track!(
+                                                Text::body(choices),
+                                                "listening.eq.gain-choices"
+                                            ))
+                                            .into_any_element()
                                     } else {
-                                        eq_text.start
+                                        self.render_eq_config_row(
+                                            eq_text.gain,
+                                            EqConfigField::Gain,
+                                            cx,
+                                        )
+                                        .into_any_element()
                                     },
                                 )
-                                .size(ButtonSize::Sm)
-                                .variant(ButtonVariant::Primary)
-                                .theme(theme.to_button_theme())
-                                .on_click_event(cx.listener(|view, _, _, cx| {
-                                    view.start_eq_training_session(cx);
-                                })),
-                                "listening.eq.start"
-                            ))
-                            .child(Text::caption(eq_text.learning.audition_path_hint)),
-                    )
+                                .child(self.render_eq_frequency_details(cx))
+                                .child(self.render_eq_config_row(
+                                    eq_text.trials,
+                                    EqConfigField::Trials,
+                                    cx,
+                                ))
+                                .child(
+                                    Button::new(
+                                        "eq-training-change-mode",
+                                        format!(
+                                            "{}: {}",
+                                            eq_text.change,
+                                            eq_change_mode_symbol(eq_config.change_mode)
+                                        ),
+                                    )
+                                    .size(ButtonSize::Sm)
+                                    .variant(ButtonVariant::Secondary)
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event(
+                                        cx.listener(|view, _, _, cx| {
+                                            view.cycle_eq_training_change_mode(cx);
+                                        }),
+                                    ),
+                                )
+                                .child(dev_track!(
+                                    Button::new(
+                                        "eq-training-start",
+                                        if has_session {
+                                            eq_text.restart
+                                        } else {
+                                            eq_text.start
+                                        },
+                                    )
+                                    .size(ButtonSize::Sm)
+                                    .variant(ButtonVariant::Primary)
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event(
+                                        cx.listener(|view, _, window, cx| {
+                                            view.start_eq_training_session(cx);
+                                            view.focus_handle.focus(window, cx);
+                                        })
+                                    ),
+                                    "listening.eq.start"
+                                ))
+                                .child(Text::caption(eq_text.learning.audition_path_hint)),
+                        )
+                    })
                     .child(
                         div()
                             .flex_1()
-                            .min_w(rems(30.0))
+                            .min_w_0()
+                            .w_full()
                             .p(d.pad_x)
                             .rounded(d.r_md)
                             .border_1()
@@ -1415,16 +1766,198 @@ impl PlayerView {
                             .flex()
                             .flex_col()
                             .gap(d.gap)
-                            .child(Text::section_header(if complete {
+                            .child(Text::section_header(if confirming {
+                                lifecycle[0]
+                            } else if early {
+                                lifecycle[3]
+                            } else if complete {
                                 eq_text.complete
                             } else if has_session {
                                 eq_text.question
                             } else {
                                 eq_text.start_prompt
                             }))
-                            .child(answers)
-                            .child(div().w_full().min_h(rems(14.0)).child(chart))
-                            .when_some(feedback, |panel, feedback| {
+                            .when(has_question && !confirming && !complete, |panel| {
+                                panel.child(Text::caption(eq_text.trial_progress(
+                                    trial_number,
+                                    planned,
+                                    accuracy,
+                                )))
+                            })
+                            .when(complete, |panel| {
+                                panel.child(Text::body(format!(
+                                    "{submitted}/{planned} · {accuracy:.0}%"
+                                )))
+                            })
+                            .when(complete, |panel| {
+                                panel.child(
+                                    div()
+                                        .flex()
+                                        .flex_wrap()
+                                        .gap(d.gap)
+                                        .child(dev_track!(
+                                            Button::new("eq-practice-retry", eq_text.restart)
+                                                .size(ButtonSize::Sm)
+                                                .variant(ButtonVariant::Primary)
+                                                .theme(theme.to_button_theme())
+                                                .on_click_event(cx.listener(
+                                                    |view, _, window, cx| {
+                                                        view.start_eq_training_session(cx);
+                                                        view.focus_handle.focus(window, cx);
+                                                    }
+                                                )),
+                                            "listening.eq.retry"
+                                        ))
+                                        .child(dev_track!(
+                                            Button::new("eq-practice-new", lifecycle[6])
+                                                .size(ButtonSize::Sm)
+                                                .theme(theme.to_button_theme())
+                                                .on_click_event(cx.listener(
+                                                    |view, _, window, cx| {
+                                                        view.state.update(cx, |state, _| {
+                                                            state
+                                                                .app
+                                                                .plugin_state
+                                                                .listening_test_state
+                                                                .eq_session = None;
+                                                        });
+                                                        view.focus_handle.focus(window, cx);
+                                                        cx.notify();
+                                                    }
+                                                )),
+                                            "listening.eq.new-practice"
+                                        )),
+                                )
+                            })
+                            .when(paused, |panel| panel.child(Text::body(lifecycle[5])))
+                            .when(has_question && !confirming, |panel| {
+                                let text =
+                                    &self.state.read(cx).app.ui_state.translations.listening_test;
+                                panel.child(
+                                    div()
+                                        .flex()
+                                        .flex_wrap()
+                                        .gap(d.gap)
+                                        .child(dev_track!(
+                                            Button::new(
+                                                "eq-practice-pause",
+                                                text.pause_resume(paused)
+                                            )
+                                            .size(ButtonSize::Sm)
+                                            .theme(theme.to_button_theme())
+                                            .on_click_event(cx.listener(|view, _, window, cx| {
+                                                view.toggle_eq_practice_pause(cx);
+                                                view.focus_handle.focus(window, cx);
+                                            })),
+                                            "listening.eq.pause"
+                                        ))
+                                        .child(dev_track!(
+                                            Button::new("eq-practice-end", lifecycle[2])
+                                                .size(ButtonSize::Sm)
+                                                .theme(theme.to_button_theme())
+                                                .on_click_event(cx.listener(
+                                                    |view, _, window, cx| {
+                                                        view.confirm_eq_practice_end(
+                                                            true, window, cx,
+                                                        );
+                                                    }
+                                                )),
+                                            "listening.eq.end"
+                                        )),
+                                )
+                            })
+                            .when(confirming, |panel| {
+                                panel.child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .gap(d.gap)
+                                        .child(Text::body(format!("{}: {submitted}", lifecycle[4])))
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .flex_wrap()
+                                                .gap(d.gap)
+                                                .child(dev_track!(
+                                                    Button::new("eq-practice-keep", lifecycle[1])
+                                                        .size(ButtonSize::Sm)
+                                                        .theme(theme.to_button_theme())
+                                                        .on_click_event(cx.listener(
+                                                            |view, _, window, cx| {
+                                                                view.confirm_eq_practice_end(
+                                                                    false, window, cx,
+                                                                );
+                                                            }
+                                                        )),
+                                                    "listening.eq.keep-practicing"
+                                                ))
+                                                .child(dev_track!(
+                                                    Button::new(
+                                                        "eq-practice-confirm-end",
+                                                        lifecycle[2]
+                                                    )
+                                                    .size(ButtonSize::Sm)
+                                                    .variant(ButtonVariant::Primary)
+                                                    .theme(theme.to_button_theme())
+                                                    .on_click_event(cx.listener(
+                                                        |view, _, window, cx| {
+                                                            view.end_eq_practice(window, cx);
+                                                        }
+                                                    )),
+                                                    "listening.eq.confirm-end"
+                                                )),
+                                        ),
+                                )
+                            })
+                            .when(has_question && !complete && !locked, |panel| {
+                                panel.child(
+                                    div()
+                                        .flex()
+                                        .flex_wrap()
+                                        .gap(d.gap)
+                                        .child(dev_track!(
+                                            Button::new(
+                                                "eq-training-original",
+                                                format!("1  {}", eq_text.original),
+                                            )
+                                            .disabled(locked)
+                                            .size(ButtonSize::Sm)
+                                            .variant(if !eq_filtered {
+                                                ButtonVariant::Primary
+                                            } else {
+                                                ButtonVariant::Secondary
+                                            })
+                                            .theme(theme.to_button_theme())
+                                            .on_click_event(cx.listener(|view, _, _, cx| {
+                                                view.activate_eq_training_path(false, cx);
+                                            }),),
+                                            "listening.eq.original"
+                                        ))
+                                        .child(dev_track!(
+                                            Button::new(
+                                                "eq-training-filtered",
+                                                format!("2  {}", eq_text.filtered),
+                                            )
+                                            .disabled(locked)
+                                            .size(ButtonSize::Sm)
+                                            .variant(if eq_filtered {
+                                                ButtonVariant::Primary
+                                            } else {
+                                                ButtonVariant::Secondary
+                                            })
+                                            .theme(theme.to_button_theme())
+                                            .on_click_event(cx.listener(|view, _, _, cx| {
+                                                view.activate_eq_training_path(true, cx);
+                                            }),),
+                                            "listening.eq.filtered"
+                                        )),
+                                )
+                            })
+                            .when(has_question && !locked, |panel| panel.child(answers))
+                            .when(answered && !locked, |panel| {
+                                panel.child(div().w_full().min_w_0().child(chart))
+                            })
+                            .when_some(feedback.filter(|_| !locked), |panel, feedback| {
                                 panel.child(Text::body(feedback).color(
                                     if feedback_result.is_some_and(|result| result.0) {
                                         theme.success
@@ -1438,50 +1971,13 @@ impl PlayerView {
                                     .flex()
                                     .flex_wrap()
                                     .gap(d.gap)
-                                    .child(dev_track!(
-                                        Button::new(
-                                            "eq-training-original",
-                                            format!("1  {}", eq_text.original),
-                                        )
-                                        .size(ButtonSize::Sm)
-                                        .variant(if !eq_filtered {
-                                            ButtonVariant::Primary
-                                        } else {
-                                            ButtonVariant::Secondary
-                                        })
-                                        .theme(theme.to_button_theme())
-                                        .on_click_event(
-                                            cx.listener(|view, _, _, cx| {
-                                                view.activate_eq_training_path(false, cx);
-                                            }),
-                                        ),
-                                        "listening.eq.original"
-                                    ))
-                                    .child(dev_track!(
-                                        Button::new(
-                                            "eq-training-filtered",
-                                            format!("2  {}", eq_text.filtered),
-                                        )
-                                        .size(ButtonSize::Sm)
-                                        .variant(if eq_filtered {
-                                            ButtonVariant::Primary
-                                        } else {
-                                            ButtonVariant::Secondary
-                                        })
-                                        .theme(theme.to_button_theme())
-                                        .on_click_event(
-                                            cx.listener(|view, _, _, cx| {
-                                                view.activate_eq_training_path(true, cx);
-                                            }),
-                                        ),
-                                        "listening.eq.filtered"
-                                    ))
-                                    .when(has_question && !answered, |row| {
+                                    .when(has_question && !answered && !locked, |row| {
                                         row.child(dev_track!(
                                             Button::new(
                                                 "eq-training-submit",
                                                 format!("Enter  {}", eq_text.submit),
                                             )
+                                            .disabled(locked)
                                             .size(ButtonSize::Sm)
                                             .variant(ButtonVariant::Primary)
                                             .theme(theme.to_button_theme())
@@ -1491,12 +1987,13 @@ impl PlayerView {
                                             "listening.eq.submit"
                                         ))
                                     })
-                                    .when(answered, |row| {
+                                    .when(answered && !locked, |row| {
                                         row.child(dev_track!(
                                             Button::new(
                                                 "eq-training-next",
                                                 format!("N  {}", eq_text.next),
                                             )
+                                            .disabled(locked)
                                             .size(ButtonSize::Sm)
                                             .variant(ButtonVariant::Primary)
                                             .theme(theme.to_button_theme())
@@ -1507,7 +2004,9 @@ impl PlayerView {
                                         ))
                                     }),
                             )
-                            .child(Text::caption(eq_text.shortcuts)),
+                            .when(has_question && !locked, |panel| {
+                                panel.child(Text::caption(eq_text.shortcuts))
+                            }),
                     ),
             )
             .child(
@@ -1515,12 +2014,19 @@ impl PlayerView {
                     .p(d.pad_y)
                     .rounded(d.r_sm)
                     .bg(theme.background_secondary)
-                    .child(Text::caption(if status.is_empty() {
+                    .child(Text::caption(if status.is_empty() && complete {
+                        if submitted > 0 {
+                            lifecycle[4]
+                        } else {
+                            lifecycle[3]
+                        }
+                    } else if status.is_empty() {
                         eq_text.configure_start
                     } else {
                         &status
                     })),
             )
+            .map(|body| dev_track!(body, "listening.eq.content"))
             .into_any_element()
     }
 
@@ -1534,12 +2040,32 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let eq_text = &state.app.ui_state.translations.listening_test.eq;
+        let source_loading = state
+            .app
+            .plugin_state
+            .plugin_ui_state
+            .listening_workspace
+            .source_request
+            .is_some();
         div()
             .flex()
             .flex_col()
             .gap(d.grid)
             .child(Text::label(source_label))
             .child(Text::caption(current_track.to_owned()))
+            .when(!cfg!(any(target_os = "ios", target_os = "tvos")), |row| {
+                row.child(dev_track!(
+                    Button::new("eq-source-browse", eq_text.choose_source())
+                        .size(ButtonSize::Sm)
+                        .variant(ButtonVariant::Secondary)
+                        .disabled(source_loading)
+                        .theme(theme.to_button_theme())
+                        .on_click_event(
+                            cx.listener(|view, _, _, cx| view.browse_eq_training_source(cx))
+                        ),
+                    "listening.eq.source.browse"
+                ))
+            })
             .child(
                 div()
                     .flex()
@@ -1555,7 +2081,7 @@ impl PlayerView {
                             ),
                         "listening.eq.source.add"
                     ))
-                    .child(
+                    .child(dev_track!(
                         Button::new("eq-source-prev", eq_text.learning.previous)
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Secondary)
@@ -1563,8 +2089,9 @@ impl PlayerView {
                             .on_click_event(
                                 cx.listener(|view, _, _, cx| view.navigate_eq_source(-1, cx)),
                             ),
-                    )
-                    .child(
+                        "listening.eq.source.previous"
+                    ))
+                    .child(dev_track!(
                         Button::new("eq-source-next", eq_text.next)
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Secondary)
@@ -1572,7 +2099,8 @@ impl PlayerView {
                             .on_click_event(
                                 cx.listener(|view, _, _, cx| view.navigate_eq_source(1, cx)),
                             ),
-                    )
+                        "listening.eq.source.next"
+                    ))
                     .child(
                         Button::new("eq-loop-start", eq_text.learning.set_loop_start)
                             .size(ButtonSize::Sm)
@@ -1601,46 +2129,121 @@ impl PlayerView {
             )
     }
 
+    fn render_eq_frequency_details(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let text = state.app.ui_state.translations.listening_test.eq.clone();
+        let expanded = state
+            .app
+            .plugin_state
+            .plugin_ui_state
+            .listening_workspace
+            .practice
+            .frequency_details_open;
+        let owner = cx.entity().downgrade();
+        let d = Ds::from_cx(cx);
+        dev_track!(
+            Accordion::new()
+                .aria_label(text.frequency_details())
+                .bordered(false)
+                .expanded(if expanded {
+                    vec!["practice-frequency".into()]
+                } else {
+                    vec![]
+                })
+                .item(
+                    AccordionItem::new("practice-frequency", text.frequency_details()).content(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(d.gap)
+                            .child(self.render_eq_config_row(
+                                text.minimum_frequency(),
+                                EqConfigField::MinFrequency,
+                                cx
+                            ))
+                            .child(self.render_eq_config_row(
+                                text.maximum_frequency(),
+                                EqConfigField::MaxFrequency,
+                                cx
+                            ))
+                            .child(self.render_eq_config_row("Q", EqConfigField::Q, cx))
+                    )
+                )
+                .on_change(move |_, expanded, _, cx| {
+                    let _ = owner.update(cx, |view, cx| {
+                        view.state.update(cx, |state, _| {
+                            state
+                                .app
+                                .plugin_state
+                                .plugin_ui_state
+                                .listening_workspace
+                                .practice
+                                .frequency_details_open = expanded;
+                        });
+                        cx.notify();
+                    });
+                }),
+            "listening.eq.frequency-details"
+        )
+    }
+
     fn render_eq_config_row(
         &self,
         label: &'static str,
-        value: impl Into<SharedString>,
         field: EqConfigField,
         cx: &mut Context<Self>,
     ) -> Div {
         let d = Ds::from_cx(cx);
-        let theme = self.state.read(cx).app.ui_state.theme.clone();
+        let state = self.state.read(cx);
+        let config = &state.app.plugin_state.listening_test_state.eq_config;
+        let (value, min, max, step, decimals, unit, _key) = match field {
+            EqConfigField::Bands => (config.band_count as f64, 2.0, 25.0, 1.0, 0, "", "bands"),
+            EqConfigField::Gain => (config.gain_db, 1.0, 15.0, 0.5, 1, "dB", "gain"),
+            EqConfigField::Q => (config.q, 0.2, 10.0, 0.1, 1, "", "q"),
+            EqConfigField::Trials => (config.trial_count as f64, 1.0, 500.0, 1.0, 0, "", "trials"),
+            EqConfigField::MinFrequency => (
+                config.min_frequency_hz,
+                20.0,
+                config.max_frequency_hz - 0.1,
+                0.1,
+                1,
+                "Hz",
+                "min-frequency",
+            ),
+            EqConfigField::MaxFrequency => (
+                config.max_frequency_hz,
+                config.min_frequency_hz + 0.1,
+                20000.0,
+                0.1,
+                1,
+                "Hz",
+                "max-frequency",
+            ),
+        };
+        let owner = cx.entity().downgrade();
+        let input = NumberInput::new(("eq-config-value", field as usize))
+            .value(value)
+            .scroll_requires_alt(true)
+            .range(min, max)
+            .step(step)
+            .decimals(decimals)
+            .unit(unit)
+            .size(NumberInputSize::Sm)
+            .width(150.0)
+            .aria_label(label)
+            .on_change(move |value, _, cx| {
+                let _ = owner.update(cx, |view, cx| view.set_eq_training_config(field, value, cx));
+            });
         div()
+            .w_full()
+            .max_w(rems(32.0))
             .flex()
+            .flex_wrap()
             .items_center()
             .justify_between()
             .gap(d.gap)
             .child(Text::label(label))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(d.grid)
-                    .child(
-                        Button::new(("eq-config-minus", field as usize), "−")
-                            .size(ButtonSize::Sm)
-                            .variant(ButtonVariant::Secondary)
-                            .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(move |view, _, _, cx| {
-                                view.adjust_eq_training_config(field, -1, cx);
-                            })),
-                    )
-                    .child(Text::new(value).color(theme.text_primary))
-                    .child(
-                        Button::new(("eq-config-plus", field as usize), "+")
-                            .size(ButtonSize::Sm)
-                            .variant(ButtonVariant::Secondary)
-                            .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(move |view, _, _, cx| {
-                                view.adjust_eq_training_config(field, 1, cx);
-                            })),
-                    ),
-            )
+            .child(dev_track!(input, format!("listening.eq.config.{_key}")))
     }
 
     fn ensure_listening_path_canvas(&self, target: ListeningPathTarget, cx: &mut Context<Self>) {
@@ -1792,7 +2395,8 @@ impl PlayerView {
         };
         div()
             .flex_1()
-            .min_w(rems(20.0))
+            .min_w_0()
+            .flex_basis(rems(20.0))
             .p(d.pad_x)
             .rounded(d.r_md)
             .border_1()
@@ -1804,6 +2408,7 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .items_center()
                     .justify_between()
                     .child(Text::new(label.to_owned()).weight(TextWeight::Semibold))
@@ -1812,6 +2417,7 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .gap(d.gap)
                     .child({
                         let button = Button::new(
@@ -1852,12 +2458,14 @@ impl PlayerView {
                 card.child(
                     div()
                         .flex()
+                        .flex_wrap()
                         .items_center()
                         .justify_between()
                         .child(Text::caption(translations.setup.simple_rack))
                         .child(
                             div()
                                 .flex()
+                                .flex_wrap()
                                 .gap(d.grid)
                                 .child(
                                     Button::new(
@@ -1904,6 +2512,7 @@ impl PlayerView {
                 card.child(
                     div()
                         .flex()
+                        .flex_wrap()
                         .items_center()
                         .justify_between()
                         .child(Text::caption(translations.setup.graph_hint))
@@ -1967,6 +2576,7 @@ impl PlayerView {
                             .child(
                                 div()
                                     .flex()
+                                    .flex_wrap()
                                     .items_center()
                                     .justify_between()
                                     .child(Text::caption(format!("{node_id} · {}", editor_label)))
@@ -2808,21 +3418,66 @@ impl PlayerView {
         let mut row = div().flex().flex_wrap().gap(d.gap);
         for &(answer, label) in answers {
             let theme = self.state.read(cx).app.ui_state.theme.clone();
+            let selected = self
+                .state
+                .read(cx)
+                .app
+                .plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .selected_answer
+                == Some(answer);
             let button = Button::new(
                 SharedString::from(format!("listening-answer-{label}")),
                 label,
             )
             .size(ButtonSize::Sm)
-            .variant(ButtonVariant::Secondary)
+            .variant(if selected {
+                ButtonVariant::Primary
+            } else {
+                ButtonVariant::Secondary
+            })
             .theme(theme.to_button_theme())
             .on_click_event(cx.listener(move |view, _, _, cx| {
-                view.commit_listening_answer(answer, cx);
+                view.state.update(cx, |state, cx| {
+                    state
+                        .app
+                        .plugin_state
+                        .plugin_ui_state
+                        .listening_workspace
+                        .selected_answer = Some(answer);
+                    cx.notify();
+                });
             }));
             #[cfg(feature = "dev-api")]
             let button = button.dev_track(format!("listening.answer.{answer:?}"));
             row = row.child(button);
         }
-        row
+        let state = self.state.read(cx);
+        let can_submit = state
+            .app
+            .plugin_state
+            .plugin_ui_state
+            .listening_workspace
+            .can_submit(mode);
+        let theme = state.app.ui_state.theme.clone();
+        let submit = state
+            .app
+            .ui_state
+            .translations
+            .listening_test
+            .workspace()
+            .submit;
+        row.child(
+            Button::new("comparison-submit", submit)
+                .size(ButtonSize::Sm)
+                .variant(ButtonVariant::Primary)
+                .theme(theme.to_button_theme())
+                .disabled(!can_submit)
+                .on_click_event(
+                    cx.listener(move |view, _, _, cx| view.submit_comparison_answer(mode, cx)),
+                ),
+        )
     }
 
     fn render_listening_trial_metadata(&self, cx: &mut Context<Self>) -> Div {
@@ -2837,40 +3492,49 @@ impl PlayerView {
             .listening_test
             .trial
             .clone();
-        let listening = self
-            .state
-            .read(cx)
+        let state = self.state.read(cx);
+        let listening = &state.app.plugin_state.listening_test_state;
+        let confidence = listening.confidence;
+        let notes = listening.notes.clone();
+        let expanded = state
             .app
             .plugin_state
-            .listening_test_state
-            .clone();
+            .plugin_ui_state
+            .listening_workspace
+            .metadata_open;
+        let title = state.app.ui_state.translations.listening_test.disclosures()[0];
+        let owner = cx.entity().downgrade();
         let state_for_confidence = self.state.clone();
         let state_for_notes = self.state.clone();
-        div()
+        let content = div()
             .flex()
+            .flex_wrap()
             .items_center()
             .gap(d.gap)
             .child(
                 div().w(rems(9.0)).child(
                     NumberInput::new("listening-confidence")
-                        .value(f64::from(listening.confidence))
+                        .label(translations.confidence)
+                        .aria_label(translations.confidence)
+                        .value(confidence.map_or(50.0, f64::from))
                         .range(0.0, 100.0)
                         .step(5.0)
                         .decimals(0)
-                        .unit(translations.confidence)
+                        .unit("%")
                         .size(NumberInputSize::Sm)
                         .on_change(move |value, _window, cx| {
                             state_for_confidence.update(cx, |state, _| {
                                 state.app.plugin_state.listening_test_state.confidence =
-                                    value.clamp(0.0, 100.0) as u8;
+                                    Some(value.clamp(0.0, 100.0) as u8);
                             });
                         }),
                 ),
             )
             .child(
-                div().flex_1().child(
+                div().flex_1().min_w(rems(12.0)).child(
                     Input::new("listening-notes")
-                        .value(listening.notes)
+                        .value(notes)
+                        .aria_label(translations.notes_placeholder)
                         .placeholder(translations.notes_placeholder)
                         .size(InputSize::Sm)
                         .on_text_change(move |value, _window, cx| {
@@ -2881,7 +3545,39 @@ impl PlayerView {
                         }),
                 ),
             )
-            .text_color(theme.text_primary)
+            .text_color(theme.text_primary);
+        div().child(dev_track!(
+            Accordion::new()
+                .aria_label(title)
+                .bordered(false)
+                .expanded(if expanded {
+                    vec!["listening-metadata".into()]
+                } else {
+                    vec![]
+                })
+                .item(
+                    AccordionItem::new("listening-metadata", title)
+                        .trailing(self.listening_disclosure_shortcut(
+                            &crate::app::actions::ListeningToggleMetadata,
+                            cx
+                        ))
+                        .content(dev_track!(content, "listening.metadata-fields"))
+                )
+                .on_change(move |_, expanded, _, cx| {
+                    let _ = owner.update(cx, |view, cx| {
+                        view.state.update(cx, |state, _| {
+                            state
+                                .app
+                                .plugin_state
+                                .plugin_ui_state
+                                .listening_workspace
+                                .metadata_open = expanded;
+                        });
+                        cx.notify();
+                    });
+                }),
+            "listening.metadata"
+        ))
     }
 
     fn listening_trial_button(
@@ -2896,8 +3592,8 @@ impl PlayerView {
             .size(ButtonSize::Sm)
             .variant(ButtonVariant::Primary)
             .theme(theme.to_button_theme())
-            .on_click_event(cx.listener(move |view, _, _, cx| {
-                view.start_listening_trial(mode, cx);
+            .on_click_event(cx.listener(move |view, _, window, cx| {
+                view.start_listening_trial(mode, window, cx);
             }));
         #[cfg(feature = "dev-api")]
         let button = button.dev_track(format!("listening.trial.{id}"));

@@ -3,6 +3,7 @@
 # Covers: SwitchToSpectrum
 
 focus       spectrum
+wait_idle 250ms
 assert      screen.focused == "Spectrum"
 assert      spectrum.has_data == false
 assert_visible spectrum.unavailable
@@ -13,15 +14,93 @@ assert_accessible switch Smoothing
 assert      spectrum.hold == false
 assert      spectrum.smoothing == false
 click       spectrum.hold
-wait_until  spectrum.hold == true timeout=2s
+assert spectrum.hold == false
 click       spectrum.smoothing
 wait_until  spectrum.smoothing == true timeout=2s
-resize      700 600
+scroll spectrum.content -2000
+wait_idle 250ms
+click spectrum.details
+wait_until spectrum.details == true timeout=2s
+wait_idle 250ms
+assert_visible spectrum.analysis
+assert_visible spectrum.readout
+scroll spectrum.content 2000
+wait_idle 250ms
+resize 700 600
 assert      screen.focused == "Spectrum"
 assert_accessible switch Hold
 assert_accessible switch Smoothing
 accessibility
 screenshot  spectrum-unavailable-narrow
+
+# Deterministic live/held frame and cursor checks without an audio device.
+resize 1440 900
+click spectrum.smoothing
+wait_until spectrum.smoothing == false timeout=2s
+action SpectrumSetFixture {"frame":"tone","sample_rate":48000}
+wait_until spectrum.has_data == true timeout=2s
+wait_idle 250ms
+assert_visible spectrum.plot
+hover spectrum.plot
+wait_until spectrum.cursor_level == -20 timeout=2s
+assert spectrum.output_rate == 48000
+assert_visible spectrum.inspect-frequency
+scroll spectrum.content -2000
+wait_idle 250ms
+click spectrum.inspect-frequency
+key cmd-a
+type 173
+key enter
+wait_until spectrum.cursor_level == -60 timeout=2s
+scroll spectrum.content 2000
+wait_idle 250ms
+hover spectrum.plot
+wait_until spectrum.cursor_level == -20 timeout=2s
+screenshot spectrum-live-inspection
+click spectrum.hold
+wait_until spectrum.hold == true timeout=2s
+action SpectrumSetFixture {"frame":"changed","sample_rate":96000}
+assert spectrum.output_rate == 48000
+assert spectrum.cursor_level == -20
+click spectrum.smoothing
+wait_until spectrum.smoothing == true timeout=2s
+assert spectrum.cursor_level == -44
+screenshot spectrum-held-smoothed
+# Losing the live source must not discard the captured frame.
+action SpectrumSetFixture {"active":false}
+wait_idle
+assert spectrum.has_data == false
+assert spectrum.hold == true
+assert_visible spectrum.plot
+assert_absent spectrum.unavailable
+assert spectrum.output_rate == 48000
+assert spectrum.cursor_level == -44 tolerance=0.001
+screenshot spectrum-held-without-source
+action SpectrumSetFixture {"frame":"changed","sample_rate":96000}
+wait_idle
+
+click spectrum.hold
+wait_until spectrum.hold == false timeout=2s
+assert spectrum.output_rate == 96000
+assert spectrum.cursor_level == -90
+action SpectrumSetFixture {"frame":"silence","sample_rate":16000}
+assert spectrum.output_rate == 16000
+assert spectrum.cursor_level == -100
+resize 360 700
+wait_idle 250ms
+screenshot spectrum-silence-narrow
+assert_visible spectrum.plot
+scroll spectrum.content -2000
+wait_idle 250ms
+assert_visible spectrum.inspect-frequency
+screenshot spectrum-analysis-narrow
+scroll spectrum.content 2000
+wait_idle 250ms
+action SpectrumSetFixture {"active":false}
+wait_until spectrum.has_data == false timeout=2s
+wait_idle 250ms
+assert_visible spectrum.unavailable
+assert_absent spectrum.plot
 
 # Return to library.
 focus       library

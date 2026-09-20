@@ -16,6 +16,7 @@ pub fn param_index_to_engine_param(
     match settings {
         // MultibandCompressor: band-level params (idx >= 100) need manual handling
         PluginSettings::MultibandCompressor {
+            num_bands,
             threshold_db,
             ratio,
             attack_ms,
@@ -28,6 +29,9 @@ pub fn param_index_to_engine_param(
             let local_idx = param_idx % 100;
             let band_zero_based = band_idx - 1;
 
+            if band_zero_based >= *num_bands {
+                return None;
+            }
             let param_name = match local_idx {
                 6 => "threshold",
                 7 => "ratio",
@@ -42,7 +46,9 @@ pub fn param_index_to_engine_param(
 
             let id = format!("band_{}_{}", band_zero_based, param_name);
 
-            let val_str = if let Some(band) = bands.get(band_zero_based) {
+            let inherited = sotf_plugins::BandCompressorParams::default();
+            let band = bands.get(band_zero_based).unwrap_or(&inherited);
+            let val_str = {
                 match local_idx {
                     6 => format!("{}", band.threshold_db.unwrap_or(*threshold_db as f32)),
                     7 => format!("{}", band.ratio.unwrap_or(*ratio as f32)),
@@ -52,16 +58,15 @@ pub fn param_index_to_engine_param(
                     13 => format!("{}", band.makeup_gain_db),
                     14 => format!("{}", band.bypass),
                     15 => format!("{}", band.solo),
-                    _ => "?".to_string(),
+                    _ => return None,
                 }
-            } else {
-                "?".to_string()
             };
 
             Some((id, val_str))
         }
         // MultibandExpander: band-level params (idx >= 100) need manual handling
         PluginSettings::MultibandExpander {
+            num_bands,
             threshold_db,
             ratio,
             attack_ms,
@@ -77,6 +82,9 @@ pub fn param_index_to_engine_param(
             let local_idx = param_idx % 100;
             let band_zero_based = band_idx - 1;
 
+            if band_zero_based >= *num_bands {
+                return None;
+            }
             let param_name = match local_idx {
                 6 => "threshold",
                 7 => "ratio",
@@ -93,7 +101,9 @@ pub fn param_index_to_engine_param(
 
             let id = format!("band_{}_{}", band_zero_based, param_name);
 
-            let val_str = if let Some(band) = bands.get(band_zero_based) {
+            let inherited = sotf_plugins::BandExpanderParams::default();
+            let band = bands.get(band_zero_based).unwrap_or(&inherited);
+            let val_str = {
                 match local_idx {
                     6 => format!("{}", band.threshold_db.unwrap_or(*threshold_db as f32)),
                     7 => format!("{}", band.ratio.unwrap_or(*ratio as f32)),
@@ -105,10 +115,8 @@ pub fn param_index_to_engine_param(
                     13 => format!("{}", band.hold_ms.unwrap_or(*hold_ms as f32)),
                     14 => format!("{}", band.bypass),
                     15 => format!("{}", band.solo),
-                    _ => "?".to_string(),
+                    _ => return None,
                 }
-            } else {
-                "?".to_string()
             };
 
             Some((id, val_str))
@@ -257,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn param_index_to_engine_param_unknown_band_returns_placeholder() {
+    fn param_index_to_engine_param_unknown_band_is_rejected() {
         let settings = mb_compressor_settings(vec![BandCompressorParams {
             threshold_db: None,
             ratio: None,
@@ -273,10 +281,30 @@ mod tests {
         }]);
 
         // Band 1 does not exist → id is still generated but value is a placeholder
-        assert_eq!(
-            param_index_to_engine_param(&settings, 206),
-            Some(("band_1_threshold".to_string(), "?".to_string()))
-        );
+        assert_eq!(param_index_to_engine_param(&settings, 206), None);
+    }
+
+    #[test]
+    fn sparse_multiband_parameters_send_inherited_values() {
+        for kind in [
+            crate::PluginType::MultibandCompressor,
+            crate::PluginType::MultibandExpander,
+        ] {
+            let mut settings = PluginSettings::default_for(&kind).unwrap();
+            settings.set_param_value(6, -25.0);
+            for band in 1..=3 {
+                assert_eq!(
+                    param_index_to_engine_param(&settings, band * 100 + 6),
+                    Some((format!("band_{}_threshold", band - 1), "-25".into()))
+                );
+                assert_eq!(
+                    param_index_to_engine_param(&settings, band * 100 + 14),
+                    Some((format!("band_{}_bypass", band - 1), "false".into()))
+                );
+            }
+            assert_eq!(param_index_to_engine_param(&settings, 406), None);
+            assert_eq!(param_index_to_engine_param(&settings, 199), None);
+        }
     }
 
     #[test]

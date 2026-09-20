@@ -40,6 +40,10 @@ pub fn resolve(path: &str, window: AnyWindowHandle, cx: &mut App) -> Result<Valu
 fn read_path(path: &str, state: &AppState) -> Result<Value> {
     let app = &state.app;
     Ok(match path {
+        "navigation.compact_open" => json!(app.ui_state.show_studio_menu),
+        "navigation.compact_highlight" => json!(app.ui_state.navigation.compact_highlight),
+        "navigation.studio_picker_open" => json!(app.ui_state.navigation.studio_picker_open),
+        "playback.transport_diagnostics" => state.player.transport_diagnostics(),
         "playback.volume" => json!(app.playback.volume),
         "playback.is_playing" => json!(app.playback.is_playing),
         "playback.muted" => json!(app.playback.muted),
@@ -77,9 +81,47 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
             app.playback.display_duration_secs().is_finite()
                 && app.playback.display_duration_secs() > 0.0
         ),
-        "spectrum.hold" => json!(app.ui_state.phone_spectrum_hold),
-        "spectrum.smoothing" => json!(app.ui_state.phone_spectrum_smoothed),
+        "spectrum.hold" => json!(app.ui_state.spectrum_view.hold),
+        "spectrum.smoothing" => json!(app.ui_state.spectrum_view.smoothed),
+        "spectrum.details" => json!(app.ui_state.spectrum_view.details_open),
+        "spectrum.cursor_fraction" => json!(app.ui_state.spectrum_view.cursor_fraction),
+        "spectrum.output_rate" => json!(if app.ui_state.spectrum_view.hold {
+            app.ui_state
+                .spectrum_view
+                .held_frame
+                .as_ref()
+                .and_then(|frame| frame.sample_rate)
+        } else {
+            app.playback.spectrum_output_sample_rate()
+        }),
+        "spectrum.cursor_level" => {
+            let spectrum = &app.ui_state.spectrum_view;
+            let frame = if spectrum.hold {
+                spectrum.held_frame.as_ref().map(|frame| &frame.data)
+            } else {
+                app.playback.spectrum_info.as_ref()
+            };
+            json!(frame.and_then(|frame| {
+                let index = spectrum.inspected_band(frame.magnitudes.len())?;
+                let values =
+                    crate::app::state::ui::SpectrumViewState::magnitudes(frame, spectrum.smoothed);
+                values.get(index).copied().filter(|value| value.is_finite())
+            }))
+        }
         "spectrum.has_data" => json!(app.playback.spectrum_info.is_some()),
+        "library.detail.open" => json!(app.library_state.album_detail.is_some()),
+        "library.detail.title" => json!(
+            app.library_state
+                .album_detail
+                .as_ref()
+                .map(|album| &album.title)
+        ),
+        "library.detail.track_count" => json!(
+            app.library_state
+                .album_detail
+                .as_ref()
+                .map_or(0, |album| album.tracks.len())
+        ),
         "listening.guide_open" => json!(
             app.tutorial.listening_guide_open
                 || !app
@@ -100,6 +142,135 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         )),
         "listening.break_open" => json!(app.tutorial.listening_break_prompt_open),
         "listening.break_interval" => json!(app.tutorial.listening_break_interval),
+        "listening.eq.source.loading" => json!(
+            app.plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .source_request
+                .is_some()
+        ),
+        "listening.eq.source.count" => {
+            json!(app.plugin_state.listening_test_state.eq_sources.len())
+        }
+        "listening.eq.source.index" => json!(app.plugin_state.listening_test_state.eq_source_index),
+        "listening.eq.source.filename" => json!(
+            app.plugin_state
+                .listening_test_state
+                .eq_sources
+                .get(app.plugin_state.listening_test_state.eq_source_index)
+                .and_then(|path| path.file_name())
+                .map(|name| name.to_string_lossy())
+        ),
+        "playback.current_filename" => json!(app.get_current_track_path().and_then(|path| {
+            path.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })),
+        "playback.current_channels" => json!(
+            app.playback
+                .current_queue_index
+                .and_then(|index| app.queue_state.get(index))
+                .and_then(|item| item.current_track())
+                .map(|track| track.channels)
+        ),
+        "listening.eq.config.bands" => {
+            json!(app.plugin_state.listening_test_state.eq_config.band_count)
+        }
+        "listening.eq.config.gain" => {
+            json!(app.plugin_state.listening_test_state.eq_config.gain_db)
+        }
+        "listening.eq.config.q" => json!(app.plugin_state.listening_test_state.eq_config.q),
+        "listening.eq.config.trials" => {
+            json!(app.plugin_state.listening_test_state.eq_config.trial_count)
+        }
+        "listening.eq.config.min-frequency" => json!(
+            app.plugin_state
+                .listening_test_state
+                .eq_config
+                .min_frequency_hz
+        ),
+        "listening.eq.config.max-frequency" => json!(
+            app.plugin_state
+                .listening_test_state
+                .eq_config
+                .max_frequency_hz
+        ),
+        "listening.eq.frequency_details_open" => json!(
+            app.plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .practice
+                .frequency_details_open
+        ),
+        "listening.eq.session_gain" => json!(
+            app.plugin_state
+                .listening_test_state
+                .eq_session
+                .as_ref()
+                .map(|session| session.config.gain_db)
+        ),
+        "listening.eq.session_q" => json!(
+            app.plugin_state
+                .listening_test_state
+                .eq_session
+                .as_ref()
+                .map(|session| session.config.q)
+        ),
+        "listening.eq.session_trials" => json!(
+            app.plugin_state
+                .listening_test_state
+                .eq_session
+                .as_ref()
+                .map(|session| session.config.trial_count)
+        ),
+        "listening.eq.session_min_frequency" => json!(
+            app.plugin_state
+                .listening_test_state
+                .eq_session
+                .as_ref()
+                .map(|session| session.config.min_frequency_hz)
+        ),
+        "listening.eq.session_max_frequency" => json!(
+            app.plugin_state
+                .listening_test_state
+                .eq_session
+                .as_ref()
+                .map(|session| session.config.max_frequency_hz)
+        ),
+        "listening.eq.paused" => json!(
+            app.plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .practice
+                .paused
+        ),
+        "listening.eq.confirm_end" => json!(
+            app.plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .practice
+                .confirm_end
+        ),
+        "listening.eq.ended_early" => json!(
+            app.plugin_state
+                .listening_test_state
+                .eq_session
+                .as_ref()
+                .is_some_and(|session| session.ended_early)
+        ),
+        "listening.eq.submitted" => json!(
+            app.plugin_state
+                .listening_test_state
+                .eq_session
+                .as_ref()
+                .map_or(0, |session| session.trials.len())
+        ),
+        "listening.eq.has_question" => json!(
+            app.plugin_state
+                .listening_test_state
+                .eq_session
+                .as_ref()
+                .is_some_and(|session| session.current_question.is_some())
+        ),
         "listening.eq.has_session" => {
             json!(app.plugin_state.listening_test_state.eq_session.is_some())
         }
@@ -124,6 +295,30 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "listening.paths_ready" => json!(
             app.plugin_state.listening_test_state.path_a.is_some()
                 && app.plugin_state.listening_test_state.path_b.is_some()
+        ),
+        "listening.metadata_open" => json!(
+            app.plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .metadata_open
+        ),
+        "listening.trials_open" => json!(
+            app.plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .trials_open
+        ),
+        "listening.confirm_end" => json!(
+            app.plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .confirm_end
+        ),
+        "listening.results_open" => json!(
+            app.plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .results_open
         ),
         "listening.session_exists" => json!(
             app.plugin_state
@@ -153,6 +348,12 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .ab_test
                 .view()
                 .completed_trials
+        ),
+        "listening.planned_trials" => json!(
+            app.plugin_state
+                .plugin_ui_state
+                .listening_workspace
+                .planned_trials
         ),
         "listening.abx_correct" => json!(
             app.plugin_state
@@ -188,6 +389,21 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "input_mode" => json!(format!("{:?}", app.ui_state.input_mode)),
         "onboarding.completed" => json!(app.tutorial.completed),
         "queue.length" => json!(app.queue_state.len()),
+        "queue.upcoming_count" => json!(app.queue_state.upcoming_track_positions().len()),
+        "queue.upcoming_titles" => json!(
+            app.queue_state
+                .upcoming_track_positions()
+                .iter()
+                .filter_map(|position| {
+                    app.queue_state
+                        .get(position.item)?
+                        .album
+                        .tracks
+                        .get(position.track)
+                        .map(|track| track.title.clone().unwrap_or_default())
+                })
+                .collect::<Vec<_>>()
+        ),
         "queue.current_index" => match app.playback.current_queue_index {
             Some(i) => json!(i),
             None => Value::Null,
@@ -201,6 +417,45 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "queue.can_undo_clear" => json!(app.queue_state.can_undo_clear()),
         "queue.can_undo_remove" => json!(app.queue_state.can_undo_remove()),
         "streams.count" => json!(app.stream_state.store.streams.len()),
+        "now_playing.details_open" => json!(app.playback.track_information_open),
+        "now_playing.signal_open" => json!(app.playback.signal_path_open),
+        "now_playing.signal_ready" => json!(
+            app.playback
+                .signal_path
+                .as_ref()
+                .is_some_and(|path| path.source.is_some())
+        ),
+        "now_playing.signal_plugins" => json!(app.playback.signal_path.as_ref().map(|path| {
+            path.plugin_chain
+                .iter()
+                .map(|plugin| &plugin.plugin_type)
+                .collect::<Vec<_>>()
+        })),
+        "home.recent_count" => json!(app.library_state.library.recently_played_albums().len()),
+        "home.recent_first_title" => json!(
+            app.library_state
+                .library
+                .recently_played_albums()
+                .first()
+                .map(|album| &album.title)
+        ),
+        "home.recent_titles" => json!(
+            app.library_state
+                .library
+                .recently_played_albums()
+                .iter()
+                .map(|album| &album.title)
+                .collect::<Vec<_>>()
+        ),
+        "home.favorite_count" => json!(
+            app.library_state
+                .library
+                .albums
+                .iter()
+                .filter(|album| album.is_favorite)
+                .count()
+        ),
+        "streams.editor_open" => json!(app.stream_state.editor_open),
         "streams.error" => json!(app.stream_state.last_error),
         "streams.status" => json!(app.stream_state.last_status),
         "streams.name" => json!(app.stream_state.name_input),
@@ -257,7 +512,17 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "library.album_count" => json!(app.library_state.library.albums.len()),
         "home.favorite_expanded" => json!(app.ui_state.expanded_home_sections.contains("favorite")),
         "library.filtered_album_count" => json!(app.filtered_albums().len()),
+        "library.filtered_track_count" => {
+            json!(app.library_state.selection_filtered_tracks().len())
+        }
         "library.search_query" => json!(app.library_state.search_query),
+        "library.list_view" => json!(app.library_state.album_list_view),
+        "library.result_order" => json!(format!(
+            "{:?}",
+            app.library_state.result_order.unwrap_or_default()
+        )),
+        "library.sort_menu_open" => json!(app.library_state.sort_menu_open),
+        "library.sort_highlight" => json!(app.library_state.sort_highlighted_index),
         "library.sort_order" => json!(format!("{:?}", app.library_state.sort_order)),
         "library.channel_filter" => json!(format!("{:?}", app.library_state.filter)),
         "library.track_count" => json!(
@@ -309,6 +574,28 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .as_ref()
                 .map(|editor| editor.search_results.len())
         ),
+        "recording.save_status" => json!(format!(
+            "{:?}",
+            app.measurement_state.recording_state.save_status()
+        )),
+        "recording.room_width_m" => {
+            let rec = &app.measurement_state.recording_state;
+            json!(rec.room_dimension_unit.to_meters(rec.room_width_input))
+        }
+        "recording.room_unit" => json!(format!(
+            "{:?}",
+            app.measurement_state.recording_state.room_dimension_unit
+        )),
+        "recording.metadata_valid" => json!(
+            app.measurement_state
+                .recording_state
+                .session_metadata_is_valid()
+        ),
+        "recording.setup_description" => {
+            json!(app.measurement_state.recording_state.setup_description)
+        }
+        "recording.save_name" => json!(app.measurement_state.recording_state.save_name),
+        "recording.saved_path" => json!(app.measurement_state.recording_state.take_review.saved_to),
         "recording.all_done" => json!(
             app.measurement_state
                 .recording_state
@@ -375,12 +662,121 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .len()
         ),
         "headphone.selected" => json!(app.measurement_state.headphone_eq_state.selected_headphone),
-        "headphone.error" => json!(app.measurement_state.headphone_eq_state.error_message),
-        "headphone.easy_applied" => json!(
+        "headphone.autoeq_stage" => json!(format!(
+            "{:?}",
+            app.measurement_state.headphone_eq_state.autoeq_stage
+        )),
+        "headphone.autoeq_detail" => json!(format!(
+            "{:?}",
+            app.measurement_state.headphone_eq_state.detail_level
+        )),
+        "headphone.audition_active" => {
+            json!(app.measurement_state.headphone_eq_state.audition.is_some())
+        }
+        "headphone.audition_corrected" => json!(
             app.measurement_state
                 .headphone_eq_state
-                .easy_mode_last_apply
-                .is_some()
+                .audition
+                .as_ref()
+                .is_some_and(|audition| audition.corrected)
+        ),
+        "headphone.audition_pending" => json!(
+            app.measurement_state
+                .headphone_eq_state
+                .audition
+                .as_ref()
+                .is_some_and(|audition| audition.is_pending())
+        ),
+        "headphone.audition_preamp_db" => json!(
+            app.measurement_state
+                .headphone_eq_state
+                .audition
+                .as_ref()
+                .map(|audition| audition.preamp_db)
+        ),
+        "headphone.error" => json!(app.measurement_state.headphone_eq_state.error_message),
+        "roomeq.application_status" => {
+            let correction = &app.measurement_state.room_eq_state;
+            json!(format!(
+                "{:?}",
+                app.correction_application_status(
+                    &correction.delivery,
+                    correction.result_is_current()
+                )
+            ))
+        }
+        "spinorama.export_current" => {
+            let speaker = &app.measurement_state.spinorama_eq_state;
+            json!(
+                speaker
+                    .delivery
+                    .current_result_exported(speaker.result_is_current())
+            )
+        }
+        "spinorama.export_filter_summary" => {
+            let speaker = &app.measurement_state.spinorama_eq_state;
+            speaker
+                .delivery
+                .last_export()
+                .and_then(|export| std::fs::read_to_string(&export.path).ok())
+                .and_then(|content| serde_json::from_str::<Vec<serde_json::Value>>(&content).ok())
+                .map(|filters| {
+                    json!(
+                        filters
+                            .iter()
+                            .map(|filter| format!(
+                                "{}@{}",
+                                filter["filter_type"].as_str().unwrap_or("unknown"),
+                                filter["srate"].as_f64().unwrap_or(0.0)
+                            ))
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    )
+                })
+                .unwrap_or(serde_json::Value::Null)
+        }
+        "spinorama.application_status" => {
+            let correction = &app.measurement_state.spinorama_eq_state;
+            json!(format!(
+                "{:?}",
+                app.correction_application_status(
+                    &correction.delivery,
+                    correction.result_is_current()
+                )
+            ))
+        }
+        "headphone.application_status" => {
+            let headphone = &app.measurement_state.headphone_eq_state;
+            json!(format!(
+                "{:?}",
+                app.correction_application_status(
+                    &headphone.delivery,
+                    headphone.result_is_current()
+                )
+            ))
+        }
+        "headphone.easy_applied" => {
+            let headphone = &app.measurement_state.headphone_eq_state;
+            json!(headphone.easy_mode_last_apply.is_some() && app.correction_application_status(&headphone.delivery, headphone.result_is_current())
+                == sotf_audio_player::ui_models::correction_delivery::CorrectionApplicationStatus::Applied)
+        }
+        "headphone.export_current" => {
+            let headphone = &app.measurement_state.headphone_eq_state;
+            json!(
+                headphone
+                    .delivery
+                    .current_result_exported(headphone.result_is_current())
+            )
+        }
+        "headphone.result_revision" => {
+            json!(app.measurement_state.headphone_eq_state.delivery.revision())
+        }
+        "headphone.export_revision" => json!(
+            app.measurement_state
+                .headphone_eq_state
+                .delivery
+                .last_export()
+                .map(|export| export.revision)
         ),
         "headphone.export_path" => {
             json!(app.measurement_state.headphone_eq_state.qa_last_export_path)
@@ -417,6 +813,43 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "headphone.measurement_path" => {
             json!(app.measurement_state.headphone_eq_state.measurement_path)
         }
+        "headphone.identity_expanded" => json!(
+            app.measurement_state
+                .headphone_eq_state
+                .expanded_sections
+                .iter()
+                .any(|section| section == "measurement-identity")
+        ),
+        "headphone.target_preset" => json!(app.measurement_state.headphone_eq_state.target_preset),
+        "headphone.target_open" => json!(
+            app.measurement_state
+                .headphone_eq_state
+                .dropdowns
+                .target_open
+        ),
+        "headphone.can_advance" => json!(app.can_advance_workflow_step()),
+        "headphone.identity.model"
+        | "headphone.identity.rig"
+        | "headphone.identity.sample"
+        | "headphone.identity.compensation" => {
+            let preview = app
+                .measurement_state
+                .headphone_eq_state
+                .active_file_preview();
+            let key = path.rsplit('.').next().unwrap_or_default();
+            json!(preview.and_then(|value| value.identity_field(key)))
+        }
+        "headphone.file_preview_point_count" => json!(
+            app.measurement_state
+                .headphone_eq_state
+                .active_file_preview()
+                .map_or(0, |preview| preview.points().len())
+        ),
+        "headphone.measurement_bounds" => json!(
+            app.measurement_state
+                .headphone_eq_state
+                .measurement_frequency_bounds()
+        ),
         "headphone.curve_point_count" => json!(
             app.measurement_state
                 .headphone_eq_state
@@ -519,6 +952,19 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .as_ref()
                 .map(|dsp| dsp.channels.len())
         ),
+        "roomeq.config.filter_count" => json!(
+            app.measurement_state
+                .room_eq_state
+                .optimizer_config
+                .num_filters
+        ),
+        "roomeq.config.opt_mode" => json!(
+            app.measurement_state
+                .room_eq_state
+                .optimizer_config
+                .mode
+                .to_code()
+        ),
         "roomeq.filter_count" => json!(
             app.measurement_state
                 .room_eq_state
@@ -560,6 +1006,69 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
             app.measurement_state.room_eq_state.wizard_mode
         )),
         "roomeq.status" => json!(app.measurement_state.room_eq_state.status_message),
+        "roomeq.has_multi_driver" => json!(app.measurement_state.room_eq_state.has_multi_driver()),
+        path if path.starts_with("roomeq.driver_count.") => json!(
+            app.measurement_state
+                .room_eq_state
+                .channel_measurements
+                .iter()
+                .find(|channel| Some(channel.channel_name.as_str())
+                    == path.strip_prefix("roomeq.driver_count."))
+                .map(|channel| channel.driver_measurement_sets.len())
+        ),
+        path if path.starts_with("roomeq.position_count.") => {
+            json!(
+                app.measurement_state
+                    .room_eq_state
+                    .multi_position_counts
+                    .iter()
+                    .find(|(name, _)| Some(name.as_str())
+                        == path.strip_prefix("roomeq.position_count."))
+                    .map(|(_, count)| count)
+            )
+        }
+        "roomeq.driver_counts" => json!(
+            app.measurement_state
+                .room_eq_state
+                .channel_measurements
+                .iter()
+                .map(|channel| (&channel.channel_name, channel.driver_measurement_sets.len()))
+                .collect::<std::collections::BTreeMap<_, _>>()
+        ),
+        "roomeq.position_counts" => json!(
+            app.measurement_state
+                .room_eq_state
+                .multi_position_counts
+                .iter()
+                .map(|(name, count)| (name, count))
+                .collect::<std::collections::BTreeMap<_, _>>()
+        ),
+        "roomeq.multi_measurement_enabled" => json!(
+            app.measurement_state
+                .room_eq_state
+                .optimizer_config
+                .multi_measurement
+                .enabled
+        ),
+        path if path.starts_with("roomeq.crossover_freq.") => {
+            let suffix = path.strip_prefix("roomeq.crossover_freq.").unwrap_or("");
+            let mut parts = suffix.split('.');
+            let value = match (parts.next(), parts.next(), parts.next()) {
+                (Some(channel), Some(index), None) => channel
+                    .parse::<usize>()
+                    .ok()
+                    .zip(index.parse::<usize>().ok())
+                    .and_then(|(channel, index)| {
+                        app.measurement_state
+                            .room_eq_state
+                            .speaker_configs
+                            .get(channel)
+                            .and_then(|config| config.crossover_freq_hints.get(index).copied())
+                    }),
+                _ => None,
+            };
+            json!(value)
+        }
         "roomeq.error" => json!(app.measurement_state.room_eq_state.error_message),
         "roomeq.export.path" => json!(default_room_eq_export_path()),
         "roomeq.export.exists" => json!(default_room_eq_export_path().is_file()),
@@ -576,10 +1085,89 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "roomeq.export.version" => json!(room_eq_export_summary().and_then(|s| s.version)),
 
         // Settings / preferences
+        "preferences.close_pending" => json!(app.settings.navigation.close_pending),
+        "preferences.category_open" => json!(app.settings.navigation.category_open),
+        "preferences.maintenance_busy" => json!(app.settings.library.maintenance.busy),
+        "preferences.maintenance_ready" => json!(app.settings.library.maintenance.review.is_some()),
+        "preferences.maintenance_count" => json!(
+            app.settings
+                .library
+                .maintenance
+                .review
+                .as_ref()
+                .map(|review| review.entries().len())
+        ),
+        "preferences.maintenance_error" => json!(app.settings.library.maintenance.error),
+        "preferences.maintenance_removed" => json!(app.settings.library.maintenance.removed),
+        "preferences.setting" => json!(
+            app.settings
+                .navigation
+                .setting
+                .map(|setting| format!("{setting:?}"))
+        ),
+        "preferences.reveal_pending" => json!(app.settings.navigation.reveal_setting),
+        "preferences.analysis_expanded" => json!(
+            app.settings
+                .expanded_sections
+                .iter()
+                .any(|id| id == "library-analysis")
+        ),
+        "preferences.sample_rate_highlight" => {
+            json!(app.audio_device_state.hal_dropdowns.highlights[0])
+        }
+        "preferences.systemwide_input" => {
+            json!(app.audio_device_state.output_draft.systemwide_input)
+        }
+        "preferences.sample_rate_hz" => json!(app.audio_device_state.output_draft.sample_rate_hz),
+        "preferences.channel_count" => json!(app.audio_device_state.output_draft.channel_count),
+        "preferences.buffer_frames" => json!(app.audio_device_state.output_draft.buffer_frames),
+        "settings.playback_source" => {
+            json!(format!("{:?}", app.audio_device_state.playback_source))
+        }
+        "settings.sample_rate_hz" => json!(app.audio_device_state.hal_config.sample_rate),
+        "settings.channel_count" => json!(app.audio_device_state.hal_config.channel_count),
+        "settings.buffer_frames" => json!(app.audio_device_state.hal_config.buffer_frames),
+        "preferences.audio_dirty" => json!(app.audio_device_state.output_draft.is_dirty()),
+        "preferences.audio_applying" => json!(app.audio_device_state.audio_apply.pending.is_some()),
+        "preferences.output_dropdown_open" => json!(app.audio_device_state.output_ui.open),
+        "preferences.device_details_expanded" => {
+            json!(app.audio_device_state.output_ui.details_expanded)
+        }
+        "preferences.replay_gain_enabled" => {
+            json!(app.audio_device_state.output_draft.replay_gain_enabled)
+        }
+        "preferences.replay_gain_mode" => json!(
+            app.audio_device_state
+                .output_draft
+                .replay_gain_mode
+                .map(|mode| format!("{mode:?}"))
+        ),
+        "settings.replay_gain_enabled" => json!(app.playback.replay_gain_enabled),
+        "settings.replay_gain_mode" => json!(format!("{:?}", app.playback.replay_gain_mode)),
+        "preferences.output_default_draft" => {
+            json!(app.audio_device_state.output_draft.system_default)
+        }
+        "audio.follow_system_default" => json!(app.audio_device_state.follow_system_default),
+        "preferences.output_draft" => json!(app.audio_device_state.output_draft.device_name),
+        "preferences.output_error" => json!(app.audio_device_state.output_draft.error),
         "settings.theme" => json!(format!("{:?}", app.ui_state.theme_id)),
+        "settings.theme_mode" => json!(match app.ui_state.theme_mode_preference {
+            gpui_themes::ThemeModePreference::FollowSystem => "system",
+            gpui_themes::ThemeModePreference::Light => "light",
+            gpui_themes::ThemeModePreference::Dark => "dark",
+            gpui_themes::ThemeModePreference::Scheduled { .. } => "scheduled",
+        }),
+        "settings.plugin_scan_in_progress" => {
+            json!(app.plugin_state.external_plugin_ui.scan_in_progress)
+        }
+        "settings.plugin_scan_completed" => {
+            json!(app.plugin_state.external_plugin_ui.scan_completed)
+        }
         "settings.language" => json!(format!("{:?}", app.ui_state.language)),
         "settings.active_tab" => json!(format!("{:?}", app.ui_state.active_settings_tab)),
         "settings.font_scale" => json!(app.ui_state.font_scale),
+        "settings.scanner_threads" => json!(app.ui_state.scanner_threads),
+        "settings.max_cpu_cores" => json!(app.ui_state.max_cpu_cores),
         "settings.reduce_motion" => json!(app.ui_state.reduce_motion),
         "settings.accessibility_palette" => {
             json!(format!("{:?}", app.ui_state.accessibility_palette))
@@ -599,6 +1187,15 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .map(|conflict| conflict.existing_action_name.as_str())
         ),
         "settings.release_channel" => json!(format!("{:?}", app.ui_state.release_channel)),
+        key if key.starts_with("settings.persisted_audio.") => crate::Config::load()
+            .ok()
+            .and_then(|config| serde_json::to_value(config.audio).ok())
+            .and_then(|audio| {
+                audio
+                    .get(&key["settings.persisted_audio.".len()..])
+                    .cloned()
+            })
+            .unwrap_or(serde_json::Value::Null),
         "settings.persisted_release_channel" => json!(
             crate::Config::load()
                 .map(|config| format!("{:?}", config.release_channel))
@@ -610,6 +1207,13 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .and_then(|config| config.providers.first().map(|provider| provider.enabled))
         ),
         "settings.metadata_error" => json!(app.settings.metadata_error),
+        "settings.metadata_busy" => json!(app.settings.metadata_loading),
+        "settings.metadata_cached_enabled" => json!(
+            app.settings
+                .metadata_config
+                .as_ref()
+                .and_then(|config| config.providers.first().map(|provider| provider.enabled))
+        ),
         "settings.library_folder_count" => json!(app.library_state.library.directories.len()),
         "settings.persisted_library_folder_count" => json!(
             crate::app::config::Config::load()
@@ -679,6 +1283,8 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
             json!(app.ui_state.design_language.as_deref().unwrap_or("default"))
         }
         "settings.remote_server_count" => json!(app.remote.server_store.servers.len()),
+        "settings.remote_manual_name" => json!(app.remote.manual_server_name),
+        "settings.sotf_api_enabled" => json!(app.federation.server_config.api.enabled),
         "settings.mpd_password_revealed" => json!(app.settings.show_mpd_password),
         "settings.mpd_password_configured" => {
             json!(app.federation.server_config.mpd.password.is_some())
@@ -708,11 +1314,57 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "plugins.graph.connection_count" => {
             json!(app.plugin_state.graph.connections.len())
         }
+        "routing.draft_connection_count" => json!(
+            app.plugin_state
+                .routing_controller()
+                .graph
+                .connections
+                .len()
+        ),
+        "plugins.update_pending" => json!(
+            app.plugin_state.update_state.pending_ack.is_some()
+                || app
+                    .plugin_state
+                    .update_state
+                    .pending_plugin_update
+                    .is_some()
+        ),
+        "routing.applying" => json!(app.plugin_state.graph_state.applying_original.is_some()),
+        "routing.header_details_open" => json!(app.plugin_state.graph_state.header_details_open),
+        "routing.dirty" => json!(app.plugin_state.routing_draft_is_dirty()),
+        "routing.inspector_close_pending" => {
+            json!(app.plugin_state.graph_state.confirm_close_dirty)
+        }
+        "routing.active_matches_base" => json!(
+            app.plugin_state.graph_state.draft_base
+                == serde_json::to_value(&app.plugin_state.graph).ok()
+        ),
+        "routing.form_open" => json!(app.plugin_state.graph_state.connection_form.open),
+        "routing.endpoints" => json!(app.plugin_state.graph_state.connection_form.endpoints),
         "plugins.graph.connecting" => json!(
             app.plugin_state
                 .graph_state
                 .keyboard_connect_source
                 .is_some()
+        ),
+        "headphone.applied_filters" => json!(
+            app.plugin_state
+                .graph
+                .nodes
+                .values()
+                .filter_map(|node| match &node.plugin.settings {
+                    sotf_audio_player::PluginSettings::EQ { filters, .. }
+                        if !node.plugin.permanent =>
+                        Some(filters),
+                    _ => None,
+                })
+                .flatten()
+                .map(|filter| format!(
+                    "{:?}:{}:{}:{}",
+                    filter.filter_type, filter.frequency, filter.q, filter.gain_db
+                ))
+                .collect::<Vec<_>>()
+                .join(";")
         ),
         "plugins.user_count" => json!(
             app.plugin_state

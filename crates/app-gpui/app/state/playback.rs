@@ -10,7 +10,17 @@ use crate::app::constants;
 use sotf_audio_player::{LoudnessData, PlaybackController, SignalPath, SpectrumData};
 use sotf_plugins::CompressorData;
 
+#[derive(Debug, Clone)]
+pub struct HeldSpectrumFrame {
+    pub data: Arc<SpectrumData>,
+    pub sample_rate: Option<u32>,
+}
+
 pub struct PlaybackState {
+    pub track_information_open: bool,
+    /// Whether the Now Playing signal-path details are expanded. Closed by
+    /// default so negotiated formats stay one explicit disclosure away.
+    pub signal_path_open: bool,
     ctrl: PlaybackController,
 
     // GPUI-specific: synced from queue
@@ -31,6 +41,9 @@ pub struct PlaybackState {
     /// Deterministic meter data used only by black-box rendered QA.
     #[cfg(feature = "dev-api")]
     pub qa_loudness_fixture: Option<Arc<LoudnessData>>,
+    /// Deterministic spectrum data used only by isolated rendered QA.
+    #[cfg(feature = "dev-api")]
+    pub qa_spectrum_fixture: Option<HeldSpectrumFrame>,
     /// Duration override for rendered transport QA (for example live audio).
     #[cfg(feature = "dev-api")]
     pub qa_duration_fixture: Option<f64>,
@@ -56,11 +69,26 @@ impl Default for PlaybackState {
 }
 
 impl PlaybackState {
+    /// Output-rate context for spectrum displays. Do not label the decoded
+    /// source rate as the current output rate when the engine resamples.
+    pub fn spectrum_output_sample_rate(&self) -> Option<u32> {
+        #[cfg(feature = "dev-api")]
+        if let Some(frame) = &self.qa_spectrum_fixture {
+            return frame.sample_rate;
+        }
+        self.signal_path
+            .as_ref()
+            .and_then(|path| u32::try_from(path.output.sample_rate_hz).ok())
+            .filter(|rate| *rate > 0)
+    }
+
     pub fn new() -> Self {
         let mut ctrl = PlaybackController::new();
         // Override the default volume with GPUI's startup volume
         ctrl.volume = constants::ui::DEFAULT_STARTUP_VOLUME;
         Self {
+            track_information_open: false,
+            signal_path_open: false,
             ctrl,
             current_queue_index: None,
             input_loudness_info: None,
@@ -71,6 +99,8 @@ impl PlaybackState {
             signal_path: None,
             #[cfg(feature = "dev-api")]
             qa_loudness_fixture: None,
+            #[cfg(feature = "dev-api")]
+            qa_spectrum_fixture: None,
             #[cfg(feature = "dev-api")]
             qa_duration_fixture: None,
         }

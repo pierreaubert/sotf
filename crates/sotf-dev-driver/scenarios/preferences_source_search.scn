@@ -1,0 +1,43 @@
+# Requires HAL support; source edits remain drafts and never start playback.
+focus Settings
+resize 600 800
+wait_idle 2s
+click preferences.search
+type "systemwide input"
+wait_idle 1s
+click preferences.result.AudioSource
+wait_idle 2s
+assert settings.active_tab == "AudioDevice"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.AudioSource
+assert settings.playback_source == "File"
+assert settings.persisted_audio.systemwide_input == false
+key enter
+wait_idle 1s
+assert preferences.systemwide_input == true
+assert preferences.audio_dirty == true
+assert settings.playback_source == "File"
+assert settings.persisted_audio.systemwide_input == false
+assert_visible settings.hal-sample-rate
+screenshot preferences-source-search
+click settings.audio-source.file
+wait_idle 1s
+assert preferences.audio_dirty == false
+assert_absent settings.hal-sample-rate
+click preferences.search
+type "audio source"
+wait_idle 1s
+click preferences.result.AudioSource
+wait_idle 2s
+key space
+wait_idle 1s
+assert preferences.systemwide_input == true
+click preferences.done
+wait_idle 1s
+assert preferences.close_pending == true
+click preferences.close.discard
+wait_idle 1s
+assert preferences.audio_dirty == false
+assert settings.playback_source == "File"
+assert settings.persisted_audio.systemwide_input == false
+assert playback.is_playing == false

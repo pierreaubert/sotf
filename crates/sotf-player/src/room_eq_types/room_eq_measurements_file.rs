@@ -360,7 +360,74 @@ impl RoomEqMeasurementsFile {
             "Loaded {} speakers (RoomConfig format)",
             room_config.speakers.len()
         );
-        Ok(Self::channels_from_room_config(room_config, base_dir))
+        let single_counts: Vec<_> = room_config
+            .speakers
+            .iter()
+            .filter_map(|(name, speaker)| {
+                let autoeq::SpeakerConfig::Single(source) = speaker else {
+                    return None;
+                };
+                let count = match source {
+                    autoeq::MeasurementSource::Multiple(multiple) => multiple.measurements.len(),
+                    _ => 1,
+                };
+                Some((name.clone(), count))
+            })
+            .collect();
+        let groups: Vec<_> = room_config
+            .speakers
+            .iter()
+            .filter_map(|(name, speaker)| {
+                let autoeq::SpeakerConfig::Group(group) = speaker else {
+                    return None;
+                };
+                let counts: Vec<_> = group
+                    .measurements
+                    .iter()
+                    .map(|source| match source {
+                        autoeq::MeasurementSource::Multiple(multiple) => {
+                            multiple.measurements.len()
+                        }
+                        _ => 1,
+                    })
+                    .collect();
+                Some((name.clone(), counts))
+            })
+            .collect();
+        let channels = Self::channels_from_room_config(room_config, base_dir);
+        for (name, expected) in single_counts {
+            let loaded = channels
+                .iter()
+                .find(|channel| channel.channel_name == name)
+                .filter(|channel| !channel.measurement.frequencies.is_empty())
+                .map_or(0, |channel| 1 + channel.multi_mic_measurements.len());
+            if loaded != expected || loaded == 0 {
+                return Err(format!(
+                    "Speaker {name}: loaded {loaded} of {expected} measurement positions"
+                ));
+            }
+        }
+        for (name, counts) in groups {
+            let channel = channels
+                .iter()
+                .find(|channel| channel.channel_name == name)
+                .ok_or_else(|| {
+                    format!("Speaker {name}: one or more driver measurements could not be loaded")
+                })?;
+            for (index, expected) in counts.into_iter().enumerate() {
+                let loaded = channel
+                    .driver_measurement_sets
+                    .get(index)
+                    .map_or(0, |driver| 1 + driver.multi_mic_measurements.len());
+                if loaded != expected {
+                    return Err(format!(
+                        "Speaker {name}, driver {}: loaded {loaded} of {expected} measurement positions",
+                        index + 1
+                    ));
+                }
+            }
+        }
+        Ok(channels)
     }
 
     /// Convert an `autoeq::RoomConfig` into `Vec<ChannelMeasurement>`.
@@ -368,6 +435,11 @@ impl RoomEqMeasurementsFile {
         room_config: autoeq::RoomConfig,
         base_dir: Option<&std::path::Path>,
     ) -> Vec<ChannelMeasurement> {
+        let recording_config = room_config.recording_config;
+        let sample_rate_hz = recording_config
+            .as_ref()
+            .and_then(|config| config.recording_sample_rate)
+            .filter(|rate| *rate > 0);
         let resolve_path = |rel: &str| -> String {
             match base_dir {
                 Some(dir) => {
@@ -387,6 +459,51 @@ impl RoomEqMeasurementsFile {
             .into_iter()
             .enumerate()
             .filter_map(|(idx, (channel_name, speaker_config))| {
+                if let autoeq::SpeakerConfig::Group(group) = speaker_config {
+                    let driver_measurement_sets = group
+                        .measurements
+                        .into_iter()
+                        .enumerate()
+                        .map(|(driver_index, source)| {
+                            let name = match &source {
+                                autoeq::MeasurementSource::Single(single) => {
+                                    single.speaker_name.clone()
+                                }
+                                autoeq::MeasurementSource::Multiple(multiple) => {
+                                    multiple.speaker_name.clone()
+                                }
+                                _ => None,
+                            };
+                            let mut config = autoeq::RoomConfig {
+                                recording_config: recording_config.clone(),
+                                ..Default::default()
+                            };
+                            config.speakers.insert(
+                                format!("driver_{}", driver_index + 1),
+                                autoeq::SpeakerConfig::Single(source),
+                            );
+                            let driver = Self::channels_from_room_config(config, base_dir)
+                                .into_iter()
+                                .next()?;
+                            Some(super::types::DriverMeasurementSet {
+                                name,
+                                measurement: driver.measurement,
+                                multi_mic_measurements: driver.multi_mic_measurements,
+                                provenance: driver.provenance,
+                            })
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    let measurement = driver_measurement_sets.first()?.measurement.clone();
+                    return Some(ChannelMeasurement {
+                        driver_measurement_sets,
+                        provenance: Vec::new(),
+                        channel_name,
+                        measurement,
+                        is_group: true,
+                        group_drivers: Vec::new(),
+                        multi_mic_measurements: Vec::new(),
+                    });
+                }
                 // Collect every MeasurementRef from the speaker config so
                 // multi-position recordings (saved as
                 // MeasurementSource::Multiple) round-trip with all takes
@@ -399,7 +516,7 @@ impl RoomEqMeasurementsFile {
                         autoeq::MeasurementSource::InMemory(_)
                         | autoeq::MeasurementSource::InMemoryMultiple(_) => Vec::new(),
                     },
-                    _ => Vec::new(), // Groups not yet supported
+                    _ => Vec::new(),
                 };
 
                 let mut iter = measurement_refs.into_iter();
@@ -409,11 +526,22 @@ impl RoomEqMeasurementsFile {
                 let (frequencies, magnitude_db, phase_deg, wav_path, csv_path) =
                     Self::load_measurement_ref(&primary_ref, &resolve_path);
 
+                let mut provenance = vec![super::types::MeasurementProvenance {
+                    name: primary_ref.name().map(str::to_owned),
+                    ..Default::default()
+                }];
                 let multi_mic_measurements = iter
                     .map(|extra_ref| {
                         let (frequencies, magnitude_db, phase_deg, wav_path, csv_path) =
                             Self::load_measurement_ref(&extra_ref, &resolve_path);
+                        if !frequencies.is_empty() {
+                            provenance.push(super::types::MeasurementProvenance {
+                                name: extra_ref.name().map(str::to_owned),
+                                ..Default::default()
+                            });
+                        }
                         RecordingResult {
+                            sample_rate_hz,
                             channel: idx,
                             wav_path,
                             csv_path,
@@ -436,8 +564,11 @@ impl RoomEqMeasurementsFile {
                     .collect();
 
                 Some(ChannelMeasurement {
+                    driver_measurement_sets: Vec::new(),
+                    provenance,
                     channel_name,
                     measurement: RecordingResult {
+                        sample_rate_hz,
                         channel: idx,
                         wav_path,
                         csv_path,

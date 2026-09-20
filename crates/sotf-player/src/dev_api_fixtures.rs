@@ -2,6 +2,32 @@
 
 use crate::{Album, Track};
 
+/// Source metadata for exercising the production file-import path in UI QA.
+pub fn write_headphone_provenance_fixture(path: &std::path::Path) -> Result<(), String> {
+    let curve = autoeq::read::read_curve_from_csv(&path.to_path_buf())
+        .map_err(|error| error.to_string())?;
+    let mut record = autoeq_measurements::MeasurementRecord::from_source_path(
+        curve,
+        autoeq_measurements::MeasurementOrigin::Csv,
+        path,
+    )
+    .map_err(|error| error.to_string())?;
+    for (key, value) in [
+        ("model", "Reference headphone, revision B"),
+        ("rig", "IEC 60318-4 fixture"),
+        ("sample", "Unit 2, left ear"),
+        ("compensation", "Uncompensated"),
+    ] {
+        record
+            .provenance
+            .acquisition
+            .extensions
+            .insert(key.into(), value.into());
+    }
+    autoeq_measurements::write_sidecar(path, &record).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 /// Returns a deterministic album fixture used by dev API endpoints.
 pub fn metadata_fixture_album() -> Album {
     let track_path = std::env::temp_dir()
@@ -38,6 +64,9 @@ pub fn home_fixture_albums() -> Vec<Album> {
             album.is_favorite = index % 2 == 0;
             album.play_count = (16 - index) as usize;
             album.tracks[0].title = Some(format!("Home Fixture Track {:02}", index + 1));
+            album.tracks[0].path = album.tracks[0]
+                .path
+                .with_file_name(format!("home-fixture-{}.flac", index + 1));
             album.tracks[0].artist = Some(format!("Fixture Artist {}", index % 3 + 1));
             album
         })

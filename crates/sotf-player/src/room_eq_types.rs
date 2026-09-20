@@ -33,6 +33,7 @@ mod multi_measurement_ui_config;
 mod multi_seat_config;
 mod multi_speaker_mode;
 mod phase_alignment_config;
+mod physical;
 mod pre_ringing_config;
 mod room_eq_algorithm;
 mod room_eq_crossover_type;

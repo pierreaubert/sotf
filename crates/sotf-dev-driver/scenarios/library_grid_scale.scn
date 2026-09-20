@@ -1,0 +1,17 @@
+focus library
+wait_until library.album_count > 0 timeout=10s
+wait_idle 2s
+click library.tab.search
+click library.search_input
+type "Demo"
+wait_until library.filtered_album_count > 0 timeout=2s
+wait_idle 2s
+screenshot library-grid-before-open
+scroll library.tab.search -2000
+wait_idle 2s
+hover library.album.0
+wait_idle 2s
+screenshot library-grid-scrolled
+assert_in_viewport library.album.0
+click library.album.0
+wait_until library.detail.open == true timeout=2s

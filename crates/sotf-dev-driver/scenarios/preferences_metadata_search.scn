@@ -1,0 +1,36 @@
+focus Settings
+resize 600 800
+wait_idle 1s
+click preferences.search
+type "MusicBrainz"
+wait_idle 1s
+click preferences.result.MetadataSearch
+wait_until settings.metadata_cached_enabled != null timeout=5s
+wait_until settings.metadata_busy == false timeout=5s
+wait_idle 1s
+assert settings.active_tab == "Metadata"
+assert preferences.setting == "MetadataSearch"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.MetadataSearch
+assert settings.metadata_cached_enabled == true
+assert settings.metadata_search_enabled == true
+key enter
+wait_until settings.metadata_busy == false timeout=5s
+wait_idle 1s
+assert settings.metadata_cached_enabled == false
+assert settings.metadata_search_enabled == false
+assert settings.metadata_error == null
+assert_accessible button Enable metadata search
+assert_visible settings.metadata.auth-status
+screenshot preferences-metadata-disabled
+key space
+wait_until settings.metadata_busy == false timeout=5s
+wait_idle 1s
+assert settings.metadata_cached_enabled == true
+assert settings.metadata_search_enabled == true
+assert settings.metadata_error == null
+assert_accessible button Disable metadata search
+assert_visible settings.metadata.auth-status
+assert_in_viewport preferences.control.MetadataSearch
+screenshot preferences-metadata-enabled
+assert playback.is_playing == false

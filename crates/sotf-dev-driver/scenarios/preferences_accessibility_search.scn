@@ -1,0 +1,38 @@
+focus Settings
+resize 600 800
+wait_idle 2s
+click preferences.search
+type "reduce motion"
+wait_idle 1s
+click preferences.result.ReduceMotion
+wait_idle 2s
+assert settings.active_tab == "Theme"
+assert preferences.setting == "ReduceMotion"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.ReduceMotion
+key space
+wait_idle 1s
+assert settings.reduce_motion == false
+key space
+wait_idle 1s
+assert settings.reduce_motion == true
+assert_in_viewport settings.appearance.palette.tritanopia
+click settings.appearance.palette.tritanopia
+wait_idle 1s
+assert settings.accessibility_palette == "Tritanopia"
+screenshot preferences-motion-search
+click preferences.search
+type "language"
+wait_idle 1s
+click preferences.result.Language
+wait_idle 2s
+assert settings.active_tab == "Language"
+assert preferences.setting == "Language"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.Language
+key tab
+key enter
+wait_idle 1s
+assert settings.language == "French"
+screenshot preferences-language-search
+assert playback.is_playing == false

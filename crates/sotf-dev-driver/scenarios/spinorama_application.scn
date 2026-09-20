@@ -1,0 +1,43 @@
+# Hermetic source selection still goes through the visible refresh and speaker
+# controls. Selecting a speaker causes the normal version/measurement chain.
+assert screen.focused == "Spinorama"
+wait_idle 2s
+assert_visible spinorama.refresh
+assert_accessible button Refresh
+click spinorama.refresh
+wait_until spinorama.loading == false timeout=5s
+assert spinorama.catalog_count == 2
+assert spinorama.suggestion_count == 2
+assert_visible spinorama.select.Fixture Speaker
+screenshot spinorama-discovery-catalog
+scroll_into_view spinorama.content spinorama.select.Fixture Speaker
+assert_in_viewport spinorama.select.Fixture Speaker
+click spinorama.select.Fixture Speaker
+wait_until spinorama.loading == false timeout=5s
+assert spinorama.selected_speaker == "Fixture Speaker"
+assert spinorama.selected_version == "fixture-v1"
+assert spinorama.selected_measurement == "CEA2034"
+assert spinorama.measurement_count == 2
+screenshot spinorama-discovery-selected
+assert_visible spinorama.next
+click spinorama.next
+wait_idle 2s
+assert spinorama.step == "Configure"
+scroll_into_view spinorama.content spinorama.optimize_start
+assert_in_viewport spinorama.optimize_start
+screenshot spinorama-configure
+click spinorama.optimize_start
+wait_until spinorama.optimization_status == "Completed" timeout=120s
+assert spinorama.step == "Review"
+scroll_into_view spinorama.content spinorama.review.identity
+assert_in_viewport spinorama.review.identity
+screenshot spinorama-review-identity
+click spinorama.next
+wait_until spinorama.step == "Export" timeout=2s
+assert spinorama.application_status == "NotApplied"
+scroll_into_view spinorama.content spinorama.apply
+click spinorama.apply
+wait_until spinorama.application_status == "Applied" timeout=5s
+scroll_into_view spinorama.content correction.application_status
+screenshot spinorama-application-accepted
+assert playback.is_playing == false

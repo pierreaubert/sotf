@@ -288,7 +288,7 @@ impl PlayerView {
                         .min_w_0()
                         .min_h_0()
                         .overflow_hidden()
-                        .child(self.render_rack_for_mode(rack_mode, cx)),
+                        .child(self.render_rack_for_mode(rack_mode, rack_width, cx)),
                 )
             })
     }
@@ -315,6 +315,9 @@ impl PlayerView {
         let rack_visible = rack_node.is_some_and(|node| node.visible);
         let library_height = library_node.map(|node| node.height).unwrap_or(0.0);
         let rack_height = rack_node.map(|node| node.height).unwrap_or(0.0);
+        let rack_width = rack_node
+            .filter(|node| node.visible)
+            .map_or(0.0, |node| node.width);
         let queue_width = solved
             .find("queue")
             .filter(|node| node.visible)
@@ -553,19 +556,26 @@ impl PlayerView {
                         .min_w_0()
                         .min_h_0()
                         .overflow_hidden()
-                        .child(self.render_rack_for_mode(rack_mode, cx)),
+                        .child(self.render_rack_for_mode(rack_mode, rack_width, cx)),
                 )
             })
     }
 
-    /// Render rack panel based on display mode
+    /// Render rack panel based on display mode.
+    ///
+    /// `solved_rack_width` is the solver's rack slot width, threaded toward
+    /// plugin editors so they size from actual bounds instead of
+    /// reconstructing them from window width and raw ratios (ui.md Phase 1 P0).
     fn render_rack_for_mode(
         &self,
         mode: crate::app::RackDisplayMode,
+        solved_rack_width: f32,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         match mode {
-            crate::app::RackDisplayMode::Full => self.render_plugins_screen(cx).into_any_element(),
+            crate::app::RackDisplayMode::Full => self
+                .render_plugins_screen(Some(solved_rack_width), cx)
+                .into_any_element(),
             crate::app::RackDisplayMode::Mini => self.render_mini_rack(cx).into_any_element(),
             crate::app::RackDisplayMode::Collapsed => div().into_any_element(),
         }

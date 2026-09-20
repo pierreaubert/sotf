@@ -1,0 +1,27 @@
+action HeadphoneSetFileFixture {"mode":"valid"}
+wait_until headphone.loading == false timeout=5s
+assert screen.focused == "HeadphoneEq"
+assert headphone.file_preview_point_count == 3
+resize 600 800
+wait_idle 1s
+assert_in_viewport headphone.content
+scroll headphone.content -5000
+wait_idle 1s
+click headphone.measurement-identity
+assert headphone.identity_expanded == true
+scroll headphone.content -5000
+wait_idle 1s
+screenshot headphone-file-identity
+action HeadphoneSetFileFixture {"mode":"invalid"}
+wait_until headphone.loading == false timeout=5s
+assert toast.type == "Error"
+assert headphone.file_preview_point_count == 3
+assert playback.is_playing == false
+screenshot headphone-file-invalid-preserves-preview
+action HeadphoneSetFileFixture {"mode":"replacement"}
+wait_until headphone.loading == false timeout=5s
+assert headphone.file_preview_point_count == 2
+assert toast.type == "Success"
+scroll headphone.content -5000
+wait_idle 1s
+screenshot headphone-file-replacement

@@ -189,6 +189,19 @@ pub fn plugin_short_name(
     }
 }
 
+/// Shared enable/bypass affordance copy (ui.md Phase 2).
+///
+/// The rack toggle and the shell toggle render at different sizes, but they
+/// must agree on state meaning, tooltip, and accessible name.
+pub fn bypass_label(enabled: bool, text: PluginCommonTranslations) -> &'static str {
+    text.bypass_labels()[usize::from(!enabled)]
+}
+
+/// Shared enable/bypass tooltip and accessible name (ui.md Phase 2).
+pub fn bypass_tooltip(enabled: bool, text: PluginCommonTranslations) -> &'static str {
+    text.bypass_labels()[2 + usize::from(!enabled)]
+}
+
 /// Wrap plugin content in a standardized shell with accent strip, header, and elevated panel.
 ///
 /// ```text
@@ -215,10 +228,17 @@ pub fn render_plugin_shell(
 ) -> impl IntoElement {
     let accent = plugin_accent_color(plugin_type, theme);
     let icon = plugin_icon(plugin_type, is_input_monitor, is_output_monitor);
-    let name = plugin_type.name().to_uppercase();
+    let name = plugin_type.name();
     let description = super::ui_rack::plugin_description(plugin_type, text);
+    let description_theme = theme.clone();
+    let tooltip_theme = theme.clone();
+    #[cfg(feature = "dev-api")]
+    let content = {
+        use crate::app::dev_api::DevTrackExt;
+        content.dev_track(format!("plugin.content.{plugin_idx}"))
+    };
 
-    div()
+    let shell = div()
         .w_full()
         .min_w_0()
         .flex()
@@ -227,7 +247,7 @@ pub fn render_plugin_shell(
         // intrinsic content height so long custom editors contribute a real
         // scroll extent instead of shrinking while descendants overflow.
         .flex_shrink_0()
-        .rounded(d.r_xl)
+        .rounded(d.r_md)
         .bg(theme.background_secondary)
         .border_1()
         .border_color(theme.border)
@@ -241,6 +261,7 @@ pub fn render_plugin_shell(
                 .w_full()
                 .min_w_0()
                 .flex()
+                .flex_wrap()
                 .items_center()
                 .justify_between()
                 .px(d.card)
@@ -257,83 +278,82 @@ pub fn render_plugin_shell(
                         .gap(d.gap)
                         .child(Icon::new(icon).size(IconSize::Sm).color(accent))
                         .child(
-                            div()
-                                .flex()
-                                .flex_1()
-                                .flex_col()
-                                .min_w_0()
-                                .child(
-                                    div()
-                                        .text_size(d.text_sm)
-                                        .font_weight(FontWeight::BOLD)
-                                        .text_color(theme.text_primary)
-                                        .overflow_hidden()
-                                        .text_ellipsis()
-                                        .whitespace_nowrap()
-                                        .child(name),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(d.text_xs)
-                                        .text_color(theme.text_muted)
-                                        .child(description),
-                                ),
+                            div().flex().flex_1().flex_col().min_w_0().child(
+                                div()
+                                    .id(("shell-plugin-name", plugin_idx))
+                                    .tooltip(move |_, cx| {
+                                        crate::components::themed_tooltip(
+                                            description,
+                                            &description_theme,
+                                            cx,
+                                        )
+                                    })
+                                    .text_size(d.text_sm)
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(theme.text_primary)
+                                    .overflow_hidden()
+                                    .text_ellipsis()
+                                    .whitespace_nowrap()
+                                    .child(name),
+                            ),
                         ),
                 )
-                // Right: bypass toggle
+                // Right: bypass toggle (shared affordance copy with the
+                // rack toggle: same label, tooltip, and accessible name).
                 .children(on_bypass.map(|cb| {
-                    let bypass = Button::new(
-                        ("shell-bypass", plugin_idx),
-                        if enabled { "Active" } else { "Bypassed" },
-                    )
-                    .variant(if enabled {
-                        ButtonVariant::Primary
-                    } else {
-                        ButtonVariant::Secondary
-                    })
-                    .size(ButtonSize::Xs)
-                    .theme(theme.to_button_theme())
-                    .aria_label(if enabled {
-                        "Bypass plugin"
-                    } else {
-                        "Activate plugin"
-                    })
-                    .on_click_event(move |_event, window, cx| cb(!enabled, window, cx));
+                    let bypass_tooltip_text = bypass_tooltip(enabled, text);
+                    let bypass =
+                        Button::new(("shell-bypass", plugin_idx), bypass_label(enabled, text))
+                            .variant(if enabled {
+                                ButtonVariant::Primary
+                            } else {
+                                ButtonVariant::Secondary
+                            })
+                            .size(ButtonSize::Xs)
+                            .theme(theme.to_button_theme())
+                            .aria_label(bypass_tooltip_text)
+                            .on_click_event(move |_event, window, cx| cb(!enabled, window, cx));
+                    #[cfg(feature = "dev-api")]
+                    let bypass = {
+                        use crate::app::dev_api::{DevElementState, DevTrackExt};
+                        bypass.dev_track_with_state(
+                            format!("plugin.shell.{plugin_idx}.bypass"),
+                            DevElementState::default().selected(enabled),
+                        )
+                    };
 
                     div()
+                        .id(("shell-bypass-tooltip", plugin_idx))
                         .flex_none()
                         .flex()
                         .flex_col()
                         .items_end()
                         .gap(d.grid)
+                        .tooltip(move |_window, cx| {
+                            crate::components::themed_tooltip(
+                                bypass_tooltip_text,
+                                &tooltip_theme,
+                                cx,
+                            )
+                        })
                         .child(bypass)
                 })),
         )
-        // Keep interaction guidance in a dedicated, scannable row instead of
-        // attaching it to the bypass control. This remains visible for both
-        // native and custom plugin views and leaves the header for identity
-        // and primary actions.
+        // The editor owns control help; an ancestor tooltip would obscure
+        // parameter labels and compete with exact-entry interactions.
         .child(
             div()
-                .flex()
-                .items_center()
-                .gap(d.gap)
-                .px(d.card)
-                .py(d.half_grid)
-                .bg(theme.background_secondary)
-                .border_y_1()
-                .border_color(theme.border)
-                .text_size(d.text_xs)
-                .text_color(theme.text_muted)
-                .child(
-                    div()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.text_secondary)
-                        .child(text.label("EDIT HINTS")),
-                )
-                .child(text.reset_hint),
-        )
-        // Content area with padding
-        .child(div().w_full().min_w_0().p(d.card).child(content))
+                .id(("shell-content-hint", plugin_idx))
+                .w_full()
+                .min_w_0()
+                .p(d.card)
+                .child(content),
+        );
+    #[cfg(feature = "dev-api")]
+    let shell = {
+        use crate::app::dev_api::DevTrackExt;
+        shell.dev_track(format!("plugin.shell.{plugin_idx}"))
+    };
+    shell
 }
 use crate::app::i18n::PluginCommonTranslations;

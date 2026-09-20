@@ -16,6 +16,8 @@ use std::ops::{Deref, DerefMut};
 pub struct RoomEqState {
     /// Shared, UI-agnostic Room EQ domain state.
     pub model: RoomEqScreenModel,
+    pub result_inputs: Option<serde_json::Value>,
+    pub delivery: sotf_audio_player::ui_models::correction_delivery::CorrectionDelivery,
 
     // === UI State ===
     pub dropdowns: RoomEqDropdowns,
@@ -23,6 +25,7 @@ pub struct RoomEqState {
     pub review_smoothing_octaves: f64,
     /// Selected channel index for review (0-based)
     pub review_selected_channel: usize,
+    pub review_sources_open: bool,
     /// Interactive chart state for review graph (zoom/pan) - initialized lazily
     pub review_chart_state: Option<InteractiveChartStateWrapper>,
     /// Whether to auto-scale Y axis for review graph.
@@ -37,6 +40,7 @@ pub struct RoomEqState {
     /// When false (default), the Configure step shows only basic settings.
     pub show_advanced_config: bool,
     /// Detail level for the configuration form (Simple / Intermediate / Expert)
+    pub autoeq_stage: crate::components::autoeq::AutoEqStage,
     pub detail_level: sotf_audio_player::autoeq::DetailLevel,
     /// Currently selected preset id
     pub selected_preset: String,
@@ -48,15 +52,19 @@ impl Default for RoomEqState {
     fn default() -> Self {
         Self {
             model: RoomEqScreenModel::default(),
+            result_inputs: None,
+            delivery: Default::default(),
             dropdowns: RoomEqDropdowns::default(),
             review_smoothing_octaves: 1.0 / 6.0, // Match display-roomeq.py default
             review_selected_channel: 0,
+            review_sources_open: false,
             review_chart_state: None,
             review_y_axis_auto: false,
             review_graph_settings: RoomEqReviewGraphSettingsSet::default(),
             progress_chart_state: None,
             custom_target_curve: CustomTargetCurve::new_flat(),
             show_advanced_config: false,
+            autoeq_stage: Default::default(),
             detail_level: sotf_audio_player::autoeq::DetailLevel::Simple,
             selected_preset: "full-range".to_string(),
             easy_layout: RoomEqEasyLayout::Stereo20,
@@ -79,11 +87,35 @@ impl DerefMut for RoomEqState {
 }
 
 impl RoomEqState {
+    pub fn optimization_input_snapshot(&self) -> serde_json::Value {
+        // RoomConfig contains non-serializable InMemory measurement variants.
+        // Snapshot their source records separately, retaining every position and
+        // driver, while serializing the remaining effective optimizer settings.
+        let mut config = self.model.to_room_config();
+        config.speakers.clear();
+        serde_json::json!({
+            "config": config,
+            "measurements": self.model.channel_measurements,
+            "speakers": self.model.speaker_configs,
+            "probe_arrivals": self.model.delay_detection.probe_arrival_map(),
+            "preset": format!("{:?}", self.model.simple_preset),
+            "mode": format!("{:?}", self.model.wizard_mode),
+            "layout": format!("{:?}", self.easy_layout),
+        })
+    }
+
+    pub fn result_is_current(&self) -> bool {
+        self.result_inputs.as_ref() == Some(&self.optimization_input_snapshot())
+    }
+
     /// Load Room EQ domain state from the app-specific RecordingState.
     ///
     /// This is a thin adapter over [`RoomEqScreenModel::load_from_recording`] that
     /// converts the GPUI recording wrapper into the shared player type.
-    pub fn load_from_recording(&mut self, recording_state: &crate::app::types::RecordingState) {
+    pub fn load_from_recording(
+        &mut self,
+        recording_state: &crate::app::types::RecordingState,
+    ) -> Result<(), String> {
         let player_state = sotf_audio_player::recording_types::RecordingState {
             playback_config: recording_state.playback_config.clone(),
             recording_config: recording_state.recording_config.clone(),
@@ -95,7 +127,12 @@ impl RoomEqState {
             signal_duration_secs: recording_state.signal_duration_secs,
             recording_directory: recording_state.recording_directory.clone(),
         };
-        self.model.load_from_recording(&player_state);
+        if let Some(imported) = &recording_state.imported_session {
+            self.model
+                .load_from_imported_recording(&player_state, imported)?;
+        } else {
+            self.model.load_from_recording(&player_state);
+        }
 
         let channel_names = self
             .model
@@ -110,6 +147,7 @@ impl RoomEqState {
             self.easy_layout = layout;
             layout.configure_preset_defaults(&mut self.model.simple_preset);
         }
+        Ok(())
     }
 
     /// Normalize an SPL curve so its average over 1–2 kHz is 0 dB.

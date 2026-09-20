@@ -29,6 +29,7 @@
 
         // Sample rate + Num filters (side by side)
         let mut sr_input = NumberInput::new((base_id.clone(), "fd-sample-rate"))
+            .scroll_requires_alt(true)
             .value(config.eq_design.sample_rate as f64)
             .min(ParamLimits::SAMPLE_RATE.min)
             .max(ParamLimits::SAMPLE_RATE.max)
@@ -45,6 +46,7 @@
         }
 
         let mut nf_input = NumberInput::new((base_id.clone(), "fd-num-filters"))
+            .scroll_requires_alt(true)
             .value(config.eq_design.num_filters as f64)
             .min(ParamLimits::NUM_FILTERS.min)
             .max(ParamLimits::NUM_FILTERS.max)
@@ -60,10 +62,15 @@
             nf_input = nf_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
         }
 
+        #[cfg(feature = "dev-api")]
+        let nf_input = {
+            use crate::app::dev_api::DevTrackExt;
+            nf_input.dev_track("autoeq.filter-count")
+        };
         section = section.child(
             HStack::new()
                 .spacing(StackSpacing::Md)
-                .child(sr_input)
+                .children((!hide_sample_rate).then_some(sr_input))
                 .child(nf_input),
         );
 
@@ -95,6 +102,7 @@
 
         // Frequency range
         let mut min_freq_input = NumberInput::new((base_id.clone(), "fd-min-freq"))
+            .scroll_requires_alt(true)
             .value(config.eq_design.min_freq)
             .min(ParamLimits::FREQUENCY.min)
             .max(ParamLimits::FREQUENCY.max)
@@ -111,6 +119,7 @@
         }
 
         let mut max_freq_input = NumberInput::new((base_id.clone(), "fd-max-freq"))
+            .scroll_requires_alt(true)
             .value(config.eq_design.max_freq)
             .min(ParamLimits::FREQUENCY.min)
             .max(ParamLimits::FREQUENCY.max)
@@ -135,6 +144,7 @@
 
         // Q range
         let mut min_q_input = NumberInput::new((base_id.clone(), "fd-min-q"))
+            .scroll_requires_alt(true)
             .value(config.eq_design.min_q)
             .min(ParamLimits::Q.min)
             .max(ParamLimits::Q.max)
@@ -151,6 +161,7 @@
         }
 
         let mut max_q_input = NumberInput::new((base_id.clone(), "fd-max-q"))
+            .scroll_requires_alt(true)
             .value(config.eq_design.max_q)
             .min(ParamLimits::Q.min)
             .max(ParamLimits::Q.max)
@@ -175,6 +186,7 @@
 
         // dB range
         let mut min_db_input = NumberInput::new((base_id.clone(), "fd-min-db"))
+            .scroll_requires_alt(true)
             .value(config.eq_design.min_db)
             .min(ParamLimits::DB.min)
             .max(ParamLimits::DB.max)
@@ -191,6 +203,7 @@
         }
 
         let mut max_db_input = NumberInput::new((base_id.clone(), "fd-max-db"))
+            .scroll_requires_alt(true)
             .value(config.eq_design.max_db)
             .min(ParamLimits::DB.min)
             .max(ParamLimits::DB.max)
@@ -215,6 +228,7 @@
 
         // Spacing weight + min spacing
         let mut sw_input = NumberInput::new((base_id.clone(), "fd-spacing-weight"))
+            .scroll_requires_alt(true)
             .value(config.eq_design.spacing_weight)
             .min(ParamLimits::SPACING_WEIGHT.min)
             .max(ParamLimits::SPACING_WEIGHT.max)
@@ -231,6 +245,7 @@
         }
 
         let mut ms_input = NumberInput::new((base_id.clone(), "fd-min-spacing"))
+            .scroll_requires_alt(true)
             .value(config.eq_design.min_spacing_oct)
             .min(ParamLimits::MIN_SPACING_OCT.min)
             .max(ParamLimits::MIN_SPACING_OCT.max)
@@ -262,12 +277,13 @@
         );
 
         let mut taps_input = NumberInput::new((base_id.clone(), "fd-fir-taps"))
+            .scroll_requires_alt(true)
             .value(config.eq_design.fir_taps as f64)
             .min(ParamLimits::FIR_TAPS.min)
             .max(ParamLimits::FIR_TAPS.max)
             .step(ParamLimits::FIR_TAPS.step)
             .decimals(0)
-            .label(format!("Taps (latency: {fir_latency_ms:.1} ms)"))
+            .label(format!("{} ({fir_duration_ms:.1} ms)", translations.autoeq_form.blocks.fir_taps))
             .size(NumberInputSize::Sm)
             .disabled(disabled)
             .theme(theme.number_input_theme.clone());
@@ -314,6 +330,7 @@
         );
 
         let mut xo_freq_input = NumberInput::new((base_id.clone(), "fd-xo-freq"))
+            .scroll_requires_alt(true)
             .value(config.v2.mixed_crossover_freq)
             .min(ParamLimits::MIXED_CROSSOVER_FREQ.min)
             .max(ParamLimits::MIXED_CROSSOVER_FREQ.max)
@@ -438,6 +455,7 @@
 
                 if !config.room_correction.excursion_auto_detect_f3 {
                     let mut f3_input = NumberInput::new((base_id.clone(), "fd-excursion-manual-f3"))
+                        .scroll_requires_alt(true)
                         .value(config.room_correction.excursion_manual_f3)
                         .min(10.0)
                         .max(500.0)
@@ -478,6 +496,7 @@
                 }
 
                 let mut order_input = NumberInput::new((base_id.clone(), "fd-excursion-order"))
+                    .scroll_requires_alt(true)
                     .value(config.room_correction.excursion_filter_order as f64)
                     .min(2.0)
                     .max(8.0)
@@ -501,6 +520,7 @@
                 );
 
                 let mut margin_input = NumberInput::new((base_id.clone(), "fd-excursion-margin"))
+                    .scroll_requires_alt(true)
                     .value(config.room_correction.excursion_margin_octaves)
                     .min(0.0)
                     .max(1.0)
@@ -545,6 +565,7 @@
 
             if config.room_correction.use_schroeder_split {
                 let mut s_freq_input = NumberInput::new((base_id.clone(), "fd-schroeder-freq"))
+                    .scroll_requires_alt(true)
                     .value(config.room_correction.schroeder_freq)
                     .min(ParamLimits::SCHROEDER_FREQ.min)
                     .max(ParamLimits::SCHROEDER_FREQ.max)
@@ -563,6 +584,7 @@
                 section = section.child(s_freq_input);
 
                 let mut low_q_input = NumberInput::new((base_id.clone(), "fd-schroeder-low-q"))
+                    .scroll_requires_alt(true)
                     .value(config.room_correction.schroeder_low_max_q)
                     .min(1.0)
                     .max(20.0)
@@ -579,6 +601,7 @@
                 }
 
                 let mut high_q_input = NumberInput::new((base_id.clone(), "fd-schroeder-high-q"))
+                    .scroll_requires_alt(true)
                     .value(config.room_correction.schroeder_high_max_q)
                     .min(0.5)
                     .max(5.0)

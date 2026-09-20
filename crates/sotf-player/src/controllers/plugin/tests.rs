@@ -5,6 +5,107 @@ use crate::{PluginSettings, PluginType};
 
 use crate::plugin_graph::NodePosition;
 
+#[test]
+fn eq_order_edit_targets_one_channel_and_rejects_svf() {
+    let (mut ctrl, id) = make_controller_with_eq();
+    if let PluginSettings::EQ {
+        filters,
+        channel_filters,
+        per_channel_mode,
+        ..
+    } = &mut ctrl.graph.nodes.get_mut(&id).unwrap().plugin.settings
+    {
+        *channel_filters = Some(vec![filters.clone(), filters.clone()]);
+        *per_channel_mode = true;
+    }
+    let effect = ctrl
+        .set_eq_filter_order_for_target_by_node_id(id, EqEditTarget::Channel(1), 0, 8)
+        .unwrap();
+    assert!(matches!(effect, PluginUpdateEffect::Structural));
+    if let PluginSettings::EQ {
+        filters,
+        channel_filters,
+        topology,
+        ..
+    } = &mut ctrl.graph.nodes.get_mut(&id).unwrap().plugin.settings
+    {
+        let channels = channel_filters.as_ref().unwrap();
+        assert_eq!(filters[0].order, 2);
+        assert_eq!(channels[0][0].order, 2);
+        assert_eq!(channels[1][0].order, 8);
+        *topology = 1.0;
+    }
+    assert!(
+        ctrl.set_eq_filter_order_for_target_by_node_id(id, EqEditTarget::Global, 0, 4)
+            .is_err()
+    );
+    assert!(
+        ctrl.set_eq_filter_order_for_target_by_node_id(id, EqEditTarget::Global, 0, 3)
+            .is_err()
+    );
+    assert!(
+        ctrl.set_eq_filter_order_for_target_by_node_id(id, EqEditTarget::Channel(9), 0, 2)
+            .is_err()
+    );
+}
+
+#[test]
+fn high_order_band_rejects_incompatible_topology_without_losing_order() {
+    use sotf_audio::plugins::EqFilterTopology;
+    let (mut ctrl, id) = make_controller_with_eq();
+    ctrl.set_eq_filter_order_for_target_by_node_id(id, EqEditTarget::Global, 0, 8)
+        .unwrap();
+    for topology in [
+        EqFilterTopology::WarpedBiquad,
+        EqFilterTopology::KautzFilter,
+    ] {
+        assert!(matches!(
+            ctrl.set_eq_filter_topology_for_target_by_node_id(
+                id,
+                EqEditTarget::Global,
+                0,
+                topology,
+            ),
+            PluginUpdateEffect::None
+        ));
+    }
+    assert!(matches!(
+        ctrl.cycle_eq_filter_topology_for_target_by_node_id(id, EqEditTarget::Global, 0,),
+        PluginUpdateEffect::None
+    ));
+    let PluginSettings::EQ { filters, .. } = &ctrl.graph.nodes[&id].plugin.settings else {
+        panic!("expected EQ")
+    };
+    assert_eq!(filters[0].order, 8);
+    assert!(matches!(filters[0].topology, EqFilterTopology::Biquad));
+}
+
+#[test]
+fn global_svf_rejects_high_order_without_mutation() {
+    use super::plugin_controller::{eq_supports_svf, set_eq_global_topology};
+    let (mut ctrl, id) = make_controller_with_eq();
+    ctrl.set_eq_filter_order_for_target_by_node_id(id, EqEditTarget::Global, 0, 4)
+        .unwrap();
+    let settings = &mut ctrl.graph.nodes.get_mut(&id).unwrap().plugin.settings;
+    assert!(!eq_supports_svf(settings));
+    assert!(set_eq_global_topology(settings, 1.0).is_err());
+    assert!(set_eq_global_topology(settings, f64::NAN).is_err());
+    let PluginSettings::EQ {
+        filters, topology, ..
+    } = settings
+    else {
+        panic!("expected EQ")
+    };
+    assert_eq!(*topology, 0.0);
+    assert_eq!(filters[0].order, 4);
+    filters[0].order = 2;
+    assert!(eq_supports_svf(settings));
+    assert!(matches!(
+        set_eq_global_topology(settings, 1.0).unwrap(),
+        PluginUpdateEffect::Structural
+    ));
+}
+
 /// Build a controller with a single non-permanent EQ plugin and return
 /// its graph node id. Mirrors how the room-EQ-as-graph apply path leaves
 /// state when the user double-clicks a plugin in the graph view.
@@ -579,6 +680,28 @@ mod plugin_query_tests {
     }
 
     #[test]
+    fn plugin_query_enabled_tracks_bypass() {
+        let mut graph = PluginGraph::with_default_rack();
+        plugin_action(
+            &mut graph,
+            "PluginAdd",
+            Some(json!({"plugin_type":"Matrix"})),
+        )
+        .unwrap();
+        let path = "plugins.plugin.2.enabled";
+        assert_eq!(plugin_query(&graph, path).unwrap(), json!(true));
+        graph.toggle_plugin_by_index(2).unwrap();
+        assert_eq!(plugin_query(&graph, path).unwrap(), json!(false));
+        assert_eq!(
+            plugin_query(&graph, "plugins.list").unwrap()[2]["enabled"],
+            plugin_query(&graph, path).unwrap()
+        );
+        graph.toggle_plugin_by_index(2).unwrap();
+        assert_eq!(plugin_query(&graph, path).unwrap(), json!(true));
+        assert!(plugin_query(&graph, "plugins.plugin.99.enabled").is_err());
+    }
+
+    #[test]
     fn plugin_query_plugin_param_count() {
         let graph = PluginGraph::with_default_rack();
         let value = plugin_query(&graph, "plugins.plugin.1.param_count").unwrap();
@@ -654,5 +777,164 @@ mod plugin_query_tests {
         assert!(plugin_query(&graph, "plugins.plugin.99.type").is_err());
         assert!(plugin_query(&graph, "plugins.plugin.1.param.99.name").is_err());
         assert!(plugin_query(&graph, "plugins.plugin.1.param.0.xyz").is_err());
+    }
+}
+
+#[test]
+fn multiband_count_reset_preserves_band_overrides() {
+    for kind in [
+        PluginType::MultibandCompressor,
+        PluginType::MultibandExpander,
+    ] {
+        for by_node in [false, true] {
+            let mut ctrl = PluginController::new();
+            let id = ctrl.graph.add_user_plugin(&kind).unwrap();
+            ctrl.set_plugin_param_by_node_id(id, 117, 0.0);
+            ctrl.set_plugin_param_by_node_id(id, 106, -33.0);
+            ctrl.set_plugin_param_by_node_id(id, 0, 5.0);
+            if by_node {
+                ctrl.reset_plugin_param_by_node_id(id, 0);
+            } else {
+                let index = ctrl.graph.linear_index_of_node(id).unwrap();
+                ctrl.reset_plugin_param(index, 0);
+            }
+            let settings = &ctrl.graph.nodes.get(&id).unwrap().plugin.settings;
+            match settings {
+                PluginSettings::MultibandCompressor {
+                    num_bands, bands, ..
+                } => {
+                    assert_eq!(*num_bands, 3);
+                    assert_eq!(bands.len(), 3);
+                    assert!(!bands[0].active);
+                    assert_eq!(bands[0].threshold_db, Some(-33.0));
+                }
+                PluginSettings::MultibandExpander {
+                    num_bands, bands, ..
+                } => {
+                    assert_eq!(*num_bands, 3);
+                    assert_eq!(bands.len(), 3);
+                    assert!(!bands[0].active);
+                    assert_eq!(bands[0].threshold_db, Some(-33.0));
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+}
+
+#[test]
+fn multiband_incremental_edits_materialize_sparse_overrides() {
+    for kind in [
+        PluginType::MultibandCompressor,
+        PluginType::MultibandExpander,
+    ] {
+        let mut ctrl = PluginController::new();
+        let id = ctrl.graph.add_user_plugin(&kind).unwrap();
+        let original = serde_json::to_value(&ctrl.graph.nodes[&id].plugin.settings).unwrap();
+        for (index, delta) in [(406, 1.0), (399, 1.0), (306, f64::NAN)] {
+            assert!(!ctrl.adjust_param_by_node_id(id, index, delta));
+            assert_eq!(
+                serde_json::to_value(&ctrl.graph.nodes[&id].plugin.settings).unwrap(),
+                original
+            );
+        }
+        // First adjustment selects an explicit value instead of inheritance;
+        // subsequent adjustments move that value using the existing step rules.
+        assert!(ctrl.adjust_param_by_node_id(id, 306, 1.0));
+        assert!(ctrl.adjust_param_by_node_id(id, 306, 1.0));
+        match &ctrl.graph.nodes[&id].plugin.settings {
+            PluginSettings::MultibandCompressor {
+                threshold_db,
+                bands,
+                ..
+            } => {
+                assert_eq!(bands.len(), 3);
+                assert!(bands[0].threshold_db.is_none());
+                assert_eq!(bands[2].threshold_db, Some(*threshold_db as f32 + 1.0));
+            }
+            PluginSettings::MultibandExpander {
+                threshold_db,
+                bands,
+                ..
+            } => {
+                assert_eq!(bands.len(), 3);
+                assert!(bands[0].threshold_db.is_none());
+                assert_eq!(bands[2].threshold_db, Some(*threshold_db as f32 + 1.0));
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[test]
+fn multiband_band_reset_restores_inheritance_without_erasing_other_edits() {
+    for kind in [
+        PluginType::MultibandCompressor,
+        PluginType::MultibandExpander,
+    ] {
+        for by_node in [false, true] {
+            let mut ctrl = PluginController::new();
+            let id = ctrl.graph.add_user_plugin(&kind).unwrap();
+            ctrl.set_plugin_param_by_node_id(id, 6, -25.0);
+            ctrl.set_plugin_param_by_node_id(id, 106, -33.0);
+            ctrl.set_plugin_param_by_node_id(id, 107, 5.0);
+            ctrl.set_plugin_param_by_node_id(id, 206, -45.0);
+            if by_node {
+                ctrl.reset_plugin_param_by_node_id(id, 106);
+            } else {
+                let index = ctrl.graph.linear_index_of_node(id).unwrap();
+                ctrl.reset_plugin_param(index, 106);
+            }
+            match &ctrl.graph.nodes[&id].plugin.settings {
+                PluginSettings::MultibandCompressor {
+                    threshold_db,
+                    bands,
+                    ..
+                } => {
+                    assert_eq!(*threshold_db, -25.0);
+                    assert_eq!(bands[0].threshold_db, None);
+                    assert_eq!(bands[0].ratio, Some(5.0));
+                    assert_eq!(bands[1].threshold_db, Some(-45.0));
+                }
+                PluginSettings::MultibandExpander {
+                    threshold_db,
+                    bands,
+                    ..
+                } => {
+                    assert_eq!(*threshold_db, -25.0);
+                    assert_eq!(bands[0].threshold_db, None);
+                    assert_eq!(bands[0].ratio, Some(5.0));
+                    assert_eq!(bands[1].threshold_db, Some(-45.0));
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+}
+
+#[test]
+fn multiband_direct_entry_clamps_before_float_conversion() {
+    for kind in [
+        PluginType::MultibandCompressor,
+        PluginType::MultibandExpander,
+    ] {
+        let mut ctrl = PluginController::new();
+        let id = ctrl.graph.add_user_plugin(&kind).unwrap();
+        ctrl.set_plugin_param_by_node_id(id, 106, f64::MAX);
+        ctrl.set_plugin_param_by_node_id(id, 107, -f64::MAX);
+        ctrl.set_plugin_param_by_node_id(id, 108, f64::MAX);
+        match &ctrl.graph.nodes[&id].plugin.settings {
+            PluginSettings::MultibandCompressor { bands, .. } => {
+                assert_eq!(bands[0].threshold_db, Some(0.0));
+                assert_eq!(bands[0].ratio, Some(1.0));
+                assert_eq!(bands[0].attack_ms, Some(100.0));
+            }
+            PluginSettings::MultibandExpander { bands, .. } => {
+                assert_eq!(bands[0].threshold_db, Some(0.0));
+                assert_eq!(bands[0].ratio, Some(1.0));
+                assert_eq!(bands[0].attack_ms, Some(50.0));
+            }
+            _ => unreachable!(),
+        }
     }
 }

@@ -21,6 +21,7 @@ fn matrix_recording(
     );
     rec.state = ChannelRecordingState::Done;
     rec.result = Some(RecordingResult {
+        sample_rate_hz: None,
         channel: speaker_idx,
         wav_path: None,
         csv_path: None,
@@ -59,6 +60,7 @@ fn raw_matrix_recording(
     );
     rec.state = ChannelRecordingState::Done;
     rec.result = Some(RecordingResult {
+        sample_rate_hz: None,
         channel: speaker_idx,
         wav_path: Some(wav_path.to_string_lossy().to_string()),
         csv_path: None,

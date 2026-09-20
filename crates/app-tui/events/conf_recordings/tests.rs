@@ -253,6 +253,7 @@ fn right_on_config_adjusts_field() {
 
 fn done_recording_result(mag_db: f32) -> RecordingResult {
     RecordingResult {
+        sample_rate_hz: None,
         channel: 0,
         wav_path: None,
         csv_path: Some("FL.csv".to_string()),

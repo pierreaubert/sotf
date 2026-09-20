@@ -47,7 +47,24 @@ impl PlayerView {
         let theme_id = state.app.ui_state.theme_id;
         let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id, cx));
         let spinorama = &state.app.measurement_state.spinorama_eq_state;
-        let app_width = state.app.ui_state.window_width;
+        let ui = &state.app.ui_state;
+        let sizing = crate::ui::resolve_sizing_context(
+            ui.window_width,
+            ui.window_height,
+            ui.font_scale,
+            ui.min_font_size_px,
+            ui.max_font_size_px,
+        );
+        let workflow_rail_rems = if self.workflow_is_compact(cx) {
+            0.0
+        } else {
+            15.0
+        };
+        let preview_width = ((sizing.desktop_content_width_rems(ui.primary_nav_collapsed)
+            - workflow_rail_rems
+            - 2.0 * d.card.0)
+            * sizing.effective_rem)
+            .max(1.0);
 
         let search_query = spinorama.speaker_search.clone();
         let selected_speaker = spinorama.selected_speaker.clone();
@@ -489,9 +506,13 @@ impl PlayerView {
                             )
                             .into_any_element()
                     } else if has_spinorama_curves {
-                        // 2x2 grid of plots - calculate width based on app width
-                        let available_width = (app_width - 32.0 - 16.0).max(600.0);
-                        let plot_width = (available_width / 2.0).max(380.0);
+                        let two_columns = preview_width >= 60.0 * sizing.effective_rem;
+                        let column_width = if two_columns {
+                            (preview_width - d.section.0 * sizing.effective_rem) / 2.0
+                        } else {
+                            preview_width
+                        };
+                        let plot_width = (column_width - 2.0 * d.card.0 * sizing.effective_rem).max(1.0);
 			// ratio + space for legend and axis
                         let plot_height = plot_width / 1.5 + 80.0;
 
@@ -504,12 +525,13 @@ impl PlayerView {
                             .child(
                                 div()
                                     .flex()
-                                    .flex_row()
+                                    .when(two_columns, |row| row.flex_row())
+                                    .when(!two_columns, |row| row.flex_col())
                                     .w_full()
                                     .gap(d.section)
                                     // Left: CEA2034 Spinorama
                                     .child(
-                                        div().flex_1().child(
+                                        div().flex_1().min_w_0().child(
                                             Card::new()
                                                 .background(theme.surface)
                                                 .header_background(theme.background_secondary)
@@ -530,7 +552,7 @@ impl PlayerView {
                                     )
                                     // Right: PIR (Estimated In-Room Response)
                                     .child(
-                                        div().flex_1().child(
+                                        div().flex_1().min_w_0().child(
                                             Card::new()
                                                 .background(theme.surface)
                                                 .header_background(theme.background_secondary)
@@ -555,12 +577,13 @@ impl PlayerView {
                             .child(
                                 div()
                                     .flex()
-                                    .flex_row()
+                                    .when(two_columns, |row| row.flex_row())
+                                    .when(!two_columns, |row| row.flex_col())
                                     .w_full()
                                     .gap(d.section)
                                     // Left: Horizontal reflections
                                     .child(
-                                        div().flex_1().child(
+                                        div().flex_1().min_w_0().child(
                                             Card::new()
                                                 .background(theme.surface)
                                                 .header_background(theme.background_secondary)
@@ -582,7 +605,7 @@ impl PlayerView {
                                     )
                                     // Right: Vertical reflections
                                     .child(
-                                        div().flex_1().child(
+                                        div().flex_1().min_w_0().child(
                                             Card::new()
                                                 .background(theme.surface)
                                                 .header_background(theme.background_secondary)

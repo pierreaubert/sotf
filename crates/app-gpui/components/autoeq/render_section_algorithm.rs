@@ -22,133 +22,12 @@
     include!("render_block_optimizer.rs");
     section = block_out;
 
-    // --- Smoothing ---
-    if !hide_smoothing {
-        section = section.child(
-            Text::label(translations.autoeq_form.parameters.smoothing)
-                .color(theme.header_color),
-        );
-
-        // Psychoacoustic toggle (disabled when curve smoothing is on)
-        let mut psycho_toggle = Toggle::new((base_id.clone(), "alg-psychoacoustic"))
-            .size(ToggleSize::Sm)
-            .checked(config.algorithm.psychoacoustic)
-            .disabled(config.algorithm.smooth)
-            .theme(toggle_theme.clone());
-
-        if let Some(ref handler) = on_psychoacoustic_change_rc {
-            let h = handler.clone();
-            psycho_toggle = psycho_toggle.on_change(move |v, w, cx| h(v, w, cx));
-        }
-
-        section = section.child(
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                .justify(StackJustify::SpaceBetween)
-                .child(
-                    VStack::new()
-                        .spacing(StackSpacing::None)
-                .child(
-                    Text::new(translations.autoeq_psychoacoustic_smoothing)
-                        .size(TextSize::Xs)
-                        .color(theme.label_color),
-                )
-                    .child(
-                        Text::new(translations.autoeq_form.parameters.smoothing_resolution)
-                            .size(TextSize::Xs)
-                            .color(theme.description_color),
-                    ),
-                )
-                .child(psycho_toggle),
-        );
-
-        // Curve smoothing toggle (disabled when psychoacoustic is on)
-        let mut smooth_toggle = Toggle::new((base_id.clone(), "alg-smooth"))
-            .size(ToggleSize::Sm)
-            .checked(config.algorithm.smooth)
-            .disabled(config.algorithm.psychoacoustic)
-            .theme(toggle_theme.clone());
-
-        if let Some(ref handler) = on_smooth_change_rc {
-            let h = handler.clone();
-            smooth_toggle = smooth_toggle.on_change(move |v, w, cx| h(v, w, cx));
-        }
-
-        section = section.child(
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                .justify(StackJustify::SpaceBetween)
-                .child(
-                    VStack::new()
-                        .spacing(StackSpacing::None)
-                .child(
-                    Text::new(translations.autoeq_curve_smoothing)
-                        .size(TextSize::Xs)
-                        .color(theme.label_color),
-                )
-                .child(
-                    Text::new(translations.autoeq_fixed_octave_smoothing)
-                        .size(TextSize::Xs)
-                        .color(theme.description_color),
-                ),
-                )
-                .child(smooth_toggle),
-        );
-
-        if config.algorithm.smooth {
-            let mut smooth_n_input = NumberInput::new((base_id.clone(), "alg-smooth-n"))
-                .value(config.algorithm.smooth_n as f64)
-                .min(ParamLimits::SMOOTH_N.min)
-                .max(ParamLimits::SMOOTH_N.max)
-                .step(ParamLimits::SMOOTH_N.step)
-                .decimals(0)
-            .label(translations.autoeq_form.parameters.smooth_window_oct)
-                .size(NumberInputSize::Sm)
-                .width(120.0)
-                .disabled(disabled)
-                .theme(theme.number_input_theme.clone());
-
-            if let Some(ref handler) = on_smooth_n_change_rc {
-                let h = handler.clone();
-                smooth_n_input = smooth_n_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
-            }
-
-            section = section.child(smooth_n_input);
-        }
+    if hide_room_sections && !hide_smoothing {
+        include!("render_block_smoothing.rs");
     }
 
-    // --- Asymmetric Loss ---
-    if !hide_asymmetric_loss {
-        let mut asymmetric_toggle = Toggle::new((base_id.clone(), "alg-asymmetric-loss"))
-            .size(ToggleSize::Sm)
-            .checked(config.algorithm.asymmetric_loss)
-            .theme(toggle_theme.clone());
-
-        if let Some(ref handler) = on_asymmetric_loss_change_rc {
-            let h = handler.clone();
-            asymmetric_toggle = asymmetric_toggle.on_change(move |v, w, cx| h(v, w, cx));
-        }
-
-        section = section.child(
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                .justify(StackJustify::SpaceBetween)
-                .child(
-                    VStack::new()
-                        .spacing(StackSpacing::None)
-                .child(
-                    Text::new(translations.autoeq_asymmetric_loss)
-                        .size(TextSize::Xs)
-                        .color(theme.label_color),
-                )
-                .child(
-                    Text::new(translations.autoeq_penalize_peaks)
-                        .size(TextSize::Xs)
-                        .color(theme.description_color),
-                ),
-                )
-                .child(asymmetric_toggle),
-        );
+    if hide_room_sections {
+        include!("render_block_goal_loss.rs");
     }
 
     // --- Seed ---
@@ -176,12 +55,13 @@
 
         if config.v2.seed_enabled {
             let mut seed_input = NumberInput::new((base_id.clone(), "alg-seed-value"))
+                .scroll_requires_alt(true)
                 .value(config.v2.seed as f64)
                 .min(ParamLimits::SEED.min)
                 .max(ParamLimits::SEED.max)
                 .step(ParamLimits::SEED.step)
                 .decimals(0)
-            .label(translations.autoeq_form.parameters.seed)
+                .label(translations.autoeq_form.parameters.seed)
                 .size(NumberInputSize::Sm)
                 .width(120.0)
                 .disabled(disabled)
@@ -194,40 +74,6 @@
 
             section = section.child(seed_input);
         }
-    }
-
-    // --- Broadband Target Matching ---
-    if !hide_broadband_matching {
-        let mut broadband_toggle = Toggle::new((base_id.clone(), "alg-broadband"))
-            .size(ToggleSize::Sm)
-            .checked(config.v2.broadband_target_matching)
-            .theme(toggle_theme.clone());
-
-        if let Some(ref h) = on_broadband_target_matching_change_rc {
-            let h = h.clone();
-            broadband_toggle = broadband_toggle.on_change(move |v, w, cx| h(v, w, cx));
-        }
-
-        section = section.child(
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                .justify(StackJustify::SpaceBetween)
-                .child(
-                    VStack::new()
-                        .spacing(StackSpacing::None)
-                .child(
-                    Text::new(translations.autoeq_broadband_target)
-                        .size(TextSize::Xs)
-                        .color(theme.label_color),
-                )
-                .child(
-                    Text::new(translations.autoeq_shelf_filters)
-                        .size(TextSize::Xs)
-                        .color(theme.description_color),
-                ),
-                )
-                .child(broadband_toggle),
-        );
     }
 
     Card::new().content(section)

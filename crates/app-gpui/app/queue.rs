@@ -16,6 +16,18 @@ fn is_missing_album_files_error(message: &str) -> bool {
 }
 
 impl App {
+    pub fn play_single_audio_file(
+        &mut self,
+        album: Album,
+    ) -> Result<Option<sotf_audio::decoder::AudioSource>, String> {
+        let effect = self.queue_state.play_single_file_now(album)?;
+        self.sync_queue_index();
+        Ok(match effect {
+            QueuePlaybackEffect::Play(source) => Some(source),
+            _ => None,
+        })
+    }
+
     /// Sync playback.current_queue_index from queue.current_index.
     #[inline]
     fn sync_queue_index(&mut self) {
@@ -250,6 +262,24 @@ impl App {
             self.sync_queue_index();
         }
         moved
+    }
+
+    pub fn remove_upcoming_track(&mut self, index: usize) -> bool {
+        let changed = self.queue_state.remove_upcoming_track(index);
+        self.sync_queue_index();
+        changed
+    }
+
+    pub fn move_upcoming_track(&mut self, from: usize, to: usize) -> bool {
+        let changed = self.queue_state.move_upcoming_track(from, to);
+        self.sync_queue_index();
+        changed
+    }
+
+    pub fn play_upcoming_track(&mut self, index: usize) -> QueuePlaybackEffect {
+        let effect = self.queue_state.play_upcoming_track(index);
+        self.sync_queue_index();
+        effect
     }
 
     pub fn clear_queue(&mut self) {

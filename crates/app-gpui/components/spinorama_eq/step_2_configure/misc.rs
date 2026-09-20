@@ -100,6 +100,7 @@ impl PlayerView {
 
         // Build AutoEqFormUiState from our dropdowns
         let autoeq_ui_state = AutoEqFormUiState {
+            stage: spinorama.autoeq_stage,
             detail_level: spinorama.detail_level,
             selected_preset: Some(spinorama.selected_preset.clone()),
             opt_mode_open: spinorama.dropdowns.opt_mode_open,
@@ -853,6 +854,15 @@ impl PlayerView {
                     });
                 }
             })
+            .on_stage_change({
+                let state = self.state.clone();
+                move |stage, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state.app.measurement_state.spinorama_eq_state.autoeq_stage = stage;
+                        cx.notify();
+                    });
+                }
+            })
             .on_detail_level_change({
                 let state = self.state.clone();
                 move |level, _window, cx| {
@@ -1000,7 +1010,12 @@ impl PlayerView {
                                     )
                                 }),
                             ))
-                            .child(Text::caption(current_mode.description())),
+                            .child(Text::caption(
+                                crate::app::i18n::SpeakerGraphTranslations::objective_help(
+                                    state.app.ui_state.language,
+                                    current_mode == SpinoramaOptimizationMode::SpeakerScore,
+                                ),
+                            )),
                     ),
             )
             // Target curve selection (only shown when mode is FlatOnPir/Target)

@@ -510,6 +510,7 @@ fn render_compact_fader(
 ) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
     VerticalSlider::new(("hw-fader", plugin_idx * 1000 + idx))
+        .scroll_requires_alt(true)
         .value(value)
         .min(min)
         .max(max)

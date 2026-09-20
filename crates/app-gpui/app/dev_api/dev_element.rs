@@ -22,6 +22,7 @@ use super::registry::DevElementState;
 
 pub struct DevTrack<E> {
     selector: String,
+    frame: bool,
     state: DevElementState,
     inner: E,
 }
@@ -74,12 +75,12 @@ impl<E: Element> Element for DevTrack<E> {
         // Deferred elements can be repositioned between prepaint and paint.
         // Publish the final screen-space bounds used for hit testing so QA
         // clicks target menus, popovers, and dialogs at their painted location.
-        registry::record_with_state(
-            window.window_handle().window_id().as_u64(),
-            &self.selector,
-            bounds,
-            self.state.clone(),
-        );
+        let window_id = window.window_handle().window_id().as_u64();
+        if self.frame {
+            registry::begin_frame(window_id);
+        } else {
+            registry::record_with_state(window_id, &self.selector, bounds, self.state.clone());
+        }
         self.inner.paint(
             id,
             inspector_id,
@@ -88,7 +89,12 @@ impl<E: Element> Element for DevTrack<E> {
             prepaint,
             window,
             cx,
-        )
+        );
+        if self.frame && !registry::finish_frame(window_id) {
+            // A concurrent HTTP reader held the lock. Retry next frame without
+            // exposing a partial snapshot or leaving the old one indefinitely.
+            window.refresh();
+        }
     }
 }
 
@@ -100,9 +106,20 @@ impl<E: Element> IntoElement for DevTrack<E> {
 }
 
 pub trait DevTrackExt: IntoElement + Sized {
+    /// Publish the root’s selectors only after its complete paint.
+    fn dev_frame(self) -> DevTrack<Self::Element> {
+        DevTrack {
+            selector: String::new(),
+            frame: true,
+            state: DevElementState::default(),
+            inner: self.into_element(),
+        }
+    }
+
     fn dev_track(self, selector: impl Into<String>) -> DevTrack<Self::Element> {
         DevTrack {
             selector: selector.into(),
+            frame: false,
             state: DevElementState::default(),
             inner: self.into_element(),
         }
@@ -118,6 +135,7 @@ pub trait DevTrackExt: IntoElement + Sized {
     ) -> DevTrack<Self::Element> {
         DevTrack {
             selector: selector.into(),
+            frame: false,
             state,
             inner: self.into_element(),
         }

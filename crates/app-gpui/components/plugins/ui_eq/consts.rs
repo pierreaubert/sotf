@@ -1,4 +1,3 @@
-use math_audio_iir_fir::Biquad;
 use sotf_audio_player::EQFilter;
 use sotf_plugins::param_specs::{eq::BAND_TEMPLATE as EQ, find_by_key as pk};
 
@@ -80,27 +79,28 @@ pub fn q_to_bar_width(q: f64) -> f32 {
 /// Warped biquads and Kautz modal filters instantiate the matching
 /// math-iir-fir runtime once and evaluate its complex response so the
 /// preview curve matches what the engine actually applies.
-pub(super) fn filter_log_response(filter: &EQFilter, freq: f64) -> f64 {
+pub(super) fn filter_log_response_at_rate(filter: &EQFilter, freq: f64, sample_rate: f64) -> f64 {
     use math_audio_iir_fir::{KautzFilter, WarpedBiquad, bark_lambda};
     use sotf_audio::plugins::EqFilterTopology;
 
     match filter.topology {
-        EqFilterTopology::Biquad => {
-            let biquad = Biquad::new(
-                filter.filter_type,
-                filter.frequency,
-                SAMPLE_RATE,
-                filter.q,
-                filter.gain_db,
-            );
-            biquad.log_result(freq)
-        }
+        EqFilterTopology::Biquad => sotf_plugins::plugin_eq::create_band_stages(
+            filter.filter_type,
+            filter.frequency,
+            sample_rate,
+            filter.q,
+            filter.gain_db,
+            filter.order,
+        )
+        .iter()
+        .map(|stage| stage.log_result(freq))
+        .sum(),
         EqFilterTopology::WarpedBiquad => {
-            let lambda = filter.lambda.unwrap_or_else(|| bark_lambda(SAMPLE_RATE));
+            let lambda = filter.lambda.unwrap_or_else(|| bark_lambda(sample_rate));
             let warped = WarpedBiquad::new(
                 filter.filter_type,
                 filter.frequency,
-                SAMPLE_RATE,
+                sample_rate,
                 filter.q,
                 filter.gain_db,
                 lambda,
@@ -117,7 +117,7 @@ pub(super) fn filter_log_response(filter: &EQFilter, freq: f64) -> f64 {
                     .map(|s| (s.pole_freq, s.q))
                     .collect()
             };
-            let mut kf = KautzFilter::from_room_modes(&modes, SAMPLE_RATE);
+            let mut kf = KautzFilter::from_room_modes(&modes, sample_rate);
             // Section gains: explicit values from kautz_sections override
             // the implicit scalar gain. Match the runtime behavior in
             // sotf_plugin_eq::KautzRuntime::apply_sample_rate.

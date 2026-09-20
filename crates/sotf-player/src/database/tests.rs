@@ -7,6 +7,77 @@ use sotf_audio::decoder::AudioSource;
 use sotf_federation::{ProviderAlbum, ProviderTrack};
 use std::path::{Path, PathBuf};
 
+#[test]
+fn recent_album_history_uses_latest_listen_and_survives_reload() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut library = crate::library::MusicLibrary::with_custom_database_for_testing(
+        dir.path().join("history.db"),
+    )
+    .unwrap();
+    let albums = [
+        ("Popular", 2026, vec!["popular.flac"]),
+        ("Recent", 1980, vec!["recent-a.flac", "recent-b.flac"]),
+        ("Unplayed", 2027, vec!["unplayed.flac"]),
+    ]
+    .into_iter()
+    .map(|(title, year, paths)| crate::library::Album {
+        title: title.into(),
+        year: Some(year),
+        tracks: paths
+            .into_iter()
+            .map(|path| crate::library::Track {
+                path: PathBuf::from(path),
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    })
+    .collect::<Vec<_>>();
+    let db = library.get_database_mut().unwrap();
+    db.save_albums(&albums).unwrap();
+    for (path, timestamp) in [
+        ("popular.flac", 100),
+        ("popular.flac", 110),
+        ("popular.flac", 120),
+        ("recent-a.flac", 90),
+        ("recent-b.flac", 200),
+    ] {
+        db.conn.execute("INSERT INTO play_history (track_path, album_id, played_at, duration_played_secs) SELECT path, album_id, ?2, 30 FROM tracks WHERE path = ?1", rusqlite::params![path, timestamp]).unwrap();
+    }
+    library.load_from_database().unwrap();
+    let titles = |library: &crate::library::MusicLibrary| {
+        library
+            .recently_played_albums()
+            .iter()
+            .map(|a| a.title.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(titles(&library), ["Recent", "Popular"]);
+    assert!(!library.record_play(Path::new("unplayed.flac"), 29).unwrap());
+    assert_eq!(titles(&library), ["Recent", "Popular"]);
+    assert!(library.record_play(Path::new("unplayed.flac"), 30).unwrap());
+    assert_eq!(titles(&library), ["Unplayed", "Recent", "Popular"]);
+    assert_eq!(
+        library
+            .albums
+            .iter()
+            .find(|a| a.title == "Unplayed")
+            .unwrap()
+            .play_count,
+        1
+    );
+    library.load_from_database().unwrap();
+    assert_eq!(titles(&library), ["Unplayed", "Recent", "Popular"]);
+    assert_eq!(
+        library
+            .get_database()
+            .unwrap()
+            .get_track_play_count(Path::new("unplayed.flac"))
+            .unwrap(),
+        1
+    );
+}
+
 fn fresh_config_test_dir(name: &str) -> std::path::PathBuf {
     let test_dir = crate::config::test_config_dir().join(name);
     std::fs::remove_dir_all(&test_dir).ok();

@@ -29,7 +29,7 @@ ALLOWLIST: set[tuple[str, str]] = {
     ("crates/app-gpui/app/config.rs", "Config"),
     # Moved from sotf-types during the engine type consolidation. Planned
     # split: transport, decode, processing, output, and diagnostics state.
-    ("crates/sotf-engine/src/types/state.rs", "AudioEngineState"),
+    ("../sotf-daw/crates/sotf-engine/src/types/state.rs", "AudioEngineState"),
     # App/remote state models. Planned split: transport/library/server
     # connectivity sub-states with explicit update effects.
     ("crates/app-gpui/app/state/app/remote_state.rs", "RemoteState"),
@@ -145,6 +145,7 @@ def find_rust_files(root: Path):
         ".git",
         ".tokensave",
         ".worktrees",
+        ".muse",  # Tool-managed worktree copies are not this checkout's sources.
         "__pycache__",
         "3rdparties",
         ".docker-target",

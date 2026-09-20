@@ -1,0 +1,60 @@
+focus Home
+focus Settings
+resize 600 800
+wait_idle 2s
+click preferences.category
+key up
+key enter
+resize 1440 1000
+wait_idle 1s
+assert_in_viewport settings.output-device
+click settings.output-device
+assert preferences.output_dropdown_open == true
+key down
+key escape
+assert preferences.output_dropdown_open == false
+assert screen.focused == "Settings"
+assert preferences.audio_dirty == false
+scroll preferences.content -1600
+wait_idle 1s
+scroll preferences.content -1600
+wait_idle 1s
+assert_in_viewport settings.rg-mode-album
+click settings.rg-mode-album
+wait_idle 1s
+click settings.replay-gain-toggle
+wait_idle 1s
+assert_absent settings.rg-mode-album
+scroll preferences.content 1600
+wait_idle 1s
+click settings.output-device
+assert preferences.output_dropdown_open == true
+action PreferencesBlockConfigSave
+click preferences.done
+assert preferences.output_dropdown_open == false
+click preferences.close.apply
+wait_idle 1s
+assert preferences.close_pending == true
+assert preferences.output_error == "Could not save audio settings. The previous settings are retained"
+assert preferences.audio_dirty == true
+assert preferences.replay_gain_enabled == false
+assert preferences.replay_gain_mode == "Album"
+assert settings.replay_gain_enabled == true
+assert settings.replay_gain_mode == "Track"
+assert playback.is_playing == false
+assert_absent settings.audio-apply
+assert_absent settings.audio-discard
+assert_in_viewport preferences.close.apply
+assert_in_viewport preferences.close.discard
+screenshot preferences-audio-save-failure
+action PreferencesUnblockConfigSave
+assert settings.persisted_audio.replay_gain_enabled == true
+assert settings.persisted_audio.replay_gain_mode == "Track"
+click preferences.close.apply
+wait_idle 1s
+assert screen.focused == "Home"
+assert preferences.audio_dirty == false
+assert preferences.output_error == null
+assert settings.persisted_audio.replay_gain_enabled == false
+assert settings.persisted_audio.replay_gain_mode == "Album"
+assert playback.is_playing == false

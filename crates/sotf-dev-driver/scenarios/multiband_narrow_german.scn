@@ -1,0 +1,16 @@
+resize 600 1000
+focus Studio
+plugin_clear
+plugin_add MultibandExpander
+action PluginSelectFirstUser
+wait_idle 1s
+assert_accessible spinbutton Bänder
+assert_accessible slider Schwelle
+assert_accessible slider Verhältnis
+assert_accessible slider Knie
+assert_inaccessible slider Threshold
+screenshot multiband-narrow-top
+scroll_at 25 700 -3000
+wait_idle 500ms
+screenshot multiband-narrow-bottom
+snapshot $SOTF_QA_DIR/narrow.json

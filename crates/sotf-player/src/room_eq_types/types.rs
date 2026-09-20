@@ -1,13 +1,7 @@
 use super::identity::identity_matrix_parameters;
 use super::room_eq_crossover_type::RoomEqCrossoverType;
-#[cfg(test)]
-use super::tests::is_bass_output_channel;
-#[cfg(test)]
-use super::tests::is_bass_route;
 use crate::recording_types::{DelayProbeResults, RecordingResult};
 pub use autoeq::roomeq::ChannelDspChain;
-#[cfg(test)]
-use autoeq::roomeq::DspChainOutput;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -218,9 +212,39 @@ pub(super) fn read_first_wav_channel_f32(path: &Path) -> Result<(Vec<f32>, u32),
     Ok((samples, sample_rate))
 }
 
+/// Source identity retained independently of measured response arrays.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MeasurementProvenance {
+    /// Source-provided display name, never inferred from a filename.
+    pub name: Option<String>,
+    /// Capture input index; absent for imported responses without this metadata.
+    pub mic_index: Option<usize>,
+    /// Capture position index; absent means unknown, not the primary seat.
+    pub mic_position_index: Option<usize>,
+}
+
+/// Measurement data for a single channel (may have multiple drivers)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DriverMeasurementSet {
+    pub name: Option<String>,
+    pub measurement: RecordingResult,
+    #[serde(default)]
+    pub multi_mic_measurements: Vec<RecordingResult>,
+    #[serde(default)]
+    pub provenance: Vec<MeasurementProvenance>,
+}
+
 /// Measurement data for a single channel (may have multiple drivers)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelMeasurement {
+    /// Complete per-driver source sets. Empty for legacy flat group records.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub driver_measurement_sets: Vec<DriverMeasurementSet>,
+    /// Primary measurement followed by additional microphone measurements.
+    /// Empty for legacy records with no source identity. Driver provenance is
+    /// not represented by this sequence.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provenance: Vec<MeasurementProvenance>,
     /// Channel name (e.g., "L", "R", "C")
     pub channel_name: String,
     /// Primary measurement (single driver or combined)
@@ -486,208 +510,9 @@ pub(super) fn is_route_replaced_global_plugin(plugin: &DspPluginConfig) -> bool 
                 == Some("home_cinema_bass_management"))
 }
 
-#[cfg(test)]
-pub(super) fn pre_route_plugins_for_route<'a>(
-    output: &'a DspChainOutput,
-    route: &autoeq::roomeq::BassManagementRoute,
-    graph: &autoeq::roomeq::BassManagementRoutingGraph,
-) -> Vec<&'a DspPluginConfig> {
-    let channel_name = route.pre_chain_channel.as_deref().unwrap_or_else(|| {
-        if is_bass_route(route) {
-            &graph.physical_sub_output
-        } else {
-            &route.source_channel
-        }
-    });
-    let Some(chain) = output.channels.get(channel_name) else {
-        return Vec::new();
-    };
-    let staged: Vec<_> = chain
-        .plugins
-        .iter()
-        .filter(|plugin| plugin_stage(plugin) == Some("pre_route"))
-        .collect();
-    if !staged.is_empty() {
-        return staged;
-    }
-    chain
-        .plugins
-        .iter()
-        .take_while(|plugin| !is_route_owned_plugin(plugin) && plugin.plugin_type != "crossover")
-        .collect()
-}
-
-#[cfg(test)]
-pub(super) fn post_route_plugins_for_channel<'a>(
-    output: &'a DspChainOutput,
-    channel_name: &str,
-    graph: &autoeq::roomeq::BassManagementRoutingGraph,
-) -> Vec<&'a DspPluginConfig> {
-    let post_chain_name = graph
-        .routes
-        .iter()
-        .find(|route| route.destination == channel_name)
-        .and_then(|route| route.post_chain_channel.as_deref())
-        .unwrap_or(channel_name);
-    let mut staged = plugins_for_post_chain_name(output, post_chain_name);
-    if staged.is_empty() && is_bass_output_channel(channel_name, graph) {
-        staged = plugins_for_post_chain_name(output, &graph.physical_sub_output);
-    }
-    if !staged.is_empty() {
-        return staged;
-    }
-    let chain = output.channels.get(post_chain_name).or_else(|| {
-        is_bass_output_channel(channel_name, graph)
-            .then(|| output.channels.get(&graph.physical_sub_output))
-            .flatten()
-    });
-    let Some(chain) = chain else {
-        return Vec::new();
-    };
-    let Some(split_idx) = chain
-        .plugins
-        .iter()
-        .position(|plugin| is_route_owned_plugin(plugin) || plugin.plugin_type == "crossover")
-    else {
-        return chain.plugins.iter().collect();
-    };
-
-    let mut start = split_idx + 1;
-    let mut skipped_route_gain = false;
-    let mut skipped_route_delay = false;
-    while let Some(plugin) = chain.plugins.get(start) {
-        if is_route_owned_plugin(plugin) {
-            start += 1;
-            continue;
-        }
-        let route_owned = match plugin.plugin_type.as_str() {
-            "crossover" => true,
-            "gain" if !skipped_route_gain => {
-                let owned = route_owns_gain_plugin(plugin, channel_name, post_chain_name, graph);
-                skipped_route_gain = owned;
-                owned
-            }
-            "delay" if !skipped_route_delay => {
-                let owned = route_owns_delay_plugin(plugin, channel_name, post_chain_name, graph);
-                skipped_route_delay = owned;
-                owned
-            }
-            _ => false,
-        };
-        if !route_owned {
-            break;
-        }
-        start += 1;
-    }
-
-    chain.plugins[start..].iter().collect()
-}
-
-#[cfg(test)]
-pub(super) fn is_route_owned_plugin(plugin: &DspPluginConfig) -> bool {
-    plugin_stage(plugin) == Some("route_owned")
-        || plugin
-            .parameters
-            .get("label")
-            .and_then(|value| value.as_str())
-            == Some("room_eq_route_owned")
-}
-
 pub(super) fn plugin_stage(plugin: &DspPluginConfig) -> Option<&str> {
     plugin
         .parameters
         .get("room_eq_stage")
         .and_then(|value| value.as_str())
-}
-
-#[cfg(test)]
-pub(super) fn plugins_for_post_chain_name<'a>(
-    output: &'a DspChainOutput,
-    post_chain_name: &str,
-) -> Vec<&'a DspPluginConfig> {
-    output
-        .channels
-        .get(post_chain_name)
-        .map(|chain| {
-            chain
-                .plugins
-                .iter()
-                .filter(|plugin| plugin_stage(plugin) == Some("post_route"))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default()
-}
-
-#[cfg(test)]
-pub(super) fn route_owns_gain_plugin(
-    plugin: &DspPluginConfig,
-    channel_name: &str,
-    post_chain_name: &str,
-    graph: &autoeq::roomeq::BassManagementRoutingGraph,
-) -> bool {
-    let gain_db = plugin
-        .parameters
-        .get("gain_db")
-        .and_then(|value| value.as_f64())
-        .unwrap_or(0.0);
-    let invert = plugin
-        .parameters
-        .get("invert")
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false);
-    let bass_output = is_bass_output_channel(channel_name, graph);
-    graph
-        .routes
-        .iter()
-        .filter(|route| {
-            route.destination == channel_name
-                || route.post_chain_channel.as_deref() == Some(post_chain_name)
-        })
-        .any(|route| {
-            let exact_route_match =
-                (route.gain_db - gain_db).abs() <= 0.01 && route.polarity_inverted == invert;
-            if exact_route_match {
-                return true;
-            }
-
-            // Bass routes can encode the shared sub gain in the route matrix
-            // instead of a separate gain node. Treat only the first
-            // post-crossover gain as route-owned; later trims remain output
-            // correction plugins and are preserved by the caller's state.
-            bass_output
-                && is_bass_route(route)
-                && (route.gain_db.abs() > 0.01 || route.polarity_inverted)
-                && (gain_db.abs() > 0.01 || invert)
-        })
-}
-
-#[cfg(test)]
-pub(super) fn route_owns_delay_plugin(
-    plugin: &DspPluginConfig,
-    channel_name: &str,
-    post_chain_name: &str,
-    graph: &autoeq::roomeq::BassManagementRoutingGraph,
-) -> bool {
-    let Some(delay_ms) = plugin
-        .parameters
-        .get("delay_ms")
-        .and_then(|value| value.as_f64())
-    else {
-        return false;
-    };
-    let bass_output = is_bass_output_channel(channel_name, graph);
-    graph
-        .routes
-        .iter()
-        .filter(|route| {
-            route.destination == channel_name
-                || route.post_chain_channel.as_deref() == Some(post_chain_name)
-        })
-        .any(|route| {
-            (route.delay_ms - delay_ms).abs() <= 0.001
-                || (bass_output
-                    && is_bass_route(route)
-                    && route.delay_ms.abs() > 0.001
-                    && delay_ms.abs() > 0.001)
-        })
 }

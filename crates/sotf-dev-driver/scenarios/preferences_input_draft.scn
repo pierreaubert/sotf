@@ -1,0 +1,108 @@
+focus Home
+focus Settings
+resize 600 800
+wait_idle 2s
+click preferences.category
+key up
+key enter
+resize 1440 1000
+wait_idle 1s
+assert settings.playback_source == "File"
+assert settings.persisted_audio.systemwide_input == false
+click settings.audio-source.hal
+wait_idle 1s
+assert preferences.systemwide_input == true
+assert settings.playback_source == "File"
+assert settings.persisted_audio.systemwide_input == false
+assert playback.is_playing == false
+click settings.hal-sample-rate
+wait_idle 1s
+key up
+wait_idle 1s
+assert preferences.sample_rate_highlight == 5
+key enter
+wait_idle 1s
+screenshot preferences-rate-after-keyboard
+assert preferences.sample_rate_hz != null
+assert settings.sample_rate_hz == 48000
+assert settings.persisted_audio.sample_rate_hz == 48000
+click settings.hal-channel-count
+wait_idle 1s
+key up
+wait_idle 1s
+key enter
+wait_idle 1s
+assert preferences.channel_count != null
+assert settings.channel_count == 2
+assert settings.persisted_audio.channel_count == 2
+click settings.hal-buffer-size
+wait_idle 1s
+key up
+wait_idle 1s
+key enter
+wait_idle 1s
+assert preferences.buffer_frames != null
+assert settings.buffer_frames == 1024
+assert settings.persisted_audio.buffer_frames == 1024
+assert playback.is_playing == false
+click settings.audio-source.file
+assert preferences.systemwide_input == null
+assert preferences.sample_rate_hz != null
+assert preferences.channel_count != null
+assert preferences.buffer_frames != null
+click settings.audio-source.hal
+wait_idle 1s
+screenshot preferences-input-draft
+click preferences.done
+assert preferences.close_pending == true
+click preferences.close.discard
+assert screen.focused == "Home"
+assert preferences.audio_dirty == false
+assert settings.playback_source == "File"
+assert settings.persisted_audio.systemwide_input == false
+assert settings.sample_rate_hz == 48000
+assert settings.persisted_audio.sample_rate_hz == 48000
+assert settings.channel_count == 2
+assert settings.persisted_audio.channel_count == 2
+assert settings.buffer_frames == 1024
+assert settings.persisted_audio.buffer_frames == 1024
+focus Settings
+wait_idle 1s
+click settings.audio-source.hal
+wait_idle 1s
+click settings.hal-sample-rate
+wait_idle 1s
+key up
+wait_idle 1s
+key enter
+click settings.hal-channel-count
+wait_idle 1s
+key up
+wait_idle 1s
+key enter
+click settings.hal-buffer-size
+wait_idle 1s
+key up
+wait_idle 1s
+key enter
+click preferences.done
+click preferences.close.apply
+assert screen.focused == "Home"
+assert preferences.audio_dirty == false
+assert settings.playback_source == "HalDevice"
+assert settings.persisted_audio.systemwide_input == true
+assert settings.sample_rate_hz == 192000
+assert settings.persisted_audio.sample_rate_hz == 192000
+assert settings.channel_count == 8
+assert settings.persisted_audio.channel_count == 8
+assert settings.buffer_frames == 4096
+assert settings.persisted_audio.buffer_frames == 4096
+assert playback.is_playing == false
+focus Settings
+wait_idle 1s
+click settings.audio-source.file
+click preferences.done
+click preferences.close.apply
+assert settings.playback_source == "File"
+assert settings.persisted_audio.systemwide_input == false
+assert playback.is_playing == false

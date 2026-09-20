@@ -26,13 +26,14 @@ use sotf_plugins::layout_solver::solve_layout_scaled;
 use sotf_plugins::plugin_layout::ColumnRole;
 
 /// Whether the generated layout currently has atomic groups in overflow.
-pub(super) fn generated_layout_has_overflow(
+#[doc(hidden)]
+pub fn generated_layout_group_ids(
     settings: &PluginSettings,
     available_width: f32,
     layout_scale: f32,
-) -> bool {
+) -> (Vec<&'static str>, Vec<&'static str>) {
     let Some(layout) = settings.layout() else {
-        return false;
+        return (Vec::new(), Vec::new());
     };
     let params = settings.param_specs();
     let values: Vec<_> = (0..params.len())
@@ -44,7 +45,15 @@ pub(super) fn generated_layout_has_overflow(
         .column_width(ColumnRole::Main)
         .unwrap_or(available_width);
     let mode = mode_selector_info::detect_mode_selector(layout, params);
-    !mode_selector_info::solve_main_groups(layout, &values, mode.as_ref(), main_width, layout_scale)
-        .1
-        .is_empty()
+    let (primary, details) = mode_selector_info::solve_main_groups(
+        layout,
+        &values,
+        mode.as_ref(),
+        main_width,
+        layout_scale,
+    );
+    (
+        primary.into_iter().map(|group| group.id).collect(),
+        details.into_iter().map(|group| group.id).collect(),
+    )
 }

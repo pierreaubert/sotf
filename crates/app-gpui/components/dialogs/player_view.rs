@@ -517,7 +517,7 @@ impl PlayerView {
             )
     }
 
-    pub(crate) fn render_toast(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_toast(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
@@ -538,6 +538,13 @@ impl PlayerView {
         });
 
         if let Some((message, variant, action_label)) = toast_data {
+            // Resolve the width before text measurement. Percentage width plus a
+            // max-width can otherwise measure wrapping against the full viewport.
+            let toast_width = rems(24.0).to_pixels(window.rem_size()).min(
+                (window.viewport_size().width - d.card.to_pixels(window.rem_size()) * 2.0)
+                    .max(Pixels::ZERO),
+            );
+            let dismiss_width = rems(1.5);
             let (bg_color, border_color, text_color) = match variant {
                 ToastVariant::Success => (
                     theme.feedback.toast_success_bg,
@@ -564,21 +571,28 @@ impl PlayerView {
                 .p(d.card)
                 .child(
                     div()
-                        .max_w_96()
+                        .relative()
+                        .w(toast_width)
+                        .min_w_0()
                         .rounded(d.r_lg)
                         .bg(bg_color)
                         .border_1()
                         .border_color(border_color)
                         .p(d.pad_x)
                         .flex()
+                        .flex_col()
                         .items_start()
                         .gap(d.gap)
                         .child(
-                            div().flex_1().child(
-                                Text::new(message.clone())
-                                    .size(TextSize::Sm)
-                                    .color(text_color),
-                            ),
+                            Text::body(message.clone())
+                                .size(TextSize::Sm)
+                                .color(text_color)
+                                .build_with_cx(cx)
+                                .w_full()
+                                .pr(dismiss_width + d.gap)
+                                .flex_shrink_0()
+                                .min_w_0()
+                                .whitespace_normal(),
                         )
                         .when_some(action_label, |el, label| {
                             el.child(
@@ -621,12 +635,16 @@ impl PlayerView {
                         .child(
                             div()
                                 .id("toast-dismiss")
+                                .absolute()
+                                .top(d.pad_x)
+                                .right(d.pad_x)
                                 .cursor_pointer()
+                                .flex_shrink_0()
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .w(rems(1.5))
-                                .h(rems(1.5))
+                                .w(dismiss_width)
+                                .h(dismiss_width)
                                 .rounded(d.r_md)
                                 .hover(move |s| s.bg(Theme::with_opacity(text_color, 0.15)))
                                 .on_mouse_up(

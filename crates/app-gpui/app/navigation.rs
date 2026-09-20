@@ -6,6 +6,47 @@ use super::state::App;
 use super::types::{HeadphoneEqStep, RecordingStep, RoomEqStep, Screen, SpinoramaStep};
 
 impl App {
+    /// Step selectors share the same validation as footer and keyboard actions.
+    /// Unvisited future steps cannot skip configuration or launch side effects.
+    pub fn select_workflow_step(&mut self, target: usize) -> bool {
+        let (current, count) = match self.ui_state.current_screen {
+            Screen::Recording => (
+                RecordingStep::all()
+                    .iter()
+                    .position(|step| *step == self.measurement_state.recording_state.step)
+                    .unwrap_or(0),
+                RecordingStep::all().len(),
+            ),
+            Screen::RoomEq => (
+                self.measurement_state.room_eq_state.step.index(),
+                RoomEqStep::all().len(),
+            ),
+            Screen::HeadphoneEq => (
+                match self.measurement_state.headphone_eq_state.step {
+                    HeadphoneEqStep::MeasurementTarget => 0,
+                    HeadphoneEqStep::Optimization => 1,
+                    HeadphoneEqStep::Listen => 2,
+                    HeadphoneEqStep::Export => 3,
+                },
+                4,
+            ),
+            Screen::Spinorama => (self.measurement_state.spinorama_eq_state.step.index(), 4),
+            _ => return false,
+        };
+        if target >= count || target > current + 1 || !self.can_rewind_workflow_step() {
+            return false;
+        }
+        if target > current {
+            return self.move_workflow_step(true);
+        }
+        for _ in target..current {
+            if !self.move_workflow_step(false) {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Whether the current domain wizard can advance through its primary action.
     ///
     /// Desktop buttons, phone controls, and keyboard actions all use this gate so
@@ -14,16 +55,19 @@ impl App {
         match self.ui_state.current_screen {
             Screen::Recording => {
                 let recording = &self.measurement_state.recording_state;
+                if recording.workflow_is_busy() {
+                    return false;
+                }
                 match recording.step {
                     RecordingStep::Config => recording.recording_directory.is_some(),
                     RecordingStep::SplCalibration => true,
                     RecordingStep::Capture => {
-                        recording.all_channels_recorded() && !recording.is_recording()
+                        recording.all_channels_recorded() && !recording.workflow_is_busy()
                     }
-                    RecordingStep::Probe
-                    | RecordingStep::BassAnchor
-                    | RecordingStep::Evaluating
-                    | RecordingStep::Saving => true,
+                    RecordingStep::Evaluating => recording.all_takes_accepted(),
+                    RecordingStep::Probe | RecordingStep::BassAnchor | RecordingStep::Saving => {
+                        true
+                    }
                 }
             }
             Screen::RoomEq => {
@@ -51,7 +95,7 @@ impl App {
 
     fn can_rewind_workflow_step(&self) -> bool {
         match self.ui_state.current_screen {
-            Screen::Recording => !self.measurement_state.recording_state.is_recording(),
+            Screen::Recording => !self.measurement_state.recording_state.workflow_is_busy(),
             Screen::RoomEq => !self.measurement_state.room_eq_state.is_optimizing(),
             Screen::HeadphoneEq => !self.measurement_state.headphone_eq_state.is_optimizing(),
             Screen::Spinorama => !self.measurement_state.spinorama_eq_state.is_optimizing(),
@@ -80,12 +124,12 @@ impl App {
                         recording.init_channel_recordings();
                     }
                     if step == RecordingStep::Saving {
-                        self.ui_state.current_screen = self.ui_state.last_screen;
+                        self.ui_state.current_screen = self.ui_state.navigation.last_screen;
                     } else if let Some(next) = step.next() {
                         recording.step = next;
                     }
                 } else if step == RecordingStep::Config {
-                    self.ui_state.current_screen = self.ui_state.last_screen;
+                    self.ui_state.current_screen = self.ui_state.navigation.last_screen;
                 } else if let Some(previous) = step.previous() {
                     recording.step = previous;
                 }
@@ -95,12 +139,12 @@ impl App {
                 let step = room_eq.step;
                 if forward {
                     if step == RoomEqStep::Export {
-                        self.ui_state.current_screen = self.ui_state.last_screen;
+                        self.ui_state.current_screen = self.ui_state.navigation.last_screen;
                     } else if let Some(next) = step.next() {
                         room_eq.step = next;
                     }
                 } else if step == RoomEqStep::LoadData {
-                    self.ui_state.current_screen = self.ui_state.last_screen;
+                    self.ui_state.current_screen = self.ui_state.navigation.last_screen;
                 } else if let Some(previous) = step.previous() {
                     room_eq.step = previous;
                 }
@@ -110,12 +154,12 @@ impl App {
                 let step = headphone_eq.step;
                 if forward {
                     if step == HeadphoneEqStep::Export {
-                        self.ui_state.current_screen = self.ui_state.last_screen;
+                        self.ui_state.current_screen = self.ui_state.navigation.last_screen;
                     } else if let Some(next) = step.next() {
                         headphone_eq.model.step = next;
                     }
                 } else if step == HeadphoneEqStep::MeasurementTarget {
-                    self.ui_state.current_screen = self.ui_state.last_screen;
+                    self.ui_state.current_screen = self.ui_state.navigation.last_screen;
                 } else if let Some(previous) = step.previous() {
                     headphone_eq.model.step = previous;
                 }
@@ -125,12 +169,12 @@ impl App {
                 let step = spinorama.step;
                 if forward {
                     if step == SpinoramaStep::Export {
-                        self.ui_state.current_screen = self.ui_state.last_screen;
+                        self.ui_state.current_screen = self.ui_state.navigation.last_screen;
                     } else if let Some(next) = step.next() {
                         spinorama.step = next;
                     }
                 } else if step == SpinoramaStep::SelectSpeaker {
-                    self.ui_state.current_screen = self.ui_state.last_screen;
+                    self.ui_state.current_screen = self.ui_state.navigation.last_screen;
                 } else if let Some(previous) = step.previous() {
                     spinorama.step = previous;
                 }
@@ -138,6 +182,9 @@ impl App {
             _ => return false,
         }
 
+        if let Err(error) = self.synchronize_headphone_audition() {
+            self.ui_state.toast_message = Some(super::types::ToastMessage::error(error));
+        }
         true
     }
 

@@ -1,0 +1,15 @@
+# The routing draft finishes only after the player actor accepts its graph.
+focus PluginGraph
+wait_idle 2s
+click routing.node.2
+action IncrementPluginParam
+assert routing.dirty == true
+assert routing.active_matches_base == true
+click routing-apply
+wait_until plugins.update_pending == false timeout=5s
+assert routing.applying == false
+assert input_mode == "Normal"
+assert routing.dirty == false
+assert toast.type == null
+assert playback.is_playing == false
+screenshot routing-applied-acknowledged

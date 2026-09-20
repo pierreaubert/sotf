@@ -13,28 +13,99 @@ impl PlayerView {
     pub(crate) fn browse_headphone_eq_measurement(&mut self, cx: &mut Context<Self>) {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
-            let state_entity = self.state.clone();
+            let view = cx.entity().downgrade();
             cx.spawn(async move |_, cx| {
                 let file = rfd::AsyncFileDialog::new()
                     .add_filter("CSV Files", &["csv", "txt"])
                     .set_title("Select Headphone Measurement")
                     .pick_file()
                     .await;
-
-                if let Some(file) = file {
-                    let path = file.path().to_string_lossy().to_string();
-                    state_entity.update(&mut cx.clone(), |state, _| {
-                        state
-                            .app
-                            .measurement_state
-                            .headphone_eq_state
-                            .model
-                            .measurement_path = path;
+                if let Some(file) = file
+                    && let Some(view) = view.upgrade()
+                {
+                    view.update(cx, |view, cx| {
+                        view.load_headphone_eq_measurement(file.path().to_path_buf(), cx);
                     });
                 }
             })
             .detach();
         }
+    }
+
+    /// Import through the same worker path for the file picker and isolated QA.
+    pub(crate) fn load_headphone_eq_measurement(
+        &mut self,
+        path: std::path::PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        use crate::app::types::headphone_eq::HeadphoneMeasurementSource;
+        if self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .headphone_eq_state
+            .measurement_source
+            != HeadphoneMeasurementSource::File
+        {
+            return;
+        }
+        let request_id = self.state.update(cx, |state, _| {
+            let headphone = &mut state.app.measurement_state.headphone_eq_state;
+            headphone.model.loading_download = true;
+            headphone.begin_download_request()
+        });
+        let state_entity = self.state.clone();
+        cx.notify();
+        cx.spawn(async move |_, cx| {
+            let preview = cx
+                .background_executor()
+                .spawn(async move {
+                    sotf_audio_player::autoeq::headphone::HeadphoneMeasurementPreview::load(&path)
+                })
+                .await;
+            state_entity.update(cx, |state, cx| {
+                let headphone = &mut state.app.measurement_state.headphone_eq_state;
+                if headphone.download_request_id != request_id {
+                    return;
+                }
+                headphone.model.loading_download = false;
+                if headphone.measurement_source != HeadphoneMeasurementSource::File {
+                    cx.notify();
+                    return;
+                }
+                match preview {
+                    Ok(preview) => {
+                        let text = crate::app::i18n::HeadphoneIdentityTranslations::for_language(
+                            state.app.ui_state.language,
+                        );
+                        let message = text.file_message(
+                            preview
+                                .path()
+                                .file_name()
+                                .and_then(|name| name.to_str())
+                                .unwrap_or_default(),
+                        );
+                        headphone.model.measurement_path =
+                            preview.path().to_string_lossy().into_owned();
+                        headphone.file_preview = Some(std::sync::Arc::new(preview));
+                        headphone.model.error_message = None;
+                        state.app.ui_state.toast_message =
+                            Some(crate::app::types::ToastMessage::success(message));
+                    }
+                    Err(error) => {
+                        let text = crate::app::i18n::HeadphoneIdentityTranslations::for_language(
+                            state.app.ui_state.language,
+                        );
+                        state.app.ui_state.toast_message = Some(
+                            crate::app::types::ToastMessage::error(text.file_message(&error)),
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     pub(crate) fn browse_headphone_eq_target(&mut self, cx: &mut Context<Self>) {
@@ -50,13 +121,13 @@ impl PlayerView {
 
                 if let Some(file) = file {
                     let path = file.path().to_string_lossy().to_string();
-                    state_entity.update(&mut cx.clone(), |state, _| {
-                        state
-                            .app
-                            .measurement_state
-                            .headphone_eq_state
-                            .model
-                            .custom_target_path = path;
+                    state_entity.update(&mut cx.clone(), |state, cx| {
+                        let headphone = &mut state.app.measurement_state.headphone_eq_state;
+                        if !headphone.model.requires_custom_target_path() {
+                            return;
+                        }
+                        headphone.model.custom_target_path = path;
+                        cx.notify();
                     });
                 }
             })
@@ -66,6 +137,14 @@ impl PlayerView {
 
     pub(crate) fn start_headphone_eq_optimization(&mut self, cx: &mut Context<Self>) {
         let state = self.state.read(cx);
+        if state
+            .app
+            .measurement_state
+            .headphone_eq_state
+            .is_optimizing()
+        {
+            return;
+        }
         let measurement_path = state
             .app
             .measurement_state
@@ -116,6 +195,8 @@ impl PlayerView {
 
         // Update status to running
         let cancel_flag = self.state.update(cx, |state, cx| {
+            let headphone = &mut state.app.measurement_state.headphone_eq_state;
+            headphone.result_inputs = Some(headphone.model.optimization_input_snapshot());
             state
                 .app
                 .measurement_state
@@ -284,6 +365,12 @@ impl PlayerView {
                             ),
                         };
 
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .delivery
+                            .calculated();
                         state.app.measurement_state.headphone_eq_state.model.result =
                             Some(app_result);
                         state
@@ -347,22 +434,66 @@ impl PlayerView {
         });
     }
 
+    fn check_headphone_result_freshness(&mut self, cx: &mut Context<Self>) -> bool {
+        let state = self.state.read(cx);
+        let headphone = &state.app.measurement_state.headphone_eq_state;
+        if headphone.result.is_none() || headphone.result_is_current() {
+            return true;
+        }
+        self.state.update(cx, |state, cx| {
+            let text =
+                crate::app::i18n::DesktopTranslations::for_language(state.app.ui_state.language);
+            state.app.ui_state.toast_message =
+                Some(crate::app::ToastMessage::warning(text.stale_result));
+            cx.notify();
+        });
+        false
+    }
+
+    /// Resubmit a failed application without replacing its graph or Undo snapshot.
+    fn retry_headphone_application(&mut self, cx: &mut Context<Self>) -> bool {
+        self.state.update(cx, |state, cx| {
+            let Some(graph) = state.app.correction_processing_snapshot() else {
+                return false;
+            };
+            let delivery = &mut state.app.measurement_state.headphone_eq_state.delivery;
+            if !delivery.can_retry_application(&graph) {
+                return false;
+            }
+            delivery.request_application(graph);
+            state.app.plugin_state.update_state.pending_plugin_update =
+                Some(crate::app::types::PluginUpdateType::Structural);
+            let text = crate::app::i18n::CorrectionApplicationTranslations::for_language(
+                state.app.ui_state.language,
+            );
+            state.app.ui_state.toast_message =
+                Some(crate::app::types::ToastMessage::info(text.pending));
+            cx.notify();
+            true
+        })
+    }
+
     pub(crate) fn apply_headphone_eq_result(&mut self, cx: &mut Context<Self>) {
+        {
+            let app = &self.state.read(cx).app;
+            let correction = &app.measurement_state.headphone_eq_state;
+            if app.correction_application_status(&correction.delivery, correction.result_is_current())
+                == sotf_audio_player::ui_models::correction_delivery::CorrectionApplicationStatus::Pending
+            { return; }
+        }
+        if !self.check_headphone_result_freshness(cx) {
+            return;
+        }
+        if self.retry_headphone_application(cx) {
+            return;
+        }
         self.state.update(cx, |state, cx| {
             if let Some(result) = &state.app.measurement_state.headphone_eq_state.result {
-                // Convert biquads to EQFilters, filtering out near-zero gain filters
+                // Preserve every designed filter: zero gain does not disable notch or pass filters.
                 let filters: Vec<EQFilter> = result
                     .biquads
                     .iter()
-                    .filter(|bq| bq.db_gain.abs() >= 0.1) // Skip effectively disabled filters
-                    .map(|bq| {
-                        EQFilter::new(
-                            parse_filter_type(&bq.filter_type),
-                            bq.freq,
-                            bq.q,
-                            bq.db_gain,
-                        )
-                    })
+                    .map(|bq| EQFilter::new(bq.biquad_filter_type(), bq.freq, bq.q, bq.db_gain))
                     .collect();
 
                 // Create new EQ plugin settings
@@ -395,9 +526,21 @@ impl PlayerView {
                 state.app.plugin_state.update_state.pending_plugin_update =
                     Some(crate::app::types::PluginUpdateType::Structural);
                 state.app.sync_spectrum_visible();
+                if let Some(graph) = state.app.correction_processing_snapshot() {
+                    state
+                        .app
+                        .measurement_state
+                        .headphone_eq_state
+                        .delivery
+                        .request_application(graph);
+                }
+                let application_text =
+                    crate::app::i18n::CorrectionApplicationTranslations::for_language(
+                        state.app.ui_state.language,
+                    );
 
-                state.app.ui_state.toast_message = Some(crate::app::types::ToastMessage::success(
-                    "Applied Headphone EQ",
+                state.app.ui_state.toast_message = Some(crate::app::types::ToastMessage::info(
+                    application_text.pending,
                 ));
                 cx.notify();
             } else {
@@ -410,6 +553,19 @@ impl PlayerView {
     }
 
     pub(crate) fn apply_headphone_easy_result(&mut self, cx: &mut Context<Self>) {
+        {
+            let app = &self.state.read(cx).app;
+            let correction = &app.measurement_state.headphone_eq_state;
+            if app.correction_application_status(&correction.delivery, correction.result_is_current())
+                == sotf_audio_player::ui_models::correction_delivery::CorrectionApplicationStatus::Pending
+            { return; }
+        }
+        if !self.check_headphone_result_freshness(cx) {
+            return;
+        }
+        if self.retry_headphone_application(cx) {
+            return;
+        }
         self.state.update(cx, |state, cx| {
             let translations = HeadphoneEasyTranslations::for_language(state.app.ui_state.language);
             let Some(result) = state
@@ -461,10 +617,21 @@ impl PlayerView {
                     state.app.plugin_state.update_state.pending_plugin_update =
                         Some(crate::app::types::PluginUpdateType::Structural);
                     state.app.sync_spectrum_visible();
-                    state.app.ui_state.toast_message =
-                        Some(crate::app::types::ToastMessage::success(
-                            translations.applied(outcome.active_filters, outcome.preamp_db),
-                        ));
+                    if let Some(graph) = state.app.correction_processing_snapshot() {
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .delivery
+                            .request_application(graph);
+                    }
+                    let application_text =
+                        crate::app::i18n::CorrectionApplicationTranslations::for_language(
+                            state.app.ui_state.language,
+                        );
+                    state.app.ui_state.toast_message = Some(crate::app::types::ToastMessage::info(
+                        application_text.pending,
+                    ));
                 }
                 Err(error) => {
                     state.app.ui_state.toast_message =
@@ -509,13 +676,16 @@ impl PlayerView {
 
     pub(crate) fn edit_headphone_easy_chain(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, cx| {
-            state.app.ui_state.last_screen = crate::app::Screen::HeadphoneEq;
+            state.app.ui_state.navigation.last_screen = crate::app::Screen::HeadphoneEq;
             state.app.ui_state.current_screen = crate::app::Screen::Studio;
             cx.notify();
         });
     }
 
     pub(crate) fn save_headphone_eq_result(&mut self, cx: &mut Context<Self>) {
+        if !self.check_headphone_result_freshness(cx) {
+            return;
+        }
         #[cfg(feature = "dev-api")]
         if self.save_headphone_eq_qa_export(cx) {
             return;
@@ -524,6 +694,12 @@ impl PlayerView {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let state = self.state.read(cx);
+            let export_revision = state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .delivery
+                .revision();
             if let Some(result) = &state.app.measurement_state.headphone_eq_state.result {
                 let export_format = state
                     .app
@@ -549,14 +725,7 @@ impl PlayerView {
                     .biquads
                     .iter()
                     .map(|b| {
-                        let ft = match b.filter_type.as_str() {
-                            "peak" => math_audio_iir_fir::BiquadFilterType::Peak,
-                            "lowshelf" => math_audio_iir_fir::BiquadFilterType::Lowshelf,
-                            "highshelf" => math_audio_iir_fir::BiquadFilterType::Highshelf,
-                            "lowpass" => math_audio_iir_fir::BiquadFilterType::Lowpass,
-                            "highpass" => math_audio_iir_fir::BiquadFilterType::Highpass,
-                            _ => math_audio_iir_fir::BiquadFilterType::Peak,
-                        };
+                        let ft = b.biquad_filter_type();
                         math_audio_iir_fir::Biquad::new(ft, b.freq, 48000.0, b.q, b.db_gain)
                     })
                     .collect();
@@ -600,6 +769,16 @@ impl PlayerView {
                         state_entity.update(&mut cx.clone(), |state, cx| {
                             match write_res {
                                 Ok(_) => {
+                                    state
+                                        .app
+                                        .measurement_state
+                                        .headphone_eq_state
+                                        .delivery
+                                        .exported(
+                                            export_revision,
+                                            export_format.clone(),
+                                            path.clone(),
+                                        );
                                     state.app.ui_state.toast_message =
                                         Some(crate::app::types::ToastMessage::success(format!(
                                             "Saved EQ to {}",
@@ -639,6 +818,14 @@ impl PlayerView {
             return false;
         };
 
+        let export_revision = self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .headphone_eq_state
+            .delivery
+            .revision();
         let (biquads, export_format, default_name) = {
             let state = self.state.read(cx);
             let headphone_eq = &state.app.measurement_state.headphone_eq_state;
@@ -656,14 +843,7 @@ impl PlayerView {
                 .biquads
                 .iter()
                 .map(|biquad| {
-                    let filter_type = match biquad.filter_type.as_str() {
-                        "peak" => math_audio_iir_fir::BiquadFilterType::Peak,
-                        "lowshelf" => math_audio_iir_fir::BiquadFilterType::Lowshelf,
-                        "highshelf" => math_audio_iir_fir::BiquadFilterType::Highshelf,
-                        "lowpass" => math_audio_iir_fir::BiquadFilterType::Lowpass,
-                        "highpass" => math_audio_iir_fir::BiquadFilterType::Highpass,
-                        _ => math_audio_iir_fir::BiquadFilterType::Peak,
-                    };
+                    let filter_type = biquad.biquad_filter_type();
                     math_audio_iir_fir::Biquad::new(
                         filter_type,
                         biquad.freq,
@@ -699,6 +879,12 @@ impl PlayerView {
             std::fs::create_dir_all(&directory).and_then(|()| std::fs::write(&path, content));
         self.state.update(cx, |state, _cx| match write_result {
             Ok(()) => {
+                state
+                    .app
+                    .measurement_state
+                    .headphone_eq_state
+                    .delivery
+                    .exported(export_revision, export_format.clone(), path.clone());
                 state
                     .app
                     .measurement_state
@@ -1051,18 +1237,4 @@ impl PlayerView {
 /// Helper to zip two vectors into a vector of tuples
 fn zip_vectors(x: &[f64], y: &[f64]) -> Vec<(f64, f64)> {
     x.iter().zip(y.iter()).map(|(&a, &b)| (a, b)).collect()
-}
-
-/// Helper to parse filter type string to enum
-fn parse_filter_type(type_str: &str) -> math_audio_iir_fir::BiquadFilterType {
-    match type_str.to_lowercase().as_str() {
-        "pk" | "peak" => math_audio_iir_fir::BiquadFilterType::Peak,
-        "ls" | "lowshelf" => math_audio_iir_fir::BiquadFilterType::Lowshelf,
-        "hs" | "highshelf" => math_audio_iir_fir::BiquadFilterType::Highshelf,
-        "lp" | "lowpass" => math_audio_iir_fir::BiquadFilterType::Lowpass,
-        "hp" | "highpass" => math_audio_iir_fir::BiquadFilterType::Highpass,
-        "bp" | "bandpass" => math_audio_iir_fir::BiquadFilterType::Bandpass,
-        "no" | "notch" => math_audio_iir_fir::BiquadFilterType::Notch,
-        _ => math_audio_iir_fir::BiquadFilterType::Peak, // Default
-    }
 }

@@ -1,0 +1,38 @@
+# Crossover frequency editing on grouped multi-driver channels.
+# Enters through the production Recording import, edits both L/R crossover
+# frequencies through the native exact-entry fields, and verifies model
+# values survive subsequent edits.
+focus recording
+wait_until recording.done_count == 8 timeout=10s
+focus room-e-q
+click roomeq.load_from_recording
+assert roomeq.has_multi_driver == true
+assert roomeq.driver_count.L == 2
+assert roomeq.driver_count.R == 2
+click roomeq.next
+click roomeq.next
+assert roomeq.step == "Process"
+scroll_into_view roomeq.content roomeq.select_full
+click roomeq.select_full
+assert roomeq.step == "Configure"
+scroll_into_view roomeq.content autoeq.stage.2
+click autoeq.stage.2
+scroll roomeq.content -10000
+scroll_into_view roomeq.content roomeq.channel-controls.0
+scroll_into_view roomeq.content roomeq.crossover_freq.0.0
+click roomeq.crossover_freq.0.0
+key cmd-a
+type "2500"
+key enter
+wait_idle 500ms
+assert roomeq.crossover_freq.0.0 == 2500
+screenshot roomeq-crossover-freq
+scroll_into_view roomeq.content roomeq.crossover_freq.1.0
+click roomeq.crossover_freq.1.0
+key cmd-a
+type "1800"
+key enter
+wait_idle 500ms
+assert roomeq.crossover_freq.1.0 == 1800
+assert roomeq.crossover_freq.0.0 == 2500
+assert playback.is_playing == false

@@ -1,0 +1,51 @@
+focus Library
+wait_idle 2s
+click library.search_input
+type "Retain this query"
+assert library.search_query == "Retain this query"
+focus Home
+focus Settings
+wait_idle 2s
+action PreferencesDraftUnavailableOutput
+assert preferences.output_draft == "QA disconnected output"
+assert input_mode == "Normal"
+key escape
+assert screen.focused == "Settings"
+assert preferences.close_pending == true
+assert library.search_query == "Retain this query"
+click preferences.close.keep
+assert preferences.close_pending == false
+assert preferences.output_draft == "QA disconnected output"
+click preferences.done
+key escape
+assert preferences.close_pending == false
+assert preferences.output_draft == "QA disconnected output"
+click preferences.done
+click preferences.close.apply
+assert screen.focused == "Settings"
+assert preferences.close_pending == true
+assert preferences.output_error != null
+assert preferences.output_draft == "QA disconnected output"
+assert playback.is_playing == false
+resize 600 800
+wait_idle 2s
+assert_in_viewport preferences.close.keep
+assert_in_viewport preferences.close.discard
+assert_in_viewport preferences.close.apply
+screenshot preferences-close-unavailable
+click preferences.close.discard
+assert screen.focused == "Home"
+assert preferences.output_draft == null
+assert preferences.output_error == null
+assert preferences.close_pending == false
+focus Settings
+wait_idle 2s
+click preferences.category
+assert preferences.category_open == true
+key escape
+assert preferences.category_open == false
+assert screen.focused == "Settings"
+assert library.search_query == "Retain this query"
+key escape
+assert screen.focused == "Home"
+assert playback.is_playing == false

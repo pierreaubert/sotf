@@ -14,3 +14,7 @@ mod misc;
 #[cfg(test)]
 #[path = "component_tests/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "component_tests/workspace.rs"]
+mod workspace;

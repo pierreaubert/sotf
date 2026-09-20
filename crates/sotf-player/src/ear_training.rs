@@ -14,7 +14,7 @@ const MIN_BANDS: usize = 2;
 const MAX_BANDS: usize = 25;
 const MIN_FREQUENCY_HZ: f64 = 20.0;
 const MAX_FREQUENCY_HZ: f64 = 20_000.0;
-const GAIN_CHOICES_DB: [f64; 4] = [3.0, 6.0, 9.0, 12.0];
+pub const GAIN_CHOICES_DB: [f64; 4] = [3.0, 6.0, 9.0, 12.0];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -296,6 +296,8 @@ pub struct EqTrainingSession {
     pub band_frequencies: Vec<f64>,
     pub trials: Vec<EqTrainingResult>,
     pub current_question: Option<EqTrainingQuestion>,
+    #[serde(default)]
+    pub ended_early: bool,
 }
 
 impl EqTrainingSession {
@@ -306,11 +308,12 @@ impl EqTrainingSession {
             band_frequencies,
             trials: Vec::new(),
             current_question: None,
+            ended_early: false,
         })
     }
 
     pub fn start(&mut self) -> Result<&EqTrainingQuestion, EqTrainingError> {
-        if self.current_question.is_some() || !self.trials.is_empty() {
+        if self.ended_early || self.current_question.is_some() || !self.trials.is_empty() {
             return Err(EqTrainingError::SessionAlreadyStarted);
         }
         self.current_question = Some(self.generate_question(0));
@@ -369,6 +372,20 @@ impl EqTrainingSession {
 
     pub fn is_complete(&self) -> bool {
         self.current_question.is_none() && self.trials.len() == self.config.trial_count
+    }
+
+    /// End an active practice session without inventing an answer for its
+    /// current question. Returns true once, so callers can record history once.
+    pub fn finish_early(&mut self) -> bool {
+        if self.current_question.take().is_none() {
+            return false;
+        }
+        self.ended_early = self.trials.len() < self.config.trial_count;
+        true
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.ended_early || self.is_complete()
     }
 
     pub fn correct_count(&self) -> usize {
@@ -444,12 +461,20 @@ impl EqTrainingSession {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EarTrainingSessionSummary {
+    /// Difficulty used for this session. Older history did not retain it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<EqTrainingConfig>,
     pub completed_at_unix_secs: u64,
     pub course: Option<EarTrainingCourse>,
     pub exercise: EqTrainingExercise,
     pub accuracy: f64,
     pub correct: usize,
     pub attempts: usize,
+    /// Older history did not retain the planned count.
+    #[serde(default)]
+    pub planned_trials: Option<usize>,
+    #[serde(default)]
+    pub ended_early: bool,
     pub band_frequencies: Vec<f64>,
     pub band_stats: Vec<(usize, usize)>,
 }
@@ -462,11 +487,14 @@ impl EarTrainingSessionSummary {
             .as_secs();
         Self {
             completed_at_unix_secs,
+            config: Some(session.config.clone()),
             course,
             exercise: session.config.exercise,
             accuracy: session.accuracy(),
             correct: session.correct_count(),
             attempts: session.trials.len(),
+            planned_trials: Some(session.config.trial_count),
+            ended_early: session.ended_early,
             band_frequencies: session.band_frequencies.clone(),
             band_stats: session
                 .band_stats()
@@ -485,6 +513,14 @@ pub struct EarTrainingProgress {
     /// progress so it survives app restarts without coupling it to a frontend.
     #[serde(default)]
     pub how_to_listen_completed: bool,
+}
+
+/// Application-independent next-step guidance, ready for localized presentation.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EarTrainingRecommendation {
+    Foundations,
+    BoostCut,
+    FocusFrequency { frequency_hz: f64 },
 }
 
 impl EarTrainingProgress {
@@ -550,13 +586,23 @@ impl EarTrainingProgress {
     }
 
     pub fn recommendation(&self) -> String {
-        if self.sessions.is_empty() {
-            return "Start with Foundations at 12 dB.".into();
+        match self.recommendation_details() {
+            EarTrainingRecommendation::Foundations => "Start with Foundations at 12 dB.".into(),
+            EarTrainingRecommendation::BoostCut => "Try a boost/cut identification session.".into(),
+            EarTrainingRecommendation::FocusFrequency { frequency_hz } => {
+                format!("Focus around {frequency_hz:.0} Hz, then reduce gain by 3 dB.")
+            }
         }
-        self.weakest_frequency_hz().map_or_else(
-            || "Try a boost/cut identification session.".into(),
-            |frequency| format!("Focus around {frequency:.0} Hz, then reduce gain by 3 dB."),
-        )
+    }
+
+    pub fn recommendation_details(&self) -> EarTrainingRecommendation {
+        if self.sessions.is_empty() {
+            return EarTrainingRecommendation::Foundations;
+        }
+        self.weakest_frequency_hz()
+            .map_or(EarTrainingRecommendation::BoostCut, |frequency_hz| {
+                EarTrainingRecommendation::FocusFrequency { frequency_hz }
+            })
     }
 
     pub fn adaptive_config(&self) -> EqTrainingConfig {
@@ -639,6 +685,78 @@ impl std::error::Error for EqTrainingError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn early_finish_retains_answers_and_planned_count_without_scoring_pending_question() {
+        let mut session = EqTrainingSession::new(EqTrainingConfig {
+            trial_count: 4,
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(!session.finish_early());
+        session.start().unwrap();
+        session.submit_answer(0).unwrap();
+        session.advance().unwrap();
+        let submitted = session.trials.clone();
+        assert!(session.finish_early());
+        assert!(!session.finish_early());
+        assert_eq!(session.trials, submitted);
+        assert_eq!(session.config.trial_count, 4);
+        assert!(session.is_finished());
+        assert!(!session.is_complete());
+        assert!(session.start().is_err());
+        assert!(session.submit_answer(0).is_err());
+        assert!(session.advance().is_err());
+        let summary = EarTrainingSessionSummary::from_session(&session, None);
+        assert_eq!(summary.attempts, 1);
+        assert_eq!(summary.planned_trials, Some(4));
+        assert!(summary.ended_early);
+        let restored: EqTrainingSession =
+            serde_json::from_value(serde_json::to_value(&session).unwrap()).unwrap();
+        assert_eq!(restored, session);
+    }
+
+    #[test]
+    fn early_finish_handles_zero_answers_and_an_already_answered_final_question() {
+        let mut empty = EqTrainingSession::new(EqTrainingConfig::default()).unwrap();
+        empty.start().unwrap();
+        assert!(empty.finish_early());
+        assert!(empty.is_finished());
+        assert_eq!(empty.accuracy(), 0.0);
+        assert!(empty.trials.is_empty());
+        assert!(empty.start().is_err());
+
+        let mut complete = EqTrainingSession::new(EqTrainingConfig {
+            trial_count: 1,
+            ..Default::default()
+        })
+        .unwrap();
+        complete.start().unwrap();
+        complete.submit_answer(0).unwrap();
+        assert!(complete.finish_early());
+        assert!(complete.is_complete());
+        assert!(!complete.ended_early);
+        assert!(!complete.finish_early());
+    }
+
+    #[test]
+    fn older_training_sessions_and_history_remain_readable() {
+        let session = EqTrainingSession::new(EqTrainingConfig::default()).unwrap();
+        let mut old_session = serde_json::to_value(&session).unwrap();
+        old_session.as_object_mut().unwrap().remove("ended_early");
+        let restored: EqTrainingSession = serde_json::from_value(old_session).unwrap();
+        assert_eq!(restored, session);
+        let mut old_summary =
+            serde_json::to_value(EarTrainingSessionSummary::from_session(&session, None)).unwrap();
+        old_summary
+            .as_object_mut()
+            .unwrap()
+            .remove("planned_trials");
+        old_summary.as_object_mut().unwrap().remove("ended_early");
+        let restored: EarTrainingSessionSummary = serde_json::from_value(old_summary).unwrap();
+        assert_eq!(restored.planned_trials, None);
+        assert!(!restored.ended_early);
+    }
 
     #[test]
     fn default_config_builds_logarithmic_bands() {
@@ -782,6 +900,42 @@ mod tests {
         assert_eq!(progress.streak(), 1);
         assert_eq!(progress.adaptive_config().gain_db, 3.0);
         assert!(progress.recommendation().contains("Hz"));
+    }
+
+    #[test]
+    fn history_retains_difficulty_and_loads_legacy_sessions() {
+        let config = EqTrainingConfig {
+            band_count: 7,
+            gain_db: 4.5,
+            q: 0.8,
+            min_frequency_hz: 80.0,
+            max_frequency_hz: 12_000.0,
+            trial_count: 1,
+            ..Default::default()
+        };
+        let mut session = EqTrainingSession::new(config.clone()).unwrap();
+        let answer = session.start().unwrap().band_index;
+        session.submit_answer(answer).unwrap();
+        session.advance().unwrap();
+        let mut progress = EarTrainingProgress::default();
+        progress.record(&session, None);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.json");
+        progress.save_atomic(&path).unwrap();
+        let loaded = EarTrainingProgress::load(&path).unwrap();
+        assert_eq!(loaded.sessions[0].config.as_ref(), Some(&config));
+
+        // Existing files must retain scores without inventing missing difficulty.
+        let mut legacy = serde_json::to_value(&progress).unwrap();
+        legacy["sessions"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("config");
+        std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        let loaded = EarTrainingProgress::load(&path).unwrap();
+        assert!(loaded.sessions[0].config.is_none());
+        assert_eq!(loaded.sessions[0].correct, 1);
+        assert_eq!(loaded.sessions[0].attempts, 1);
     }
 
     #[test]

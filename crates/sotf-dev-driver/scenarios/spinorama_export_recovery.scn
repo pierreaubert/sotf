@@ -1,0 +1,22 @@
+# Force a real write failure using an empty directory inside isolated QA state.
+action SpinoramaSetExportFixture
+resize 600 1000
+wait_idle 500ms
+qa_empty_dir create spinorama_eq_Export_Fixture.json
+scroll_into_view spinorama.content spinorama.export_save
+click spinorama.export_save
+wait_idle 1s
+assert spinorama.export_current == false
+scroll_into_view spinorama.content spinorama.export_error
+assert_in_viewport spinorama.export_error
+scroll spinorama.content -3000
+wait_idle 500ms
+screenshot spinorama-export-failed
+qa_empty_dir remove spinorama_eq_Export_Fixture.json
+click spinorama.export_save
+wait_until spinorama.export_current == true timeout=5s
+assert_absent spinorama.export_error
+scroll_into_view spinorama.content correction.export_status
+screenshot spinorama-export-recovered
+assert spinorama.export_filter_summary == "Lowshelf@96000,Highshelf@96000,Notch@96000"
+assert playback.is_playing == false

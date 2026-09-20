@@ -1,0 +1,26 @@
+# Requires a desktop binary built with dev-api,qa,hal. Never starts playback.
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+size = "1440x1000"
+
+[[scenario]]
+name = "preferences-audio-save-failure"
+path = "crates/sotf-dev-driver/scenarios/preferences_audio_save_failure.scn"
+
+[[scenario]]
+name = "preferences-device-details"
+path = "crates/sotf-dev-driver/scenarios/preferences_device_details.scn"
+
+[[scenario]]
+name = "preferences-output-search"
+path = "crates/sotf-dev-driver/scenarios/preferences_output_search.scn"
+
+[[scenario]]
+name = "preferences-input-draft"
+path = "crates/sotf-dev-driver/scenarios/preferences_input_draft.scn"
+
+[[scenario]]
+name = "preferences-replaygain-draft"
+path = "crates/sotf-dev-driver/scenarios/preferences_replaygain_draft.scn"

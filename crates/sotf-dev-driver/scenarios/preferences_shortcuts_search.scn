@@ -1,0 +1,40 @@
+focus Settings
+resize 600 800
+wait_idle 2s
+click preferences.search
+type "playback keyboard shortcuts"
+wait_idle 1s
+click preferences.result.Shortcuts
+wait_idle 2s
+assert settings.active_tab == "Keybindings"
+assert preferences.setting == "Shortcuts"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.Shortcuts
+assert_in_viewport settings.keybinding.edit.playpause
+assert settings.custom_keybinding_count == 0
+screenshot preferences-shortcuts-search
+scroll settings.keybinding.list -600
+wait_idle 1s
+click preferences.search
+type "playback keyboard shortcuts"
+wait_idle 1s
+click preferences.result.Shortcuts
+wait_idle 2s
+assert_in_viewport settings.keybinding.edit.playpause
+key enter
+wait_idle 1s
+assert_visible settings.keybinding.capture
+assert_focused keybinding-capture
+key f6
+wait_idle 1s
+assert_visible settings.keybinding.save
+screenshot preferences-shortcuts-edit
+scroll preferences.content -180
+wait_idle 1s
+assert_in_viewport settings.keybinding.cancel
+screenshot preferences-shortcuts-cancel
+click settings.keybinding.cancel
+wait_idle 1s
+assert_absent settings.keybinding.capture
+assert settings.custom_keybinding_count == 0
+assert playback.is_playing == false

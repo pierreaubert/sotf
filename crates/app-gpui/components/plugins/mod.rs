@@ -115,6 +115,7 @@ pub fn render_plugin_content(
     eq_chart_focus_handle: FocusHandle,
     plugin_exact_entry_focus_handle: FocusHandle,
     cx: &mut Context<PlayerView>,
+    solved_editor_width: Option<f32>,
 ) -> AnyElement {
     let d = Ds::from_cx(cx);
     let state = entity.read(cx);
@@ -132,17 +133,19 @@ pub fn render_plugin_content(
         .get(&plugin_idx)
         .copied()
         .unwrap_or(0);
-    let mut auto_overflow_open = state
-        .app
-        .plugin_ui
-        .plugin_auto_overflow_open
-        .get(&plugin_idx)
-        .copied()
-        .unwrap_or(false);
-
-    // Resolve the active plugin chassis theme — cascade of rack default
-    // and per-plugin override. Bound here so `&plugin_theme` references in
-    // both render paths remain valid for the rest of the function.
+    let sections = plugin_instance_id.map(|id| {
+        (
+            id,
+            state
+                .app
+                .plugin_state
+                .plugin_ui_state
+                .plugin_sections
+                .get(&id)
+                .cloned()
+                .unwrap_or_default(),
+        )
+    });
     let plugin_theme = plugin_theme_id_for_app_theme(
         state
             .app
@@ -163,36 +166,12 @@ pub fn render_plugin_content(
         state.app.ui_state.max_font_size_px,
     );
 
-    // Compute available width for the plugin content area.
-    let available_width = {
-        let is_standalone = state.app.ui_state.current_screen == crate::app::Screen::Studio;
-        let content_width = if is_standalone {
-            let nav_width = if state.app.ui_state.primary_nav_collapsed {
-                60.0 * combined_scale
-            } else {
-                192.0 * combined_scale
-            };
-            (window_width - nav_width).max(0.0)
-        } else {
-            let layout_state = state.layout.read(cx);
-            let rack_ratio = if layout_state.rack_panel_collapsed {
-                0.0
-            } else {
-                layout_state.rack_h_ratio
-            };
-            rack_ratio * window_width
-        };
-        let output_meter_width = if state.app.layout.output_meter_collapsed {
-            0.0
-        } else {
-            state.app.layout.output_meter_width
-        };
-        // Header/shell chrome is 2.75rem at the 16px baseline. Never
-        // advertise more width than physically remains: narrow/zoomed views
-        // must select their compact layouts instead of clipping a phantom
-        // 300px minimum.
-        (content_width - output_meter_width - 44.0 * combined_scale).max(1.0)
-    };
+    // The caller supplies the measured content box after meters and shell
+    // padding. The initial compact fallback is replaced after layout.
+    let available_width = solved_editor_width
+        .filter(|width| width.is_finite())
+        .unwrap_or(320.0 * combined_scale)
+        .max(1.0);
 
     // Overlay the chassis theme onto the global app theme so custom views
     // and the layout renderer share the same chassis-aware colors. The owned
@@ -200,31 +179,35 @@ pub fn render_plugin_content(
     // borrow it.
     let chassis_theme = plugin_theme.apply_to(theme);
 
-    // A controlled overflow surface must not remain logically open after a
-    // resize or mode change makes every group visible again.
-    if auto_overflow_open
-        && settings.layout().is_some()
-        && !ui_layout_renderer::generated_layout_has_overflow(
-            settings,
-            available_width,
-            combined_scale,
-        )
-    {
-        auto_overflow_open = false;
-        entity.update(cx, |state, _| {
-            state
-                .app
-                .plugin_ui
-                .plugin_auto_overflow_open
-                .insert(plugin_idx, false);
-        });
-    }
-
-    // Check if this plugin has a registered custom view
     let registry = gpui_view_registry();
     let type_key = custom_view_registry::plugin_type_key(settings);
 
-    let content = if let Some(render_fn) = registry.get(type_key) {
+    let minimum_width = if settings.param_specs().len() <= 3 {
+        160.0
+    } else if settings.layout().is_some()
+        && (registry.get(type_key).is_none()
+            || matches!(
+                settings,
+                PluginSettings::Crossfeed { .. }
+                    | PluginSettings::Denoiser { .. }
+                    | PluginSettings::MultibandCompressor { .. }
+                    | PluginSettings::MultibandExpander { .. }
+            ))
+    {
+        // Declarative editors wrap their controls. Require room for one
+        // control, not a complete row, so scaled narrow windows stay usable.
+        200.0
+    } else {
+        320.0
+    };
+    let content = if available_width < minimum_width * combined_scale {
+        use gpui::prelude::*;
+        gpui::div()
+            .w_full()
+            .min_w_0()
+            .child(gpui_ui_kit::Text::body(text.editor_too_narrow()))
+            .into_any_element()
+    } else if let Some(render_fn) = registry.get(type_key) {
         let ctx = CustomViewRenderContext {
             entity: entity.clone(),
             plugin_idx,
@@ -269,7 +252,7 @@ pub fn render_plugin_content(
             is_editing,
             selected_param,
             auto_tab,
-            auto_overflow_open,
+            sections,
             plugin_data.as_ref(),
             available_width,
             combined_scale,
@@ -282,9 +265,13 @@ pub fn render_plugin_content(
         gpui::div().into_any_element()
     };
 
+    // This is the scrollport's direct child. Its height must include the full
+    // editor; filling the viewport hides descendant overflow from scrolling.
     if let Some(plugin) = plugin_graph.get_plugin(plugin_idx) {
         gpui::div()
-            .size_full()
+            .w_full()
+            .min_w_0()
+            .flex_shrink_0()
             .flex()
             .flex_col()
             .items_stretch()
@@ -304,7 +291,9 @@ pub fn render_plugin_content(
             .into_any_element()
     } else {
         gpui::div()
-            .size_full()
+            .w_full()
+            .min_w_0()
+            .flex_shrink_0()
             .bg(chassis_theme.background)
             .child(content)
             .into_any_element()

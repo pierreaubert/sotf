@@ -22,6 +22,7 @@ mod multiband_presets;
 mod performance_metrics;
 pub mod plugin_file_picker;
 pub mod queue_render;
+mod recording_display;
 
 #[cfg(test)]
 mod test_harness {
@@ -116,10 +117,11 @@ pub use components::home::image_cache::MAX_CACHE_SIZE;
 // Re-export UI functions for testing
 #[cfg(not(test))]
 pub use ui::{
-    DEFAULT_MAX_FONT_SIZE_PX, DEFAULT_MIN_FONT_SIZE_PX, combined_scale_bounds,
+    DEFAULT_MAX_FONT_SIZE_PX, DEFAULT_MIN_FONT_SIZE_PX, ResolvedSizing, combined_scale_bounds,
     compute_combined_scale, compute_responsive_scale, engine_stop_without_queue_should_clear,
-    estimate_grid_dimensions, is_phone_sized_window, responsive_scale_reference_size,
-    screen_shows_rack_data, should_auto_advance_on_engine_stop, visible_loudness,
+    estimate_grid_dimensions, is_phone_sized_window, resolve_sizing_context,
+    responsive_scale_reference_size, screen_shows_rack_data, should_auto_advance_on_engine_stop,
+    visible_loudness,
 };
 
 // Re-export room EQ rack-apply helper for testing.
@@ -131,10 +133,11 @@ pub use ui::{
 #[cfg(not(test))]
 pub use components::room_eq::render::{
     RoomEqReportCurve, RoomEqReportData, calculate_room_eq_log_trend,
-    is_room_eq_sub_or_lfe_channel, room_eq_channel_sort_key, room_eq_passband_trend_fit_domain,
-    room_eq_python_default_smoothing_octaves, room_eq_report_channel_has_renderable_data,
-    room_eq_report_data_from_dsp_output, room_eq_report_eq_y_range, room_eq_report_y_range,
-    room_eq_trend_fit_domain, should_render_filter_plot, sum_room_eq_responses_db,
+    is_room_eq_sub_or_lfe_channel, room_eq_channel_sort_key, room_eq_chart_width,
+    room_eq_passband_trend_fit_domain, room_eq_python_default_smoothing_octaves,
+    room_eq_report_channel_has_renderable_data, room_eq_report_data_from_dsp_output,
+    room_eq_report_eq_y_range, room_eq_report_y_range, room_eq_trend_fit_domain,
+    should_render_filter_plot, sum_room_eq_responses_db,
 };
 #[cfg(not(test))]
 pub use components::room_eq::{
@@ -149,7 +152,8 @@ pub use sotf_audio_player::autoeq::{classify_channel_eq_filters, upsert_named_ro
 pub use components::plugins::ui_eq::{
     CHART_BOTTOM_MARGIN, CHART_HEIGHT, CHART_LEFT_MARGIN, CHART_RIGHT_MARGIN, CHART_TOP_MARGIN,
     GPUI_PX_MARGIN_TOP, MAX_FREQ, MIN_FREQ, Q_BAR_MAX_WIDTH, Q_BAR_MIN_WIDTH, SAMPLE_RATE,
-    calculate_band_response, calculate_plot_width, calculate_plot_width_without_legend,
-    calculate_response_at_freq, drag_delta_to_q_change, freq_to_x, gain_to_y,
-    get_filter_type_index, nudge_eq_band_values, q_to_bar_width, x_to_freq, y_to_gain,
+    calculate_band_response, calculate_band_response_at_rate, calculate_plot_width,
+    calculate_plot_width_without_legend, calculate_response_at_freq, calculate_response_at_rate,
+    drag_delta_to_q_change, freq_to_x, gain_to_y, get_filter_type_index, nudge_eq_band_values,
+    q_to_bar_width, x_to_freq, y_to_gain,
 };

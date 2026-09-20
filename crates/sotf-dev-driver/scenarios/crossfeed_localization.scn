@@ -1,0 +1,123 @@
+# Shared controls within a custom editor must use the current locale.
+focus Studio
+plugin_clear
+plugin_add Crossfeed
+action PluginSelectFirstUser
+wait_idle
+accessibility
+screenshot crossfeed-german-initial
+assert_accessible slider Mischung
+assert_inaccessible slider Mix
+assert_accessible slider ITD Delay
+scroll_into_view rack.params plugin.choice.2.2.0
+click plugin.choice.2.2.0
+assert plugins.plugin.2.param.2.value == 0
+click plugin.choice.2.2.1
+assert plugins.plugin.2.param.2.value == 1
+screenshot crossfeed-german-shared-controls
+# Edit the actual displayed numeric controls, including percentage scaling.
+scroll_into_view rack.params plugin.control.2.3
+click plugin.control.2.3
+wait_idle
+scroll_into_view rack.params plugin.param.2.3.exact
+screenshot crossfeed-number-3
+click plugin.param.2.3.exact
+wait_idle
+key cmd-a
+type "35"
+key enter
+wait_idle
+assert plugins.plugin.2.param.3.value == 0.35 tolerance=0.001
+assert plugins.plugin.2.enabled == true
+scroll_into_view rack.params plugin.control.2.12
+click plugin.control.2.12
+wait_idle
+scroll_into_view rack.params plugin.param.2.12.exact
+screenshot crossfeed-number-12
+click plugin.param.2.12.exact
+wait_idle
+key cmd-a
+type "0.4"
+key enter
+wait_idle
+assert plugins.plugin.2.param.12.value == 0.4 tolerance=0.001
+assert plugins.plugin.2.enabled == true
+screenshot crossfeed-exact-primary
+# Escape cancels pending text instead of changing the accepted value.
+click plugin.param.2.12.exact
+wait_idle
+key cmd-a
+type "0.8"
+key escape
+wait_idle
+assert plugins.plugin.2.param.12.value == 0.4 tolerance=0.001
+assert plugins.plugin.2.enabled == true
+# Exact entry clamps to the actual parameter bounds.
+click plugin.param.2.12.exact
+wait_idle
+key cmd-a
+type "2"
+key enter
+wait_idle
+assert plugins.plugin.2.param.12.value == 1 tolerance=0.001
+click plugin.param.2.12.exact
+wait_idle
+key cmd-a
+type "-1"
+key enter
+wait_idle
+assert plugins.plugin.2.param.12.value == 0 tolerance=0.001
+assert plugins.plugin.2.enabled == true
+screenshot crossfeed-numeric-bounds
+scroll_into_view rack.params plugin.choice.2.0.1
+click plugin.choice.2.0.1
+assert plugins.plugin.2.param.0.value == 1
+assert_accessible slider Bauer Cutoff
+assert_inaccessible slider Meier Level
+screenshot crossfeed-bauer
+click plugin.choice.2.0.2
+assert plugins.plugin.2.param.0.value == 2
+assert_accessible slider Meier Level
+assert_inaccessible slider Bauer Cutoff
+screenshot crossfeed-meier
+click plugin.choice.2.0.3
+assert plugins.plugin.2.param.0.value == 3
+assert_accessible slider MB Low Freq
+assert_inaccessible slider Meier Level
+screenshot crossfeed-multiband
+click rack.config.toggle
+scroll_into_view rack.config.scroll plugin.choice.2.1.2
+click plugin.choice.2.1.2
+assert plugins.plugin.2.param.1.value == 2
+assert plugins.plugin.2.param.0.value == 2
+assert plugins.plugin.2.param.6.value == 30
+scroll_into_view rack.config.scroll plugin.choice.2.1.1
+click plugin.choice.2.1.1
+assert plugins.plugin.2.param.1.value == 1
+assert plugins.plugin.2.param.0.value == 1
+assert plugins.plugin.2.param.4.value == 700
+assert plugins.plugin.2.param.5.value == 6
+scroll_into_view rack.config.scroll plugin.choice.2.1.4
+click plugin.choice.2.1.4
+assert plugins.plugin.2.param.1.value == 4
+assert plugins.plugin.2.param.0.value == 0
+screenshot crossfeed-preset-off
+scroll_into_view rack.config.scroll plugin.choice.2.1.0
+click plugin.choice.2.1.0
+assert plugins.plugin.2.param.0.value == 1
+assert plugins.plugin.2.param.5.value == 4.5
+scroll_into_view rack.config.scroll plugin.choice.2.1.3
+click plugin.choice.2.1.3
+assert plugins.plugin.2.param.0.value == 3
+assert plugins.plugin.2.param.7.value == 150
+assert plugins.plugin.2.param.8.value == 5700
+scroll_into_view rack.config.scroll plugin.choice.2.1.5
+click plugin.choice.2.1.5
+assert plugins.plugin.2.param.0.value == 4
+screenshot crossfeed-preset-hrtf
+scroll_into_view rack.config.scroll plugin.choice.2.1.4
+click plugin.choice.2.1.4
+click rack.config.toggle
+scroll rack.params 5000
+screenshot crossfeed-off-summary
+plugin_remove 2

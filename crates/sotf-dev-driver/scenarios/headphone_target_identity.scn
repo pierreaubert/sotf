@@ -1,0 +1,39 @@
+# 2026-09-10: Identity disclosure showed raw target IDs instead of picker labels.
+# Fix: components/headphone_eq/measurement_identity.rs resolves shared labels.
+# Run: target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/headphone_target_identity_ui.toml -v
+action HeadphoneSetFileFixture {"mode":"valid"}
+wait_until headphone.loading == false timeout=5s
+assert headphone.target_preset == "harman-over-ear-2018"
+resize 600 800
+wait_idle 1s
+scroll headphone.content -5000
+wait_idle 1s
+assert_in_viewport headphone.target
+scroll_into_view headphone.content headphone.target
+click headphone.target
+assert headphone.target_open == true
+screenshot headphone-target-options
+key up
+key enter
+assert headphone.target_preset == "flat"
+assert headphone.can_advance == true
+click headphone.target
+key up
+key enter
+assert headphone.target_preset == "custom"
+assert headphone.can_advance == false
+screenshot headphone-custom-target-required
+click headphone.target
+key escape
+assert headphone.target_open == false
+click headphone.target
+key down
+key enter
+assert headphone.target_preset == "flat"
+assert headphone.can_advance == true
+scroll_into_view headphone.content headphone.measurement-identity
+click headphone.measurement-identity
+scroll_into_view headphone.content headphone.identity.target
+assert_in_viewport headphone.identity.target
+screenshot headphone-flat-identity
+assert playback.is_playing == false

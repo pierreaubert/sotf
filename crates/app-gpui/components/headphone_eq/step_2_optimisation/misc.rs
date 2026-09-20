@@ -11,7 +11,7 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Badge, BadgeVariant, Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, Progress,
+    Badge, BadgeVariant, Button, ButtonSize, ButtonTheme, ButtonVariant, Card, Progress,
     ProgressSize, ProgressVariant, Spinner, SpinnerSize, StackSpacing, Text, TextSize, TextWeight,
     VStack,
 };
@@ -54,6 +54,9 @@ impl PlayerView {
         let config = &headphone_eq.optimizer_config;
         let autoeq_config = AutoEqConfig {
             eq_design: EqDesignConfig {
+                // This workflow designs IIR filters. A blank default hid every
+                // expert filter control and incorrectly exposed FIR review data.
+                opt_mode: "iir".to_string(),
                 num_filters: config.num_filters,
                 sample_rate: 48000,
                 min_db: config.min_db,
@@ -99,6 +102,7 @@ impl PlayerView {
 
         // Build AutoEqFormUiState from our dropdowns
         let autoeq_ui_state = AutoEqFormUiState {
+            stage: headphone_eq.autoeq_stage,
             detail_level: headphone_eq.detail_level,
             selected_preset: Some(headphone_eq.selected_preset.clone()),
             algo_open: headphone_eq.dropdowns.algorithm_open,
@@ -683,6 +687,15 @@ impl PlayerView {
                     });
                 }
             })
+            .on_stage_change({
+                let state = self.state.clone();
+                move |stage, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state.app.measurement_state.headphone_eq_state.autoeq_stage = stage;
+                        cx.notify();
+                    });
+                }
+            })
             .on_detail_level_change({
                 let state = self.state.clone();
                 move |level, _window, cx| {
@@ -762,68 +775,10 @@ impl PlayerView {
                     .color(theme.text_secondary),
             )
             .child(autoeq_form)
-            .when(headphone_eq.model.requires_custom_target_path(), |vstack| {
-                let custom_target_path = headphone_eq.model.custom_target_path.clone();
-                let path_text = if custom_target_path.is_empty() {
-                    translations.no_target_curve.to_string()
-                } else {
-                    custom_target_path
-                };
-
-                vstack.child(
-                    Card::new()
-                        .background(theme.surface)
-                        .header_background(theme.background_secondary)
-                        .border(theme.border)
-                        .header(
-                            Text::new(translations.custom_target_curve)
-                                .color(theme.text_primary)
-                                .weight(TextWeight::Semibold),
-                        )
-                        .content(
-                            VStack::new()
-                                .spacing(StackSpacing::Sm)
-                                .child(
-                                    Text::new(discovery_text.custom_target_help)
-                                        .size(TextSize::Xs)
-                                        .color(theme.text_secondary),
-                                )
-                                .child(
-                                    HStack::new()
-                                        .spacing(StackSpacing::Xs)
-                                        .child(
-                                            div()
-                                                .flex_1()
-                                                .px(d.pad_x)
-                                                .py(d.pad_y)
-                                                .rounded(d.r_md)
-                                                .bg(theme.background_secondary)
-                                                .text_size(d.text_sm)
-                                                .text_color(
-                                                    if headphone_eq.model.has_custom_target_path() {
-                                                        theme.text_primary
-                                                    } else {
-                                                        theme.text_muted
-                                                    },
-                                                )
-                                                .child(path_text),
-                                        )
-                                        .child(
-                                            Button::new(
-                                                "browse-custom-target",
-                                                discovery_text.browse,
-                                            )
-                                            .variant(ButtonVariant::Secondary)
-                                            .size(ButtonSize::Sm)
-                                            .theme(button_theme.clone())
-                                            .on_click_event(cx.listener(|view, _, _, cx| {
-                                                view.browse_headphone_eq_target(cx);
-                                            })),
-                                        ),
-                                ),
-                        ),
-                )
-            })
+            .when(
+                headphone_eq.model.requires_custom_target_path(),
+                |content| content.child(self.render_headphone_custom_target_controls(cx)),
+            )
             // Generate EQ section
             .child(
                 Card::new()

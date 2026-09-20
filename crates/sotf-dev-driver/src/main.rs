@@ -18,6 +18,11 @@
 //!   assert_visible <selector>              (rendered selector has non-empty bounds)
 //!   assert_absent <selector>               (selector is not in the current rendered frame)
 //!   assert_in_viewport <selector>           (rendered selector is not clipped)
+//! snapshot <path> (save authenticated diagnostic snapshot)
+//!   click_at <x> <y>                     (click a measured viewport point)
+//!   double_click_at <x> <y>              (dispatch a native double-click)
+//!   scroll_at <x> <y> <delta_y>            (wheel at a measured viewport point)
+//!   scroll_into_view <container> <target>   (bring a rendered target into its scrollport)
 //!   assert_non_overlapping <a> <b>           (rendered selectors do not overlap)
 //!   export_room_eq_json [path]             Export completed RoomEQ DSP JSON
 //!   elements                              (print every tracked selector; debugging aid)

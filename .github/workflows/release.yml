@@ -81,7 +81,6 @@ jobs:
             dist/sotf-desktop-*-macos-x86_64
             dist/sotf-tui-*-macos-arm64
             dist/sotf-tui-*-macos-x86_64
-            dist/sotf-systemwide-*-macos-universal.pkg
             dist/au/sotf-audio-units-*.pkg
           retention-days: 7
 

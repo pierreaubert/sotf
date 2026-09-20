@@ -34,12 +34,13 @@ names or old documentation.
 
 ### Core runtime and shared logic
 
-- `crates/sotf-engine/` — decode, process, playback, and manager runtime.
 - `crates/sotf-player/` — shared playback, library, EQ workflow, configuration,
   and application-facing business logic.
-- `crates/sotf-iamf/` — IAMF support.
 - `crates/sotf-media-controls/` — platform media-control integration.
-- `crates/sotf-midi/` — MIDI integration.
+- `../sotf-daw/` — DAW core workspace (engine, plugins, MIDI, IAMF, driver
+  transport). This workspace depends on it via `../sotf-daw` path
+  dependencies; never the reverse. `sotf-streaming` stays here and is wired
+  into the engine through its optional `streaming`/`hls` features.
 
 ### Applications
 
@@ -53,26 +54,29 @@ Application crates should remain thin. Put reusable business logic in
 appropriate plugin or math dependency. Never duplicate business rules between
 GPUI, TUI, CLI, iOS, and tvOS.
 
-### Plugins and plugin hosting
+### Plugins and plugin hosting (moved to `../sotf-daw`)
 
-- `crates/sotf-plugins/` — plugin registry, integration, stress tools, and
-  plugin-level test suites.
-- `crates/sotf-plugins/crates/sotf-host/` — internal and external plugin host.
-- `crates/sotf-plugins/crates/sotf-plugin-*/` — focused DSP plugin crates.
-- `crates/sotf-plugins/crates/plugins-ffi/` — C/Swift-facing FFI.
-- `crates/sotf-plugins/crates/plugins-nih/` — CLAP/VST3 integration.
-- `crates/sotf-plugins/crates/plugins-gpui/` — plugin UI integration.
-- `crates/sotf-plugins/crates/plugins-bridge/`, `plugins-spatial/`, and
-  `plugins-denoiser/` — specialized bridges and packaging layers.
+- `../sotf-daw/crates/sotf-plugins/` — plugin registry, integration, stress
+  tools, and plugin-level test suites.
+- `../sotf-daw/crates/sotf-plugins/crates/sotf-host/` — internal and external
+  plugin host.
+- `../sotf-daw/crates/sotf-plugins/crates/sotf-plugin-*/` — focused DSP plugin
+  crates.
+- `../sotf-daw/crates/sotf-plugins/crates/plugins-ffi/` — C/Swift-facing FFI.
+- `../sotf-daw/crates/sotf-plugins/crates/plugins-nih/` — CLAP/VST3 integration.
+- `../sotf-daw/crates/sotf-plugins/crates/plugins-gpui/` — plugin UI integration.
+- `../sotf-daw/crates/sotf-plugins/crates/plugins-bridge/`, `plugins-spatial/`,
+  and `plugins-denoiser/` — specialized bridges and packaging layers.
 
-### Systemwide audio
+### Systemwide audio (moved to `../sotf-systemwide`)
 
-- `crates/systemwide/crates/daemon/` — systemwide audio daemon.
-- `crates/systemwide/crates/driver-common/` — shared driver protocol/types.
-- `crates/systemwide/crates/driver-hal/` — macOS HAL-side transport.
-- `builds/systemwide.just`, `builds/macos.just`, and
-  `scripts/build-systemwide.sh` — build, package, install, and test
-  orchestration.
+- `../sotf-systemwide/crates/daemon/` — systemwide audio daemon.
+- `../sotf-systemwide/crates/driver-common/` — shared driver protocol/types.
+- `../sotf-systemwide/crates/driver-hal/` — macOS HAL-side transport.
+- `../sotf-systemwide/builds/`, `../sotf-systemwide/Justfile`, and
+  `../sotf-systemwide/scripts/` — build, package, install, and test
+  orchestration. `driver-common`/`driver-hal` live in `../sotf-daw` and are
+  consumed here via `../sotf-daw` path dependencies.
 
 ### Services and network playback
 

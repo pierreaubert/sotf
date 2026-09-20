@@ -385,6 +385,9 @@ pub struct AbTestSession {
     pub setup: ListeningTestSetup,
     pub assignment_seed: u64,
     pub trials: Vec<TrialRecord>,
+    /// Requested session length; absent in legacy session files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planned_trials: Option<u32>,
     /// In-progress assignments are deliberately not persisted: a saved session
     /// must not disclose a blind answer before it is committed.
     #[serde(skip)]
@@ -408,6 +411,7 @@ impl AbTestSession {
             setup,
             assignment_seed,
             trials: Vec::new(),
+            planned_trials: None,
             pending: None,
         })
     }
@@ -498,9 +502,23 @@ impl AbTestSession {
             })
     }
 
+    /// Committed preference totals for paths A and B, excluding ABX trials.
+    pub fn preference_counts(&self) -> (usize, usize) {
+        self.trials
+            .iter()
+            .fold((0, 0), |(a, b), trial| match trial.result {
+                TrialResult::Preference(PathSelection::A) => (a + 1, b),
+                TrialResult::Preference(PathSelection::B) => (a, b + 1),
+                TrialResult::Correct | TrialResult::Incorrect => (a, b),
+            })
+    }
+
     pub fn validate(&self) -> Result<(), AbTestError> {
         if self.schema_version != SESSION_SCHEMA_VERSION {
             return Err(AbTestError::UnsupportedSchema(self.schema_version));
+        }
+        if self.planned_trials == Some(0) {
+            return Err(AbTestError::InvalidSetup);
         }
         self.setup.validate()?;
         for (expected, trial) in self.trials.iter().enumerate() {
@@ -539,7 +557,9 @@ impl ListeningTestSetup {
             },
             bypass: false,
             auto_gain_enabled: false,
-            gain_smoothing_ms: 0.0,
+            // Auto gain is disabled for fixed level matching. Keep its inactive
+            // smoothing parameter at the valid plugin default so construction
+            // succeeds; switch timing is controlled separately below.
             max_auto_gain_db: self.level_match.max_correction_db as f32,
             mix_transition_ms: self.switch_transition_ms,
             ..ABComparePluginParams::default()
@@ -573,6 +593,8 @@ pub enum AbTestError {
     IncompatiblePathLayout,
     #[error("failed to read or write a listening-test session: {0}")]
     SessionIo(String),
+    #[error("could not load listening-test session: invalid session document ({0})")]
+    SessionFormat(String),
     #[error("saved listening-test media path is unavailable")]
     MediaPathUnavailable,
     #[error("saved listening-test media no longer matches its content identity")]
@@ -917,6 +939,32 @@ mod tests {
     }
 
     #[test]
+    fn cancelling_a_trial_preserves_committed_results_and_blind_identity() {
+        let mut session = AbTestSession::new("cancel-test", setup(), 42).unwrap();
+        session.start_trial(TrialMode::BlindAb).unwrap();
+        session
+            .commit_trial(TrialAnswer::First, None, None)
+            .unwrap();
+        let committed = session.trials.clone();
+        session.start_trial(TrialMode::Abx).unwrap();
+        let unknown = session.path_for_pending_cue(TrialCue::Unknown).unwrap();
+        assert!(session.cancel_pending_trial());
+        assert!(!session.cancel_pending_trial());
+        assert_eq!(session.pending_mode(), None);
+        assert_eq!(session.trials, committed);
+        assert_eq!(session.abx_score(), (0, 0));
+        assert!(matches!(
+            session.commit_trial(TrialAnswer::A, None, None),
+            Err(AbTestError::NoPendingTrial)
+        ));
+        session.start_trial(TrialMode::Abx).unwrap();
+        assert_eq!(
+            session.path_for_pending_cue(TrialCue::Unknown).unwrap(),
+            unknown
+        );
+    }
+
+    #[test]
     fn abx_commit_scores_and_reveals_assignment() {
         let mut session = AbTestSession::new("session-1", setup(), 42).unwrap();
         session.start_trial(TrialMode::Abx).unwrap();
@@ -931,6 +979,45 @@ mod tests {
         assert_eq!(record.result, TrialResult::Correct);
         assert_eq!(record.path_for_cue(TrialCue::Unknown).unwrap(), unknown);
         assert_eq!(session.abx_score(), (1, 1));
+        assert_eq!(session.preference_counts(), (0, 0));
+    }
+
+    #[test]
+    fn preference_counts_use_revealed_paths_and_only_committed_trials() {
+        let mut session = AbTestSession::new("preferences", setup(), 42).unwrap();
+        assert_eq!(session.preference_counts(), (0, 0));
+        for preferred in [PathSelection::B, PathSelection::A, PathSelection::B] {
+            session.start_trial(TrialMode::BlindAb).unwrap();
+            let first = session.path_for_pending_cue(TrialCue::First).unwrap();
+            let answer = if first == preferred {
+                TrialAnswer::First
+            } else {
+                TrialAnswer::Second
+            };
+            session.commit_trial(answer, None, None).unwrap();
+        }
+        assert_eq!(session.preference_counts(), (1, 2));
+        session.start_trial(TrialMode::BlindAb).unwrap();
+        assert_eq!(session.preference_counts(), (1, 2));
+        session.cancel_pending_trial();
+        assert_eq!(session.preference_counts(), (1, 2));
+        assert_eq!(session.abx_score(), (0, 0));
+    }
+
+    #[test]
+    fn planned_trials_round_trip_and_legacy_sessions_remain_readable() {
+        let mut session = AbTestSession::new("planned", setup(), 42).unwrap();
+        session.planned_trials = Some(25);
+        let mut json = serde_json::to_value(&session).unwrap();
+        let restored: AbTestSession = serde_json::from_value(json.clone()).unwrap();
+        restored.validate().unwrap();
+        assert_eq!(restored.planned_trials, Some(25));
+        json.as_object_mut().unwrap().remove("planned_trials");
+        let legacy: AbTestSession = serde_json::from_value(json).unwrap();
+        legacy.validate().unwrap();
+        assert_eq!(legacy.planned_trials, None);
+        session.planned_trials = Some(0);
+        assert!(session.validate().is_err());
     }
 
     #[test]
@@ -1010,6 +1097,31 @@ mod tests {
                 assert_eq!(plugins[0].parameters["gain_db"], -1.5);
             }
             _ => panic!("level-matched empty rack must end in a fixed gain stage"),
+        }
+    }
+
+    #[test]
+    fn runtime_config_instantiates_the_comparison_plugin_for_every_cue() {
+        for (mode, cues) in [
+            (TrialMode::BlindAb, vec![TrialCue::First, TrialCue::Second]),
+            (
+                TrialMode::Abx,
+                vec![
+                    TrialCue::ReferenceA,
+                    TrialCue::ReferenceB,
+                    TrialCue::Unknown,
+                ],
+            ),
+        ] {
+            let mut session = AbTestSession::new("factory-regression", setup(), 42).unwrap();
+            session.start_trial(mode).unwrap();
+            for cue in cues {
+                let config = session.runtime_config_for_pending_cue(cue).unwrap();
+                assert!(!config.auto_gain_enabled);
+                let serialized = serde_json::to_value(config).unwrap();
+                sotf_plugins::create_plugin("ab_compare", &serialized, 2, 48_000)
+                    .unwrap_or_else(|error| panic!("{mode:?} {cue:?}: {error}"));
+            }
         }
     }
 

@@ -1,0 +1,53 @@
+resize 600 1000
+focus Studio
+plugin_clear
+plugin_add Limiter
+action PluginSelectFirstUser
+wait_idle 1s
+click rack.config.toggle
+wait_idle 500ms
+scroll_into_view rack.config.scroll plugin.choice.2.3.1
+click plugin.choice.2.3.1
+assert plugins.plugin.2.param.3.value == 1
+assert_selected plugin.choice.2.3.1 == true
+scroll_into_view rack.config.scroll plugin.choice.2.3.0
+click plugin.choice.2.3.0
+assert plugins.plugin.2.param.3.value == 0
+assert_selected plugin.choice.2.3.0 == true
+scroll_into_view rack.config.scroll plugin.choice.2.5.1
+click plugin.choice.2.5.1
+assert plugins.plugin.2.param.5.value == 1
+assert_selected plugin.choice.2.5.1 == true
+scroll_into_view rack.config.scroll plugin.choice.2.5.0
+click plugin.choice.2.5.0
+assert plugins.plugin.2.param.5.value == 0
+assert_selected plugin.choice.2.5.0 == true
+scroll_into_view rack.config.scroll plugin.choice.2.6.1
+click plugin.choice.2.6.1
+assert plugins.plugin.2.param.6.value == 1
+assert_selected plugin.choice.2.6.1 == true
+scroll_into_view rack.config.scroll plugin.choice.2.6.0
+click plugin.choice.2.6.0
+assert plugins.plugin.2.param.6.value == 0
+assert_selected plugin.choice.2.6.0 == true
+scroll_into_view rack.config.scroll plugin.choice.2.9.1
+click plugin.choice.2.9.1
+assert plugins.plugin.2.param.9.value == 1
+assert_selected plugin.choice.2.9.1 == true
+scroll_into_view rack.config.scroll plugin.choice.2.9.0
+click plugin.choice.2.9.0
+assert plugins.plugin.2.param.9.value == 0
+assert_selected plugin.choice.2.9.0 == true
+scroll_into_view rack.config.scroll plugin.choice.2.6.1
+click plugin.choice.2.6.1
+assert plugins.plugin.2.param.6.value == 1
+screenshot limiter-setup
+click rack.config.toggle
+plugin_chain_save $SOTF_QA_DIR/limiter-setup.json
+plugin_remove 2
+plugin_chain_load $SOTF_QA_DIR/limiter-setup.json
+assert plugins.plugin.2.type == "Limiter"
+assert plugins.plugin.2.param.3.value == 0
+assert plugins.plugin.2.param.5.value == 0
+assert plugins.plugin.2.param.6.value == 1
+assert plugins.plugin.2.param.9.value == 0

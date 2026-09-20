@@ -24,6 +24,29 @@ click headphone.next
 wait_until headphone.step == "Optimization" timeout=2s
 assert_visible headphone.optimize_start
 screenshot headphone-configure
+# Stage navigation is independent of detail level and never starts optimization.
+assert headphone.autoeq_stage == "Goals"
+click autoeq.stage.1
+assert headphone.autoeq_stage == "FilterDesign"
+click autoeq.detail
+assert headphone.autoeq_detail == "Intermediate"
+click autoeq.detail
+assert headphone.autoeq_detail == "Expert"
+assert_visible autoeq.filter-count
+screenshot headphone-autoeq-filter-design
+click autoeq.stage.2
+assert headphone.autoeq_stage == "Timing"
+screenshot headphone-autoeq-timing-unavailable
+click autoeq.stage.3
+assert headphone.autoeq_stage == "Algorithm"
+screenshot headphone-autoeq-algorithm
+click autoeq.stage.4
+assert headphone.autoeq_stage == "Review"
+screenshot headphone-autoeq-review
+click autoeq.stage.0
+assert headphone.autoeq_stage == "Goals"
+click autoeq.detail
+assert headphone.autoeq_detail == "Simple"
 click headphone.optimize_start
 wait_until headphone.optimization_status != "Running" timeout=20s
 assert headphone.optimization_status == "Completed"
@@ -31,14 +54,34 @@ assert_visible headphone.next
 click headphone.next
 wait_until headphone.step == "Listen" timeout=2s
 screenshot headphone-listen
+assert_visible headphone.audition.original
+assert_visible headphone.audition.corrected
+click headphone.audition.corrected
+wait_until headphone.audition_pending == false timeout=2s
+assert headphone.audition_active == true
+assert headphone.audition_corrected == true
+assert_visible headphone.audition.preamp
+screenshot headphone-listen-corrected
+click headphone.audition.original
+wait_until headphone.audition_pending == false timeout=2s
+assert headphone.audition_corrected == false
+click headphone.audition.stop
+wait_until headphone.audition_active == false timeout=2s
+click headphone.audition.corrected
+wait_until headphone.audition_pending == false timeout=2s
 click headphone.next
 wait_until headphone.step == "Export" timeout=2s
+wait_until headphone.audition_active == false timeout=2s
 screenshot headphone-export
 wait_idle 250ms
+scroll_into_view headphone.content headphone.apply
 assert_visible headphone.apply
 click headphone.apply
 wait_until headphone.easy_applied == true timeout=2s
 assert headphone.easy_applied == true
+wait_idle 250ms
+screenshot headphone-export-applied
+scroll_into_view headphone.content headphone.export
 assert_visible headphone.export
 click headphone.export
 wait_until headphone.export_exists == true timeout=2s

@@ -1,7 +1,7 @@
 # Plugin rack: arrange an empty user chain, then mutate it only through visible
 # controls. Route away and back to prove the rack state survives navigation.
 action     PluginClear
-click      sidebar.nav-studio-rack
+click      sidebar.nav-studiohub
 assert     screen.focused == "Studio"
 assert     plugins.user_count == 0
 assert_visible rack.add.open
@@ -20,6 +20,6 @@ accessibility
 screenshot plugin-rack-visible-controls
 click      sidebar.nav-library
 assert     screen.focused == "Library"
-click      sidebar.nav-studio-rack
+click      sidebar.nav-studiohub
 assert     screen.focused == "Studio"
 assert     plugins.user_count == 1

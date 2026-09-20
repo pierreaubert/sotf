@@ -4,6 +4,10 @@ use gpui::KeyBinding;
 /// Bindings common to all presets (playback, screen switching, etc.)
 pub(super) fn common_bindings() -> Vec<KeyBinding> {
     vec![
+        // Let focused parameter choices handle activation instead of rack shortcuts.
+        KeyBinding::new("enter", gpui::NoAction, Some("PluginChoice")),
+        KeyBinding::new("space", gpui::NoAction, Some("PluginChoice")),
+        KeyBinding::new("shift-enter", actions::AddToQueue, Some("PlayerView")),
         // Font size controls (global) - Cmd/Ctrl + (or =), -, Shift+0 to reset
         KeyBinding::new("secondary-=", actions::IncreaseFontSize, None),
         KeyBinding::new("secondary-+", actions::IncreaseFontSize, None),

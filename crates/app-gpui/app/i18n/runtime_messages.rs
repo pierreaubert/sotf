@@ -65,6 +65,92 @@ macro_rules! message {
 
 const RUNTIME_MESSAGE_PATTERNS: &[RuntimeMessagePattern] = &[
     message!(
+        "No data for this view",
+        "Aucune donnée pour cette vue",
+        "Keine Daten für diese Ansicht",
+        "Sin datos para esta vista"
+    ),
+    message!(
+        "could not load listening-test session: invalid session document ({})",
+        "Impossible de charger la session d’écoute : document de session invalide ({})",
+        "Hörtestsitzung konnte nicht geladen werden: ungültiges Sitzungsdokument ({})",
+        "No se pudo cargar la sesión de escucha: documento de sesión no válido ({})"
+    ),
+    message!("#{} plugins", "#{} plugins", "#{} Plugins", "#{} plugins"),
+    message!(
+        "#{} links",
+        "#{} liaisons",
+        "#{} Verbindungen",
+        "#{} conexiones"
+    ),
+    message!("{} nodes", "{} nœuds", "{} Knoten", "{} nodos"),
+    message!(
+        "{}k out",
+        "Sortie : {} kHz",
+        "Ausgang: {} kHz",
+        "Salida: {} kHz"
+    ),
+    message!(
+        "{} headphones",
+        "{} casques",
+        "{} Kopfhörer",
+        "{} auriculares"
+    ),
+    message!(
+        "({} matches)",
+        "({} résultats)",
+        "({} Treffer)",
+        "({} coincidencias)"
+    ),
+    message!(
+        "No headphones loaded. Click Refresh to load.",
+        "Aucun casque chargé. Cliquez sur Actualiser.",
+        "Keine Kopfhörer geladen. Klicken Sie auf Aktualisieren.",
+        "No hay auriculares cargados. Pulse Actualizar."
+    ),
+    message!(
+        "No matching headphones found.",
+        "Aucun casque correspondant trouvé.",
+        "Keine passenden Kopfhörer gefunden.",
+        "No se encontraron auriculares coincidentes."
+    ),
+    message!(
+        "Headphone download failed: {}",
+        "Échec du téléchargement du casque : {}",
+        "Kopfhörer-Download fehlgeschlagen: {}",
+        "Error al descargar el auricular: {}"
+    ),
+    message!(
+        "Failed to fetch headphones: {}",
+        "Impossible de charger les casques : {}",
+        "Kopfhörer konnten nicht geladen werden: {}",
+        "No se pudieron cargar los auriculares: {}"
+    ),
+    message!(
+        "audio is too quiet to level match reliably",
+        "Le signal audio est trop faible pour un alignement fiable des niveaux.",
+        "Das Audiosignal ist zu leise für einen zuverlässigen Pegelabgleich.",
+        "El audio es demasiado bajo para igualar los niveles de forma fiable."
+    ),
+    message!(
+        "audio is shorter than the selected level-match metric requires",
+        "Le signal audio est trop court pour la mesure de niveau sélectionnée.",
+        "Das Audiosignal ist für die gewählte Pegelmessung zu kurz.",
+        "El audio es demasiado corto para la medición de nivel seleccionada."
+    ),
+    message!(
+        "level-match residual exceeds the configured tolerance",
+        "L’écart résiduel de niveau dépasse la tolérance configurée.",
+        "Die verbleibende Pegelabweichung überschreitet die eingestellte Toleranz.",
+        "La diferencia de nivel residual supera la tolerancia configurada."
+    ),
+    message!(
+        "Could not restore the audition chain. Playback paused; retry Stop preview.",
+        "Impossible de restaurer la chaîne d'écoute. Lecture en pause ; réessayez d'arrêter l'aperçu.",
+        "Die Abhörkette konnte nicht wiederhergestellt werden. Wiedergabe pausiert; versuchen Sie erneut, die Vorschau zu stoppen.",
+        "No se pudo restaurar la cadena de escucha. Reproducción en pausa; vuelva a intentar detener la vista previa."
+    ),
+    message!(
         "A SOTF server test is already running.",
         "Un test de serveur SOTF est déjà en cours.",
         "Ein SOTF-Servertest läuft bereits.",
@@ -297,12 +383,6 @@ const RUNTIME_MESSAGE_PATTERNS: &[RuntimeMessagePattern] = &[
         "Échec du lancement de l’analyse de forme d’onde : {}",
         "Wellenformanalyse konnte nicht gestartet werden: {}",
         "No se pudo iniciar el análisis de forma de onda: {}"
-    ),
-    message!(
-        "Failed to {action}: {err}",
-        "Échec de l’action {action} : {err}",
-        "Aktion {action} fehlgeschlagen: {err}",
-        "Falló la acción {action}: {err}"
     ),
     message!(
         "Failed to {action}; restored previous source settings: {e}",
@@ -1193,6 +1273,15 @@ const RUNTIME_MESSAGE_PATTERNS: &[RuntimeMessagePattern] = &[
         "Code copié.",
         "Code kopiert.",
         "Código copiado."
+    ),
+    // Generic action failures must follow concrete failures such as recording
+    // directory preparation, reading, and saving; otherwise the action name
+    // is captured as an untranslated dynamic value.
+    message!(
+        "Failed to {action}: {err}",
+        "Échec de l’action {action} : {err}",
+        "Aktion {action} fehlgeschlagen: {err}",
+        "Falló la acción {action}: {err}"
     ),
     // Language-neutral joiner for composed status lines (message + warning
     // suffix). Must stay LAST: the specific patterns above win first.

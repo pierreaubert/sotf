@@ -1,0 +1,13 @@
+# Exercise the production exporter with a known mixed-filter 96 kHz result.
+action SpinoramaSetExportFixture
+wait_idle 500ms
+wait_until spinorama.step == "Export" timeout=3s
+assert spinorama.export_current == false
+scroll_into_view spinorama.content spinorama.export_save
+click spinorama.export_save
+wait_until spinorama.export_current == true timeout=5s
+scroll_into_view spinorama.content correction.export_status
+wait_idle 500ms
+screenshot spinorama-export-current
+assert spinorama.export_filter_summary == "Lowshelf@96000,Highshelf@96000,Notch@96000"
+assert playback.is_playing == false

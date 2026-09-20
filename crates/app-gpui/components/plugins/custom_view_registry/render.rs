@@ -5,7 +5,7 @@ use crate::app::state::{
 };
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
-use gpui::prelude::FluentBuilder;
+use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{HStack, StackSpacing, Text, VStack};
 use sotf_audio_player::{
@@ -23,6 +23,9 @@ pub(super) fn render_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerVi
         per_channel_mode,
         max_filters,
         tdf2,
+        auto_gain_enabled,
+        oversampling,
+        topology,
         ..
     } = ctx.settings
     {
@@ -42,6 +45,21 @@ pub(super) fn render_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerVi
                 mode: ui_eq::EqViewMode::Standard,
                 num_filters: *max_filters,
                 tdf2: *tdf2,
+                auto_gain_enabled: *auto_gain_enabled,
+                oversampling: *oversampling,
+                topology: *topology,
+                sample_rate: f64::from(
+                    ctx.entity
+                        .read(cx)
+                        .app
+                        .playback
+                        .spectrum_output_sample_rate()
+                        .filter(|rate| *rate > 0)
+                        .unwrap_or(48_000),
+                ),
+                order_label: crate::app::i18n::EqViewTranslations::order(
+                    ctx.entity.read(cx).app.ui_state.language,
+                ),
                 available_width: ctx.available_width,
                 layout_scale: ctx.layout_scale,
                 exact_entry_focus_handle: ctx.plugin_exact_entry_focus_handle.clone(),
@@ -299,7 +317,7 @@ pub(super) fn render_denoiser(
                 .justify_center()
                 .text_size(d.text_sm)
                 .text_color(ctx.theme.text_muted)
-                .child(text.spatial_waiting_data),
+                .child(text.spatial.waiting_data),
         );
     }
 
@@ -314,6 +332,7 @@ pub(super) fn render_denoiser(
             ctx.plugin_data.as_ref(),
             ctx.available_width,
             ctx.layout_scale,
+            text,
             ctx.theme,
         ),
     )
@@ -367,7 +386,11 @@ fn render_denoiser_band_row(
         .into_any_element()
 }
 
-fn render_main_controls(ctx: &CustomViewRenderContext, d: &Ds) -> AnyElement {
+fn render_main_controls(
+    ctx: &CustomViewRenderContext,
+    d: &Ds,
+    text: PluginCommonTranslations,
+) -> AnyElement {
     super::super::ui_layout_renderer::render_main_controls_from_layout(
         d,
         ctx.entity.clone(),
@@ -378,6 +401,7 @@ fn render_main_controls(ctx: &CustomViewRenderContext, d: &Ds) -> AnyElement {
         ctx.plugin_data.as_ref(),
         ctx.available_width,
         ctx.layout_scale,
+        text,
         ctx.theme,
     )
 }
@@ -452,16 +476,35 @@ pub(super) fn render_convolution(
                 )
                 .child(
                     div()
+                        .id(SharedString::from(format!(
+                            "convolution-ir-path-{}",
+                            ctx.plugin_idx
+                        )))
                         .w_full()
                         .min_w_0()
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .whitespace_nowrap()
                         .py(d.pad_y)
                         .text_size(d.text_xs)
                         .text_color(ctx.theme.text_secondary)
+                        // ui.md Phase 3 pilot: show the base name truncated
+                        // in the row so long IR paths cannot widen the
+                        // editor; the full path stays available on demand
+                        // through this tooltip.
                         .child(if has_ir {
-                            ir_file.clone()
+                            crate::plugin_file_picker::convolution_ir_display_name(ir_file)
+                                .to_string()
                         } else {
                             text.label("Use the file picker below to load an IR")
                                 .to_string()
+                        })
+                        .when(has_ir, |el| {
+                            let full_path = ir_file.clone();
+                            let theme = ctx.theme.clone();
+                            el.tooltip(move |_window, cx| {
+                                crate::components::themed_tooltip(full_path.clone(), &theme, cx)
+                            })
                         }),
                 )
                 .child(
@@ -475,7 +518,7 @@ pub(super) fn render_convolution(
                         .child(format!("· {}", text.convolution_preview)),
                 ),
         )
-        .child(render_main_controls(ctx, &d))
+        .child(render_main_controls(ctx, &d, text))
         .into_any_element()
 }
 
@@ -561,7 +604,7 @@ pub(super) fn render_xtc(
                         .child(format!("{}: {head_yaw_deg:.1}°", text.label("Yaw"))),
                 ),
         )
-        .child(render_main_controls(ctx, &d))
+        .child(render_main_controls(ctx, &d, text))
         .into_any_element()
 }
 
@@ -573,6 +616,7 @@ pub(super) fn render_crossfeed(
     let text = PluginCommonTranslations::for_language(ctx.entity.read(cx).app.ui_state.language);
     let PluginSettings::Crossfeed {
         enabled,
+        mode,
         mix,
         itd_delay_ms,
         ..
@@ -581,7 +625,12 @@ pub(super) fn render_crossfeed(
         return Empty.into_any_element();
     };
 
-    let status = text.label(if *enabled { "Enabled" } else { "Bypassed" });
+    let processing_enabled = *enabled && !matches!(mode, sotf_plugins::CrossfeedMode::Off);
+    let status = text.label(if processing_enabled {
+        "Enabled"
+    } else {
+        "Bypassed"
+    });
     div()
         .flex()
         .flex_col()
@@ -596,7 +645,7 @@ pub(super) fn render_crossfeed(
                 .p(d.card)
                 .rounded(d.r_md)
                 .border_1()
-                .border_color(if *enabled {
+                .border_color(if processing_enabled {
                     ctx.theme.accent
                 } else {
                     ctx.theme.border
@@ -613,7 +662,7 @@ pub(super) fn render_crossfeed(
                         .child(
                             div()
                                 .text_size(d.text_xs)
-                                .text_color(if *enabled {
+                                .text_color(if processing_enabled {
                                     ctx.theme.success
                                 } else {
                                     ctx.theme.text_muted
@@ -648,7 +697,7 @@ pub(super) fn render_crossfeed(
                         ),
                 ),
         )
-        .child(render_main_controls(ctx, &d))
+        .child(render_main_controls(ctx, &d, text))
         .into_any_element()
 }
 
@@ -736,7 +785,7 @@ pub(super) fn render_binaural(
                     )
                 }),
         )
-        .child(render_main_controls(ctx, &d))
+        .child(render_main_controls(ctx, &d, text))
         .into_any_element()
 }
 
@@ -804,6 +853,21 @@ pub(super) fn render_linear_phase_eq(
                 },
                 num_filters: *num_filters as usize,
                 tdf2: false,
+                auto_gain_enabled: false,
+                oversampling: 1.0,
+                topology: 0.0,
+                sample_rate: f64::from(
+                    ctx.entity
+                        .read(cx)
+                        .app
+                        .playback
+                        .spectrum_output_sample_rate()
+                        .filter(|rate| *rate > 0)
+                        .unwrap_or(48_000),
+                ),
+                order_label: crate::app::i18n::EqViewTranslations::order(
+                    ctx.entity.read(cx).app.ui_state.language,
+                ),
                 available_width: ctx.available_width,
                 layout_scale: ctx.layout_scale,
                 exact_entry_focus_handle: ctx.plugin_exact_entry_focus_handle.clone(),
@@ -1098,6 +1162,14 @@ pub(super) fn render_matrix(
             ctx.entity.clone(),
             ctx.plugin_idx,
             ui_matrix::MatrixRenderState {
+                route_menu: ctx
+                    .entity
+                    .read(cx)
+                    .app
+                    .plugin_state
+                    .plugin_ui_state
+                    .matrix_route_menu
+                    .and_then(|(id, output)| (id == plugin_instance_id).then_some(output)),
                 plugin_instance_id,
                 input_channels: *input_channels,
                 output_channels: *output_channels,
@@ -1119,6 +1191,9 @@ pub(super) fn render_matrix(
                     }),
             },
             ctx.theme,
+            crate::app::i18n::DesktopTranslations::matrix_routes(
+                ctx.entity.read(cx).app.ui_state.language,
+            ),
         )
         .into_any_element()
     } else {
@@ -1176,9 +1251,11 @@ pub(super) fn render_mb_compressor(
         bands,
     } = ctx.settings
     {
-        let selected_band_idx = ctx.selected_band_idx.min(bands.len());
-        let (dt, dr, da, drl, dk, dm, dam, dact, ds, db) = if selected_band_idx > 0 {
-            let b = &bands[selected_band_idx - 1];
+        let selected_band_idx = ctx.selected_band_idx.min(*num_bands);
+        let (dt, dr, da, drl, dk, dm, dam, dact, ds, db) = if let Some(b) = selected_band_idx
+            .checked_sub(1)
+            .and_then(|index| bands.get(index))
+        {
             (
                 b.threshold_db.map(|v| v as f64).unwrap_or(*threshold_db),
                 b.ratio.map(|v| v as f64).unwrap_or(*ratio),
@@ -1278,9 +1355,12 @@ pub(super) fn render_mb_expander(
         bands,
     } = ctx.settings
     {
-        let selected_band_idx = ctx.selected_band_idx.min(bands.len());
-        let (dt, dr, da, drl, drng, dk, dh, dhold, dam, dact, ds, db) = if selected_band_idx > 0 {
-            let b = &bands[selected_band_idx - 1];
+        let selected_band_idx = ctx.selected_band_idx.min(*num_bands);
+        let (dt, dr, da, drl, drng, dk, dh, dhold, dam, dact, ds, db) = if let Some(b) =
+            selected_band_idx
+                .checked_sub(1)
+                .and_then(|index| bands.get(index))
+        {
             (
                 b.threshold_db.map(|v| v as f64).unwrap_or(*threshold_db),
                 b.ratio.map(|v| v as f64).unwrap_or(*ratio),

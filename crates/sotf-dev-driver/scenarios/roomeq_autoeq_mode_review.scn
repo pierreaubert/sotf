@@ -1,0 +1,63 @@
+# Native mode selection at an explicit 1200x1000 viewport.
+# Review screenshots require inspection: UI-driven fixture processing does not select the mode.
+resize 1200 1000
+# Room EQ Advanced mode: user selects the full control surface explicitly.
+focus room-e-q
+click roomeq.load_from_recording
+click roomeq.next
+click roomeq.next
+assert roomeq.step == "Process"
+assert_visible roomeq.select_full
+click roomeq.select_full
+assert roomeq.wizard_mode == "Full"
+assert roomeq.step == "Configure"
+screenshot roomeq-advanced-configure
+
+click autoeq.stage.1
+click autoeq.detail
+click autoeq.detail
+wait_idle 1s
+screenshot autoeq-filter-controls
+scroll_into_view roomeq.content autoeq.filter-count
+click autoeq.filter-count
+key cmd-a
+type "7"
+key enter
+assert roomeq.config.filter_count == 7
+scroll autoeq.filter-count -100
+assert roomeq.config.filter_count == 7
+scroll roomeq.content 10000
+click_at 400 404
+wait_idle 500ms
+click autoeq.stage.4
+wait_idle 500ms
+screenshot autoeq-review-fir
+click autoeq.stage.1
+wait_idle 500ms
+click_at 400 433
+wait_idle 500ms
+click autoeq.stage.4
+wait_idle 500ms
+screenshot autoeq-review-mixed
+click autoeq.stage.1
+wait_idle 500ms
+click_at 400 463
+wait_idle 500ms
+click autoeq.stage.4
+wait_idle 500ms
+screenshot autoeq-review-mixed-phase
+scroll roomeq.content -1200
+screenshot autoeq-review-solver
+resize 600 1000
+scroll roomeq.content 10000
+screenshot autoeq-review-narrow
+scroll roomeq.content -10000
+screenshot autoeq-review-narrow-solver
+resize 1200 1000
+scroll roomeq.content 10000
+click autoeq.stage.2
+scroll roomeq.content -10000
+screenshot autoeq-timing-parent-controls
+scroll roomeq.content 10000
+click autoeq.stage.1
+wait_idle 500ms

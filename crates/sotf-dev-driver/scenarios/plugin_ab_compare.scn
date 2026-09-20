@@ -3,7 +3,7 @@
 action PluginClear
 resize 1400 1100
 wait_idle
-click sidebar.nav-studio-rack
+click sidebar.nav-studiohub
 assert screen.focused == "Studio"
 wait_idle
 

@@ -13,6 +13,7 @@ use crate::app::types::{
 /// Unified state for all measurement and EQ workflows
 #[derive(Debug, Default)]
 pub struct MeasurementState {
+    pub step_menu_open: bool,
     /// Generic measurement state (e.g., signal analysis)
     pub measure_state: Option<MeasureState>,
 

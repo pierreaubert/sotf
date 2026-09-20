@@ -1,0 +1,13 @@
+# Transport/UI smoke only: file fidelity requires separate validation.
+action SpinoramaSetExportFixture
+resize 600 1000
+wait_idle 500ms
+scroll_into_view spinorama.content spinorama.export_format.wavelet
+click spinorama.export_format.wavelet
+scroll_into_view spinorama.content spinorama.export_save
+click spinorama.export_save
+wait_until spinorama.export_current == true timeout=5s
+assert_absent spinorama.export_error
+scroll_into_view spinorama.content correction.export_status
+screenshot spinorama-export-wavelet
+assert playback.is_playing == false

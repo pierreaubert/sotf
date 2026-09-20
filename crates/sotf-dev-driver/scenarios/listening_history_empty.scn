@@ -1,0 +1,26 @@
+# 2026-09-09: Empty history and coach advice must use the selected locale.
+# Presentation lives in app/i18n/desktop.rs; guidance decisions remain in sotf-player.
+# Run: target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/listening_history_ui.toml
+# Review captures for the translated empty state and Foundations advice.
+action ListeningResetGuide
+click listening.guide.acknowledge
+wait_until listening.guide_open == false timeout=3s
+click listening.eq.nav.progress
+wait_until listening.surface == "Progress" timeout=3s
+assert listening.eq.progress_sessions == 0
+assert settings.language == "English"
+wait_idle
+screenshot history-empty-english
+action CycleLanguage
+assert settings.language == "French"
+wait_idle
+screenshot history-empty-french
+action CycleLanguage
+assert settings.language == "German"
+wait_idle
+screenshot history-empty-german
+action CycleLanguage
+assert settings.language == "Spanish"
+wait_idle
+screenshot history-empty-spanish
+assert playback.is_playing == false

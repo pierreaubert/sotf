@@ -22,21 +22,24 @@ fn language_controls_publish_individual_keyboard_accessibility_contracts() {
     assert!(appearance.contains("AriaState::Pressed(true)"));
     assert!(appearance.contains(".selected(selected)"));
     assert!(appearance.contains(".track_focus_element(&focus_handle)"));
-    assert!(appearance.contains("focus_language_relative"));
+    assert!(appearance.contains("focus_settings_choice_relative"));
     assert!(appearance.contains("\"enter\" | \"space\""));
     assert!(appearance.contains("dev_track_with_state"));
     assert!(appearance.contains("settings.language.{}"));
 }
 
 #[test]
-fn settings_tabs_publish_compact_keyboard_accessibility_contracts() {
-    let settings_shell = include_str!("../components/mod.rs");
+fn preferences_publish_labeled_compact_navigation_contracts() {
+    let settings_shell = include_str!("../components/settings/navigation.rs");
 
-    assert!(settings_shell.contains("compact_tab_header"));
-    assert!(settings_shell.contains("cx.register_accessible(AccessibilityNode"));
-    assert!(settings_shell.contains("AriaState::Pressed(true)"));
-    assert!(settings_shell.contains(".track_focus_element(&focus_handle)"));
-    assert!(settings_shell.contains("focus_settings_tab_relative"));
-    assert!(settings_shell.contains("\"enter\" | \"space\""));
-    assert!(settings_shell.contains("themed_tooltip(label, &tooltip_theme, cx)"));
+    // The shared Select owns keyboard/focus handling; the app must supply a
+    // visible label, accessible name, translated options and selected state.
+    assert!(settings_shell.contains("Select::new(\"preferences-category\")"));
+    assert!(settings_shell.contains(".label(text.category)"));
+    assert!(settings_shell.contains(".aria_label(text.category)"));
+    assert!(settings_shell.contains("text.categories[*group as usize]"));
+    assert!(settings_shell.contains(".selected((category as usize).to_string())"));
+    assert!(settings_shell.contains("state.app.ui_state.active_settings_tab = *tab"));
+    assert!(settings_shell.contains("state.app.settings.navigation.category_open = false"));
+    assert!(settings_shell.contains(".aria_label(text.search)"));
 }

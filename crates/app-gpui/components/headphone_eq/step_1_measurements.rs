@@ -49,6 +49,7 @@ impl PlayerView {
         let measurement_source = headphone_eq.measurement_source;
         let measurement_path = headphone_eq.model.measurement_path.clone();
         let downloaded_curve = headphone_eq.downloaded_curve.clone();
+        let file_preview = headphone_eq.active_file_preview().cloned();
         let app_width = state.app.ui_state.window_width;
 
         // Pre-extract spinorama state to avoid borrow conflicts
@@ -285,10 +286,10 @@ impl PlayerView {
                                                     !is_loading
                                                         && available_headphones_count > 0,
                                                     |hstack| {
-                                                        hstack.child(Text::caption(format!(
+                                                        hstack.child(Text::caption(runtime_text.translate(&format!(
                                                             "{} headphones",
                                                             available_headphones_count
-                                                        )))
+                                                        )).into_owned()))
                                                     },
                                                 ),
                                         ),
@@ -308,10 +309,10 @@ impl PlayerView {
                                                 .color(theme.text_primary)
                                                 .weight(TextWeight::Semibold),
                                         )
-                                        .child(Text::caption(format!(
+                                        .child(Text::caption(runtime_text.translate(&format!(
                                             "({} matches)",
                                             suggestions.len()
-                                        ))),
+                                        )).into_owned())),
                                 )
                                 .content(
                                     div()
@@ -327,11 +328,11 @@ impl PlayerView {
                                             ))
                                         })
                                         .when(suggestions.is_empty() && !is_loading, |el| {
-                                            el.child(Text::caption(if search_query.is_empty() {
+                                            el.child(Text::caption(runtime_text.translate(if search_query.is_empty() {
                                                 "No headphones loaded. Click Refresh to load."
                                             } else {
                                                 "No matching headphones found."
-                                            }))
+                                            }).into_owned()))
                                         })
                                         .children(suggestions.iter().map(|headphone| {
                                             let is_selected =
@@ -432,6 +433,14 @@ impl PlayerView {
                         )
                 },
             )
+            .when(is_downloading && measurement_source == HeadphoneMeasurementSource::File, |content| {
+                content.child(Text::caption(workflow_text.loading))
+            })
+            .when_some(file_preview, |content, preview| {
+                content.child(self.render_headphone_measurement_graph(preview.points(), &theme, app_width, cx))
+            })
+            .child(self.render_headphone_target_controls(cx))
+            .child(self.render_headphone_measurement_identity(cx))
     }
 
     fn render_headphone_measurement_graph(

@@ -1,8 +1,6 @@
-use super::misc::BREAKPOINT_NARROW_LAYOUT_REMS;
 use crate::app::i18n::PhoneTranslations;
 use crate::components::design::Ds;
 use crate::components::home::album_card::{AlbumCard, AlbumCardMode};
-use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -65,38 +63,11 @@ impl PlayerView {
         let stats = &state.app.library_view.stats;
 
         let remote_library_active = state.app.remote.server_store.selected_server_id.is_some();
-        let remote_library_summary = state.app.remote.current_state.as_ref().map(|s| &s.library);
-        let albums_count = if remote_library_active {
-            state
-                .app
-                .remote
-                .current_album_page
-                .as_ref()
-                .map(|page| page.total)
-                .or_else(|| remote_library_summary.map(|summary| summary.albums))
-                .unwrap_or(0)
-        } else {
-            state.app.library_state.library.albums.len()
-        };
-        let artists_count = stats.artists_count;
-        let tracks_count = if remote_library_active {
-            remote_library_summary
-                .map(|summary| summary.tracks)
-                .unwrap_or(stats.total_tracks)
-        } else {
-            stats.total_tracks
-        };
-        let composers_count = stats.composers_count;
         let search_query = state.app.library_state.search_query.clone();
-        let input_mode = state.app.ui_state.input_mode;
         let sort_order = state.app.library_state.sort_order;
         let channel_filter = state.app.library_state.filter;
         let filter_menu_open = state.app.ui_state.filter_menu_open;
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
-        let min_year = stats.min_year;
-        let max_year = stats.max_year;
-        let genres_count = stats.genres_count;
         let mono_count = stats.mono_count;
         let stereo_count = stats.stereo_count;
         let surround_count = stats.surround_count;
@@ -108,17 +79,6 @@ impl PlayerView {
             .filter_map(|(&channels, &count)| (channels > 2).then_some((channels, count)))
             .collect();
         exact_multichannel_counts.sort_by_key(|&(channels, _)| channels);
-
-        // Selection filters and counts for each category
-        let window_width = state.app.ui_state.window_width;
-        let window_height = state.app.ui_state.window_height;
-        let responsive_scale = crate::ui::compute_responsive_scale(window_width, window_height);
-        let effective_rem = 16.0
-            * (state.app.ui_state.font_scale * responsive_scale).clamp(
-                crate::ui::DEFAULT_MIN_FONT_SIZE_PX / 16.0,
-                crate::ui::DEFAULT_MAX_FONT_SIZE_PX / 16.0,
-            );
-        let window_width_rems = window_width / effective_rem;
 
         let selected_genre = state.app.library_state.selected_genre.clone();
         let selected_decade = state.app.library_state.selected_decade;
@@ -140,104 +100,14 @@ impl PlayerView {
         let album_letter_counts = stats.album_letter_counts.clone();
         let track_range_counts = stats.track_range_counts.clone();
 
-        let is_search_mode = input_mode == crate::app::InputMode::Search;
         let is_filter_mode = filter_menu_open;
-        let has_active_filters = state.app.library_state.has_active_filters();
-
-        // Map sort order to tab index (Filter=6, Search=7 are special)
-        let sort_tab_index = if is_search_mode {
-            7 // Search tab
-        } else if is_filter_mode {
-            6 // Filter tab
-        } else {
-            match sort_order {
-                crate::app::LibrarySortOrder::Year => 0,
-                crate::app::LibrarySortOrder::Genre => 1,
-                crate::app::LibrarySortOrder::Artist => 2,
-                crate::app::LibrarySortOrder::Album => 3,
-                crate::app::LibrarySortOrder::Tracks => 4,
-                crate::app::LibrarySortOrder::Composer => 5,
-                crate::app::LibrarySortOrder::Popularity => 3, // maps to Album tab as closest
-            }
-        };
-
-        // Format year range for tab badge
-        let year_badge = format!(
-            "{}-{}",
-            if min_year > 0 {
-                min_year.to_string()
-            } else {
-                "?".to_string()
-            },
-            if max_year > 0 {
-                max_year.to_string()
-            } else {
-                "?".to_string()
-            }
-        );
-
-        let sort_tabs = [
-            (
-                "year",
-                translations.library_years,
-                year_badge,
-                IconName::Disc,
-            ),
-            (
-                "genre",
-                translations.library_genres,
-                genres_count.to_string(),
-                IconName::Folder,
-            ),
-            (
-                "artist",
-                translations.library_artists,
-                artists_count.to_string(),
-                IconName::User,
-            ),
-            (
-                "album",
-                translations.library_albums,
-                albums_count.to_string(),
-                IconName::Album,
-            ),
-            (
-                "tracks",
-                translations.library_tracks,
-                tracks_count.to_string(),
-                IconName::Music,
-            ),
-            (
-                "composer",
-                translations.library_composers,
-                composers_count.to_string(),
-                IconName::PenTool,
-            ),
-            (
-                "filter",
-                translations.library_stereo_multi,
-                format!(
-                    "{}/{}/{}",
-                    stereo_count,
-                    surround_count,
-                    surround71_count + surround_plus_count
-                ),
-                IconName::AudioWaveform,
-            ),
-            (
-                "search",
-                translations.library_search,
-                translations.library_albums.to_string(),
-                IconName::Search,
-            ),
-        ];
-
-        let state_for_tabs = self.state.clone();
-
         div()
+            .id("library-screen-scroll")
+            .track_scroll(&self.scroll.library_screen)
             .flex()
             .flex_col()
             .size_full()
+            .overflow_y_scroll()
             .p(d.pad_y)
             .when(state.app.library_view.loading_initial_data, |el| {
                 el.justify_center()
@@ -245,367 +115,183 @@ impl PlayerView {
                     .child(div().child(Spinner::new().size(SpinnerSize::Lg)))
             })
             .when(!state.app.library_view.loading_initial_data, |el| {
-                let state_for_clear = self.state.clone();
-                let view_handle_for_tabs = cx.entity().clone();
-                let view_handle_for_clear = cx.entity().clone();
-                el.child(
-                    div()
-                        .flex()
-                        .when(window_width_rems < BREAKPOINT_NARROW_LAYOUT_REMS, |el| {
-                            el.flex_col()
-                        })
-                        .when(window_width_rems >= BREAKPOINT_NARROW_LAYOUT_REMS, |el| {
-                            el.flex_wrap()
-                        })
-                        .items_center()
-                        .justify_center()
-                        .gap(d.gap)
-                        .mb(d.gap)
-                        .child(
+                el.child(self.render_library_toolbar(cx))
+                    // Filter options row (only visible when filter mode is active)
+                    .when(is_filter_mode, |el| {
+                        el.child(
                             div()
-                                .id("library-sort-tabs")
                                 .flex()
                                 .flex_wrap()
-                                .items_center()
-                                .gap_2()
-                                .p_1()
+                                .justify_center()
+                                .gap(d.gap)
+                                .mb(d.gap)
+                                .py(d.pad_y)
+                                .px(d.card)
                                 .bg(theme.surface)
-                                .rounded_lg()
-                                .children(sort_tabs.into_iter().enumerate().map(
-                                    |(index, (id, label, badge, icon))| {
-                                        let selected = index == sort_tab_index;
-                                        let state_for_tab = state_for_tabs.clone();
-                                        let view_handle = view_handle_for_tabs.clone();
-                                        let tab_id = SharedString::from(format!("tab-{id}"));
-                                        let icon_color = if selected {
-                                            theme.icon_on_accent
-                                        } else {
-                                            theme.accent
-                                        };
-
-                                        dev_track_selected!(
-                                            div()
-                                            .id(tab_id)
-                                            .flex()
-                                            .items_center()
-                                            .gap_2()
-                                            .px_3()
-                                            .py_2()
-                                            .min_w(rems(5.625))
-                                            .rounded_lg()
-                                            .cursor_pointer()
-                                            .bg(if selected {
-                                                theme.accent
-                                            } else {
-                                                theme.surface_hover
-                                            })
-                                            .text_color(if selected {
-                                                theme.text_on_accent
-                                            } else {
-                                                theme.text_muted
-                                            })
-                                            .when(!selected, |el| {
-                                                el.hover(|style| style.bg(theme.surface_hover))
-                                            })
-                                            .child(
-                                                div().flex().items_center().child(
-                                                    Icon::new(icon)
-                                                        .size(IconSize::Md)
-                                                        .color(icon_color),
-                                                ),
-                                            )
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .flex_col()
-                                                    .gap(d.half_grid)
-                                                    .child(
-                                                        div()
-                                                            .text_xs()
-                                                            .font_weight(if selected {
-                                                                FontWeight::SEMIBOLD
-                                                            } else {
-                                                                FontWeight::NORMAL
-                                                            })
-                                                            .child(label),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .text_sm()
-                                                            .font_weight(FontWeight::BOLD)
-                                                            .child(badge),
-                                                    ),
-                                            )
-                                            .on_mouse_up(
-                                                MouseButton::Left,
-                                                move |_event, _window, cx| {
-                                                    let mut left_search = false;
-                                                    state_for_tab.update(cx, |state, _cx| {
-                                                        if index <= 5 {
-                                                            let sort_order = match index {
-                                                                0 => {
-                                                                    crate::app::LibrarySortOrder::Year
-                                                                }
-                                                                1 => {
-                                                                    crate::app::LibrarySortOrder::Genre
-                                                                }
-                                                                2 => {
-                                                                    crate::app::LibrarySortOrder::Artist
-                                                                }
-                                                                3 => {
-                                                                    crate::app::LibrarySortOrder::Album
-                                                                }
-                                                                4 => {
-                                                                    crate::app::LibrarySortOrder::Tracks
-                                                                }
-                                                                5 => {
-                                                                    crate::app::LibrarySortOrder::Composer
-                                                                }
-                                                                _ => {
-                                                                    crate::app::LibrarySortOrder::Album
-                                                                }
-                                                            };
-                                                            state
-                                                                .app
-                                                                .set_library_sort_order(sort_order);
-                                                            state.app.ui_state.filter_menu_open =
-                                                                false;
-                                                            if state.app.ui_state.input_mode
-                                                                == crate::app::InputMode::Search
-                                                            {
-                                                                left_search = true;
-                                                            }
-                                                            state.app.ui_state.input_mode =
-                                                                crate::app::InputMode::Normal;
-                                                        } else if index == 6 {
-                                                            state.app.ui_state.filter_menu_open =
-                                                                !state.app.ui_state.filter_menu_open;
-                                                            if state.app.ui_state.input_mode
-                                                                == crate::app::InputMode::Search
-                                                            {
-                                                                left_search = true;
-                                                            }
-                                                            state.app.ui_state.input_mode =
-                                                                crate::app::InputMode::Normal;
-                                                        } else if index == 7 {
-                                                            if state.app.ui_state.input_mode
-                                                                == crate::app::InputMode::Search
-                                                            {
-                                                                state.app.ui_state.input_mode =
-                                                                    crate::app::InputMode::Normal;
-                                                                state.app.clear_library_search();
-                                                                left_search = true;
-                                                            } else {
-                                                                state.app.ui_state.input_mode =
-                                                                    crate::app::InputMode::Search;
-                                                                state.app.ui_state.filter_menu_open =
-                                                                    false;
-                                                            }
-                                                        }
-                                                    });
-                                                    if left_search {
-                                                        #[cfg(any(
-                                                            target_os = "ios",
-                                                            target_os = "tvos"
-                                                        ))]
-                                                        gpui_ios::hide_keyboard();
-                                                    }
-                                                    view_handle.update(cx, |_, cx| cx.notify());
-                                                },
-                                            ),
-                                            format!("library.tab.{id}"),
-                                            selected
-                                        )
-                                        .into_any_element()
-                                    },
-                                )),
-                        )
-                        .when(has_active_filters, |el| {
-                            el.child(
-                                Button::new("clear-filters", text.reset)
-                                    .variant(ButtonVariant::Ghost)
-                                    .size(ButtonSize::Sm)
-                                    .on_click(move |_, cx| {
-                                        state_for_clear.update(cx, |state, _| {
-                                            state.app.library_state.clear_all_filters();
-                                            state.app.library_state.ensure_cache_valid();
-                                            state.app.library_state.ensure_selection_cache_valid();
-                                            state.app.ui_state.filter_menu_open = false;
-                                            state.app.ui_state.input_mode =
-                                                crate::app::InputMode::Normal;
-                                        });
-                                        view_handle_for_clear.update(cx, |_, cx| cx.notify());
-                                    }),
-                            )
-                        }),
-                )
-                // Filter options row (only visible when filter mode is active)
-                .when(is_filter_mode, |el| {
-                    el.child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .justify_center()
-                            .gap(d.gap)
-                            .mb(d.gap)
-                            .py(d.pad_y)
-                            .px(d.card)
-                            .bg(theme.surface)
-                            .rounded(d.r_lg)
-                            .child(self.render_filter_button(
-                                "All",
-                                crate::app::state::library::ChannelFilter::All,
-                                channel_filter,
-                                theme.clone(),
-                                cx,
-                            ))
-                            .child(self.render_filter_button(
-                                &format!("1.0 Mono ({})", mono_count),
-                                crate::app::state::library::ChannelFilter::Mono,
-                                channel_filter,
-                                theme.clone(),
-                                cx,
-                            ))
-                            .child(self.render_filter_button(
-                                &format!("2.0 Stereo ({})", stereo_count),
-                                crate::app::state::library::ChannelFilter::Stereo,
-                                channel_filter,
-                                theme.clone(),
-                                cx,
-                            ))
-                            .child(self.render_filter_button(
-                                &format!("5.x Surround ({})", surround_count),
-                                crate::app::state::library::ChannelFilter::Surround,
-                                channel_filter,
-                                theme.clone(),
-                                cx,
-                            ))
-                            .child(self.render_filter_button(
-                                &format!("7.1 ({})", surround71_count),
-                                crate::app::state::library::ChannelFilter::Surround71,
-                                channel_filter,
-                                theme.clone(),
-                                cx,
-                            ))
-                            .child(self.render_filter_button(
-                                &format!(">7.1 ({})", surround_plus_count),
-                                crate::app::state::library::ChannelFilter::SurroundPlus,
-                                channel_filter,
-                                theme.clone(),
-                                cx,
-                            ))
-                            .children(exact_multichannel_counts.iter().map(|(channels, count)| {
-                                self.render_filter_button(
-                                    &format!(
-                                        "{} ({})",
-                                        sotf_audio_player::format_channel_count(*channels),
-                                        count
-                                    ),
-                                    crate::app::state::library::ChannelFilter::Specific(*channels),
+                                .rounded(d.r_lg)
+                                .child(self.render_filter_button(
+                                    "All",
+                                    crate::app::state::library::ChannelFilter::All,
                                     channel_filter,
                                     theme.clone(),
                                     cx,
-                                )
-                            })),
-                    )
-                })
-                // Search bar row (only visible when in search mode)
-                .when(is_search_mode, |el| {
-                    el.child(
+                                ))
+                                .child(self.render_filter_button(
+                                    &format!("1.0 Mono ({})", mono_count),
+                                    crate::app::state::library::ChannelFilter::Mono,
+                                    channel_filter,
+                                    theme.clone(),
+                                    cx,
+                                ))
+                                .child(self.render_filter_button(
+                                    &format!("2.0 Stereo ({})", stereo_count),
+                                    crate::app::state::library::ChannelFilter::Stereo,
+                                    channel_filter,
+                                    theme.clone(),
+                                    cx,
+                                ))
+                                .child(self.render_filter_button(
+                                    &format!("5.x Surround ({})", surround_count),
+                                    crate::app::state::library::ChannelFilter::Surround,
+                                    channel_filter,
+                                    theme.clone(),
+                                    cx,
+                                ))
+                                .child(self.render_filter_button(
+                                    &format!("7.1 ({})", surround71_count),
+                                    crate::app::state::library::ChannelFilter::Surround71,
+                                    channel_filter,
+                                    theme.clone(),
+                                    cx,
+                                ))
+                                .child(self.render_filter_button(
+                                    &format!(">7.1 ({})", surround_plus_count),
+                                    crate::app::state::library::ChannelFilter::SurroundPlus,
+                                    channel_filter,
+                                    theme.clone(),
+                                    cx,
+                                ))
+                                .children(exact_multichannel_counts.iter().map(
+                                    |(channels, count)| {
+                                        self.render_filter_button(
+                                            &format!(
+                                                "{} ({})",
+                                                sotf_audio_player::format_channel_count(*channels),
+                                                count
+                                            ),
+                                            crate::app::state::library::ChannelFilter::Specific(
+                                                *channels,
+                                            ),
+                                            channel_filter,
+                                            theme.clone(),
+                                            cx,
+                                        )
+                                    },
+                                )),
+                        )
+                    })
+                    // Search stays mounted independently of the selected view.
+                    .child(dev_track!(
                         div().flex().justify_center().mb(d.gap).child(
                             div()
-                                .w_96()
+                                .w_full()
                                 .debug_selector(|| "library-search-bar".to_string())
                                 .child(
                                     dev_track!(
                                         SearchBar::new("search-input")
-                                        .value(search_query.clone())
-                                        .placeholder(text.search_library)
-                                        .size(SearchBarSize::Sm)
-                                        .on_change({
-                                            let app_state = self.state.clone();
-                                            let view_handle = cx.entity().clone();
-                                            move |text, _window, cx| {
-                                                app_state.update(cx, |state, _| {
-                                                    state
-                                                        .app
-                                                        .set_library_search_query(text.to_string());
-                                                    if state
-                                                        .app
-                                                        .remote
-                                                        .server_store
-                                                        .selected_server_id
-                                                        .is_some()
-                                                    {
-                                                        state.app.remote.clear_remote_album_page();
-                                                        state
+                                            .value(search_query.clone())
+                                            .placeholder(text.search_library)
+                                            .size(SearchBarSize::Sm)
+                                            .on_change({
+                                                let app_state = self.state.clone();
+                                                let view_handle = cx.entity().clone();
+                                                move |text, _window, cx| {
+                                                    app_state.update(cx, |state, _| {
+                                                        state.app.set_library_search_query(
+                                                            text.to_string(),
+                                                        );
+                                                        if state
                                                             .app
                                                             .remote
-                                                            .refresh_requests
-                                                            .visible_album_page = true;
-                                                    }
-                                                    if state.app.ui_state.input_mode
-                                                        != crate::app::InputMode::Search
-                                                    {
-                                                        state.app.ui_state.input_mode =
-                                                            crate::app::InputMode::Search;
-                                                    }
-                                                });
-                                                view_handle.update(cx, |_, cx| cx.notify());
-                                            }
-                                        })
-                                        .on_submit({
-                                            let view_handle = cx.entity().clone();
-                                            move |_text, _window, cx| {
-                                                log::info!("Search confirmed");
-                                                // Optionally we could trigger something here
-                                                view_handle.update(cx, |_, cx| cx.notify());
-                                            }
-                                        }),
+                                                            .server_store
+                                                            .selected_server_id
+                                                            .is_some()
+                                                        {
+                                                            state
+                                                                .app
+                                                                .remote
+                                                                .clear_remote_album_page();
+                                                            state
+                                                                .app
+                                                                .remote
+                                                                .refresh_requests
+                                                                .visible_album_page = true;
+                                                        }
+                                                        if state.app.ui_state.input_mode
+                                                            != crate::app::InputMode::Search
+                                                        {
+                                                            state.app.ui_state.input_mode =
+                                                                crate::app::InputMode::Search;
+                                                        }
+                                                    });
+                                                    view_handle.update(cx, |_, cx| cx.notify());
+                                                }
+                                            })
+                                            .on_submit({
+                                                let view_handle = cx.entity().clone();
+                                                move |_text, _window, cx| {
+                                                    log::info!("Search confirmed");
+                                                    // Optionally we could trigger something here
+                                                    view_handle.update(cx, |_, cx| cx.notify());
+                                                }
+                                            }),
                                         "library.search_input"
                                     )
                                     .into_any_element(),
                                 ),
                         ),
+                        "library.tab.search"
+                    ))
+                    .child(
+                        div()
+                            .id("library-content-container")
+                            .flex_1()
+                            // Keep a useful results viewport at large text sizes.
+                            // The screen scrolls its toolbar away when necessary,
+                            // rather than clipping cards behind the player footer.
+                            .min_h(rems(20.0))
+                            .overflow_hidden()
+                            .child(if remote_library_active {
+                                self.render_remote_library_content(cx).into_any_element()
+                            } else {
+                                self.render_library_content(
+                                    sort_order,
+                                    theme.clone(),
+                                    // Selection states
+                                    selected_genre,
+                                    selected_decade,
+                                    selected_year,
+                                    selected_artist_letter,
+                                    selected_artist,
+                                    selected_composer_letter,
+                                    selected_composer,
+                                    selected_album_letter,
+                                    selected_track_range,
+                                    // Count maps
+                                    genre_counts,
+                                    decade_counts,
+                                    year_counts,
+                                    artist_counts,
+                                    artist_letter_counts,
+                                    composer_counts,
+                                    composer_letter_counts,
+                                    album_letter_counts,
+                                    track_range_counts,
+                                    cx,
+                                )
+                                .into_any_element()
+                            }),
                     )
-                })
-                .child(
-                    div()
-                        .id("library-content-container")
-                        .flex_1()
-                        .min_h_0()
-                        .overflow_hidden()
-                        .child(if remote_library_active {
-                            self.render_remote_library_content(cx).into_any_element()
-                        } else {
-                            self.render_library_content(
-                                sort_order,
-                                theme.clone(),
-                                // Selection states
-                                selected_genre,
-                                selected_decade,
-                                selected_year,
-                                selected_artist_letter,
-                                selected_artist,
-                                selected_composer_letter,
-                                selected_composer,
-                                selected_album_letter,
-                                selected_track_range,
-                                // Count maps
-                                genre_counts,
-                                decade_counts,
-                                year_counts,
-                                artist_counts,
-                                artist_letter_counts,
-                                composer_counts,
-                                composer_letter_counts,
-                                album_letter_counts,
-                                track_range_counts,
-                                cx,
-                            )
-                            .into_any_element()
-                        }),
-                )
             })
     }
 
@@ -820,7 +506,7 @@ impl PlayerView {
                         .id("remote-album-scroll")
                         .size_full()
                         .overflow_y_scroll()
-                        .track_scroll(&self.grid_scroll_handle)
+                        .track_scroll(&self.scroll.library_grid)
                         .flex()
                         .flex_wrap()
                         .content_start()
@@ -907,7 +593,7 @@ impl PlayerView {
                 .into_any_element()
             }
             LibrarySortOrder::Tracks => {
-                // Tracks tab: track range filter bar + album grid with track count dividers
+                // Tracks tab: individual playable track rows
                 self.render_tracks_tab_content(selected_track_range, track_range_counts, theme, cx)
                     .into_any_element()
             }
@@ -933,7 +619,7 @@ impl PlayerView {
                             .flex_1()
                             .min_h_0()
                             .overflow_hidden()
-                            .child(self.render_library_grid(cx)),
+                            .child(self.render_library_albums(cx)),
                     )
                     .into_any_element()
             }
@@ -971,7 +657,7 @@ impl PlayerView {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .child(self.render_library_grid(cx)),
+                    .child(self.render_library_albums(cx)),
             )
     }
 
@@ -1113,7 +799,7 @@ impl PlayerView {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .child(self.render_library_grid(cx)),
+                    .child(self.render_library_albums(cx)),
             )
     }
 
@@ -1177,7 +863,7 @@ impl PlayerView {
             }))
     }
 
-    /// Render Artist tab with letter filter bar, artist names, and album grid
+    /// Render Artist tab with letter filter bar and artist album entries
     pub(super) fn render_artist_tab_content(
         &self,
         selected_letter: Option<char>,
@@ -1203,12 +889,12 @@ impl PlayerView {
                 ),
             )
             .child(
-                // Album grid
+                // Artist entries with explicit album navigation
                 div()
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .child(self.render_library_grid(cx)),
+                    .child(self.render_artist_album_rows(cx)),
             )
     }
 
@@ -1385,7 +1071,7 @@ impl PlayerView {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .child(self.render_library_grid(cx)),
+                    .child(self.render_library_albums(cx)),
             )
     }
 
@@ -1531,91 +1217,15 @@ impl PlayerView {
             })
     }
 
-    /// Render Tracks tab with track range filter bar and album grid
+    /// Render the track-oriented library view.
     pub(super) fn render_tracks_tab_content(
         &self,
-        selected_range: Option<(usize, usize)>,
-        track_range_counts: Vec<(usize, usize, usize)>,
-        theme: crate::theme::Theme,
+        _selected_range: Option<(usize, usize)>,
+        _track_range_counts: Vec<(usize, usize, usize)>,
+        _theme: crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .child(
-                // Filter bar (track ranges)
-                self.render_tracks_filter_bar(
-                    selected_range,
-                    track_range_counts,
-                    theme.clone(),
-                    cx,
-                ),
-            )
-            .child(
-                // Album grid
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_hidden()
-                    .child(self.render_library_grid(cx)),
-            )
-    }
-
-    /// Render tracks filter bar with track count ranges
-    pub(super) fn render_tracks_filter_bar(
-        &self,
-        selected_range: Option<(usize, usize)>,
-        track_range_counts: Vec<(usize, usize, usize)>,
-        theme: crate::theme::Theme,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let d = Ds::from_cx(cx);
-        div()
-            .flex()
-            .flex_wrap()
-            .justify_center()
-            .items_center()
-            .gap(d.grid)
-            .p(d.pad_y)
-            .bg(theme.surface)
-            .border_b_1()
-            .border_color(theme.border)
-            .children(track_range_counts.into_iter().map(|(min, max, count)| {
-                let is_selected = selected_range == Some((min, max));
-                let label = if max == usize::MAX {
-                    format!("{}+ ({})", min, count)
-                } else if min == max {
-                    format!("{} ({})", min, count)
-                } else {
-                    format!("{}-{} ({})", min, max, count)
-                };
-
-                Button::new(
-                    SharedString::from(format!("tracks-range-{}-{}", min, max)),
-                    SharedString::from(label),
-                )
-                .variant(if is_selected {
-                    ButtonVariant::Primary
-                } else {
-                    ButtonVariant::Ghost
-                })
-                .size(ButtonSize::Xs)
-                .theme(theme.to_button_theme())
-                .on_click_event(cx.listener(
-                    move |view, _: &ClickEvent, _window, cx| {
-                        view.state.update(cx, |state, _cx| {
-                            if state.app.library_state.selected_track_range == Some((min, max)) {
-                                state.app.library_state.selected_track_range = None;
-                            } else {
-                                state.app.library_state.selected_track_range = Some((min, max));
-                            }
-                            state.app.library_state.selected_index = 0;
-                        });
-                        cx.notify();
-                    },
-                ))
-            }))
+        self.render_library_tracks(cx)
     }
 
     /// Render content for Genre tab that uses selection UI
@@ -1679,7 +1289,7 @@ impl PlayerView {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .child(self.render_library_grid(cx)),
+                    .child(self.render_library_albums(cx)),
             );
 
             content.into_any_element()
@@ -1950,51 +1560,34 @@ impl PlayerView {
                             return;
                         }
 
-                        let click_count = event.click_count();
-                        view.state.update(cx, |state, _cx| {
+                        let album = view.state.update(cx, |state, _| {
                             state.app.library_state.selected_index = idx;
-                            if click_count >= 2 {
-                                let queue_was_empty = state.app.queue_state.is_empty();
-                                match state.app.add_album_to_queue() {
-                                    Ok(Some(path)) => Self::play_track(state, path),
-                                    Ok(None) if queue_was_empty => {
-                                        if let Some(path) = state.app.start_queue() {
-                                            Self::play_track(state, path);
-                                        }
-                                    }
-                                    Err(e) => {
-                                        state.app.ui_state.toast_message =
-                                            Some(crate::app::ToastMessage::error(e));
-                                    }
-                                    _ => {}
-                                }
-                            }
+                            state
+                                .app
+                                .filtered_albums()
+                                .get(idx)
+                                .map(|album| Arc::new((*album).clone()))
                         });
-                        cx.notify();
+                        if let Some(album) = album {
+                            view.open_album_detail(album, window, cx);
+                        }
                     }))
-                    .on_key_down(cx.listener(move |view, event: &KeyDownEvent, _window, cx| {
+                    .on_key_down(cx.listener(move |view, event: &KeyDownEvent, window, cx| {
                         if !matches!(event.keystroke.key.as_str(), "enter" | "space") {
                             return;
                         }
-                        view.state.update(cx, |state, _cx| {
+                        let album = view.state.update(cx, |state, _| {
                             state.app.library_state.selected_index = idx;
-                            let queue_was_empty = state.app.queue_state.is_empty();
-                            match state.app.add_album_to_queue() {
-                                Ok(Some(path)) => Self::play_track(state, path),
-                                Ok(None) if queue_was_empty => {
-                                    if let Some(path) = state.app.start_queue() {
-                                        Self::play_track(state, path);
-                                    }
-                                }
-                                Err(error) => {
-                                    state.app.ui_state.toast_message =
-                                        Some(crate::app::ToastMessage::error(error));
-                                }
-                                _ => {}
-                            }
+                            state
+                                .app
+                                .filtered_albums()
+                                .get(idx)
+                                .map(|album| Arc::new((*album).clone()))
                         });
+                        if let Some(album) = album {
+                            view.open_album_detail(album, window, cx);
+                        }
                         cx.stop_propagation();
-                        cx.notify();
                     }))
                     .on_mouse_up(
                         MouseButton::Right,
@@ -2025,7 +1618,7 @@ impl PlayerView {
             .p(d.pad_y)
             .size_full()
             .overflow_y_scroll()
-            .track_scroll(&self.grid_scroll_handle)
+            .track_scroll(&self.scroll.library_grid)
             .children(elements)
             .when(albums.is_empty(), |el| {
                 el.child(dev_track!(
@@ -2039,6 +1632,9 @@ impl PlayerView {
                         .p(d.card)
                         .w_full()
                         .child(Text::section_header(empty_results_label).color(theme.text_primary),)
+                        .when(!has_active_filters, |empty| {
+                            empty.child(self.render_empty_library_actions(cx))
+                        })
                         .when(has_active_filters, |empty| {
                             empty.child(dev_track!(
                                 Button::new("clear-library-results", reset_label)

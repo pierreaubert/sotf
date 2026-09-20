@@ -76,7 +76,6 @@ impl PlayerView {
             .auth_token
             .as_deref()
             .is_some_and(|token| !token.trim().is_empty());
-        let selected_api_state = if api.enabled { "enabled" } else { "disabled" };
         let state_for_api_enabled = self.state.clone();
         let (show_qr, qr_data) = {
             let state = self.state.read(cx);
@@ -109,21 +108,22 @@ impl PlayerView {
                             .color(theme.text_primary),
                     )
                     .child(div().flex_1())
-                    .child(
-                        ButtonSet::new("sotf-api-enabled")
-                            .options(vec![
-                                ButtonSetOption::new("enabled", text.enable),
-                                ButtonSetOption::new("disabled", text.disable),
-                            ])
-                            .selected(selected_api_state)
-                            .size(ButtonSetSize::Xs)
-                            .theme(theme.to_button_set_theme())
-                            .on_change(move |value, _window, cx| {
-                                state_for_api_enabled.update(cx, |state, _cx| {
-                                    state.app.set_sotf_api_enabled(value.as_ref() == "enabled");
-                                });
-                            }),
-                    )
+                    .child(dev_track!(
+                        self.preference_toggle(
+                            crate::app::types::PreferencesSetting::SharingServers,
+                            gpui_ui_kit::Toggle::new("sotf-api-enabled")
+                                .label(text.enable)
+                                .checked(api.enabled)
+                                .on_change(move |enabled, _, cx| {
+                                    state_for_api_enabled.update(cx, |state, cx| {
+                                        state.app.set_sotf_api_enabled(enabled);
+                                        cx.notify();
+                                    });
+                                }),
+                            cx,
+                        ),
+                        "settings.servers.api.enabled"
+                    ))
                     .child(
                         Button::new(
                             "toggle-sotf-api-connection-qr",
@@ -727,19 +727,26 @@ impl PlayerView {
             .child(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(server_editable_field(
-                        "remote-sotf-name",
-                        "Name",
-                        &manual_name,
-                        "Listening Room",
-                        theme,
-                        d,
-                        move |val, _window, cx| {
-                            let value = val.to_string();
-                            state_for_name.update(cx, |state, _cx| {
-                                state.app.update_manual_remote_server_name(value);
-                            });
-                        },
+                    .child(dev_track!(
+                        self.preference_text_input(
+                            crate::app::types::PreferencesSetting::RemotePlayers,
+                            Input::new("remote-sotf-name")
+                                .label(
+                                    crate::app::i18n::StreamsTranslations::for_language(
+                                        self.state.read(cx).app.ui_state.language
+                                    )
+                                    .name
+                                )
+                                .value(SharedString::from(manual_name))
+                                .size(InputSize::Sm)
+                                .on_text_change(move |val, _window, cx| {
+                                    state_for_name.update(cx, |state, _cx| {
+                                        state.app.update_manual_remote_server_name(val.to_string());
+                                    });
+                                }),
+                            cx,
+                        ),
+                        "settings.servers.remote-sotf-name"
                     ))
                     .child(server_editable_field(
                         "remote-sotf-url",

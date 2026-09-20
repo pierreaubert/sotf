@@ -860,6 +860,125 @@ pub(super) fn verb_scroll(rest: &str, ctx: &Ctx) -> Result<()> {
     Ok(())
 }
 
+/// Click a measured viewport point through native pointer events.
+pub(super) fn verb_click_at(rest: &str, ctx: &Ctx) -> Result<()> {
+    coordinate_click(rest, ctx, 1)
+}
+
+pub(super) fn verb_double_click_at(rest: &str, ctx: &Ctx) -> Result<()> {
+    coordinate_click(rest, ctx, 2)
+}
+
+fn coordinate_click(rest: &str, ctx: &Ctx, click_count: usize) -> Result<()> {
+    let values = rest
+        .split_whitespace()
+        .map(str::parse::<f64>)
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .context("click_at requires numeric x and y")?;
+    if values.len() != 2 || values.iter().any(|value| !value.is_finite()) {
+        bail!("click_at needs finite `<x> <y>`");
+    }
+    let response = ctx.client.get(format!("{}/snapshot", ctx.base)).send()?;
+    let snapshot = parse_dev_response(response, "snapshot for coordinate click")?;
+    let snapshot = snapshot.get("value").unwrap_or(&snapshot);
+    let revision = snapshot
+        .get("state_revision")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| anyhow!("snapshot contains no state revision"))?;
+    for phase in ["move", "down", "up"] {
+        post_dev_json(
+            ctx,
+            "/input",
+            &json!({
+                "kind": "pointer", "phase": phase, "x": values[0], "y": values[1],
+                "button": 0, "click_count": click_count, "viewport_revision": revision,
+            }),
+            "coordinate click",
+        )?;
+    }
+    Ok(())
+}
+
+/// Send wheel input at an explicit viewport point, using a fresh snapshot revision.
+pub(super) fn verb_scroll_at(rest: &str, ctx: &Ctx) -> Result<()> {
+    let values = rest
+        .split_whitespace()
+        .map(str::parse::<f64>)
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .context("scroll_at requires numeric x, y, and delta_y")?;
+    if values.len() != 3 || values.iter().any(|value| !value.is_finite()) {
+        bail!("scroll_at needs finite `<x> <y> <delta_y>`");
+    }
+    let response = ctx.client.get(format!("{}/snapshot", ctx.base)).send()?;
+    let snapshot = parse_dev_response(response, "snapshot for coordinate scroll")?;
+    let snapshot = snapshot.get("value").unwrap_or(&snapshot);
+    let revision = snapshot
+        .get("state_revision")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| anyhow!("snapshot contains no state revision"))?;
+    post_dev_json(
+        ctx,
+        "/input",
+        &json!({
+            "kind": "scroll", "x": values[0], "y": values[1],
+            "delta_x": 0.0, "delta_y": values[2], "viewport_revision": revision,
+        }),
+        "coordinate scroll",
+    )?;
+    Ok(())
+}
+
+/// Bring an already-rendered target's click point inside a vertical scrollport.
+pub(super) fn verb_scroll_into_view(rest: &str, ctx: &Ctx) -> Result<()> {
+    let (container, target) = split2(rest);
+    let target = target.trim();
+    if container.is_empty() || target.is_empty() {
+        bail!("scroll_into_view needs `<container> <target>`");
+    }
+    for _ in 0..4 {
+        let elements = fetch_elements(ctx)?;
+        let port = find_element(&elements, container)
+            .ok_or_else(|| anyhow!("scroll container `{container}` is not rendered"))?;
+        let item = find_element(&elements, target).ok_or_else(|| {
+            anyhow!("target `{target}` is not rendered; scroll its region into view first")
+        })?;
+        let health = fetch_health(ctx)?;
+        let viewport = health
+            .get("value")
+            .and_then(|value| value.get("viewport"))
+            .ok_or_else(|| anyhow!("health response does not contain viewport"))?;
+        if !element_is_within_viewport(port, viewport) {
+            bail!("scroll container `{container}` is clipped by the window");
+        }
+        let center = |element: &Value| -> Result<f64> {
+            let y = element.get("y").and_then(Value::as_f64);
+            let height = element.get("h").and_then(Value::as_f64);
+            match (y, height) {
+                (Some(y), Some(height)) if y.is_finite() && height.is_finite() && height > 0.0 => {
+                    Ok(y + height / 2.0)
+                }
+                _ => bail!("invalid scroll geometry: {element}"),
+            }
+        };
+        let delta = center(port)? - center(item)?;
+        let height = port.get("h").and_then(Value::as_f64).unwrap_or(0.0);
+        if delta.abs() < (height / 2.0 - 1.0).max(0.0) {
+            return Ok(());
+        }
+        post_dev_json(
+            ctx,
+            "/scroll",
+            &json!({"selector": container, "delta_y": delta}),
+            "center scroll target",
+        )?;
+        sleep(Duration::from_millis(100));
+    }
+    let elements = fetch_elements(ctx)?;
+    let port = find_element(&elements, container);
+    let item = find_element(&elements, target);
+    bail!("could not bring `{target}` inside `{container}`; container={port:?}, target={item:?}")
+}
+
 /// Resize the window content area to a deterministic viewport.
 pub(super) fn verb_resize(rest: &str, ctx: &Ctx) -> Result<()> {
     let (width, height) = parse_resize_dimensions(rest)?;

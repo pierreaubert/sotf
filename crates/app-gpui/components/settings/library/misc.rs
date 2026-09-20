@@ -116,6 +116,313 @@ impl PlayerView {
         cx.notify();
     }
 
+    pub(crate) fn render_replay_gain_settings(
+        &self,
+        playback: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
+        let scan_in_progress = state.app.library_state.scan_in_progress;
+        let replay_gain_enabled = state
+            .app
+            .audio_device_state
+            .output_draft
+            .replay_gain_enabled
+            .unwrap_or(state.app.playback.replay_gain_enabled);
+        let replay_gain_mode = state
+            .app
+            .audio_device_state
+            .output_draft
+            .replay_gain_mode
+            .unwrap_or(state.app.playback.replay_gain_mode);
+        div()
+            // ReplayGain Section
+            .child(
+                div()
+                    .mt(d.section)
+                    .flex()
+                    .flex_col()
+                    .gap(d.gap_md)
+                    .child(
+                        div()
+                            .text_size(d.text_sm)
+                            .font_weight(FontWeight::BOLD)
+                            .child(translations.settings_replaygain),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(d.section)
+                            .p(d.card)
+                            .bg(theme.background_secondary)
+                            .rounded(d.r_md)
+                            .border_1()
+                            .border_color(theme.border)
+                            .when(playback, |section| {
+                                section.child(
+                                    HStack::new()
+                                        .spacing(StackSpacing::Sm)
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .flex_1()
+                                                .min_w_0()
+                                                .flex_col()
+                                                .child(
+                                                    div()
+                                                        .text_size(d.text_sm)
+                                                        .font_weight(FontWeight::BOLD)
+                                                        .child(
+                                                            translations.settings_enable_replaygain,
+                                                        ),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_size(d.text_xs)
+                                                        .text_color(theme.text_secondary)
+                                                        .child(
+                                                            translations.settings_replaygain_desc,
+                                                        ),
+                                                ),
+                                        )
+                                        .child(
+                                            self.preference_action(
+                                                crate::app::types::PreferencesSetting::ReplayGain,
+                                                Button::new(
+                                                    "replay-gain-toggle",
+                                                    if replay_gain_enabled {
+                                                        translations.settings_on
+                                                    } else {
+                                                        translations.settings_off
+                                                    },
+                                                )
+                                                .variant(if replay_gain_enabled {
+                                                    ButtonVariant::Primary
+                                                } else {
+                                                    ButtonVariant::Secondary
+                                                })
+                                                .size(ButtonSize::Xs)
+                                                .theme(theme.to_button_theme()),
+                                                false,
+                                                |view, _window, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        let active =
+                                                            state.app.playback.replay_gain_enabled;
+                                                        let draft = &mut state
+                                                            .app
+                                                            .audio_device_state
+                                                            .output_draft;
+                                                        draft.set_replay_gain_enabled(
+                                                            !draft
+                                                                .replay_gain_enabled
+                                                                .unwrap_or(active),
+                                                            active,
+                                                        );
+                                                    });
+                                                    cx.notify();
+                                                },
+                                                cx,
+                                            )
+                                            .map(
+                                                |button| {
+                                                    #[cfg(feature = "dev-api")]
+                                                    {
+                                                        button
+                                                            .dev_track(
+                                                                "settings.replay-gain-toggle",
+                                                            )
+                                                            .into_any_element()
+                                                    }
+                                                    #[cfg(not(feature = "dev-api"))]
+                                                    {
+                                                        button
+                                                    }
+                                                },
+                                            ),
+                                        ),
+                                )
+                            })
+                            .when(playback && replay_gain_enabled, |section| {
+                                section.child(Divider::new().color(theme.border))
+                            })
+                            .when(playback && replay_gain_enabled, |section| {
+                                section.child(
+                                    HStack::new()
+                                        .spacing(StackSpacing::Sm)
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .flex_1()
+                                                .min_w_0()
+                                                .flex_col()
+                                                .child(
+                                                    div()
+                                                        .text_size(d.text_sm)
+                                                        .font_weight(FontWeight::BOLD)
+                                                        .child(translations.settings_mode),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_size(d.text_xs)
+                                                        .text_color(theme.text_secondary)
+                                                        .child(translations.settings_mode_desc),
+                                                ),
+                                        )
+                                        .child(
+                                            HStack::new()
+                                                .spacing(StackSpacing::Xs)
+                                                .child(
+                                                    Button::new(
+                                                        "rg-mode-track",
+                                                        translations.settings_track,
+                                                    )
+                                                    .variant(
+                                                        if replay_gain_mode == ReplayGainMode::Track
+                                                        {
+                                                            ButtonVariant::Primary
+                                                        } else {
+                                                            ButtonVariant::Ghost
+                                                        },
+                                                    )
+                                                    .size(ButtonSize::Xs)
+                                                    .theme(theme.to_button_theme())
+                                                    .on_click_event(cx.listener(
+                                                        |view, _: &ClickEvent, _window, cx| {
+                                                            view.state.update(cx, |state, _cx| {
+                                                                state
+                                                                    .app
+                                                                    .audio_device_state
+                                                                    .output_draft
+                                                                    .set_replay_gain_mode(
+                                                                        ReplayGainMode::Track,
+                                                                        state
+                                                                            .app
+                                                                            .playback
+                                                                            .replay_gain_mode,
+                                                                    );
+                                                            });
+                                                            cx.notify();
+                                                        },
+                                                    ))
+                                                    .map(|button| {
+                                                        #[cfg(feature = "dev-api")]
+                                                        {
+                                                            use crate::app::dev_api::DevTrackExt;
+                                                            button
+                                                                .dev_track("settings.rg-mode-track")
+                                                        }
+                                                        #[cfg(not(feature = "dev-api"))]
+                                                        {
+                                                            button
+                                                        }
+                                                    }),
+                                                )
+                                                .child(
+                                                    Button::new(
+                                                        "rg-mode-album",
+                                                        translations.settings_album,
+                                                    )
+                                                    .variant(
+                                                        if replay_gain_mode == ReplayGainMode::Album
+                                                        {
+                                                            ButtonVariant::Primary
+                                                        } else {
+                                                            ButtonVariant::Ghost
+                                                        },
+                                                    )
+                                                    .size(ButtonSize::Xs)
+                                                    .theme(theme.to_button_theme())
+                                                    .on_click_event(cx.listener(
+                                                        |view, _: &ClickEvent, _window, cx| {
+                                                            view.state.update(cx, |state, _cx| {
+                                                                state
+                                                                    .app
+                                                                    .audio_device_state
+                                                                    .output_draft
+                                                                    .set_replay_gain_mode(
+                                                                        ReplayGainMode::Album,
+                                                                        state
+                                                                            .app
+                                                                            .playback
+                                                                            .replay_gain_mode,
+                                                                    );
+                                                            });
+                                                            cx.notify();
+                                                        },
+                                                    ))
+                                                    .map(|button| {
+                                                        #[cfg(feature = "dev-api")]
+                                                        {
+                                                            use crate::app::dev_api::DevTrackExt;
+                                                            button
+                                                                .dev_track("settings.rg-mode-album")
+                                                        }
+                                                        #[cfg(not(feature = "dev-api"))]
+                                                        {
+                                                            button
+                                                        }
+                                                    }),
+                                                ),
+                                        ),
+                                )
+                            })
+                            .when(!playback, |section| {
+                                section.child(
+                                    HStack::new()
+                                        .spacing(StackSpacing::Sm)
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .flex_1()
+                                                .min_w_0()
+                                                .flex_col()
+                                                .child(
+                                                    div()
+                                                        .text_size(d.text_sm)
+                                                        .font_weight(FontWeight::BOLD)
+                                                        .child(
+                                                            translations
+                                                                .settings_compute_replaygain,
+                                                        ),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_size(d.text_xs)
+                                                        .text_color(theme.text_secondary)
+                                                        .child(
+                                                            translations
+                                                                .settings_compute_replaygain_desc,
+                                                        ),
+                                                ),
+                                        )
+                                        .child(
+                                            Button::new(
+                                                "replaygain-scan-btn",
+                                                translations.settings_compute,
+                                            )
+                                            .variant(ButtonVariant::Secondary)
+                                            .size(ButtonSize::Xs)
+                                            .disabled(scan_in_progress) // Also disable if library scan is running
+                                            .theme(theme.to_button_theme())
+                                            .on_click_event(cx.listener(
+                                                |view, _: &ClickEvent, _window, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state.app.scan_replay_gain();
+                                                    });
+                                                    cx.notify();
+                                                },
+                                            )),
+                                        ),
+                                )
+                            }),
+                    ),
+            )
+    }
+
     pub(crate) fn render_library_settings_content(
         &self,
         cx: &mut Context<Self>,
@@ -130,8 +437,6 @@ impl PlayerView {
             directory_error,
             scan_error,
             pending_remove_index,
-            replay_gain_enabled,
-            replay_gain_mode,
             album_count,
             track_count,
         ) = {
@@ -145,8 +450,6 @@ impl PlayerView {
                 state.app.settings.library.directory_error.clone(),
                 state.app.settings.library.scan_error.clone(),
                 state.app.settings.library.pending_remove_index,
-                state.app.playback.replay_gain_enabled,
-                state.app.playback.replay_gain_mode,
                 state.app.library_state.library.albums.len(),
                 state
                     .app
@@ -159,10 +462,143 @@ impl PlayerView {
             )
         };
 
+        let analysis_title = crate::app::i18n::LibraryAnalysisTranslations::title(
+            self.state.read(cx).app.ui_state.language,
+        );
+        let analysis_expanded = self
+            .state
+            .read(cx)
+            .app
+            .settings
+            .expanded_sections
+            .iter()
+            .any(|id| id == "library-analysis");
+        let analysis = analysis_expanded.then(|| {
+            div().flex().flex_col().gap(d.section)
+            .child(self.render_replay_gain_settings(false, cx))
+            // Audio Analysis Section (Bliss)
+            .child(
+                div()
+                    .mt(d.section)
+                    .flex()
+                    .flex_col()
+                    .gap(d.gap_md)
+                    .child(
+                        div()
+                            .text_size(d.text_sm)
+                            .font_weight(FontWeight::BOLD)
+                            .child(translations.settings_audio_analysis),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(d.section)
+                            .p(d.card)
+                            .bg(theme.background_secondary)
+                            .rounded(d.r_md)
+                            .border_1()
+                            .border_color(theme.border)
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Sm)
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .flex_col()
+                                            .child(
+                                                div()
+                                                    .text_size(d.text_sm)
+                                                    .font_weight(FontWeight::BOLD)
+                                                    .child(translations.settings_compute_bliss),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(d.text_xs)
+                                                    .text_color(theme.text_secondary)
+                                                    .child(
+                                                        translations.settings_compute_bliss_desc,
+                                                    ),
+                                            ),
+                                    )
+                                    .child(
+                                        self.preference_action(
+                                            crate::app::types::PreferencesSetting::AudioAnalysis,
+                                            Button::new(
+                                                "bliss-scan-btn",
+                                                translations.settings_compute,
+                                            )
+                                            .variant(ButtonVariant::Secondary)
+                                            .size(ButtonSize::Xs)
+                                            .theme(theme.to_button_theme()),
+                                            scan_in_progress,
+                                            |view, _window, cx| {
+                                                view.state.update(cx, |state, _cx| {
+                                                    state.app.scan_bliss();
+                                                });
+                                                cx.notify();
+                                            },
+                                            cx,
+                                        ),
+                                    ),
+                            )
+                            .child(Divider::new().color(theme.border))
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Sm)
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .flex_col()
+                                            .child(
+                                                div()
+                                                    .text_size(d.text_sm)
+                                                    .font_weight(FontWeight::BOLD)
+                                                    .child(translations.settings_compute_waveform),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(d.text_xs)
+                                                    .text_color(theme.text_secondary)
+                                                    .child(
+                                                        translations.settings_compute_waveform_desc,
+                                                    ),
+                                            ),
+                                    )
+                                    .child(
+                                        Button::new(
+                                            "waveform-scan-btn",
+                                            translations.settings_compute,
+                                        )
+                                        .variant(ButtonVariant::Secondary)
+                                        .size(ButtonSize::Xs)
+                                        .disabled(scan_in_progress)
+                                        .theme(theme.to_button_theme())
+                                        .on_click_event(
+                                            cx.listener(|view, _: &ClickEvent, _window, cx| {
+                                                view.state.update(cx, |state, _cx| {
+                                                    state.app.compute_waveform();
+                                                });
+                                                cx.notify();
+                                            }),
+                                        ),
+                                    ),
+                            ),
+                    ),
+            )
+            .child(self.render_library_maintenance(cx))
+        });
+
         div()
             .flex()
             .flex_col()
             .gap(d.section)
+            .w_full()
+            .min_w_0()
             // Library Overview Stats
             .child(
                 div()
@@ -243,18 +679,15 @@ impl PlayerView {
                             "settings-library-add-button",
                             translations.directories_add,
                         );
-                        let button = Button::new(id, translations.directories_add)
-                            .variant(ButtonVariant::Secondary)
-                            .size(ButtonSize::Xs)
-                            .theme(theme.to_button_theme())
-                            .build()
-                            .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
-                                view.choose_library_settings_directory(cx);
-                            }));
-                        let button = apply_library_button_accessibility(
-                            button,
-                            translations.directories_add,
+                        let button = self.preference_action(
+                            crate::app::types::PreferencesSetting::MusicFolders,
+                            Button::new(id, translations.directories_add)
+                                .variant(ButtonVariant::Secondary)
+                                .size(ButtonSize::Xs)
+                                .theme(theme.to_button_theme()),
                             false,
+                            |view, _window, cx| view.choose_library_settings_directory(cx),
+                            cx,
                         );
                         #[cfg(feature = "dev-api")]
                         let button = button.dev_track("settings.library.add");
@@ -557,377 +990,29 @@ impl PlayerView {
                 let alert = alert.dev_track("settings.library.scan-error");
                 content.child(alert)
             })
-            // ReplayGain Section
-            .child(
-                div()
-                    .mt(d.section)
-                    .flex()
-                    .flex_col()
-                    .gap(d.gap_md)
-                    .child(
-                        div()
-                            .text_size(d.text_sm)
-                            .font_weight(FontWeight::BOLD)
-                            .child(translations.settings_replaygain),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(d.section)
-                            .p(d.card)
-                            .bg(theme.background_secondary)
-                            .rounded(d.r_md)
-                            .border_1()
-                            .border_color(theme.border)
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Sm)
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_1()
-                                            .flex_col()
-                                            .child(
-                                                div()
-                                                    .text_size(d.text_sm)
-                                                    .font_weight(FontWeight::BOLD)
-                                                    .child(translations.settings_enable_replaygain),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(d.text_xs)
-                                                    .text_color(theme.text_secondary)
-                                                    .child(translations.settings_replaygain_desc),
-                                            ),
-                                    )
-                                    .child(
-                                        // Toggle switch (simulated with button for now or use Checkbox if available)
-                                        Button::new(
-                                            "replay-gain-toggle",
-                                            if replay_gain_enabled {
-                                                translations.settings_on
-                                            } else {
-                                                translations.settings_off
-                                            },
-                                        )
-                                        .variant(if replay_gain_enabled {
-                                            ButtonVariant::Primary
-                                        } else {
-                                            ButtonVariant::Secondary
-                                        })
-                                        .size(ButtonSize::Xs)
-                                        .theme(theme.to_button_theme())
-                                        .on_click_event(
-                                            cx.listener(|view, _: &ClickEvent, _window, cx| {
-                                                view.state.update(cx, |state, _cx| {
-                                                    state.app.playback.replay_gain_enabled =
-                                                        !state.app.playback.replay_gain_enabled;
-                                                });
-                                                cx.notify();
-                                            }),
-                                        ),
-                                    ),
-                            )
-                            .child(Divider::new().color(theme.border))
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Sm)
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_1()
-                                            .flex_col()
-                                            .child(
-                                                div()
-                                                    .text_size(d.text_sm)
-                                                    .font_weight(FontWeight::BOLD)
-                                                    .child(translations.settings_mode),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(d.text_xs)
-                                                    .text_color(theme.text_secondary)
-                                                    .child(translations.settings_mode_desc),
-                                            ),
-                                    )
-                                    .child(
-                                        HStack::new()
-                                            .spacing(StackSpacing::Xs)
-                                            .child(
-                                                Button::new(
-                                                    "rg-mode-track",
-                                                    translations.settings_track,
-                                                )
-                                                .variant(
-                                                    if replay_gain_mode == ReplayGainMode::Track {
-                                                        ButtonVariant::Primary
-                                                    } else {
-                                                        ButtonVariant::Ghost
-                                                    },
-                                                )
-                                                .size(ButtonSize::Xs)
-                                                .theme(theme.to_button_theme())
-                                                .on_click_event(cx.listener(
-                                                    |view, _: &ClickEvent, _window, cx| {
-                                                        view.state.update(cx, |state, _cx| {
-                                                            state.app.playback.replay_gain_mode =
-                                                                ReplayGainMode::Track;
-                                                        });
-                                                        cx.notify();
-                                                    },
-                                                )),
-                                            )
-                                            .child(
-                                                Button::new(
-                                                    "rg-mode-album",
-                                                    translations.settings_album,
-                                                )
-                                                .variant(
-                                                    if replay_gain_mode == ReplayGainMode::Album {
-                                                        ButtonVariant::Primary
-                                                    } else {
-                                                        ButtonVariant::Ghost
-                                                    },
-                                                )
-                                                .size(ButtonSize::Xs)
-                                                .theme(theme.to_button_theme())
-                                                .on_click_event(cx.listener(
-                                                    |view, _: &ClickEvent, _window, cx| {
-                                                        view.state.update(cx, |state, _cx| {
-                                                            state.app.playback.replay_gain_mode =
-                                                                ReplayGainMode::Album;
-                                                        });
-                                                        cx.notify();
-                                                    },
-                                                )),
-                                            ),
-                                    ),
-                            )
-                            .child(Divider::new().color(theme.border))
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Sm)
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_1()
-                                            .flex_col()
-                                            .child(
-                                                div()
-                                                    .text_size(d.text_sm)
-                                                    .font_weight(FontWeight::BOLD)
-                                                    .child(
-                                                        translations.settings_compute_replaygain,
-                                                    ),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(d.text_xs)
-                                                    .text_color(theme.text_secondary)
-                                                    .child(
-                                                        translations
-                                                            .settings_compute_replaygain_desc,
-                                                    ),
-                                            ),
-                                    )
-                                    .child(
-                                        Button::new(
-                                            "replaygain-scan-btn",
-                                            translations.settings_compute,
-                                        )
-                                        .variant(ButtonVariant::Secondary)
-                                        .size(ButtonSize::Xs)
-                                        .disabled(scan_in_progress) // Also disable if library scan is running
-                                        .theme(theme.to_button_theme())
-                                        .on_click_event(
-                                            cx.listener(|view, _: &ClickEvent, _window, cx| {
-                                                view.state.update(cx, |state, _cx| {
-                                                    state.app.scan_replay_gain();
-                                                });
-                                                cx.notify();
-                                            }),
-                                        ),
-                                    ),
-                            ),
-                    ),
-            )
-            // Audio Analysis Section (Bliss)
-            .child(
-                div()
-                    .mt(d.section)
-                    .flex()
-                    .flex_col()
-                    .gap(d.gap_md)
-                    .child(
-                        div()
-                            .text_size(d.text_sm)
-                            .font_weight(FontWeight::BOLD)
-                            .child(translations.settings_audio_analysis),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(d.section)
-                            .p(d.card)
-                            .bg(theme.background_secondary)
-                            .rounded(d.r_md)
-                            .border_1()
-                            .border_color(theme.border)
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Sm)
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_1()
-                                            .flex_col()
-                                            .child(
-                                                div()
-                                                    .text_size(d.text_sm)
-                                                    .font_weight(FontWeight::BOLD)
-                                                    .child(translations.settings_compute_bliss),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(d.text_xs)
-                                                    .text_color(theme.text_secondary)
-                                                    .child(
-                                                        translations.settings_compute_bliss_desc,
-                                                    ),
-                                            ),
-                                    )
-                                    .child(
-                                        Button::new(
-                                            "bliss-scan-btn",
-                                            translations.settings_compute,
-                                        )
-                                        .variant(ButtonVariant::Secondary)
-                                        .size(ButtonSize::Xs)
-                                        .disabled(scan_in_progress)
-                                        .theme(theme.to_button_theme())
-                                        .on_click_event(
-                                            cx.listener(|view, _: &ClickEvent, _window, cx| {
-                                                view.state.update(cx, |state, _cx| {
-                                                    state.app.scan_bliss();
-                                                });
-                                                cx.notify();
-                                            }),
-                                        ),
-                                    ),
-                            )
-                            .child(Divider::new().color(theme.border))
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Sm)
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_1()
-                                            .flex_col()
-                                            .child(
-                                                div()
-                                                    .text_size(d.text_sm)
-                                                    .font_weight(FontWeight::BOLD)
-                                                    .child(translations.settings_compute_waveform),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(d.text_xs)
-                                                    .text_color(theme.text_secondary)
-                                                    .child(
-                                                        translations.settings_compute_waveform_desc,
-                                                    ),
-                                            ),
-                                    )
-                                    .child(
-                                        Button::new(
-                                            "waveform-scan-btn",
-                                            translations.settings_compute,
-                                        )
-                                        .variant(ButtonVariant::Secondary)
-                                        .size(ButtonSize::Xs)
-                                        .disabled(scan_in_progress)
-                                        .theme(theme.to_button_theme())
-                                        .on_click_event(
-                                            cx.listener(|view, _: &ClickEvent, _window, cx| {
-                                                view.state.update(cx, |state, _cx| {
-                                                    state.app.compute_waveform();
-                                                });
-                                                cx.notify();
-                                            }),
-                                        ),
-                                    ),
-                            ),
-                    ),
-            )
-            // Scanner Threads Section
             .child(self.render_scanner_threads_section(cx))
-            // Database Maintenance Section
-            .child(
-                div()
-                    .mt(d.section)
-                    .flex()
-                    .flex_col()
-                    .gap(d.gap_md)
-                    .child(
-                        div()
-                            .text_size(d.text_sm)
-                            .font_weight(FontWeight::BOLD)
-                            .child(translations.settings_database_maintenance),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(d.section)
-                            .p(d.card)
-                            .bg(theme.background_secondary)
-                            .rounded(d.r_md)
-                            .border_1()
-                            .border_color(theme.border)
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Sm)
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_1()
-                                            .flex_col()
-                                            .child(
-                                                div()
-                                                    .text_size(d.text_sm)
-                                                    .font_weight(FontWeight::BOLD)
-                                                    .child(translations.settings_clean_database),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(d.text_xs)
-                                                    .text_color(theme.text_secondary)
-                                                    .child(
-                                                        translations.settings_clean_database_desc,
-                                                    ),
-                                            ),
-                                    )
-                                    .child(
-                                        Button::new("clean-db-btn", translations.settings_clean)
-                                            .variant(ButtonVariant::Secondary)
-                                            .size(ButtonSize::Xs)
-                                            .disabled(scan_in_progress)
-                                            .theme(theme.to_button_theme())
-                                            .on_click_event(cx.listener(
-                                                |view, _: &ClickEvent, _window, cx| {
-                                                    view.state.update(cx, |state, _cx| {
-                                                        state.app.clear_local_library();
-                                                    });
-                                                    cx.notify();
-                                                },
-                                            )),
-                                    ),
-                            ),
-                    ),
-            )
+            .child({
+                let button = Button::new("library-analysis-disclosure", analysis_title)
+                    .icon_left(if analysis_expanded { "▾" } else { "▸" })
+                    .selected(analysis_expanded)
+                    .variant(ButtonVariant::Ghost)
+                    .theme(theme.to_button_theme())
+                    .on_click_event(cx.listener(|view, _, _, cx| {
+                        view.state.update(cx, |state, _| {
+                            let expanded = &mut state.app.settings.expanded_sections;
+                            if expanded.iter().any(|id| id == "library-analysis") {
+                                expanded.retain(|id| id != "library-analysis");
+                            } else {
+                                expanded.push("library-analysis".into());
+                            }
+                        });
+                        cx.notify();
+                    }));
+                #[cfg(feature = "dev-api")]
+                let button = button.dev_track("settings.library.analysis-disclosure");
+                button
+            })
+            .children(analysis)
     }
 
     /// Render the scanner threads section for library settings
@@ -952,6 +1037,8 @@ impl PlayerView {
         let state_entity = self.state.clone();
 
         div()
+            .w_full()
+            .min_w_0()
             .mt(d.section)
             .flex()
             .flex_col()
@@ -973,8 +1060,13 @@ impl PlayerView {
                     .border_1()
                     .border_color(theme.border)
                     .child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap(d.gap_md)
+                            .w_full()
+                            .min_w_0()
                             .child(
                                 VStack::new()
                                     .spacing(gpui_ui_kit::StackSpacing::Xs)
@@ -990,7 +1082,9 @@ impl PlayerView {
                                             .color(theme.text_secondary),
                                     )
                                     .build()
-                                    .flex_1(),
+                                    .flex_1()
+                                    .min_w(rems(12.0))
+                                    .max_w_full(),
                             )
                             .child(
                                 NumberInput::new("scanner-threads-input")
@@ -1011,6 +1105,13 @@ impl PlayerView {
                                                 .ctrl
                                                 .set_num_threads(Some(threads as usize));
                                         });
+                                    })
+                                    .map(|input| {
+                                        self.preference_number_input(
+                                            crate::app::types::PreferencesSetting::ScanWorkers,
+                                            input,
+                                            cx,
+                                        )
                                     }),
                             ),
                     ),

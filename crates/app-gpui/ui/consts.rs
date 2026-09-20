@@ -1,4 +1,4 @@
-use super::misc::compute_responsive_scale;
+use super::misc::compute_combined_scale;
 
 /// Album card width in rems (~140px at default 16px rem). Used in album_card.rs grid rendering
 /// and recalculate_pagination column estimation.
@@ -30,9 +30,13 @@ pub fn estimate_grid_dimensions(
     min_font_size_px: Option<f32>,
     max_font_size_px: Option<f32>,
 ) -> (usize, usize) {
-    let responsive_scale = compute_responsive_scale(window_width, window_height);
-    let (scale_min, scale_max) = combined_scale_bounds(min_font_size_px, max_font_size_px);
-    let combined_scale = (font_scale * responsive_scale).clamp(scale_min, scale_max);
+    let combined_scale = compute_combined_scale(
+        window_width,
+        window_height,
+        font_scale,
+        min_font_size_px,
+        max_font_size_px,
+    );
     let effective_rem = 16.0 * combined_scale;
 
     let card_with_gap = (ALBUM_CARD_WIDTH_REMS + ALBUM_CARD_GAP_REMS) * effective_rem;
@@ -64,10 +68,12 @@ pub const DEFAULT_MAX_FONT_SIZE_PX: f32 = 32.0;
 /// Uses defaults when `None` is provided.
 pub fn combined_scale_bounds(min_px: Option<f32>, max_px: Option<f32>) -> (f32, f32) {
     let min = min_px
+        .filter(|value| value.is_finite())
         .unwrap_or(DEFAULT_MIN_FONT_SIZE_PX)
         .clamp(MIN_CONFIGURABLE_FONT_SIZE_PX, DEFAULT_MAX_FONT_SIZE_PX)
         / 16.0;
     let max = max_px
+        .filter(|value| value.is_finite())
         .unwrap_or(DEFAULT_MAX_FONT_SIZE_PX)
         .clamp(MIN_CONFIGURABLE_FONT_SIZE_PX + 1.0, 48.0)
         / 16.0;

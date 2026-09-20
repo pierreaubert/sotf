@@ -53,6 +53,11 @@ pub struct EqRenderState<'a> {
     pub num_filters: usize,
     /// Use Transposed Direct Form II (Standard EQ only)
     pub tdf2: bool,
+    pub auto_gain_enabled: bool,
+    pub oversampling: f64,
+    pub topology: f64,
+    pub order_label: &'static str,
+    pub sample_rate: f64,
     /// Available width in pixels for responsive compact-layout selection
     pub available_width: f32,
     /// Effective responsive/font scale used to interpret logical breakpoints.

@@ -1,5 +1,0 @@
-pub(super) const DB_CONVERSION_FACTOR: f32 = 20.0;
-
-pub(super) const EPSILON: f32 = 1e-10;
-
-pub(super) const FIXED_KNEE_DB: f32 = 6.0;

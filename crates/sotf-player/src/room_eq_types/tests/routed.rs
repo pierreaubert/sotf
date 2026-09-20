@@ -2,8 +2,6 @@ use super::super::build::build_room_eq_plugin_graph_config;
 use super::super::*;
 use super::bare::bare_chain;
 use super::bare::bare_output;
-#[cfg(test)]
-use super::build_routed_room_eq_graph;
 use autoeq::roomeq::{
     BassManagementReport, BassManagementRoute, BassManagementRoutingGraph,
     BassManagementSignalFlowEntry, HomeCinemaRole, OptimizationMetadata, PluginConfigWrapper,
@@ -135,6 +133,8 @@ pub(super) fn routed_bass_output() -> DspChainOutput {
         ),
     ]);
     output.metadata = Some(OptimizationMetadata {
+        final_convolution_sha256: None,
+        qa_seed_distribution: None,
         pre_score: 1.0,
         post_score: 0.5,
         algorithm: "test".to_string(),
@@ -470,7 +470,7 @@ fn test_build_room_eq_graph_preserves_non_routing_global_plugins() {
     // (gain_pre is the first factored node).
     let gain_pre_id = labeled_nodes
         .iter()
-        .find(|(_, label)| *label == "room_eq_gain_pre")
+        .find(|(_, label)| *label == "room_eq_input_0")
         .map(|(id, _)| *id)
         .expect("factored gain_pre should be emitted");
     assert!(
@@ -525,42 +525,36 @@ fn test_factored_graph_nodes_instantiate_via_factory() {
     }
 }
 
-/// The `lfe_gain_applied_to_chain == true` path needs explicit coverage
-/// because the common fixtures set it to false. Build a small
-/// variant that flips it and confirm the matrix coefficient still
-/// reflects route.gain_db (chain has no route_owned gain in this
-/// minimal scenario, so the chain-override branch shouldn't fire).
+/// The LFE-chain flag must not change the complete route gain or polarity.
 #[test]
-fn test_factored_graph_handles_lfe_gain_applied_to_chain_true() {
+fn test_physical_graph_uses_complete_route_gain_with_lfe_chain_flag() {
     let mut output = routed_bass_output();
-    if let Some(report) = output
+    output
         .metadata
         .as_mut()
-        .and_then(|m| m.bass_management.as_mut())
-    {
-        report.lfe_gain_applied_to_chain = true;
-    }
+        .unwrap()
+        .bass_management
+        .as_mut()
+        .unwrap()
+        .lfe_gain_applied_to_chain = true;
     let graph = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
-    let matrix_node = graph
+    let route = graph
         .nodes
         .iter()
-        .find(|n| {
-            n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_matrix_to_sub_bus")
-        })
-        .expect("factored sub-bus matrix");
-    let matrix: Vec<f32> = matrix_node.parameters["matrix"]
-        .as_array()
-        .unwrap()
+        .find(|n| n.parameters["label"] == "room_eq_route_1")
+        .unwrap();
+    let gain_id = graph
+        .edges
         .iter()
-        .map(|v| v.as_f64().unwrap() as f32)
-        .collect();
-    // L → Sub LP route gain_db = -3, no chain route_owned gain to
-    // override. Expect 10^(-3/20).
-    let expected = 10.0_f32.powf(-3.0 / 20.0);
-    let got = matrix[2];
+        .find(|e| e.from_node == route.id)
+        .unwrap()
+        .to_node;
+    let gain = graph.nodes.iter().find(|n| n.id == gain_id).unwrap();
+    // This fixture's redirected route is polarity-inverted as well as -3 dB.
     assert!(
-        (got - expected).abs() < 1e-5,
-        "L→Sub matrix coef under lfe_gain_applied_to_chain=true should be 10^(-3/20) ≈ {expected}, got {got}"
+        (gain.parameters["matrix"][0].as_f64().unwrap() + 10.0_f64.powf(-3.0 / 20.0)).abs() < 1e-6,
+        "route gain node: {:?}",
+        gain.parameters
     );
 }
 
@@ -569,29 +563,25 @@ fn test_factored_graph_handles_lfe_gain_applied_to_chain_true() {
 /// input through the HP branch so signals arriving on that channel
 /// upstream of RoomEQ reach the post-EQ stage instead of being muted.
 #[test]
-fn test_factored_graph_passthrough_for_destination_only_channels() {
-    let output = routed_physical_sub_output();
-    let graph = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
-    let xover_hp = graph
-        .nodes
-        .iter()
-        .find(|n| n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_xover_hp"))
-        .expect("factored HP crossover");
-    let modes: Vec<String> = xover_hp.parameters["channel_modes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap().to_string())
-        .collect();
-    // Channel order in routed_physical_sub_output is [L, LFE, SubA].
-    // L (idx 0) is the source of main_highpass_to_self → "highpass".
-    // LFE (idx 1) is neither source nor destination in the routing
-    // graph after the relabel → "mute".
-    // SubA (idx 2) is destination-only → must be "passthrough".
-    assert_eq!(modes[0], "highpass", "L must be HP");
-    assert_eq!(
-        modes[2], "passthrough",
-        "destination-only SubA must be passthrough"
+fn test_physical_graph_routes_destination_only_channels_without_input_leakage() {
+    let graph = build_room_eq_plugin_graph_config(&routed_physical_sub_output(), 48_000.0).unwrap();
+    assert!(
+        graph
+            .nodes
+            .iter()
+            .any(|n| n.parameters["label"] == "room_eq_output_sum_2")
+    );
+    assert!(
+        !graph
+            .nodes
+            .iter()
+            .any(|n| n.parameters["label"] == "room_eq_input_2")
+    );
+    assert!(
+        !graph
+            .nodes
+            .iter()
+            .any(|n| n.parameters["label"] == "room_eq_output_sum_1")
     );
 }
 
@@ -601,93 +591,25 @@ fn test_factored_graph_passthrough_for_destination_only_channels() {
 /// the LP branch all-Mute, and the matrix is zero. The graph must still
 /// instantiate cleanly via the factory.
 #[test]
-fn test_factored_graph_fixes_specific_legacy_bugs_on_routed_bass() {
-    let output = routed_bass_output();
-
-    // Drive the legacy builder directly — same input, two outputs.
-    let legacy_graph = build_routed_room_eq_graph(
-        &output,
-        output
-            .metadata
-            .as_ref()
-            .unwrap()
-            .bass_management
-            .as_ref()
-            .unwrap()
-            .routing_graph
-            .as_ref()
-            .unwrap(),
-    )
-    .unwrap();
-    let factored = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
-
-    let legacy_labels: Vec<&str> = legacy_graph
+fn test_physical_graph_does_not_duplicate_source_or_output_eq() {
+    let graph = build_room_eq_plugin_graph_config(&routed_bass_output(), 48_000.0).unwrap();
+    let labels: Vec<_> = graph
         .nodes
         .iter()
-        .filter_map(|n| n.parameters.get("label").and_then(|l| l.as_str()))
+        .filter_map(|n| n.parameters["label"].as_str())
         .collect();
-    let factored_labels: Vec<&str> = factored
-        .nodes
-        .iter()
-        .filter_map(|n| n.parameters.get("label").and_then(|l| l.as_str()))
-        .collect();
-
-    // Bug 1: node count blow-up. Even on the 2-channel routed_bass_output
-    // fixture (one main + one sub), the legacy builder emits ≥2x the
-    // factored count. On the 10-channel gen514 case the ratio grows
-    // (~50+ vs 9) — see `gen514_factored_graph_topology_matches_golden_snapshot`
-    // in the integration tests.
-    assert!(
-        legacy_graph.nodes.len() >= factored.nodes.len() * 2,
-        "legacy builder should emit at least 2x the nodes of the factored builder \
-             (legacy={}, factored={})",
-        legacy_graph.nodes.len(),
-        factored.nodes.len()
-    );
-    assert_eq!(factored.nodes.len(), 9);
-
-    // Bug 2: legacy carries the source chain's pre-EQ as a standalone
-    // node; factored folds it into the single `room_eq_eq_pre` array.
+    assert_eq!(labels.iter().filter(|l| **l == "pre_room_eq").count(), 1);
+    assert_eq!(labels.iter().filter(|l| **l == "post_room_eq").count(), 1);
     assert_eq!(
-        factored_labels
-            .iter()
-            .filter(|l| **l == "pre_room_eq")
-            .count(),
-        0,
-        "factored folds pre_room_eq into room_eq_eq_pre channel_filters"
+        labels.iter().filter(|l| **l == "sub_post_room_eq").count(),
+        1
     );
     assert_eq!(
-        factored_labels
+        labels
             .iter()
-            .filter(|l| **l == "room_eq_eq_pre")
+            .filter(|l| l.starts_with("room_eq_route_"))
             .count(),
-        1,
-    );
-
-    // Bug 3: per-channel output isolator matrices.
-    let legacy_isolators = legacy_labels
-        .iter()
-        .filter(|l| l.starts_with("room_eq_output_isolate_"))
-        .count();
-    assert!(
-        legacy_isolators >= 2,
-        "legacy emits one isolator per output channel (got {legacy_isolators})"
-    );
-    assert_eq!(
-        factored_labels
-            .iter()
-            .filter(|l| l.starts_with("room_eq_output_isolate_"))
-            .count(),
-        0,
-    );
-
-    // Sanity: single sub-bus matrix in the factored graph.
-    assert_eq!(
-        factored_labels
-            .iter()
-            .filter(|l| **l == "room_eq_matrix_to_sub_bus")
-            .count(),
-        1,
+        2
     );
 }
 

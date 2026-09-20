@@ -1,0 +1,8 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "60s"
+[[scenario]]
+name = "multiband-count-preservation"
+path = "crates/sotf-dev-driver/scenarios/multiband_count_preservation.scn"
+timeout = "60s"

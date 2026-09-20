@@ -1,0 +1,22 @@
+action HomeSeedShelves
+wait_idle 2s
+assert home.recent_count == 2
+assert home.recent_first_title == "Home Fixture Album 02"
+assert home.favorite_count == 8
+assert_visible home.favorite.open.0
+assert_visible home.browse
+screenshot home-history
+click home.favorite.open.0
+assert library.detail.open == true
+assert library.detail.title == "Home Fixture Album 01"
+assert playback.is_playing == false
+focus home
+wait_idle 2s
+click home.browse
+assert screen.focused == "Library"
+assert library.detail.open == false
+focus home
+resize 600 800
+wait_idle 2s
+assert_in_viewport home.browse
+screenshot home-history-narrow

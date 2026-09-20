@@ -315,9 +315,57 @@ pub(super) fn dispatch_text(text: &str, window: AnyWindowHandle, cx: &mut App) -
 }
 
 pub(super) fn dispatch_click(selector: &str, window: AnyWindowHandle, cx: &mut App) -> Result<()> {
-    let bounds = registry::lookup(window.window_id().as_u64(), selector)
+    let node_index = selector
+        .strip_prefix("routing.node.")
+        .map(str::parse::<usize>)
+        .transpose()
+        .context("invalid routing node index")?;
+    let tracked_selector = if node_index.is_some() {
+        "routing.canvas"
+    } else {
+        selector
+    };
+    let bounds = registry::lookup(window.window_id().as_u64(), tracked_selector)
         .ok_or_else(|| anyhow!("no tracked element for selector `{selector}` (was it painted?)"))?;
-    let position: Point<gpui::Pixels> = bounds.center();
+    let position: Point<gpui::Pixels> = if let Some(index) = node_index {
+        window
+            .update(cx, |any_view, _, cx| {
+                let view = any_view
+                    .downcast::<PlayerView>()
+                    .map_err(|_| anyhow!("root view is not PlayerView"))?;
+                let state = view.read(cx).state.read(cx);
+                let canvas = state
+                    .app
+                    .plugin_state
+                    .graph_state
+                    .workflow_canvas
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("Routing canvas is unavailable"))?
+                    .read(cx);
+                let mut nodes = canvas.graph().nodes.values().collect::<Vec<_>>();
+                nodes.sort_by(|a, b| {
+                    a.position
+                        .x
+                        .total_cmp(&b.position.x)
+                        .then(a.position.y.total_cmp(&b.position.y))
+                        .then(a.id.cmp(&b.id))
+                });
+                let node = nodes
+                    .get(index)
+                    .ok_or_else(|| anyhow!("Routing node {index} is unavailable"))?;
+                let center = canvas.viewport().canvas_to_screen(&node.center());
+                let position = bounds.origin + point(px(center.x), px(center.y));
+                if !bounds.contains(&position) {
+                    return Err(anyhow!(
+                        "Routing node {index} is outside the canvas viewport"
+                    ));
+                }
+                Ok(position)
+            })
+            .map_err(|e| anyhow!("window.update failed: {e:#}"))??
+    } else {
+        bounds.center()
+    };
     window
         .update(cx, |_view, window, cx| {
             let modifiers = Default::default();
@@ -396,6 +444,7 @@ pub(super) fn dispatch_coordinate_input(
                     x,
                     y,
                     button,
+                    click_count,
                     ..
                 } => {
                     let position = validate_point(x, y)?;
@@ -419,7 +468,7 @@ pub(super) fn dispatch_coordinate_input(
                                 button,
                                 position,
                                 modifiers,
-                                click_count: 1,
+                                click_count,
                                 first_mouse: false,
                             }),
                             cx,
@@ -429,7 +478,7 @@ pub(super) fn dispatch_coordinate_input(
                                 button,
                                 position,
                                 modifiers,
-                                click_count: 1,
+                                click_count,
                             }),
                             cx,
                         ),
@@ -612,7 +661,9 @@ pub(super) fn dispatch_screenshot(
         .with_context(|| format!("creating screenshot directory {}", output_dir.display()))?;
     let output = output_dir.join(format!("{name}.png"));
 
-    let state = with_player_view(window, cx, |view, _cx| Ok(view.state.clone()))?;
+    let (state, scroll) = with_player_view(window, cx, |view, _cx| {
+        Ok((view.state.clone(), view.scroll.detached_copy()))
+    })?;
     let viewport_size = window
         .update(cx, |_view, window, _cx| window.viewport_size())
         .map_err(|e| anyhow!("reading screenshot viewport failed: {e:#}"))?;
@@ -631,7 +682,15 @@ pub(super) fn dispatch_screenshot(
                 show: false,
                 ..Default::default()
             },
-            move |_window, cx| cx.new(|cx| PlayerView::new_for_visual_qa(state, cx)),
+            move |_window, cx| {
+                cx.new(|cx| {
+                    let mut view = PlayerView::new_for_visual_qa(state, cx);
+                    // Recreate independent handles: sharing the live handles would
+                    // let capture layout overwrite the interactive window's bounds.
+                    view.scroll = scroll;
+                    view
+                })
+            },
         )
         .context("opening off-screen screenshot window")?
         .into();
@@ -639,15 +698,19 @@ pub(super) fn dispatch_screenshot(
         .update(cx, |_view, window, _cx| window.render_to_image())
         .map_err(|e| anyhow!("reading initial off-screen scene failed: {e:#}"))
         .and_then(|result| result)
-        .with_context(|| format!("reading initial scene for {}", output.display()))?;
+        .with_context(|| format!("reading initial scene for {}", output.display()));
+    let initial_image = match initial_image {
+        Ok(image) => image,
+        Err(error) => {
+            clear_screenshot_view(capture_window, cx)?;
+            return Err(error);
+        }
+    };
     let initial_elements = registry::snapshot_for(capture_window.window_id().as_u64());
 
-    // Keep the hidden capture window registered until normal app shutdown.
-    // Removing a freshly rendered macOS window leaves queued platform paint
-    // callbacks that GPUI reports as `window not found`. These views have no
-    // runtime services, remain hidden, and the QA suite creates only a small,
-    // bounded number of them.
-
+    // Keep the native window registered for queued macOS paint callbacks,
+    // but release its PlayerView after capture. A retained capture view shares
+    // live layout state and can repaint at its old size after the user resizes.
     cx.defer(move |cx| {
         let result = capture_window
             .update(cx, |_view, window, cx| {
@@ -669,13 +732,29 @@ pub(super) fn dispatch_screenshot(
             .map_err(|e| anyhow!("off-screen screenshot update failed: {e:#}"))
             .and_then(|result| result)
             .with_context(|| format!("capturing screenshot {}", output.display()));
-        let dev_reply = match result {
+        let cleanup = clear_screenshot_view(capture_window, cx).and_then(|()| {
+            window
+                .update(cx, |_, window, _| window.refresh())
+                .map_err(|error| anyhow!("refreshing live window after capture: {error:#}"))
+        });
+        let dev_reply = match result.and(cleanup) {
             Ok(()) => DevReply::ok(),
             Err(error) => DevReply::err(format!("{error:#}")),
         };
         let _ = reply.send(dev_reply);
     });
     Ok(())
+}
+
+fn clear_screenshot_view(window: AnyWindowHandle, cx: &mut App) -> Result<()> {
+    window
+        .update(cx, |_, window, cx| {
+            let empty_root = window.replace_root(cx, |_, _| gpui::Empty);
+            window.draw(cx).clear();
+            registry::clear(window.window_handle().window_id().as_u64());
+            drop(empty_root);
+        })
+        .map_err(|error| anyhow!("releasing screenshot view: {error:#}"))
 }
 
 pub fn merge_missing_tracked_elements(
@@ -1091,6 +1170,57 @@ fn dispatch_metadata_action(
             })?;
             Ok(true)
         }
+        "SpectrumSetFixture" => {
+            if std::env::var_os("SOTF_QA_DIR").is_none() {
+                anyhow::bail!("Spectrum fixtures require isolated QA mode");
+            }
+            let active = payload
+                .as_ref()
+                .and_then(|value| value.get("active"))
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
+            let sample_rate = payload
+                .as_ref()
+                .and_then(|value| value.get("sample_rate"))
+                .and_then(Value::as_u64)
+                .unwrap_or(48_000);
+            if !(8_000..=192_000).contains(&sample_rate) {
+                anyhow::bail!("Invalid fixture sample rate");
+            }
+            let kind = payload
+                .as_ref()
+                .and_then(|value| value.get("frame"))
+                .and_then(Value::as_str)
+                .unwrap_or("tone");
+            let levels = match kind {
+                "tone" => vec![-80.0_f32, -70.0, -60.0, -30.0, -20.0, -50.0, -60.0, -70.0],
+                "changed" => vec![-90.0_f32; 8],
+                "silence" => vec![-100.0_f32; 8],
+                _ => anyhow::bail!("Unknown spectrum fixture"),
+            };
+            let max_frequency = (sample_rate as f32 * 0.5).min(20_000.0);
+            let frequencies = (0..8)
+                .map(|index| 20.0 * (max_frequency / 20.0).powf((index as f32 + 0.5) / 8.0))
+                .collect();
+            let data = std::sync::Arc::new(sotf_audio_player::SpectrumData {
+                frequencies: std::sync::Arc::new(frequencies),
+                peak_magnitude: levels.iter().copied().fold(f32::NEG_INFINITY, f32::max),
+                magnitudes: levels.into(),
+            });
+            with_player_view(window, cx, |view, cx| {
+                view.state.update(cx, |state, _| {
+                    state.app.playback.qa_spectrum_fixture =
+                        active.then(|| crate::app::state::playback::HeldSpectrumFrame {
+                            data: data.clone(),
+                            sample_rate: Some(sample_rate as u32),
+                        });
+                    state.app.playback.spectrum_info = active.then_some(data);
+                });
+                cx.notify();
+                Ok(())
+            })?;
+            Ok(true)
+        }
         "MetersSetFixture" => {
             let active = payload
                 .as_ref()
@@ -1140,6 +1270,321 @@ fn dispatch_metadata_action(
                 state.app.ui_state.current_screen = Screen::Settings;
                 state.app.ui_state.active_settings_tab = tab;
                 state.app.ui_state.input_mode = InputMode::Normal;
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "SpinoramaSetExportFixture" => {
+            if std::env::var_os("SOTF_QA_DIR").is_none() {
+                return Err(anyhow!(
+                    "Spinorama export fixtures require isolated QA mode"
+                ));
+            }
+            with_app_state(window, cx, |state| {
+                use sotf_audio_player::spinorama_eq_types::{
+                    SpinoramaBiquad, SpinoramaEqResult, SpinoramaStep,
+                };
+                let speaker = &mut state.app.measurement_state.spinorama_eq_state;
+                speaker.selected_speaker = Some("Export Fixture".into());
+                speaker.optimizer_config.sample_rate = 96_000;
+                speaker.export_format = "json".into();
+                speaker.result = Some(SpinoramaEqResult {
+                    biquads: [
+                        ("Lowshelf", 100.0),
+                        ("Highshelf", 6000.0),
+                        ("Notch", 1000.0),
+                    ]
+                    .into_iter()
+                    .map(|(kind, freq)| SpinoramaBiquad {
+                        filter_type: kind.into(),
+                        freq,
+                        q: 0.7,
+                        db_gain: -3.0,
+                    })
+                    .collect(),
+                    pre_score: 5.0,
+                    post_score: 7.0,
+                    original_response: None,
+                    corrected_response: None,
+                    target_response: None,
+                });
+                speaker.result_inputs = Some(speaker.model.optimization_input_snapshot());
+                speaker.delivery.calculated();
+                speaker.step = SpinoramaStep::Export;
+                state
+                    .app
+                    .set_screen(Screen::Spinorama, "SpinoramaExportFixture");
+                Ok(())
+            })?;
+            with_player_view(window, cx, |_, cx| {
+                cx.notify();
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "HeadphoneRejectApplyFixture"
+        | "SpinoramaRejectApplyFixture"
+        | "RoomEqRejectApplyFixture" => {
+            if std::env::var_os("SOTF_QA_DIR").is_none() {
+                return Err(anyhow!(
+                    "Headphone rejection fixtures require isolated QA mode"
+                ));
+            }
+            with_app_state(window, cx, |state| {
+                if state.app.plugin_state.update_state.pending_ack.is_some()
+                    || state
+                        .app
+                        .plugin_state
+                        .update_state
+                        .pending_plugin_update
+                        .is_some()
+                {
+                    return Err(anyhow!(
+                        "Wait for the current plugin update before injecting rejection"
+                    ));
+                }
+                let graph = state
+                    .app
+                    .correction_processing_snapshot()
+                    .ok_or_else(|| anyhow!("No processing graph for rejection fixture"))?;
+                if name == "SpinoramaRejectApplyFixture" {
+                    state
+                        .app
+                        .measurement_state
+                        .spinorama_eq_state
+                        .delivery
+                        .request_application(graph.clone());
+                } else if name == "RoomEqRejectApplyFixture" {
+                    state
+                        .app
+                        .measurement_state
+                        .room_eq_state
+                        .delivery
+                        .request_application(graph.clone());
+                } else {
+                    state
+                        .app
+                        .measurement_state
+                        .headphone_eq_state
+                        .delivery
+                        .request_application(graph.clone());
+                }
+                let revisions = state.app.pending_correction_revisions();
+                state.app.plugin_state.update_state.pending_ack =
+                    Some(crate::app::state::plugin::PluginUpdateAcknowledgement {
+                        receipt: crate::app::player_handle::PlayerCommandReceipt::qa_rejected(),
+                        submitted_graph: Some(serde_json::to_value(&state.app.plugin_state.graph)?),
+                        submitted_processing_graph: Some(graph),
+                        correction_revisions: revisions,
+                        routing: false,
+                        audition: false,
+                    });
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "RoutingRejectApplyFixture" => {
+            if std::env::var_os("SOTF_QA_DIR").is_none() {
+                return Err(anyhow!(
+                    "Routing rejection fixtures require isolated QA mode"
+                ));
+            }
+            with_app_state(window, cx, |state| {
+                if state.app.plugin_state.update_state.pending_ack.is_some()
+                    || state
+                        .app
+                        .plugin_state
+                        .update_state
+                        .pending_plugin_update
+                        .is_some()
+                {
+                    return Err(anyhow!(
+                        "Wait for the current plugin update before injecting rejection"
+                    ));
+                }
+                if !state.app.plugin_state.routing_draft_is_dirty() {
+                    return Err(anyhow!("Routing rejection fixture needs an edited draft"));
+                }
+                state
+                    .app
+                    .plugin_state
+                    .apply_routing_draft()
+                    .map_err(|error| anyhow!(error))?;
+                state.app.plugin_state.update_state.pending_plugin_update = None;
+                state.app.plugin_state.update_state.pending_ack =
+                    Some(crate::app::state::plugin::PluginUpdateAcknowledgement {
+                        receipt: crate::app::player_handle::PlayerCommandReceipt::qa_rejected(),
+                        submitted_graph: Some(serde_json::to_value(&state.app.plugin_state.graph)?),
+                        submitted_processing_graph: state.app.correction_processing_snapshot(),
+                        correction_revisions: [None; 3],
+                        routing: true,
+                        audition: false,
+                    });
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "HeadphoneSetApplyFixture" => {
+            if std::env::var_os("SOTF_QA_DIR").is_none() {
+                return Err(anyhow!("Headphone apply fixtures require isolated QA mode"));
+            }
+            with_app_state(window, cx, |state| {
+                use sotf_audio_player::headphone_eq_types::{
+                    HeadphoneEqBiquad, HeadphoneEqResult, HeadphoneEqStep,
+                };
+                let headphone = &mut state.app.measurement_state.headphone_eq_state;
+                headphone.detail_level = if payload
+                    .as_ref()
+                    .and_then(|value| value.get("simple"))
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false)
+                {
+                    sotf_audio_player::autoeq::DetailLevel::Simple
+                } else {
+                    sotf_audio_player::autoeq::DetailLevel::Expert
+                };
+                headphone.result = Some(HeadphoneEqResult {
+                    biquads: [("Notch", 1000.0), ("Highpass", 80.0), ("Lowpass", 12000.0)]
+                        .into_iter()
+                        .map(|(kind, freq)| HeadphoneEqBiquad {
+                            filter_type: kind.into(),
+                            freq,
+                            q: 0.7,
+                            db_gain: 0.0,
+                        })
+                        .collect(),
+                    pre_score: 5.0,
+                    post_score: 7.0,
+                    original_response: None,
+                    corrected_response: None,
+                    target_response: None,
+                    filter_response: None,
+                    deviation_response: None,
+                    error_response: None,
+                    individual_responses: None,
+                });
+                headphone.result_inputs = Some(headphone.model.optimization_input_snapshot());
+                headphone.delivery.calculated();
+                headphone.step = HeadphoneEqStep::Export;
+                state
+                    .app
+                    .set_screen(Screen::HeadphoneEq, "HeadphoneApplyFixture");
+                Ok(())
+            })?;
+            with_player_view(window, cx, |_, cx| {
+                cx.notify();
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "HeadphoneSetFileFixture" => {
+            let qa_dir = std::env::var_os("SOTF_QA_DIR")
+                .map(PathBuf::from)
+                .ok_or_else(|| anyhow!("Headphone file fixtures require isolated QA mode"))?;
+            let mode = payload_str(&payload, "mode")?;
+            let (name, content) = match mode {
+                "valid" => (
+                    "headphone-file-valid.csv",
+                    "frequency,spl\n20,-4\n1000,0\n20000,-3\n",
+                ),
+                "provenance" => (
+                    "headphone-provenance.csv",
+                    "frequency,spl\n20,-4\n1000,0\n20000,-3\n",
+                ),
+                "stale-provenance" => (
+                    "headphone-stale-provenance.csv",
+                    "frequency,spl\n20,-4\n1000,0\n20000,-3\n",
+                ),
+                "invalid" => ("headphone-file-invalid.csv", "frequency,spl\n0,0\n100,1\n"),
+                "replacement" => (
+                    "headphone-file-replacement.csv",
+                    "frequency,spl\n50,0\n10000,1\n",
+                ),
+                _ => anyhow::bail!("Unknown headphone file fixture"),
+            };
+            let path = qa_dir.join(name);
+            std::fs::write(&path, content)?;
+            if matches!(mode, "provenance" | "stale-provenance") {
+                sotf_audio_player::dev_api_fixtures::write_headphone_provenance_fixture(&path)
+                    .map_err(|error| anyhow!(error))?;
+                if mode == "stale-provenance" {
+                    std::fs::write(&path, "frequency,spl\n20,-1\n1000,0\n20000,-3\n")?;
+                }
+            }
+            with_player_view(window, cx, |view, cx| {
+                view.state.update(cx, |state, _| {
+                    state
+                        .app
+                        .measurement_state
+                        .headphone_eq_state
+                        .measurement_source =
+                        crate::app::types::headphone_eq::HeadphoneMeasurementSource::File;
+                    state
+                        .app
+                        .set_screen(crate::app::Screen::HeadphoneEq, "HeadphoneFileFixture");
+                });
+                view.load_headphone_eq_measurement(path, cx);
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "SettingsSetMaintenanceFixture" => {
+            let qa_dir = std::env::var_os("SOTF_QA_DIR")
+                .map(PathBuf::from)
+                .ok_or_else(|| anyhow!("Maintenance fixtures require isolated QA mode"))?;
+            let root = qa_dir
+                .parent()
+                .ok_or_else(|| anyhow!("QA scenario directory unavailable"))?;
+            let mode = payload_str(&payload, "mode")?;
+            with_app_state(window, cx, |state| {
+                let db = state
+                    .app
+                    .library_state
+                    .library
+                    .get_database_mut()
+                    .ok_or_else(|| anyhow!("Library database unavailable"))?;
+                let backing = db
+                    .backing_path()
+                    .ok_or_else(|| anyhow!("Database backing path unavailable"))?;
+                if !backing.canonicalize()?.starts_with(root.canonicalize()?) {
+                    anyhow::bail!(
+                        "Maintenance fixture database must belong to the isolated scenario"
+                    );
+                }
+                let fixture_dir = qa_dir.join("maintenance-fixture");
+                std::fs::create_dir_all(&fixture_dir)?;
+                let fixture_dir = fixture_dir.canonicalize()?;
+                match mode {
+                    "seed" => {
+                        db.save_albums(&[sotf_audio_player::Album {
+                            title: "Maintenance review fixture".into(),
+                            tracks: (0..3)
+                                .map(|index| sotf_audio_player::Track {
+                                    path: fixture_dir.join(format!("missing-{index}.flac")),
+                                    ..Default::default()
+                                })
+                                .collect(),
+                            ..Default::default()
+                        }])?;
+                    }
+                    "restore" => {
+                        std::fs::write(fixture_dir.join("missing-0.flac"), b"restored fixture")?
+                    }
+                    "refresh_failure" => {
+                        state.app.settings.library.maintenance.qa_fail_next_refresh = true;
+                    }
+                    "concurrent_change" => {
+                        state
+                            .app
+                            .settings
+                            .library
+                            .maintenance
+                            .qa_change_before_refresh = true;
+                    }
+                    _ => anyhow::bail!(
+                        "Maintenance fixture mode must be seed, restore or refresh_failure"
+                    ),
+                }
                 Ok(())
             })?;
             Ok(true)
@@ -1211,6 +1656,26 @@ fn dispatch_metadata_action(
                 view.state.update(cx, |state, _cx| {
                     state.app.library_state.library.albums =
                         sotf_audio_player::dev_api_fixtures::home_fixture_albums();
+                    let history = state
+                        .app
+                        .library_state
+                        .library
+                        .albums
+                        .iter()
+                        .take(2)
+                        .enumerate()
+                        .filter_map(|(index, album)| {
+                            album
+                                .tracks
+                                .first()
+                                .map(|track| (track.path.clone(), 100 + index as u64))
+                        })
+                        .collect();
+                    state
+                        .app
+                        .library_state
+                        .library
+                        .set_playback_history_fixture(history);
                     state.app.library_state.selected_index = 0;
                     state.app.library_state.invalidate_cache();
                     state.app.library_view.loading_initial_data = false;
@@ -1219,6 +1684,139 @@ fn dispatch_metadata_action(
                     state.app.ui_state.input_mode = InputMode::Normal;
                 });
                 cx.notify();
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "PreferencesSeedAcceptedAudioApply" => {
+            if std::env::var_os("SOTF_QA_DIR").is_none() {
+                anyhow::bail!("Audio apply fixture requires isolated QA mode");
+            }
+            let supersede = payload
+                .as_ref()
+                .and_then(|value| value.get("newer_stop"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            with_player_view(window, cx, |view, cx| {
+                view.state.update(cx, |state, _| {
+                    // Exercise completion and recovery without opening an audio
+                    // device. With no source, restoration must acknowledge Stop.
+                    if state.app.playback.is_playing
+                        || state.app.queue_state.current_track_source().is_some()
+                        || state.app.audio_device_state.audio_apply.pending.is_some()
+                    {
+                        anyhow::bail!(
+                            "Audio apply fixture requires idle playback without a source"
+                        );
+                    }
+                    let previous = state.app.audio_preferences();
+                    let mut target = previous.clone();
+                    target.replay_gain_enabled = !previous.replay_gain_enabled;
+                    state
+                        .app
+                        .audio_device_state
+                        .output_draft
+                        .set_replay_gain_enabled(
+                            target.replay_gain_enabled,
+                            previous.replay_gain_enabled,
+                        );
+                    state.app.audio_device_state.audio_apply.pending =
+                        Some(crate::app::state::audio_device::PendingAudioApply {
+                            receipt: state.player.stop_with_receipt()?,
+                            target,
+                            target_index: state.app.audio_device_state.selected_output_device_index,
+                            draft: state.app.audio_device_state.output_draft.clone(),
+                            previous_graph_gain: state.app.plugin_state.graph.replay_gain_db(),
+                            recovery: None,
+                        });
+                    if supersede {
+                        state.player.stop_with_receipt()?;
+                    }
+                    Ok(())
+                })?;
+                cx.notify();
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "PreferencesBlockConfigSave" | "PreferencesUnblockConfigSave" => {
+            let qa_dir = std::env::var_os("SOTF_QA_DIR")
+                .map(std::path::PathBuf::from)
+                .ok_or_else(|| anyhow::anyhow!("Config-save fixture requires isolated QA mode"))?;
+            let path = sotf_audio_player::config::get_gpui_state_path()
+                .ok_or_else(|| anyhow::anyhow!("Missing QA config path"))?;
+            if path.parent() != Some(qa_dir.as_path()) {
+                return Err(anyhow::anyhow!(
+                    "Config-save fixture must stay inside the QA directory"
+                ));
+            }
+            let backup = qa_dir.join("audio-preferences-save-backup.json");
+            if name == "PreferencesBlockConfigSave" {
+                if backup.exists() || path.is_dir() {
+                    return Err(anyhow::anyhow!("Config-save fixture is already blocked"));
+                }
+                if path.exists() {
+                    std::fs::rename(&path, &backup)?;
+                } else {
+                    crate::Config::load()?.save_to_path(&backup)?;
+                }
+                if let Err(error) = std::fs::create_dir(&path) {
+                    let _ = std::fs::rename(&backup, &path);
+                    return Err(error.into());
+                }
+            } else {
+                if !path.is_dir() || !backup.is_file() {
+                    return Err(anyhow::anyhow!("No blocked QA config save to restore"));
+                }
+                std::fs::remove_dir(&path)?;
+                std::fs::rename(&backup, &path)?;
+            }
+            Ok(true)
+        }
+        "PreferencesSetOutputFixture" => {
+            if std::env::var_os("SOTF_QA_DIR").is_none() {
+                return Err(anyhow!("Output fixtures require isolated QA mode"));
+            }
+            with_player_view(window, cx, |view, cx| {
+                view.state.update(cx, |state, cx| {
+                    let devices = &mut state.app.audio_device_state;
+                    devices.output_devices = ["QA Speakers", "QA DAC"]
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, name)| sotf_audio::devices::AudioDevice {
+                            device_id: None,
+                            name: name.into(),
+                            display_info: None,
+                            is_input: false,
+                            is_default: index == 0,
+                            supported_configs: vec![],
+                            default_config: None,
+                            available_sample_rates: vec![],
+                        })
+                        .collect();
+                    devices.current_output_device_name = Some("QA DAC".into());
+                    devices.follow_system_default = false;
+                    devices.selected_output_device_index = 1;
+                    devices.output_draft.discard();
+                    state.app.ui_state.current_screen = Screen::Settings;
+                    state.app.ui_state.active_settings_tab = SettingsTab::AudioDevice;
+                    cx.notify();
+                });
+                cx.notify();
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "PreferencesDraftUnavailableOutput" => {
+            with_app_state(window, cx, |state| {
+                state.app.audio_device_state.output_draft.select(
+                    "QA disconnected output".into(),
+                    state
+                        .app
+                        .audio_device_state
+                        .current_output_device_name
+                        .as_deref(),
+                );
                 Ok(())
             })?;
             Ok(true)
@@ -1238,6 +1836,103 @@ fn dispatch_metadata_action(
                 );
                 state.app.ui_state.input_mode = InputMode::MetadataEditor;
                 Ok(())
+            })?;
+            Ok(true)
+        }
+        "ListeningSetSourceFixture" => {
+            let qa_dir = std::env::var_os("SOTF_QA_DIR")
+                .map(PathBuf::from)
+                .ok_or_else(|| anyhow!("Listening source fixtures require isolated QA mode"))?;
+            let mode = payload_str(&payload, "mode")?;
+            let (name, channels) = match mode {
+                "first" => ("practice-source-mono.wav", 1),
+                "second" => ("practice-source-stereo.wav", 2),
+                "comparison" => ("comparison-source-stereo.wav", 2),
+                "comparison-silent" => ("comparison-source-silent.wav", 2),
+                "invalid" => ("practice-source-invalid.wav", 0),
+                _ => anyhow::bail!("Unknown listening source fixture"),
+            };
+            let path = qa_dir.join(name);
+            if channels == 0 {
+                std::fs::write(&path, b"not an audio file")?;
+            } else if !path.exists() {
+                let spec = hound::WavSpec {
+                    channels,
+                    sample_rate: 48000,
+                    bits_per_sample: 16,
+                    sample_format: hound::SampleFormat::Int,
+                };
+                let mut writer = hound::WavWriter::create(&path, spec)?;
+                // Playback fixtures remain silent. Comparison preparation needs
+                // a measurable signal; its scenarios must keep playback stopped.
+                let comparison = mode.starts_with("comparison");
+                let seconds = if comparison { 10 } else { 120 };
+                for index in 0..48000 * seconds * usize::from(channels) {
+                    let sample = if mode == "comparison" {
+                        let frame = index / usize::from(channels);
+                        (2048.0 * (std::f64::consts::TAU * 440.0 * frame as f64 / 48000.0).sin())
+                            as i16
+                    } else {
+                        0
+                    };
+                    writer.write_sample(sample)?;
+                }
+                writer.finalize()?;
+            }
+            if mode.starts_with("comparison") {
+                // Seed selection only: this fixture tests preparation, not the
+                // source loader's intentional play-now behavior.
+                let album = sotf_audio_player::Album::from_audio_file(&path)
+                    .map_err(|error| anyhow!(error))?;
+                with_player_view(window, cx, |view, cx| {
+                    view.state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .play_single_audio_file(album)
+                            .map_err(|error| anyhow!(error))?;
+                        cx.notify();
+                        Ok(())
+                    })
+                })?;
+                return Ok(true);
+            }
+            with_player_view(window, cx, |view, cx| {
+                let surface = view
+                    .state
+                    .read(cx)
+                    .app
+                    .plugin_state
+                    .listening_test_state
+                    .surface;
+                view.load_listening_source(path, surface, cx);
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        "ListeningCommitPreferenceFixture" => {
+            if std::env::var_os("SOTF_QA_DIR").is_none() {
+                anyhow::bail!("Listening preference fixtures require isolated QA mode");
+            }
+            with_player_view(window, cx, |view, cx| {
+                view.state.update(cx, |state, cx| -> anyhow::Result<()> {
+                    use sotf_audio_player::controllers::ab_test_session::{TrialAnswer, TrialMode};
+                    let controller = &mut state.app.plugin_state.listening_test_state.ab_test;
+                    if controller.view().runtime_active {
+                        anyhow::bail!("Preference fixture requires inactive comparison audio");
+                    }
+                    let session = controller
+                        .session_mut()
+                        .ok_or_else(|| anyhow!("Prepare a session first"))?;
+                    if !session.trials.is_empty() || session.pending_mode().is_some() {
+                        anyhow::bail!("Preference fixture requires a fresh session");
+                    }
+                    for answer in [TrialAnswer::First, TrialAnswer::Second, TrialAnswer::First] {
+                        session.start_trial(TrialMode::BlindAb)?;
+                        session.commit_trial(answer, None, None)?;
+                    }
+                    cx.notify();
+                    Ok(())
+                })
             })?;
             Ok(true)
         }
@@ -1265,6 +1960,7 @@ fn dispatch_metadata_action(
             with_player_view(window, cx, |view, cx| {
                 view.state.update(cx, |state, _| {
                     let _ = state.app.plugin_state.leave_ab_test_runtime();
+                    state.app.plugin_state.plugin_ui_state.listening_workspace = Default::default();
                     let listening = &mut state.app.plugin_state.listening_test_state;
                     listening.ab_test = Default::default();
                     listening.path_a = None;

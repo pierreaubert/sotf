@@ -1,0 +1,93 @@
+# Import through the production completion callback; no hardware capture.
+focus recording
+wait_until recording.channel_count == 4 timeout=10s
+assert recording.step == "Evaluating"
+assert recording.done_count == 4
+assert_enabled recording.next == false
+scroll_into_view recording.content recording.retake.0
+screenshot imported-initial-review
+assert_enabled recording.retake.0 == false
+scroll_into_view recording.content recording.route.0.output
+click recording.route.0.output
+key down
+key enter
+screenshot imported-output-selected
+scroll_into_view recording.content recording.retake.0
+assert_enabled recording.retake.0 == false
+scroll_into_view recording.content recording.route.0.input
+click recording.route.0.input
+key down
+key enter
+scroll_into_view recording.content recording.retake.0
+screenshot imported-input-selected
+assert_enabled recording.retake.0 == true
+screenshot imported-routing-ready
+scroll_into_view recording.content recording.accept.0
+click recording.accept.0
+assert_enabled recording.next == false
+scroll_into_view recording.content recording.accept.1
+click recording.accept.1
+assert_enabled recording.next == false
+scroll_into_view recording.content recording.accept.2
+click recording.accept.2
+assert_enabled recording.next == false
+scroll_into_view recording.content recording.accept.3
+click recording.accept.3
+assert_enabled recording.next == true
+screenshot imported-takes-accepted
+click recording.next
+assert recording.step == "Saving"
+assert recording.room_width_m == 4.0
+assert recording.setup_description == "Original setup"
+scroll_into_view recording.content recording.metadata.unit
+click recording.metadata.unit
+assert recording.room_unit == "Imperial"
+screenshot metadata-feet
+click recording.metadata.unit
+assert recording.room_unit == "Metric"
+scroll_into_view recording.content recording.metadata.room_height
+click recording.metadata.room_height
+key cmd-a
+type "0"
+key enter
+assert recording.metadata_valid == false
+scroll_into_view recording.content recording.save
+assert_enabled recording.save == false
+screenshot metadata-incomplete
+scroll_into_view recording.content recording.metadata.room_width
+click recording.metadata.room_width
+key cmd-a
+type "4.5"
+key enter
+assert recording.room_width_m == 4.5
+scroll_into_view recording.content recording.metadata.room_height
+click recording.metadata.room_height
+key cmd-a
+type "2.8"
+key enter
+assert recording.metadata_valid == true
+scroll_into_view recording.content recording.metadata.setup
+click recording.metadata.setup
+key cmd-a
+type "Updated listening room"
+assert recording.setup_description == "Updated listening room"
+screenshot metadata-edited
+scroll_into_view recording.content recording.save
+screenshot imported-save-ready
+assert_enabled recording.save == true
+click recording.save
+wait_until recording.save_status == "Current" timeout=5s
+screenshot imported-copy-saved
+scroll_into_view recording.content recording.save_name
+click recording.save_name
+key cmd-a
+type "Imported renamed copy"
+assert recording.save_status == "Previous"
+screenshot imported-copy-name
+scroll_into_view recording.content recording.save
+assert_enabled recording.save == true
+click recording.save
+wait_until recording.save_status == "Current" timeout=5s
+assert recording.done_count == 4
+screenshot imported-copy-renamed
+assert playback.is_playing == false

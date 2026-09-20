@@ -1,0 +1,35 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "/tmp/sotf-roomeq-apply-retry"
+readiness_timeout = "60s"
+
+[[scenario]]
+name = "english"
+path = "crates/sotf-dev-driver/scenarios/roomeq_apply_rejection_retry.scn"
+timeout = "180s"
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true
+
+[[scenario]]
+name = "german"
+language = "German"
+font_scale = 1.5
+theme = "Light"
+path = "crates/sotf-dev-driver/scenarios/roomeq_apply_rejection_retry.scn"
+timeout = "180s"
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true

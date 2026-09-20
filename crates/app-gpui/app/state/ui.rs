@@ -3,6 +3,9 @@
 //! Contains all state related to the user interface including theme,
 //! layout, panels, and modal states.
 
+mod spectrum_view;
+pub use spectrum_view::SpectrumViewState;
+
 use crate::app::constants;
 use crate::app::i18n::{Language, Translations};
 use crate::app::keybindings::KeymapPreset;
@@ -131,11 +134,56 @@ impl Default for LayoutState {
 }
 
 #[derive(Debug, Clone)]
-pub struct UIState {
-    pub current_screen: Screen,
+pub struct NavigationHistory {
     pub last_screen: Screen,
     pub last_player_screen: Screen,
     pub last_studio_screen: Screen,
+    studio_categories: [Screen; 4],
+    pub compact_highlight: Option<usize>,
+    pub studio_picker_open: bool,
+    pub studio_picker_highlight: Option<usize>,
+}
+
+impl Default for NavigationHistory {
+    fn default() -> Self {
+        Self {
+            last_screen: Screen::Library,
+            last_player_screen: Screen::Home,
+            last_studio_screen: Screen::Studio,
+            compact_highlight: None,
+            studio_picker_open: false,
+            studio_picker_highlight: None,
+            studio_categories: [
+                Screen::Studio,
+                Screen::Recording,
+                Screen::RoomEq,
+                Screen::ListeningTest,
+            ],
+        }
+    }
+}
+
+impl NavigationHistory {
+    pub fn remember_studio(&mut self, screen: Screen) {
+        let category = match screen {
+            Screen::Studio | Screen::PluginGraph | Screen::Spectrum => 0,
+            Screen::Recording => 1,
+            Screen::RoomEq | Screen::HeadphoneEq | Screen::Spinorama => 2,
+            Screen::ListeningTest => 3,
+            _ => return,
+        };
+        self.studio_categories[category] = screen;
+    }
+
+    pub fn studio_target(&self, category: usize) -> Option<Screen> {
+        self.studio_categories.get(category).copied()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UIState {
+    pub current_screen: Screen,
+    pub navigation: NavigationHistory,
     pub input_mode: InputMode,
     pub active_menu: ActiveMenu,
     pub density_mode: DensityMode,
@@ -168,9 +216,7 @@ pub struct UIState {
     pub phone_shuffle_enabled: bool,
     pub phone_repeat_enabled: bool,
     pub phone_plugin_rack_editing: bool,
-    pub phone_spectrum_hold: bool,
-    pub phone_spectrum_hold_magnitudes: Option<Vec<f32>>,
-    pub phone_spectrum_smoothed: bool,
+    pub spectrum_view: SpectrumViewState,
     pub phone_plugin_graph_list: bool,
     pub phone_plugin_graph_actions_open: bool,
     pub phone_stream_sources_open: bool,
@@ -205,9 +251,7 @@ impl Default for UIState {
     fn default() -> Self {
         Self {
             current_screen: Screen::Home,
-            last_screen: Screen::Library,
-            last_player_screen: Screen::Home,
-            last_studio_screen: Screen::Studio,
+            navigation: NavigationHistory::default(),
             input_mode: InputMode::Normal,
             active_menu: ActiveMenu::None,
             density_mode: DensityMode::Standard,
@@ -240,9 +284,7 @@ impl Default for UIState {
             phone_shuffle_enabled: false,
             phone_repeat_enabled: false,
             phone_plugin_rack_editing: false,
-            phone_spectrum_hold: false,
-            phone_spectrum_hold_magnitudes: None,
-            phone_spectrum_smoothed: false,
+            spectrum_view: SpectrumViewState::default(),
             phone_plugin_graph_list: false,
             phone_plugin_graph_actions_open: false,
             phone_stream_sources_open: false,

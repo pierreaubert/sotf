@@ -1,0 +1,25 @@
+# Choice activation must receive Enter and Space without rack shortcuts.
+focus Studio
+plugin_clear
+plugin_add Dither
+action PluginSelectFirstUser
+wait_idle
+scroll_into_view rack.params plugin.choice.2.0.1
+click plugin.choice.2.0.1
+wait_idle
+assert_focused btn-set-2-0-1
+# Change the value independently, keeping keyboard focus on the 20-bit choice.
+plugin_param_set 2 0 0
+wait_idle
+key enter
+wait_idle
+assert plugins.plugin.2.param.0.value == 1
+assert plugins.plugin.2.enabled == true
+plugin_param_set 2 0 0
+wait_idle
+key space
+wait_idle
+assert plugins.plugin.2.param.0.value == 1
+assert plugins.plugin.2.enabled == true
+screenshot dither-keyboard-activation
+plugin_remove 2

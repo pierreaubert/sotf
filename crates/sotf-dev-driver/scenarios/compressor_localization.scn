@@ -1,0 +1,24 @@
+# German generated labels and setup interaction at narrow/scaled size.
+focus Studio
+plugin_clear
+plugin_add Compressor
+action PluginSelectFirstUser
+wait_idle
+assert_accessible spinbutton Schwelle value
+assert_accessible spinbutton Aufholverstärkung value
+assert_inaccessible spinbutton Threshold value
+click rack.config.toggle
+wait_idle
+scroll_into_view rack.config.scroll plugin.choice.2.8.0
+assert_accessible button Kanäle koppeln: Unabhängig
+assert_accessible button Kanäle koppeln: Gekoppelt
+click plugin.choice.2.8.0
+assert plugins.plugin.2.param.8.value == 0
+click plugin.choice.2.8.1
+assert plugins.plugin.2.param.8.value == 1
+wait_idle
+assert_in_viewport plugin.choice.2.8.1
+assert_absent plugin.choice.2.15.0
+screenshot compressor-german-labels
+click rack.config.toggle
+plugin_remove 2

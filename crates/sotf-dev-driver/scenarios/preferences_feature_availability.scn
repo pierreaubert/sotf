@@ -1,0 +1,49 @@
+focus Settings
+resize 600 800
+wait_idle 1s
+click preferences.search
+type "feature availability"
+wait_idle 1s
+click preferences.result.FeatureAvailability
+wait_idle 2s
+assert settings.active_tab == "ReleaseChannel"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.FeatureAvailability
+assert_in_viewport settings.release-channel.Stable
+assert_in_viewport settings.release-channel.Beta
+assert_in_viewport settings.release-channel.Alpha
+click settings.release-channel.Stable
+wait_idle 1s
+assert settings.release_channel == "Prod"
+assert settings.persisted_release_channel == "Prod"
+click preferences.search
+type "feature availability"
+wait_idle 1s
+click preferences.result.FeatureAvailability
+wait_idle 1s
+key tab
+key enter
+wait_idle 1s
+assert settings.release_channel == "Beta"
+assert settings.persisted_release_channel == "Beta"
+assert_selected settings.release-channel.Beta == true
+key tab
+key space
+wait_idle 1s
+assert settings.release_channel == "Alpha"
+assert settings.persisted_release_channel == "Alpha"
+assert_selected settings.release-channel.Alpha == true
+screenshot preferences-feature-choices
+# The table is below the channel controls; render its scroll region before
+# inspecting availability cells (especially with enlarged text).
+scroll preferences.content -600
+wait_idle 1s
+assert_enabled preferences.availability.screen.Library.Stable == true
+assert_enabled preferences.availability.screen.Library.Beta == true
+assert_enabled preferences.availability.screen.Library.Alpha == true
+assert_enabled preferences.availability.screen.Streams.Stable == false
+assert_enabled preferences.availability.screen.Streams.Beta == true
+assert_enabled preferences.availability.screen.PluginGraph.Beta == false
+assert_enabled preferences.availability.screen.PluginGraph.Alpha == true
+screenshot preferences-feature-table
+assert playback.is_playing == false

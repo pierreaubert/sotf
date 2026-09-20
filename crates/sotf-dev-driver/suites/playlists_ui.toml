@@ -11,3 +11,10 @@ path = "crates/sotf-dev-driver/scenarios/gpui_playlists.scn"
 seed_demo_audio = true
 timeout = "60s"
 tags = ["playlists", "ui", "crud", "accessibility", "persistence"]
+
+[[scenario]]
+name = "playlist-dialog-focus"
+path = "crates/sotf-dev-driver/scenarios/playlist_dialog_focus.scn"
+seed_demo_audio = true
+timeout = "60s"
+tags = ["playlists", "ui", "keyboard", "focus", "recovery"]

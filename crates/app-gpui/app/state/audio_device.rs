@@ -7,10 +7,10 @@ use sotf_audio::devices::AudioDevice;
 use crate::app::types::PlaybackSource;
 
 /// Common sample rates for audio devices
-pub const SAMPLE_RATES: &[u32] = &[44100, 48000, 88200, 96000, 176400, 192000];
+pub use sotf_audio_player::ui_models::audio_preferences::INPUT_SAMPLE_RATES_HZ as SAMPLE_RATES;
 
 /// Common buffer sizes (in frames)
-pub const BUFFER_SIZES: &[u32] = &[128, 256, 512, 1024, 2048, 4096];
+pub use sotf_audio_player::ui_models::audio_preferences::INPUT_BUFFER_FRAMES as BUFFER_SIZES;
 
 /// Select the output sample rate used to configure the active processing graph.
 ///
@@ -46,12 +46,20 @@ pub struct HalConfig {
 /// State for HAL configuration dropdowns
 #[derive(Debug, Clone, Default)]
 pub struct HalDropdownState {
+    /// Keyboard highlight for sample rate, channels and buffer size.
+    pub highlights: [Option<usize>; 3],
     /// Whether sample rate dropdown is open
     pub sample_rate_open: bool,
     /// Whether channel count dropdown is open
     pub channel_count_open: bool,
     /// Whether buffer size dropdown is open
     pub buffer_size_open: bool,
+}
+
+impl HalDropdownState {
+    pub fn is_open(&self) -> bool {
+        self.sample_rate_open || self.channel_count_open || self.buffer_size_open
+    }
 }
 
 impl Default for HalConfig {
@@ -117,12 +125,18 @@ pub struct CastDeviceInfo {
 /// Audio device state for input and output device selection
 #[derive(Debug, Clone, Default)]
 pub struct AudioDeviceState {
+    pub output_ui: OutputDeviceUiState,
+    pub audio_apply: AudioApplyState,
+    pub output_draft: sotf_audio_player::ui_models::audio_preferences::AudioOutputDraft,
+    /// Previous route while a committed output change waits for paused playback to resume.
+    pub pending_output_restart: Option<(usize, Option<String>, bool)>,
     /// Available output devices
     pub output_devices: Vec<AudioDevice>,
     /// Currently selected output device index
     pub selected_output_device_index: usize,
     /// Name of the currently active output device (may differ from selected during transitions)
     pub current_output_device_name: Option<String>,
+    pub follow_system_default: bool,
 
     /// Available input devices
     pub input_devices: Vec<AudioDevice>,
@@ -146,6 +160,35 @@ pub struct AudioDeviceState {
     pub selected_cast_device: Option<usize>,
     /// Whether a Cast device discovery scan is in progress
     pub cast_discovery_running: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct OutputDeviceUiState {
+    pub open: bool,
+    pub highlight: Option<usize>,
+    pub details_expanded: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AudioApplyState {
+    pub last_submission: Option<crate::app::player_handle::TransportReceipt>,
+    pub pending: Option<PendingAudioApply>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingAudioApply {
+    pub receipt: crate::app::player_handle::TransportReceipt,
+    pub target: sotf_audio_player::ui_models::audio_preferences::AudioPreferences,
+    pub target_index: usize,
+    pub draft: sotf_audio_player::ui_models::audio_preferences::AudioOutputDraft,
+    pub previous_graph_gain: Option<f64>,
+    pub recovery: Option<AudioApplyRecovery>,
+}
+
+#[derive(Debug, Clone)]
+pub enum AudioApplyRecovery {
+    Restoring(String),
+    Stopping(String),
 }
 
 impl AudioDeviceState {
@@ -186,6 +229,15 @@ impl AudioDeviceState {
     /// Update the list of available output devices
     pub fn set_output_devices(&mut self, devices: Vec<AudioDevice>) {
         self.output_devices = devices;
+        if self.follow_system_default {
+            self.current_output_device_name = None;
+            self.selected_output_device_index = self
+                .output_devices
+                .iter()
+                .position(|device| device.is_default)
+                .unwrap_or(0);
+            return;
+        }
         // Clamp selection to valid range
         if self.selected_output_device_index >= self.output_devices.len() {
             self.selected_output_device_index = 0;
@@ -244,8 +296,17 @@ impl AudioDeviceState {
 
     /// Update output devices and select the best default
     pub fn set_output_devices_with_smart_default(&mut self, devices: Vec<AudioDevice>) {
-        self.output_devices = devices;
-        self.selected_output_device_index = self.find_best_default_device_index();
+        self.set_output_devices(devices);
+        if self.follow_system_default {
+            return;
+        }
+        self.selected_output_device_index = self
+            .output_devices
+            .iter()
+            .position(|device| {
+                Some(device.name.as_str()) == self.current_output_device_name.as_deref()
+            })
+            .unwrap_or_else(|| self.find_best_default_device_index());
         if let Some(device) = self.output_devices.get(self.selected_output_device_index) {
             self.current_output_device_name = Some(device.name.clone());
         }
@@ -253,6 +314,7 @@ impl AudioDeviceState {
 
     /// Close all HAL dropdowns
     pub fn close_hal_dropdowns(&mut self) {
+        self.hal_dropdowns.highlights = [None; 3];
         self.hal_dropdowns.sample_rate_open = false;
         self.hal_dropdowns.channel_count_open = false;
         self.hal_dropdowns.buffer_size_open = false;

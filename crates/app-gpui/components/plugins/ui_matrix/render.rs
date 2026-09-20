@@ -9,17 +9,19 @@ use super::consts::MSD_BTN_SIZE;
 use super::consts::MSD_COL_WIDTH;
 use super::misc::compute_output_groups;
 use super::misc::format_gain_db;
-use super::misc::{cell_index, checked_matrix_cell_index, matrix_settings_mut_by_instance_id};
+use super::misc::{cell_index, checked_matrix_cell_index};
 use super::types::MatrixRenderState;
 use super::types::MsdAction;
 use crate::app::AppState;
-use crate::app::types::PluginUpdateType;
 use crate::components::design::Ds;
 use crate::components::themed_tooltip;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{ButtonSet, ButtonSetOption, ButtonSetSize, NumberInput, NumberInputSize};
+use gpui_ui_kit::{
+    ButtonSet, ButtonSetOption, ButtonSetSize, NumberInput, NumberInputSize, Select, SelectOption,
+};
+use sotf_audio_player::PluginUpdateEffect;
 use sotf_audio_player::{
     apply_matrix_preset, available_matrix_presets, db_to_linear, detect_matrix_preset,
     get_channel_label_from_config,
@@ -60,12 +62,17 @@ pub fn render_matrix_plugin(
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
-    state: MatrixRenderState,
+    mut state: MatrixRenderState,
     theme: &Theme,
+    route_labels: [&'static str; 2],
 ) -> impl IntoElement {
     let preset_name =
         detect_matrix_preset(state.input_channels, state.output_channels, state.matrix);
     let geometry = matrix_geometry(&state);
+    // Keep a route editable even before the user can reach the grid.
+    if state.selected_cell.is_none() && state.input_channels > 0 && state.output_channels > 0 {
+        state.selected_cell = Some((0, 0));
+    }
 
     div()
         .w_full()
@@ -81,6 +88,13 @@ pub fn render_matrix_plugin(
             state.output_channels,
             preset_name,
             theme,
+        ))
+        .child(render_route_selectors(
+            d,
+            entity.clone(),
+            &state,
+            theme,
+            route_labels,
         ))
         .children(render_selected_cell_editor(
             d,
@@ -104,6 +118,82 @@ pub fn render_matrix_plugin(
                     theme,
                 )),
         )
+}
+
+fn render_route_selectors(
+    d: &Ds,
+    entity: Entity<AppState>,
+    state: &MatrixRenderState,
+    theme: &Theme,
+    route_labels: [&'static str; 2],
+) -> impl IntoElement {
+    let instance_id = state.plugin_instance_id;
+    let (input, output) = state.selected_cell.unwrap_or((0, 0));
+    div()
+        .flex()
+        .flex_wrap()
+        .gap(d.gap)
+        .children([false, true].map(|is_output| {
+            let count = if is_output {
+                state.output_channels
+            } else {
+                state.input_channels
+            };
+            let selected = if is_output { output } else { input };
+            // Select's retained blur subscription must not own the window state.
+            let toggle = entity.downgrade();
+            let change = entity.clone();
+            Select::new(if is_output {
+                "matrix-route-output"
+            } else {
+                "matrix-route-input"
+            })
+            .label(route_labels[usize::from(is_output)])
+            .options(
+                (0..count)
+                    .map(|index| {
+                        SelectOption::new(
+                            index.to_string(),
+                            get_channel_label_from_config(
+                                index,
+                                count,
+                                state.speaker_config.as_deref(),
+                            ),
+                        )
+                    })
+                    .collect(),
+            )
+            .selected(selected.to_string())
+            .disabled(count == 0)
+            .is_open(state.route_menu == Some(is_output))
+            .theme(theme.to_select_theme())
+            .on_toggle(move |open, _, cx| {
+                let _ = toggle.update(cx, |state, cx| {
+                    state.app.plugin_state.plugin_ui_state.matrix_route_menu =
+                        open.then_some((instance_id, is_output));
+                    cx.notify();
+                });
+            })
+            .on_change(move |value: &SharedString, _, cx| {
+                let Ok(index) = value.parse::<usize>() else {
+                    return;
+                };
+                if index >= count {
+                    return;
+                }
+                change.update(cx, |state, cx| {
+                    let (input, output) = if is_output {
+                        (input, index)
+                    } else {
+                        (index, output)
+                    };
+                    state.app.plugin_state.matrix_selected_cell =
+                        Some((instance_id, input, output));
+                    state.app.plugin_state.plugin_ui_state.matrix_route_menu = None;
+                    cx.notify();
+                });
+            })
+        }))
 }
 
 fn render_selected_cell_editor(
@@ -142,6 +232,7 @@ fn render_selected_cell_editor(
     Some(
         div()
             .flex()
+            .flex_wrap()
             .items_center()
             .gap(d.gap)
             .child(
@@ -164,20 +255,27 @@ fn render_selected_cell_editor(
                     .aria_label(format!("{output_label} ← {input_label}"))
                     .on_change(move |value, _window, cx| {
                         entity.update(cx, |state, _| {
-                            if state.app.plugin_state.matrix_selected_cell
-                                != Some((plugin_instance_id, input_idx, output_idx))
+                            if state
+                                .app
+                                .plugin_state
+                                .matrix_selected_cell
+                                .is_some_and(|selected| {
+                                    selected.0 == plugin_instance_id
+                                        && selected != (plugin_instance_id, input_idx, output_idx)
+                                })
                             {
                                 return;
                             }
-                            if let Some(settings) = matrix_settings_mut_by_instance_id(
-                                &mut state.app.plugin_state.graph,
-                                plugin_instance_id,
-                            ) && let sotf_audio_player::PluginSettings::Matrix {
-                                input_channels,
-                                output_channels,
-                                matrix,
-                                ..
-                            } = settings
+                            if let Some(settings) = state
+                                .app
+                                .plugin_state
+                                .editor_settings_mut_by_instance_id(plugin_instance_id)
+                                && let sotf_audio_player::PluginSettings::Matrix {
+                                    input_channels,
+                                    output_channels,
+                                    matrix,
+                                    ..
+                                } = settings
                                 && let Some(index) = checked_matrix_cell_index(
                                     input_idx,
                                     output_idx,
@@ -187,8 +285,10 @@ fn render_selected_cell_editor(
                                 )
                             {
                                 matrix[index] = polarity * db_to_linear(value as f32);
-                                state.app.plugin_state.update_state.pending_plugin_update =
-                                    Some(PluginUpdateType::Structural);
+                                state
+                                    .app
+                                    .plugin_state
+                                    .record_editor_effect(PluginUpdateEffect::Structural);
                             }
                         });
                     }),
@@ -226,19 +326,22 @@ fn render_preset_buttons(
         .on_change(move |value, _window, cx| {
             let preset_name = value.to_string();
             entity.update(cx, |state, _| {
-                if let Some(settings) = matrix_settings_mut_by_instance_id(
-                    &mut state.app.plugin_state.graph,
-                    plugin_instance_id,
-                ) && let sotf_audio_player::PluginSettings::Matrix {
-                    input_channels: in_ch,
-                    output_channels: out_ch,
-                    matrix,
-                    ..
-                } = settings
+                if let Some(settings) = state
+                    .app
+                    .plugin_state
+                    .editor_settings_mut_by_instance_id(plugin_instance_id)
+                    && let sotf_audio_player::PluginSettings::Matrix {
+                        input_channels: in_ch,
+                        output_channels: out_ch,
+                        matrix,
+                        ..
+                    } = settings
                 {
                     apply_matrix_preset(*in_ch, *out_ch, matrix, &preset_name);
-                    state.app.plugin_state.update_state.pending_plugin_update =
-                        Some(PluginUpdateType::Structural);
+                    state
+                        .app
+                        .plugin_state
+                        .record_editor_effect(PluginUpdateEffect::Structural);
                 }
             });
         })
@@ -512,14 +615,15 @@ fn render_msd_button(
         .child(label)
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
             entity.update(cx, |state, _| {
-                if let Some(settings) = matrix_settings_mut_by_instance_id(
-                    &mut state.app.plugin_state.graph,
-                    plugin_instance_id,
-                ) && let sotf_audio_player::PluginSettings::Matrix {
-                    channel_states,
-                    output_channels: out_ch,
-                    ..
-                } = settings
+                if let Some(settings) = state
+                    .app
+                    .plugin_state
+                    .editor_settings_mut_by_instance_id(plugin_instance_id)
+                    && let sotf_audio_player::PluginSettings::Matrix {
+                        channel_states,
+                        output_channels: out_ch,
+                        ..
+                    } = settings
                 {
                     // Resize channel_states if needed
                     let target_len = (*out_ch).max(output_channels);
@@ -537,8 +641,10 @@ fn render_msd_button(
                             }
                         }
                     }
-                    state.app.plugin_state.update_state.pending_plugin_update =
-                        Some(PluginUpdateType::Structural);
+                    state
+                        .app
+                        .plugin_state
+                        .record_editor_effect(PluginUpdateEffect::Structural);
                 }
             });
         })
@@ -690,16 +796,17 @@ fn render_matrix_cell(
             entity_click.update(cx, |state, _| {
                 if event.click_count >= 2 {
                     // Double-click to reset cell to 0 and clear M/S/D for that output channel
-                    if let Some(settings) = matrix_settings_mut_by_instance_id(
-                        &mut state.app.plugin_state.graph,
-                        plugin_instance_id,
-                    ) && let sotf_audio_player::PluginSettings::Matrix {
-                        input_channels,
-                        output_channels,
-                        matrix,
-                        channel_states,
-                        ..
-                    } = settings
+                    if let Some(settings) = state
+                        .app
+                        .plugin_state
+                        .editor_settings_mut_by_instance_id(plugin_instance_id)
+                        && let sotf_audio_player::PluginSettings::Matrix {
+                            input_channels,
+                            output_channels,
+                            matrix,
+                            channel_states,
+                            ..
+                        } = settings
                         && let Some(idx) = checked_matrix_cell_index(
                             input_idx,
                             output_idx,
@@ -712,8 +819,10 @@ fn render_matrix_cell(
                         if output_idx < channel_states.len() {
                             channel_states[output_idx] = sotf_plugins::ChannelState::default();
                         }
-                        state.app.plugin_state.update_state.pending_plugin_update =
-                            Some(PluginUpdateType::Structural);
+                        state
+                            .app
+                            .plugin_state
+                            .record_editor_effect(PluginUpdateEffect::Structural);
                     }
                 } else {
                     // Single click only selects the cell. Gain changes remain
@@ -748,18 +857,23 @@ fn render_matrix_cell(
             });
             cx.stop_propagation();
         })
-        // Scroll to adjust value (preserving sign for negative gains)
+        // Ordinary scrolling belongs to the editor; Alt-wheel adjusts gain.
         .on_scroll_wheel(move |event, _, cx| {
+            if !event.modifiers.alt {
+                return;
+            }
+            cx.stop_propagation();
             entity_scroll.update(cx, |state, _| {
-                if let Some(settings) = matrix_settings_mut_by_instance_id(
-                    &mut state.app.plugin_state.graph,
-                    plugin_instance_id,
-                ) && let sotf_audio_player::PluginSettings::Matrix {
-                    input_channels,
-                    output_channels,
-                    matrix,
-                    ..
-                } = settings
+                if let Some(settings) = state
+                    .app
+                    .plugin_state
+                    .editor_settings_mut_by_instance_id(plugin_instance_id)
+                    && let sotf_audio_player::PluginSettings::Matrix {
+                        input_channels,
+                        output_channels,
+                        matrix,
+                        ..
+                    } = settings
                     && let Some(idx) = checked_matrix_cell_index(
                         input_idx,
                         output_idx,
@@ -790,8 +904,10 @@ fn render_matrix_cell(
                         let new_db = (current_db + delta).clamp(MIN_DB, MAX_DB);
                         // Preserve sign, apply new magnitude
                         matrix[idx] = sign * db_to_linear(new_db);
-                        state.app.plugin_state.update_state.pending_plugin_update =
-                            Some(PluginUpdateType::Structural);
+                        state
+                            .app
+                            .plugin_state
+                            .record_editor_effect(PluginUpdateEffect::Structural);
                     }
                 }
             });
@@ -824,6 +940,7 @@ mod tests {
         let matrix = [0.0_f32; 16];
         let channel_states = [sotf_plugins::ChannelState::default(); 4];
         let state = MatrixRenderState {
+            route_menu: None,
             plugin_instance_id: 1,
             input_channels: 16,
             output_channels: 16,
@@ -848,6 +965,7 @@ mod tests {
         let matrix = [0.0_f32; 4];
         let channel_states = [sotf_plugins::ChannelState::default(); 2];
         let state = MatrixRenderState {
+            route_menu: None,
             plugin_instance_id: 1,
             input_channels: 2,
             output_channels: 2,

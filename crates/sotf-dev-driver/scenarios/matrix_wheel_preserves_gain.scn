@@ -1,0 +1,14 @@
+# Ordinary wheel over a Matrix cell must not change routing gains.
+# Coordinates measured in the 1440x900 desktop reference viewport.
+focus Studio
+plugin_clear
+plugin_add Matrix
+action PluginSelectFirstUser
+wait_idle
+plugin_chain_save $SOTF_QA_DIR/matrix-before-wheel.json
+screenshot matrix-before-wheel
+scroll_at 315 690 -40
+wait_idle
+plugin_chain_save $SOTF_QA_DIR/matrix-after-wheel.json
+screenshot matrix-after-wheel
+assert playback.is_playing == false

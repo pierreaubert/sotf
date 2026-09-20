@@ -10,6 +10,13 @@ pub struct MusicDatabase {
 }
 
 impl MusicDatabase {
+    /// Backing file for a worker connection; absent for in-memory databases.
+    pub fn backing_path(&self) -> Option<PathBuf> {
+        self.conn
+            .path()
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
+    }
     /// Get the default database path
     /// Linux: ~/.config/sotf/music.db
     /// macOS: ~/Library/Application Support/org.spinorama.sotf/music.db

@@ -1,13 +1,12 @@
 // intentional-file: fixed pixel values here are graph and plugin control geometry.
-use crate::app::types::ChannelRecordingState;
 use crate::app::types::recording::RoomDimensionUnit;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Card, HStack, Heading, Input, StackAlign, StackSpacing,
-    Text, TextSize, VStack,
+    Button, ButtonSize, ButtonVariant, Card, HStack, Heading, Input, NumberInput, StackAlign,
+    StackSpacing, Text, TextSize, VStack,
 };
 
 /// Filter the available-speakers list to the top matches for a query.
@@ -47,7 +46,7 @@ impl PlayerView {
             let rec = &snap.app.measurement_state.recording_state;
             let catalog_missing = sp.available_speakers.is_empty() && !sp.loading_speakers;
             let speakers_unsynced =
-                rec.channel_speakers.len() != rec.playback_config.channel_mappings.len();
+                rec.channel_speakers.len() != rec.metadata_channel_names().len();
             catalog_missing || speakers_unsynced
         };
         if needs_fetch {
@@ -83,10 +82,7 @@ impl PlayerView {
         let translations = state.app.ui_state.translations.clone();
         let recording_state = &state.app.measurement_state.recording_state;
 
-        let has_recordings = recording_state
-            .channel_recordings
-            .iter()
-            .any(|r| r.state == ChannelRecordingState::Done);
+        let has_recordings = recording_state.all_takes_accepted();
 
         let recording_dir = recording_state.recording_directory.clone();
 
@@ -103,6 +99,39 @@ impl PlayerView {
                             .color(theme.text_secondary),
                     ),
             )
+            .child({
+                use sotf_audio_player::ui_models::take_review::RecordingSaveStatus;
+                let status = recording_state.save_status();
+                let color = match status {
+                    RecordingSaveStatus::Current => theme.success,
+                    RecordingSaveStatus::Previous => theme.warning,
+                    RecordingSaveStatus::NotSaved => theme.text_secondary,
+                };
+                let receipt = VStack::new()
+                    .spacing(StackSpacing::Xs)
+                    .child(
+                        Text::body(crate::app::i18n::TakeReviewTranslations::save_status(
+                            state.app.ui_state.language,
+                            status,
+                        ))
+                        .color(color),
+                    )
+                    .when_some(
+                        recording_state.take_review.saved_to.as_ref(),
+                        |view, path| {
+                            view.child(Text::caption(path.clone()).color(theme.text_secondary))
+                        },
+                    );
+                #[cfg(feature = "dev-api")]
+                {
+                    use crate::app::dev_api::DevTrackExt;
+                    receipt.dev_track("recording.save_status")
+                }
+                #[cfg(not(feature = "dev-api"))]
+                {
+                    receipt
+                }
+            })
             .child(self.render_save_name_card(cx))
             .child(self.render_save_location_card(cx))
             .child(self.render_room_info_card(cx))
@@ -124,7 +153,22 @@ impl PlayerView {
             .save_name
             .clone();
         let view = cx.entity().clone();
-
+        let input = Input::new("save_name_input")
+            .value(save_name)
+            .placeholder(translations.recording_enter_name_placeholder)
+            .on_text_change(move |value, _window, cx| {
+                view.update(cx, |this, cx| {
+                    this.state.update(cx, |state, _| {
+                        state.app.measurement_state.recording_state.save_name = value.to_string();
+                    });
+                    cx.notify();
+                });
+            });
+        #[cfg(feature = "dev-api")]
+        let input = {
+            use crate::app::dev_api::DevTrackExt;
+            input.dev_track("recording.save_name")
+        };
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
@@ -144,26 +188,7 @@ impl PlayerView {
                                 .on_mouse_down(MouseButton::Left, |_event, _window, cx| {
                                     cx.stop_propagation();
                                 })
-                                .child(
-                                    Input::new("save_name_input")
-                                        .value(save_name.clone())
-                                        .placeholder(translations.recording_enter_name_placeholder)
-                                        .on_text_change({
-                                            let view = view.clone();
-                                            move |value, _window, cx| {
-                                                view.update(cx, |this, cx| {
-                                                    this.state.update(cx, |state, _| {
-                                                        state
-                                                            .app
-                                                            .measurement_state
-                                                            .recording_state
-                                                            .save_name = value.to_string();
-                                                    });
-                                                    cx.notify();
-                                                });
-                                            }
-                                        }),
-                                ),
+                                .child(input),
                         ),
                 )
                 .child(Text::caption(translations.recording_save_name_help)),
@@ -271,99 +296,55 @@ impl PlayerView {
     /// Render the save contents card showing what will be saved
     pub(super) fn render_save_contents_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
-        let recording_state = &state.app.measurement_state.recording_state;
-        let safe_save_name = recording_state.safe_save_name();
-
-        let recorded_channels: Vec<_> = recording_state
-            .channel_recordings
-            .iter()
-            .filter(|r| r.state == ChannelRecordingState::Done)
-            .collect();
-
+        let theme = &state.app.ui_state.theme;
+        let translations = &state.app.ui_state.translations;
+        let recording = &state.app.measurement_state.recording_state;
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
                 .child(Text::eyebrow(translations.recording_files_to_save).color(theme.accent))
                 .child(
-                    VStack::new()
-                        .spacing(StackSpacing::Xs)
-                        // recordings.json
-                        .child(
-                            HStack::new()
-                                .spacing(StackSpacing::Xs)
-                                .align(StackAlign::Center)
-                                .child(Text::new("+").size(TextSize::Xs).color(theme.success))
-                                .child(
-                                    // B5: the session JSON is always saved
-                                    // under the canonical filename, not the
-                                    // user-chosen session name.
-                                    Text::label(sotf_audio_player::recording_helpers::RECORDINGS_FILENAME)
-                                        .color(theme.text_primary),
-                                )
-                                .child(Text::caption(translations.recording_files_config_data)),
-                        )
-                        // Per-channel files
-                        .children(
-                            recorded_channels
-                                .iter()
-                                .flat_map(|rec| {
-                                    // Shared sanitizer (C1) — matches the
-                                    // names capture actually writes.
-                                    let safe_channel_name =
-                                        sotf_audio_player::recording_helpers::sanitize_recording_name(
-                                            &rec.channel_name,
-                                        );
-
-                                    vec![
-                                        HStack::new()
-                                            .spacing(StackSpacing::Xs)
-                                            .align(StackAlign::Center)
-                                            .child(
-                                                Text::new("+")
-                                                    .size(TextSize::Xs)
-                                                    .color(theme.success),
-                                            )
-                                            .child(
-                                                Text::new(format!(
-                                                    "{}_{}.wav",
-                                                    safe_save_name, safe_channel_name
-                                                ))
-                                                .size(TextSize::Xs)
-                                                .color(theme.text_primary),
-                                            )
-                                            .child(Text::caption(format!(
-                                                "- {} recording",
-                                                rec.channel_name
-                                            )))
-                                            .into_any_element(),
-                                        HStack::new()
-                                            .spacing(StackSpacing::Xs)
-                                            .align(StackAlign::Center)
-                                            .child(
-                                                Text::new("+")
-                                                    .size(TextSize::Xs)
-                                                    .color(theme.success),
-                                            )
-                                            .child(
-                                                Text::new(format!(
-                                                    "{}_{}.csv",
-                                                    safe_save_name, safe_channel_name
-                                                ))
-                                                .size(TextSize::Xs)
-                                                .color(theme.text_primary),
-                                            )
-                                            .child(Text::caption(format!(
-                                                "- {} frequency response",
-                                                rec.channel_name
-                                            )))
-                                            .into_any_element(),
-                                    ]
-                                })
-                                .collect::<Vec<_>>(),
-                        ),
-                ),
+                    div()
+                        .w_full()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .child(Text::label(
+                            sotf_audio_player::recording_helpers::RECORDINGS_FILENAME,
+                        ))
+                        .child(Text::caption(translations.recording_files_config_data)),
+                )
+                .child(div().w_full().min_w_0().child(Text::caption(
+                    crate::app::i18n::TakeReviewTranslations::references_help(
+                        state.app.ui_state.language,
+                    ),
+                )))
+                .children(recording.channel_recordings.iter().filter_map(|take| {
+                    let result = take.result.as_ref()?;
+                    if result.wav_path.is_none() && result.csv_path.is_none() {
+                        return None;
+                    }
+                    Some(
+                        div()
+                            .w_full()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .child(Text::label(take.channel_name.clone()))
+                            .children(
+                                [result.wav_path.as_deref(), result.csv_path.as_deref()]
+                                    .into_iter()
+                                    .flatten()
+                                    .map(|path| {
+                                        let name = std::path::Path::new(path)
+                                            .file_name()
+                                            .map(|name| name.to_string_lossy().into_owned())
+                                            .unwrap_or_else(|| path.to_owned());
+                                        Text::caption(name)
+                                    }),
+                            ),
+                    )
+                })),
         )
     }
 
@@ -377,15 +358,40 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let recording = &state.app.measurement_state.recording_state;
         let status_message =
             crate::app::i18n::RuntimeMessageTranslations::for_language(state.app.ui_state.language)
-                .translate(&state.app.measurement_state.recording_state.status_message)
+                .translate(&recording.status_message)
                 .into_owned();
-        let status_severity = state.app.measurement_state.recording_state.status_severity;
-        let view = cx.entity().clone();
-
-        let can_save = has_recordings && recording_dir.is_some();
-
+        let status_severity = recording.status_severity;
+        let show_status = !status_message.is_empty()
+            && !(recording.take_review.saved_to.is_some()
+                && matches!(
+                    status_severity,
+                    crate::app::types::recording::RecordingStatusSeverity::Success
+                ));
+        let can_save = has_recordings
+            && (recording_dir.is_some() || recording.named_recording_directory().is_some())
+            && !recording.workflow_is_busy()
+            && recording.session_metadata_is_valid();
+        let save_view = cx.entity().clone();
+        let load_view = cx.entity().clone();
+        let save_button = Button::new("save_recordings", translations.recording_save_all)
+            .variant(ButtonVariant::Primary)
+            .size(ButtonSize::Md)
+            .disabled(!can_save)
+            .theme(theme.to_button_theme())
+            .on_click(move |_, cx| {
+                save_view.update(cx, |this, cx| this.save_recordings(cx));
+            });
+        #[cfg(feature = "dev-api")]
+        let save_button = {
+            use crate::app::dev_api::DevTrackExt;
+            save_button.dev_track_with_state(
+                "recording.save",
+                crate::app::dev_api::DevElementState::default().enabled(can_save),
+            )
+        };
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
@@ -393,61 +399,47 @@ impl PlayerView {
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
-                        .child(
-                            Button::new("save_recordings", translations.recording_save_all)
-                                .variant(ButtonVariant::Primary)
-                                .size(ButtonSize::Md)
-                                .disabled(!can_save)
-                                .theme(theme.to_button_theme())
-                                .on_click({
-                                    let view = view.clone();
-                                    move |_, cx| {
-                                        view.update(cx, |this, cx| {
-                                            this.save_recordings(cx);
-                                        });
-                                    }
-                                }),
-                        )
+                        .child(save_button)
                         .child(
                             Button::new("load_recordings", translations.recording_load_previous)
                                 .variant(ButtonVariant::Secondary)
                                 .size(ButtonSize::Sm)
                                 .theme(theme.to_button_theme())
-                                .on_click({
-                                    let view = view.clone();
-                                    move |_, cx| {
-                                        view.update(cx, |this, cx| {
-                                            this.load_recordings_from_file(cx);
-                                        });
-                                    }
+                                .on_click(move |_, cx| {
+                                    load_view
+                                        .update(cx, |this, cx| this.load_recordings_from_file(cx));
                                 }),
                         ),
                 )
-                .when(!status_message.is_empty(), |stack| {
-                    let theme = theme.clone();
-                    stack.child(Text::new(status_message.clone()).size(TextSize::Xs).color(
-                        match status_severity {
-                            crate::app::types::recording::RecordingStatusSeverity::Idle => {
-                                theme.text_secondary
-                            }
-                            crate::app::types::recording::RecordingStatusSeverity::Working => {
-                                theme.accent
-                            }
-                            crate::app::types::recording::RecordingStatusSeverity::Success => {
-                                theme.success
-                            }
-                            crate::app::types::recording::RecordingStatusSeverity::Warning => {
-                                theme.warning
-                            }
-                            crate::app::types::recording::RecordingStatusSeverity::Error => {
-                                theme.error
-                            }
-                        },
-                    ))
+                .when(show_status, |stack| {
+                    let color = match status_severity {
+                        crate::app::types::recording::RecordingStatusSeverity::Idle => {
+                            theme.text_secondary
+                        }
+                        crate::app::types::recording::RecordingStatusSeverity::Working => {
+                            theme.accent
+                        }
+                        crate::app::types::recording::RecordingStatusSeverity::Success => {
+                            theme.success
+                        }
+                        crate::app::types::recording::RecordingStatusSeverity::Warning => {
+                            theme.warning
+                        }
+                        crate::app::types::recording::RecordingStatusSeverity::Error => theme.error,
+                    };
+                    stack.child(
+                        Text::new(status_message.clone())
+                            .size(TextSize::Xs)
+                            .color(color),
+                    )
                 })
                 .when(!can_save, |stack| {
                     let reason = if !has_recordings {
                         translations.recording_no_recordings_warning
+                    } else if !recording.session_metadata_is_valid() {
+                        crate::app::i18n::TakeReviewTranslations::dimensions_warning(
+                            state.app.ui_state.language,
+                        )
                     } else {
                         translations.recording_no_dir_warning
                     };
@@ -467,72 +459,72 @@ impl PlayerView {
     pub(super) fn render_room_info_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
+        let translations = &state.app.ui_state.translations;
         let rec = &state.app.measurement_state.recording_state;
-        let width = rec.room_width_input;
-        let depth = rec.room_depth_input;
-        let height = rec.room_height_input;
+        let labels =
+            crate::app::i18n::TakeReviewTranslations::dimension_labels(state.app.ui_state.language);
+        let d = Ds::from_cx(cx);
         let unit = rec.room_dimension_unit;
         let view = cx.entity().clone();
-
+        let toggle_view = view.clone();
+        let toggle = Button::new("room_unit_toggle", unit.label())
+            .variant(ButtonVariant::Secondary)
+            .size(ButtonSize::Sm)
+            .theme(theme.to_button_theme())
+            .on_click(move |_, cx| {
+                toggle_view.update(cx, |this, cx| {
+                    this.state.update(cx, |state, _| {
+                        let rec = &mut state.app.measurement_state.recording_state;
+                        let unit = rec.room_dimension_unit.toggled();
+                        rec.set_room_dimension_unit(unit);
+                    });
+                    cx.notify();
+                });
+            });
+        #[cfg(feature = "dev-api")]
+        let toggle = {
+            use crate::app::dev_api::DevTrackExt;
+            toggle.dev_track("recording.metadata.unit")
+        };
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
                 .child(Text::eyebrow(translations.recording_room_dimensions).color(theme.accent))
                 .child(Text::caption(translations.recording_room_dimensions_help))
                 .child(
-                    HStack::new()
-                        .spacing(StackSpacing::Sm)
-                        .align(StackAlign::Center)
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .items_center()
+                        .gap(d.gap)
                         .child(dimension_field(
                             "room_width",
-                            "Width",
-                            width,
+                            labels[0],
+                            rec.room_width_input,
                             unit,
                             theme.clone(),
                             view.clone(),
-                            |rec, v| rec.room_width_input = v,
+                            |rec, value| rec.room_width_input = value,
                         ))
                         .child(dimension_field(
                             "room_depth",
-                            "Depth",
-                            depth,
+                            labels[1],
+                            rec.room_depth_input,
                             unit,
                             theme.clone(),
                             view.clone(),
-                            |rec, v| rec.room_depth_input = v,
+                            |rec, value| rec.room_depth_input = value,
                         ))
                         .child(dimension_field(
                             "room_height",
-                            "Height",
-                            height,
+                            labels[2],
+                            rec.room_height_input,
                             unit,
                             theme.clone(),
-                            view.clone(),
-                            |rec, v| rec.room_height_input = v,
+                            view,
+                            |rec, value| rec.room_height_input = value,
                         ))
-                        .child(
-                            Button::new("room_unit_toggle", unit.label())
-                                .variant(ButtonVariant::Secondary)
-                                .size(ButtonSize::Sm)
-                                .theme(theme.to_button_theme())
-                                .on_click({
-                                    let view = view.clone();
-                                    move |_, cx| {
-                                        view.update(cx, |this, cx| {
-                                            this.state.update(cx, |state, _| {
-                                                let rec = &mut state
-                                                    .app
-                                                    .measurement_state
-                                                    .recording_state;
-                                                rec.room_dimension_unit =
-                                                    rec.room_dimension_unit.toggled();
-                                            });
-                                            cx.notify();
-                                        });
-                                    }
-                                }),
-                        ),
+                        .child(toggle),
                 ),
         )
     }
@@ -540,8 +532,8 @@ impl PlayerView {
     /// Render the free-form "setup description" text card.
     pub(super) fn render_setup_description_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.ui_state.theme.clone();
-        let translations = state.app.ui_state.translations.clone();
+        let theme = &state.app.ui_state.theme;
+        let translations = &state.app.ui_state.translations;
         let description = state
             .app
             .measurement_state
@@ -549,7 +541,26 @@ impl PlayerView {
             .setup_description
             .clone();
         let view = cx.entity().clone();
-
+        let input = Input::new("setup_description_input")
+            .value(description)
+            .placeholder(translations.recording_setup_placeholder)
+            .on_text_change(move |value, _, cx| {
+                view.update(cx, |this, cx| {
+                    this.state.update(cx, |state, _| {
+                        state
+                            .app
+                            .measurement_state
+                            .recording_state
+                            .setup_description = value.to_string();
+                    });
+                    cx.notify();
+                });
+            });
+        #[cfg(feature = "dev-api")]
+        let input = {
+            use crate::app::dev_api::DevTrackExt;
+            input.dev_track("recording.metadata.setup")
+        };
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
@@ -558,33 +569,7 @@ impl PlayerView {
                         .color(theme.accent),
                 )
                 .child(Text::caption(translations.recording_setup_description_help))
-                .child(
-                    div()
-                        .w(px(560.0)) // intentional: wide description field width
-                        .on_mouse_down(MouseButton::Left, |_event, _window, cx| {
-                            cx.stop_propagation();
-                        })
-                        .child(
-                            Input::new("setup_description_input")
-                                .value(description)
-                                .placeholder(translations.recording_setup_placeholder)
-                                .on_text_change({
-                                    let view = view.clone();
-                                    move |value, _window, cx| {
-                                        view.update(cx, |this, cx| {
-                                            this.state.update(cx, |state, _| {
-                                                state
-                                                    .app
-                                                    .measurement_state
-                                                    .recording_state
-                                                    .setup_description = value.to_string();
-                                            });
-                                            cx.notify();
-                                        });
-                                    }
-                                }),
-                        ),
-                ),
+                .child(div().w_full().min_w_0().child(input)),
         )
     }
 
@@ -620,13 +605,12 @@ impl PlayerView {
         // listeners. Speaker identity is per physical playback channel,
         // not per captured mic/position row.
         let rows: Vec<(usize, String, String)> = rec
-            .playback_config
-            .channel_mappings
-            .iter()
+            .metadata_channel_names()
+            .into_iter()
             .enumerate()
-            .map(|(i, mapping)| {
+            .map(|(i, name)| {
                 let current = rec.channel_speakers.get(i).cloned().unwrap_or_default();
-                (i, mapping.group_name.clone(), current)
+                (i, name, current)
             })
             .collect();
         let view = cx.entity().clone();
@@ -773,41 +757,27 @@ fn dimension_field(
     view: gpui::Entity<PlayerView>,
     apply: fn(&mut crate::app::types::recording::RecordingState, f64),
 ) -> impl IntoElement {
-    let display = if current > 0.0 {
-        format!("{:.2}", current)
-    } else {
-        String::new()
+    let input = NumberInput::new(id)
+        .value(current)
+        .min(0.0)
+        .step(0.1)
+        .decimals(2)
+        .width(100.0)
+        .on_change(move |value, _, cx| {
+            view.update(cx, |this, cx| {
+                this.state.update(cx, |state, _| {
+                    apply(&mut state.app.measurement_state.recording_state, value);
+                });
+                cx.notify();
+            });
+        });
+    #[cfg(feature = "dev-api")]
+    let input = {
+        use crate::app::dev_api::DevTrackExt;
+        input.dev_track(format!("recording.metadata.{id}"))
     };
     VStack::new()
         .spacing(StackSpacing::Xs)
-        .child(
-            Text::new(format!("{} ({})", label, unit.label()))
-                .size(TextSize::Xs)
-                .color(theme.text_secondary),
-        )
-        .child(
-            div()
-                .w(px(100.0)) // intentional: dimension numeric-input column width
-                .on_mouse_down(MouseButton::Left, |_event, _window, cx| {
-                    cx.stop_propagation();
-                })
-                .child(
-                    Input::new(id)
-                        .value(display)
-                        .placeholder("0.00")
-                        .on_text_change(move |value, _window, cx| {
-                            // Empty string means "clear" — stored as 0.0
-                            // which `room_dimensions_for_save` treats as
-                            // "not specified" so the whole triple is
-                            // dropped from serialization.
-                            let parsed = value.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
-                            view.update(cx, |this, cx| {
-                                this.state.update(cx, |state, _| {
-                                    apply(&mut state.app.measurement_state.recording_state, parsed);
-                                });
-                                cx.notify();
-                            });
-                        }),
-                ),
-        )
+        .child(Text::caption(format!("{} ({})", label, unit.label())).color(theme.text_secondary))
+        .child(input)
 }

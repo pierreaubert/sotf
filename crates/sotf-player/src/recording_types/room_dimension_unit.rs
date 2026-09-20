@@ -29,6 +29,14 @@ impl RoomDimensionUnit {
         }
     }
 
+    /// Convert canonical meters into the selected display unit.
+    pub fn from_meters(&self, value: f64) -> f64 {
+        match self {
+            Self::Metric => value,
+            Self::Imperial => value / 0.304_8,
+        }
+    }
+
     pub fn toggled(&self) -> Self {
         match self {
             Self::Metric => Self::Imperial,

@@ -24,6 +24,7 @@ pub use sotf_audio_player::federation_scan::FederationScanResult;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+mod audio_preferences;
 mod consts;
 mod error;
 mod federation_state;
@@ -143,6 +144,7 @@ pub enum PlaylistDialog {
 }
 
 pub struct SettingsState {
+    pub navigation: crate::app::types::PreferencesNavigation,
     pub expanded_sections: Vec<String>,
     /// Secrets are masked by default and only revealed after an explicit
     /// per-field user action. This state is deliberately ephemeral.
@@ -150,12 +152,16 @@ pub struct SettingsState {
     pub show_manual_remote_token: bool,
     /// Retained metadata-preference persistence failure.
     pub metadata_error: Option<String>,
+    /// Cached presentation data; filesystem work runs in a background task.
+    pub metadata_config: Option<sotf_audio_player::MetadataServicesConfig>,
+    pub metadata_loading: bool,
     pub library: LibraryFolderSettingsState,
     pub keybindings: KeybindingSettingsState,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct LibraryFolderSettingsState {
+    pub maintenance: LibraryMaintenanceState,
     /// Access or path diagnosis from the most recent folder selection.
     pub directory_error: Option<sotf_audio_player::LibraryDirectoryAccessError>,
     /// Background scan failure retained until retry or a new successful scan.
@@ -166,6 +172,18 @@ pub struct LibraryFolderSettingsState {
     /// builds and is consumed by the next visible Add/Retry activation.
     #[cfg(feature = "dev-api")]
     pub qa_picker_result: Option<QaLibraryPickerResult>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct LibraryMaintenanceState {
+    #[cfg(feature = "dev-api")]
+    pub qa_fail_next_refresh: bool,
+    #[cfg(feature = "dev-api")]
+    pub qa_change_before_refresh: bool,
+    pub busy: bool,
+    pub review: Option<sotf_audio_player::database::MissingFileReview>,
+    pub error: Option<String>,
+    pub removed: Option<usize>,
 }
 
 #[cfg(feature = "dev-api")]
@@ -358,10 +376,13 @@ impl App {
                 deleted_playlist: None,
             },
             settings: SettingsState {
+                navigation: crate::app::types::PreferencesNavigation::default(),
                 expanded_sections: vec!["library".to_string()],
                 show_mpd_password: false,
                 show_manual_remote_token: false,
                 metadata_error: None,
+                metadata_config: None,
+                metadata_loading: false,
                 library: LibraryFolderSettingsState::default(),
                 keybindings: KeybindingSettingsState::default(),
             },
@@ -414,6 +435,7 @@ impl App {
             .map_err(|err| err.to_string())?;
         self.stream_state.last_error = None;
         self.stream_state.last_status = Some("Stream saved".to_string());
+        self.stream_state.clear_editor();
         Ok(())
     }
 
@@ -421,15 +443,10 @@ impl App {
         &mut self,
         stream: sotf_audio_player::SavedStream,
     ) -> Result<Option<sotf_audio::decoder::AudioSource>, String> {
-        let was_empty = self.queue_state.is_empty();
-        let was_not_playing = !self.playback.is_playing;
         let album = stream_queue_album(&stream);
         self.queue_state.add_album(album)?;
         self.stream_state.last_error = None;
         self.stream_state.last_status = Some(format!("Added {}", stream.name));
-        if was_empty || was_not_playing {
-            return Ok(self.start_queue());
-        }
         Ok(None)
     }
 
@@ -470,6 +487,7 @@ impl App {
 
     pub fn set_stream_inputs_from_selected(&mut self, index: usize) {
         if let Some(stream) = self.stream_state.store.streams.get(index) {
+            self.stream_state.editor_open = true;
             self.stream_state.selected_index = index;
             self.stream_state.name_input = stream.name.clone();
             self.stream_state.url_input = stream.url.clone();
@@ -495,6 +513,94 @@ impl App {
     pub fn record_stream_error(&mut self, error: impl Into<String>) {
         self.stream_state.last_error = Some(error.into());
         self.stream_state.last_status = None;
+    }
+
+    /// Processing identity excludes canvas position, selection and other view state.
+    pub fn correction_processing_snapshot(&self) -> Option<serde_json::Value> {
+        let sample_rate = super::audio_device::output_sample_rate_for_track(
+            self.playback.sample_rate.unwrap_or(48_000),
+            self.audio_device_state
+                .current_output_device_name
+                .as_deref(),
+        );
+        serde_json::to_value(self.plugin_state.graph.to_plugin_graph_config(sample_rate)).ok()
+    }
+
+    pub fn correction_application_status(
+        &self,
+        delivery: &sotf_audio_player::ui_models::correction_delivery::CorrectionDelivery,
+        result_is_current: bool,
+    ) -> sotf_audio_player::ui_models::correction_delivery::CorrectionApplicationStatus {
+        use sotf_audio_player::ui_models::correction_delivery::CorrectionApplicationStatus;
+        let Some(graph) = self.correction_processing_snapshot() else {
+            return CorrectionApplicationStatus::ChangedGraph;
+        };
+        let runtime_matches = self
+            .plugin_state
+            .update_state
+            .acknowledged_processing_graph
+            .as_ref()
+            == Some(&graph)
+            && self.plugin_state.update_state.pending_ack.is_none()
+            && self
+                .plugin_state
+                .update_state
+                .pending_plugin_update
+                .is_none();
+        delivery.application_status(result_is_current, &graph, runtime_matches)
+    }
+
+    pub fn pending_correction_revisions(&self) -> [Option<u64>; 3] {
+        let Some(graph) = self.correction_processing_snapshot() else {
+            return [None; 3];
+        };
+        [
+            self.measurement_state
+                .headphone_eq_state
+                .delivery
+                .pending_application_revision(&graph),
+            self.measurement_state
+                .room_eq_state
+                .delivery
+                .pending_application_revision(&graph),
+            self.measurement_state
+                .spinorama_eq_state
+                .delivery
+                .pending_application_revision(&graph),
+        ]
+    }
+
+    pub fn acknowledge_correction_application(
+        &mut self,
+        revisions: [Option<u64>; 3],
+        graph: &serde_json::Value,
+        succeeded: bool,
+    ) {
+        let mut matched = false;
+        for (delivery, revision) in [
+            &mut self.measurement_state.headphone_eq_state.delivery,
+            &mut self.measurement_state.room_eq_state.delivery,
+            &mut self.measurement_state.spinorama_eq_state.delivery,
+        ]
+        .into_iter()
+        .zip(revisions)
+        {
+            if let Some(revision) = revision {
+                matched |= delivery.acknowledge_application(revision, graph, succeeded);
+            }
+        }
+        let text = crate::app::i18n::CorrectionApplicationTranslations::for_language(
+            self.ui_state.language,
+        );
+        if matched
+            && self
+                .ui_state
+                .toast_message
+                .as_ref()
+                .is_some_and(|toast| toast.message == text.pending)
+        {
+            self.ui_state.toast_message = None;
+        }
     }
 
     pub fn rollback_failed_plugin_update(
@@ -540,17 +646,35 @@ impl App {
 
     /// Re-enter Player mode at the last player destination the user visited.
     pub fn enter_player_mode(&mut self, trigger: &str) {
-        self.set_screen(self.ui_state.last_player_screen, trigger);
+        self.set_screen(self.ui_state.navigation.last_player_screen, trigger);
     }
 
     /// Re-enter Studio & Measurement mode at the last tool the user visited.
     pub fn enter_studio_mode(&mut self, trigger: &str) {
-        self.set_screen(self.ui_state.last_studio_screen, trigger);
+        let remembered = self.ui_state.navigation.last_studio_screen;
+        let target = if remembered != crate::app::Screen::StudioHub
+            && self.ui_state.release_channel.allows(remembered.maturity())
+        {
+            remembered
+        } else {
+            crate::app::Screen::Studio
+        };
+        self.set_screen(target, trigger);
     }
 
     /// Set current screen with debug logging and state history capture.
     /// If the screen's maturity exceeds the current release channel, redirects to Library.
     pub fn set_screen(&mut self, screen: crate::app::Screen, trigger: &str) {
+        self.ui_state.navigation.studio_picker_open = false;
+        self.ui_state.navigation.studio_picker_highlight = None;
+        self.measurement_state
+            .headphone_eq_state
+            .dropdowns
+            .target_open = false;
+        self.measurement_state
+            .headphone_eq_state
+            .dropdowns
+            .target_highlight = None;
         let target = if self.ui_state.release_channel.allows(screen.maturity()) {
             screen
         } else {
@@ -567,9 +691,42 @@ impl App {
             crate::app::Screen::Library
         };
         let old_screen = self.ui_state.current_screen;
+        if old_screen == crate::app::Screen::Library
+            && target != old_screen
+            && self.ui_state.input_mode == crate::app::InputMode::Search
+        {
+            // Search text belongs to Library; its editing mode must not
+            // disable keyboard navigation on the destination screen.
+            self.ui_state.input_mode = crate::app::InputMode::Normal;
+        }
+        if old_screen == crate::app::Screen::HeadphoneEq
+            && target != old_screen
+            && let Err(error) = self.stop_headphone_audition()
+        {
+            self.ui_state.toast_message = Some(crate::app::ToastMessage::error(error));
+        }
+        if old_screen == crate::app::Screen::PluginGraph && target != old_screen {
+            self.plugin_state.graph_state.clear_editing_context();
+            if self.ui_state.input_mode == crate::app::InputMode::EditingPluginNode {
+                self.ui_state.input_mode = crate::app::InputMode::Normal;
+            }
+        }
+        if matches!(
+            target,
+            crate::app::Screen::Settings | crate::app::Screen::SettingsDetail
+        ) && !matches!(
+            old_screen,
+            crate::app::Screen::Settings | crate::app::Screen::SettingsDetail
+        ) {
+            self.settings.navigation.return_screen = Some(old_screen);
+            if !self.settings.metadata_loading {
+                // Reload on the next metadata visit without polling the filesystem in render.
+                self.settings.metadata_config = None;
+            }
+        }
         if old_screen != target {
             crate::app::debug::log_screen_transition(old_screen, target, trigger);
-            self.ui_state.last_screen = old_screen;
+            self.ui_state.navigation.last_screen = old_screen;
             self.state_history.capture(
                 target,
                 self.ui_state.input_mode,
@@ -577,6 +734,7 @@ impl App {
                 format!("screen: {}", trigger),
             );
             self.ui_state.current_screen = target;
+            self.ui_state.navigation.remember_studio(target);
             if matches!(
                 target,
                 crate::app::Screen::Studio
@@ -587,9 +745,10 @@ impl App {
                     | crate::app::Screen::HeadphoneEq
                     | crate::app::Screen::Spinorama
                     | crate::app::Screen::PluginGraph
+                    | crate::app::Screen::Spectrum
                     | crate::app::Screen::ListeningTest
             ) {
-                self.ui_state.last_studio_screen = target;
+                self.ui_state.navigation.last_studio_screen = target;
             } else if matches!(
                 target,
                 crate::app::Screen::Home
@@ -599,9 +758,8 @@ impl App {
                     | crate::app::Screen::Streams
                     | crate::app::Screen::Queue
                     | crate::app::Screen::Playlists
-                    | crate::app::Screen::Spectrum
             ) {
-                self.ui_state.last_player_screen = target;
+                self.ui_state.navigation.last_player_screen = target;
             }
             self.plugin_state.clear_confirmations();
 
@@ -700,6 +858,7 @@ impl App {
 
     /// Set output device with debug logging
     pub fn set_output_device(&mut self, device_name: Option<String>, trigger: &str) {
+        self.audio_device_state.follow_system_default = device_name.is_none();
         let old_device = self
             .audio_device_state
             .current_output_device_name
@@ -832,31 +991,22 @@ impl App {
             (&self.track_tracking.path, self.track_tracking.start_time)
         {
             let elapsed = start_time.elapsed().as_secs();
-            if elapsed >= 30
-                && let Some(db) = self.library_state.library.get_database()
-            {
+            if elapsed >= 30 {
                 let duration = self.playback.position_secs as u64;
-                if let Err(e) = db.record_play(path, duration) {
-                    log::error!("Failed to record play: {}", e);
-                } else {
-                    log::info!("Recorded play for {:?} ({}s)", path, duration);
-                    self.track_tracking.already_recorded = true;
-
-                    // Update in-memory play_count so UI reflects immediately
-                    let path = path.clone();
-                    for item in self.queue_state.iter_mut() {
-                        for track in &mut item.album.tracks {
-                            if track.path == path {
-                                track.play_count += 1;
+                let path = path.clone();
+                match self.library_state.library.record_play(&path, duration) {
+                    Err(error) => log::error!("Failed to record play: {error}"),
+                    Ok(false) => {}
+                    Ok(true) => {
+                        self.track_tracking.already_recorded = true;
+                        for item in self.queue_state.iter_mut() {
+                            for track in &mut item.album.tracks {
+                                if track.path == path {
+                                    track.play_count = track.play_count.saturating_add(1);
+                                }
                             }
                         }
-                    }
-                    for album in &mut self.library_state.library.albums {
-                        for track in &mut album.tracks {
-                            if track.path == path {
-                                track.play_count += 1;
-                            }
-                        }
+                        self.library_state.invalidate_cache();
                     }
                 }
             }
@@ -1148,6 +1298,7 @@ impl App {
         &mut self,
         config: crate::config::Config,
     ) -> Result<LayoutState, Box<dyn std::error::Error>> {
+        config.audio.validate()?;
         // Cache window geometry so save_config doesn't need to re-read from disk
         self.geometry.last_saved_geometry = Some(config.window_geometry.clone());
 
@@ -1213,6 +1364,7 @@ impl App {
         // Restore volume and muted state
         // self.playback.volume = config.volume; // Always start at default (10%) per requirement
         self.playback.muted = config.muted;
+        self.restore_audio_preferences(&config.audio)?;
 
         // Restore recording config
         if !config.recording_config.playback.device_name.is_empty() {
@@ -1368,6 +1520,7 @@ impl App {
         // Update cache so future saves without geometry don't need disk I/O
         self.geometry.last_saved_geometry = Some(geometry.clone());
         let config = Config {
+            audio: self.audio_preferences(),
             directories: self.library_state.library.directories.clone(),
             last_loaded_plugin_preset: self.plugin_state.last_loaded_preset.clone(),
             theme: self.ui_state.theme_id,

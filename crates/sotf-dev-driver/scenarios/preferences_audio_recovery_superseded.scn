@@ -1,0 +1,21 @@
+# A failed audio apply must not recover over a newer accepted transport command.
+# The isolated fixture queues Stop after the pending apply, before UI polling.
+focus Home
+focus Settings
+wait_idle
+action PreferencesBlockConfigSave
+action PreferencesSeedAcceptedAudioApply {"newer_stop":true}
+wait_until preferences.audio_applying == false timeout=5s
+# Recovery must not enqueue its own Stop (which adds a recovery status message).
+assert preferences.output_error == "Could not save audio settings. Retry Apply"
+assert preferences.audio_dirty == true
+assert settings.replay_gain_enabled == true
+assert preferences.replay_gain_enabled == false
+assert playback.is_playing == false
+action PreferencesUnblockConfigSave
+assert settings.persisted_audio.replay_gain_enabled == true
+click preferences.done
+click preferences.close.discard
+assert screen.focused == "Home"
+assert preferences.audio_dirty == false
+assert playback.is_playing == false

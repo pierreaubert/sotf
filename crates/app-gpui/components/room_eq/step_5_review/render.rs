@@ -13,12 +13,137 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Card, HStack, Select, SelectSize, StackSpacing, TabItem, TabVariant, Tabs, Text, TextSize,
-    TextWeight, Toggle, VStack,
+    Accordion, AccordionItem, Card, HStack, Select, SelectSize, StackSpacing, TabItem, TabVariant,
+    Tabs, Text, TextSize, TextWeight, Toggle, VStack,
 };
 
 impl PlayerView {
+    fn render_room_eq_source_identity(&self, cx: &mut Context<Self>) -> AnyElement {
+        let state = self.state.read(cx);
+        let room = &state.app.measurement_state.room_eq_state;
+        let theme = &state.app.ui_state.theme;
+        let d = Ds::from_cx(cx);
+        let [title, microphone, position, unknown] =
+            RoomEqReportTranslations::source_labels(state.app.ui_state.language);
+        let Some(channels) = room
+            .result_inputs
+            .as_ref()
+            .and_then(|inputs| inputs.get("measurements"))
+            .and_then(serde_json::Value::as_array)
+        else {
+            return div().into_any_element();
+        };
+        let source_set = |set: &serde_json::Value| {
+            let provenance = set.get("provenance").and_then(serde_json::Value::as_array);
+            div()
+                .flex()
+                .flex_col()
+                .min_w_0()
+                .gap(d.gap)
+                .when(provenance.is_none_or(Vec::is_empty), |row| {
+                    row.child(Text::caption(unknown).color(theme.text_secondary))
+                })
+                .children(provenance.into_iter().flatten().map(|source| {
+                    let index = |key| {
+                        source
+                            .get(key)
+                            .and_then(serde_json::Value::as_u64)
+                            .and_then(|index| index.checked_add(1))
+                            .map(|index| index.to_string())
+                            .unwrap_or_else(|| unknown.to_owned())
+                    };
+                    let name = source
+                        .get("name")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or(unknown);
+                    div()
+                        .min_w_0()
+                        .child(Text::body(name.to_owned()).color(theme.text_primary))
+                        .child(
+                            Text::caption(format!(
+                                "{microphone}: {} · {position}: {}",
+                                index("mic_index"),
+                                index("mic_position_index")
+                            ))
+                            .color(theme.text_secondary),
+                        )
+                }))
+        };
+        let sources =
+            div()
+                .flex()
+                .flex_col()
+                .gap(d.gap)
+                .min_w_0()
+                .children(channels.iter().map(|channel| {
+                    let name = channel
+                        .get("channel_name")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or(unknown);
+                    let drivers = channel
+                        .get("driver_measurement_sets")
+                        .and_then(serde_json::Value::as_array);
+                    div()
+                        .flex()
+                        .flex_col()
+                        .min_w_0()
+                        .gap(d.gap)
+                        .child(Text::label(name.to_owned()).color(theme.text_primary))
+                        .when(drivers.is_none_or(Vec::is_empty), |row| {
+                            row.child(source_set(channel))
+                        })
+                        .children(drivers.into_iter().flatten().enumerate().map(
+                            |(index, driver)| {
+                                let name = driver
+                                    .get("name")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or(unknown);
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .min_w_0()
+                                    .gap(d.gap)
+                                    .pl(d.pad_x)
+                                    .child(
+                                        Text::label(format!("{} · {name}", index + 1))
+                                            .color(theme.text_primary),
+                                    )
+                                    .child(source_set(driver))
+                            },
+                        ))
+                }));
+        let owner = cx.entity().downgrade();
+        let disclosure = Accordion::new()
+            .aria_label(title)
+            .bordered(false)
+            .expanded(if room.review_sources_open {
+                vec!["room-eq-sources".into()]
+            } else {
+                vec![]
+            })
+            .item(AccordionItem::new("room-eq-sources", title).content(sources))
+            .on_change(move |_, expanded, _, cx| {
+                let _ = owner.update(cx, |view, cx| {
+                    view.state.update(cx, |state, _| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .review_sources_open = expanded
+                    });
+                    cx.notify();
+                });
+            });
+        #[cfg(feature = "dev-api")]
+        let disclosure = {
+            use crate::app::dev_api::DevTrackExt;
+            disclosure.dev_track("roomeq.review.sources")
+        };
+        disclosure.into_any_element()
+    }
+
     pub(crate) fn render_room_eq_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let source_identity = self.render_room_eq_source_identity(cx);
         let state = self.state.read(cx);
         let d = Ds::from_cx(cx);
         let translations = state.app.ui_state.translations.clone();
@@ -60,8 +185,16 @@ impl PlayerView {
                     .color(theme.text_secondary),
             )
             .when_some(report.as_ref(), |vstack, report| {
-                vstack.child(render_room_eq_report_summary(d, report, text, &theme))
+                vstack.child(render_room_eq_report_summary(
+                    d,
+                    report,
+                    text,
+                    &theme,
+                    self.workflow_is_compact(cx),
+                    state.app.ui_state.language,
+                ))
             })
+            .child(source_identity)
             .when_some(report.as_ref(), |vstack, report| {
                 let original_id = RoomEqReviewGraphId::OverviewOriginal;
                 let eq_id = RoomEqReviewGraphId::OverviewEq;

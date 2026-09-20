@@ -38,6 +38,7 @@ path = "src/bin/album_art_gen.rs"
 math-iir-fir = { workspace = true }
 math-optimisation = { workspace = true }
 autoeq = { workspace = true }
+autoeq-measurements = { workspace = true }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
 sotf-mpd = { workspace = true, features = ["tls"] }
@@ -100,6 +101,7 @@ math-dsp = { workspace = true }
 rubato = { workspace = true }
 audioadapter-buffers = { workspace = true }
 num_cpus = { workspace = true }
+tempfile = { workspace = true }
 
 # CLI for bliss scanner
 clap = { workspace = true }
@@ -108,6 +110,5 @@ clap = { workspace = true }
 sotf-player = { path = ".", features = ["testing"] }
 sotf-testkit = { workspace = true }
 sotf-test = { workspace = true }
-tempfile = { workspace = true }
 insta = { workspace = true }
 proptest = { workspace = true }

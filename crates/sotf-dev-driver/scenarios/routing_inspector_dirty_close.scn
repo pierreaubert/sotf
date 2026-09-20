@@ -1,0 +1,55 @@
+focus PluginGraph
+wait_idle 2s
+click routing.node.2
+action IncrementPluginParam
+assert routing.dirty == true
+assert routing.active_matches_base == true
+action GraphEditSelectedNode
+key escape
+assert input_mode == "EditingPluginNode"
+assert routing.inspector_close_pending == true
+assert routing.active_matches_base == true
+key escape
+assert routing.inspector_close_pending == false
+assert input_mode == "EditingPluginNode"
+assert routing.dirty == true
+key escape
+assert routing.inspector_close_pending == true
+screenshot routing-inspector-dirty-close
+assert_in_viewport routing.inspector.keep
+assert_in_viewport routing.inspector.close
+click routing.inspector.continue
+assert input_mode == "EditingPluginNode"
+assert routing.inspector_close_pending == false
+assert routing.dirty == true
+click routing.inspector.close
+assert routing.inspector_close_pending == true
+click routing.inspector.close
+assert input_mode == "Normal"
+assert plugins.graph.selection_count == 1
+assert routing.dirty == false
+assert routing.active_matches_base == true
+action GraphEditSelectedNode
+assert input_mode == "EditingPluginNode"
+wait_idle 2s
+action IncrementPluginParam
+click routing.inspector.close
+assert routing.inspector_close_pending == true
+resize 600 800
+wait_idle 2s
+scroll routing-connections -2000
+wait_idle 2s
+assert_in_viewport routing.inspector.continue
+assert_in_viewport routing.inspector.keep
+assert_in_viewport routing.inspector.close
+screenshot routing-inspector-confirmation-narrow
+click routing.inspector.keep
+assert input_mode == "Normal"
+assert routing.dirty == true
+assert routing.active_matches_base == true
+scroll routing.canvas 2000
+wait_idle 2s
+click routing-discard
+assert routing.dirty == false
+assert input_mode == "Normal"
+assert playback.is_playing == false

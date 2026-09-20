@@ -1,9 +1,0 @@
-use sotf_plugins::param_specs::{self};
-
-pub(super) fn hpf_orders() -> &'static [&'static str] {
-    param_specs::find_by_key(param_specs::compressor::PARAMS, "sidechain_hpf_order").choice_labels()
-}
-
-pub(super) fn hpf_order_to_index(order: &str) -> f64 {
-    hpf_orders().iter().position(|&m| m == order).unwrap_or(0) as f64
-}

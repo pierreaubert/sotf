@@ -2,6 +2,7 @@
 // Appends to block_out. Expects is_fir check done by caller.
 {
     let mut fir_taps_input = NumberInput::new((base_id.clone(), "fir-taps"))
+        .scroll_requires_alt(true)
         .value(config.eq_design.fir_taps as f64)
         .min(ParamLimits::FIR_TAPS.min)
         .max(ParamLimits::FIR_TAPS.max)

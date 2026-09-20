@@ -256,10 +256,11 @@ impl PlayerView {
         let should_update_spectrum = frame_count.is_multiple_of(2);
         let include_spectrum = should_update_spectrum
             && (state.app.layout.spectrum_visible || current_screen == Screen::Spectrum);
-        let structural_update_pending = matches!(
-            state.app.plugin_state.update_state.pending_plugin_update,
-            Some(crate::app::types::PluginUpdateType::Structural)
-        );
+        let structural_update_pending = state.app.plugin_state.update_state.pending_ack.is_some()
+            || matches!(
+                state.app.plugin_state.update_state.pending_plugin_update,
+                Some(crate::app::types::PluginUpdateType::Structural)
+            );
         // Engine indices describe the pre-update graph until the structural
         // update has been applied. Suppress live plugin data during that gap
         // so an index reused by a reordered node cannot display stale data.
@@ -407,7 +408,23 @@ impl PlayerView {
         state.app.playback.input_loudness_info = input_loudness_info;
         state.app.playback.loudness_info = loudness_info;
         if include_spectrum {
-            state.app.playback.spectrum_info = snapshot.spectrum_info.clone();
+            #[cfg(feature = "dev-api")]
+            let spectrum_info = state
+                .app
+                .playback
+                .qa_spectrum_fixture
+                .as_ref()
+                .map(|frame| frame.data.clone())
+                .or_else(|| {
+                    meters_live
+                        .then(|| snapshot.spectrum_info.clone())
+                        .flatten()
+                });
+            #[cfg(not(feature = "dev-api"))]
+            let spectrum_info = meters_live
+                .then(|| snapshot.spectrum_info.clone())
+                .flatten();
+            state.app.playback.spectrum_info = spectrum_info;
         }
         if include_compressor {
             state.app.playback.compressor_info = snapshot.compressor_info.clone();

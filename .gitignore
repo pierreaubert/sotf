@@ -34,6 +34,17 @@ __pycache__
 /data_generated
 /*.csv
 /*.html
+!/ui-plugins.html
+!/ui-listening.html
+!/ui-pages.html
+!/ui-recording.html
+!/ui-roomeq.html
+!/ui-headphoneeq.html
+!/ui-spinoramaeq.html
+!/ui-autoeq.html
+!/ui-plugin-graph.html
+!/ui-spectrum.html
+!/ui-specialist-screens.html
 /*.json
 /*.wav
 /*.json.bz2
@@ -102,3 +113,7 @@ CTAGS
 /roadmap-*.md
 .clauge-worktrees/
 .worktrees/
+
+# Terminal UI design proposals
+!/ui-tui.html
+!/ui-tui-*.html

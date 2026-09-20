@@ -21,13 +21,42 @@ fn test_room_eq_state_defaults() {
 }
 
 #[test]
+fn rejected_imported_recording_keeps_existing_room_configuration() {
+    let imported = sotf_audio_player::recording_types::RecordingImport::from_json(
+        r#"{"version":"1.1.0","speakers":{"L":{"measurements":[{"name":"Seat 1","frequencies":[100,1000],"magnitude_db":[0,0]},{"name":"Seat 2","frequencies":[100,1000],"magnitude_db":[1,1]}]}}}"#,
+        None,
+    ).unwrap();
+    let mut recording = RecordingState {
+        model: sotf_audio_player::ui_models::recording::RecordingScreenModel {
+            channel_recordings: imported.recordings(),
+            ..Default::default()
+        },
+        imported_session: Some(imported),
+        ..Default::default()
+    };
+    let mut room = RoomEqState::default();
+    room.load_from_recording(&recording).unwrap();
+    room.optimizer_config.num_filters = 13;
+    let layout = room.easy_layout;
+    recording.channel_recordings.pop();
+    assert!(room.load_from_recording(&recording).is_err());
+    assert_eq!(room.optimizer_config.num_filters, 13);
+    assert_eq!(room.easy_layout, layout);
+    assert_eq!(room.channel_measurements.len(), 1);
+    assert_eq!(room.channel_measurements[0].multi_mic_measurements.len(), 1);
+}
+
+#[test]
 fn test_room_eq_to_room_config_simple() {
     let mut state = RoomEqState::default();
 
     // Add a dummy measurement
     state.channel_measurements.push(ChannelMeasurement {
+        driver_measurement_sets: Vec::new(),
+        provenance: Vec::new(),
         channel_name: "L".to_string(),
         measurement: RecordingResult {
+            sample_rate_hz: None,
             channel: 0,
             frequencies: vec![100.0, 1000.0],
             magnitude_db: vec![70.0, 75.0],
@@ -80,6 +109,7 @@ fn test_load_from_recording_marks_ctc_fallback_as_measured() {
         );
         rec.state = ChannelRecordingState::Done;
         rec.result = Some(RecordingResult {
+            sample_rate_hz: None,
             channel: speaker_idx,
             frequencies: vec![100.0],
             magnitude_db: vec![0.0],
@@ -119,7 +149,7 @@ fn test_load_from_recording_marks_ctc_fallback_as_measured() {
     recording.model.recording_config.ctc_matrix_strategy = CtcMatrixExportStrategy::RawSweep;
 
     let mut room_eq = RoomEqState::default();
-    room_eq.load_from_recording(&recording);
+    room_eq.load_from_recording(&recording).unwrap();
 
     let ctc = room_eq.ctc_config.as_ref().expect("ctc config");
     assert_eq!(ctc.matrix_source, "measured");
@@ -163,7 +193,7 @@ fn test_load_from_recording_applies_probe_delay_results() {
     });
 
     let mut room_eq = RoomEqState::default();
-    room_eq.load_from_recording(&recording);
+    room_eq.load_from_recording(&recording).unwrap();
 
     assert_eq!(
         room_eq.delay_detection.status,
@@ -210,8 +240,11 @@ fn test_room_eq_to_room_config_advanced() {
 
     // Add measurement
     state.channel_measurements.push(ChannelMeasurement {
+        driver_measurement_sets: Vec::new(),
+        provenance: Vec::new(),
         channel_name: "L".to_string(),
         measurement: RecordingResult {
+            sample_rate_hz: None,
             channel: 0,
             frequencies: vec![100.0],
             magnitude_db: vec![70.0],
@@ -291,8 +324,11 @@ fn test_room_eq_validation() {
 
     // Add measurement to make it a valid RoomConfig otherwise
     state.channel_measurements.push(ChannelMeasurement {
+        driver_measurement_sets: Vec::new(),
+        provenance: Vec::new(),
         channel_name: "L".to_string(),
         measurement: RecordingResult {
+            sample_rate_hz: None,
             channel: 0,
             frequencies: vec![100.0],
             magnitude_db: vec![70.0],

@@ -1,7 +1,12 @@
 # Validate before persistence, then save, edit, queue, and remove a stream
 # through rendered controls. The first invalid Save must stay recoverable.
+wait_idle 2s
 click sidebar.nav-streams
 assert screen.focused == "Streams"
+assert streams.editor_open == false
+assert_visible streams.add
+click streams.add
+assert streams.editor_open == true
 assert_visible streams.name_input
 assert_visible streams.url_input
 assert_accessible button Save
@@ -20,12 +25,26 @@ click streams.save
 wait_until streams.count == 1 timeout=2s
 assert streams.error == null
 assert streams.status == "Stream saved"
+assert streams.editor_open == false
+click streams.add
+click streams.name_input
+type "Discard this draft"
+click streams.cancel
+assert streams.editor_open == false
+assert streams.count == 1
+click streams.add
+assert streams.name == ""
+key escape
+assert streams.editor_open == false
 
 assert_visible streams.queue.0
 click streams.queue.0
 wait_until queue.length == 1 timeout=2s
+assert playback.is_playing == false
+assert queue.current_index == null
+assert toast.type == null
 
-click streams.row.0
+click streams.edit.0
 assert streams.name == "SOTF QA Live"
 click streams.seekable
 assert streams.seekable == true
@@ -38,3 +57,14 @@ wait_until streams.status == "Stream saved" timeout=2s
 assert_visible streams.remove.0
 click streams.remove.0
 wait_until streams.count == 0 timeout=2s
+
+resize 600 800
+wait_idle 250ms
+click streams.add
+wait_idle 250ms
+assert_in_viewport streams.save
+assert_in_viewport streams.cancel
+screenshot streams-add-narrow
+assert toast.type == null
+click streams.cancel
+assert streams.editor_open == false

@@ -1,0 +1,53 @@
+# Search and edit isolated connection settings without connecting or starting servers.
+focus Settings
+resize 600 800
+wait_idle 2s
+click preferences.search
+type "remote music libraries"
+wait_idle 1s
+click preferences.result.RemoteSources
+wait_idle 2s
+assert settings.active_tab == "Federation"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.RemoteSources
+assert settings.federation_source_count == 0
+key enter
+wait_idle 1s
+assert settings.federation_source_count == 1
+assert_visible settings.federation.source.0
+click preferences.search
+type "remote playback devices"
+wait_idle 1s
+click preferences.result.RemotePlayers
+wait_idle 2s
+assert settings.active_tab == "Federation"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.RemotePlayers
+assert_focused remote-sotf-name
+type "Listening room test"
+wait_idle 1s
+assert screen.focused == "Settings"
+assert settings.remote_manual_name == "Listening room test"
+key cmd-a
+type "Second room"
+wait_idle 1s
+assert settings.remote_manual_name == "Second room"
+assert settings.remote_server_count == 0
+screenshot preferences-remote-players-search
+click preferences.search
+type "sharing servers"
+wait_idle 1s
+click preferences.result.SharingServers
+wait_idle 2s
+assert settings.active_tab == "Servers"
+assert preferences.reveal_pending == false
+assert_in_viewport preferences.control.SharingServers
+screenshot preferences-sharing-servers-search
+assert settings.sotf_api_enabled == false
+key space
+wait_idle 1s
+assert settings.sotf_api_enabled == true
+key space
+wait_idle 1s
+assert settings.sotf_api_enabled == false
+assert playback.is_playing == false

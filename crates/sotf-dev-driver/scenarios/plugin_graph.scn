@@ -2,11 +2,14 @@
 # Addition, bypass, invalid connection, cancellation, and deletion are driven
 # through the graph's documented keyboard interaction model.
 action     PluginClear
-click      sidebar.nav-plugin-graph
+click      sidebar.nav-studiohub
+click studio.subtool.PluginGraph
 assert     screen.focused == "PluginGraph"
 assert     plugins.user_count == 0
 key        a
-wait_until plugins.user_count == 1 timeout=2s
+wait_until routing.dirty == true timeout=2s
+assert plugins.user_count == 0
+assert routing.active_matches_base == true
 assert     plugins.graph.selection_count == 1
 key        c
 assert     plugins.graph.connecting == true
@@ -18,4 +21,7 @@ wait_until plugins.graph.connecting == false timeout=2s
 accessibility
 screenshot plugin-graph-keyboard-invalid-edge
 key        delete
-wait_until plugins.user_count == 0 timeout=2s
+wait_until routing.dirty == false timeout=2s
+assert plugins.user_count == 0
+assert plugins.graph.selection_count == 0
+assert routing.active_matches_base == true

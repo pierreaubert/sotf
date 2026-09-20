@@ -1,0 +1,36 @@
+# 2026-09-09: standard EQ omitted auto gain and oversampling from its config.
+# Controls live in ui_eq/layout_compact.rs and use the structural update path.
+focus Studio
+plugin_clear
+plugin_add EQ
+action PluginSelectFirstUser
+wait_idle
+click eq.config.toggle
+wait_idle
+assert_visible eq.global.auto-gain
+assert_visible eq.global.oversampling-1
+assert_visible eq.global.oversampling-2
+assert_visible eq.global.oversampling-4
+scroll_into_view rack.params eq.global.oversampling-4
+assert_in_viewport eq.global.auto-gain
+assert_in_viewport eq.global.oversampling-1
+assert_in_viewport eq.global.oversampling-2
+assert_in_viewport eq.global.oversampling-4
+click eq.global.auto-gain
+click eq.global.topology-svf
+plugin_chain_save $SOTF_QA_DIR/eq-global-svf.json
+click eq.global.topology-biquad
+click eq.global.oversampling-4
+plugin_chain_save $SOTF_QA_DIR/eq-global-enabled.json
+screenshot eq-global-enabled
+plugin_remove 2
+plugin_chain_load $SOTF_QA_DIR/eq-global-enabled.json
+action PluginSelectFirstUser
+wait_idle
+screenshot eq-global-reloaded
+click eq.global.auto-gain
+click eq.global.oversampling-2
+plugin_chain_save $SOTF_QA_DIR/eq-global-2x.json
+click eq.global.oversampling-1
+plugin_chain_save $SOTF_QA_DIR/eq-global-default.json
+assert playback.is_playing == false

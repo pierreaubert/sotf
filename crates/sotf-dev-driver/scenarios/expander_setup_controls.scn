@@ -1,0 +1,59 @@
+resize 600 1000
+focus Studio
+plugin_clear
+plugin_add Expander
+action PluginSelectFirstUser
+wait_idle 1s
+click rack.config.toggle
+wait_idle 500ms
+scroll_into_view rack.config.scroll plugin.choice.2.10.1
+click plugin.choice.2.10.1
+assert plugins.plugin.2.param.10.value == 1
+scroll_into_view rack.config.scroll plugin.choice.2.10.0
+click plugin.choice.2.10.0
+assert plugins.plugin.2.param.10.value == 0
+scroll_into_view rack.config.scroll plugin.choice.2.13.0
+click plugin.choice.2.13.0
+assert plugins.plugin.2.param.13.value == 0
+scroll_into_view rack.config.scroll plugin.choice.2.13.1
+click plugin.choice.2.13.1
+assert plugins.plugin.2.param.13.value == 1
+scroll_into_view rack.config.scroll plugin.control.2.11
+click plugin.control.2.11
+wait_idle 500ms
+scroll_into_view rack.config.scroll plugin.param.2.11.exact
+click plugin.param.2.11.exact
+key cmd-a
+type "120"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.11.value == 120 tolerance=0.001
+click rack.config.toggle
+wait_idle 500ms
+assert plugins.plugin.2.param.11.value == 120 tolerance=0.001
+resize 1600 1400
+wait_idle 1s
+# Rack bounds x=192..1454, y=408.5..1134; scroll over left padding.
+scroll_at 200 700 -1200
+wait_idle 500ms
+scroll_into_view rack.params plugin.choice.2.9.0
+click plugin.choice.2.9.0
+assert plugins.plugin.2.param.9.value == 0
+scroll_into_view rack.params plugin.choice.2.9.1
+click plugin.choice.2.9.1
+assert plugins.plugin.2.param.9.value == 1
+scroll_into_view rack.params plugin.choice.2.14.0
+click plugin.choice.2.14.0
+assert plugins.plugin.2.param.14.value == 0
+scroll_into_view rack.params plugin.choice.2.14.1
+click plugin.choice.2.14.1
+assert plugins.plugin.2.param.14.value == 1
+plugin_chain_save $SOTF_QA_DIR/expander-setup.json
+plugin_remove 2
+plugin_chain_load $SOTF_QA_DIR/expander-setup.json
+assert plugins.plugin.2.type == "Expander"
+assert plugins.plugin.2.param.10.value == 0 tolerance=0.001
+assert plugins.plugin.2.param.13.value == 1 tolerance=0.001
+assert plugins.plugin.2.param.9.value == 1 tolerance=0.001
+assert plugins.plugin.2.param.14.value == 1 tolerance=0.001
+assert plugins.plugin.2.param.11.value == 120 tolerance=0.001

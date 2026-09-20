@@ -1085,8 +1085,61 @@ impl PlayerView {
     // Recording control methods
     // ==========================================================================
 
+    pub(crate) fn imported_retake_device_channels(&self, cx: &Context<Self>) -> (usize, usize) {
+        let state = self.state.read(cx);
+        let rec = &state.app.measurement_state.recording_state;
+        let outputs = state
+            .app
+            .audio_device_state
+            .output_devices
+            .iter()
+            .find(|device| device.name == rec.playback_config.device_name)
+            .and_then(|device| device.default_config.as_ref())
+            .map_or(0, |config| config.channels as usize);
+        let inputs = state
+            .app
+            .audio_device_state
+            .input_devices
+            .iter()
+            .find(|device| device.name == rec.recording_config.device_name)
+            .and_then(|device| device.default_config.as_ref())
+            .map_or(0, |config| config.channels as usize);
+        (outputs, inputs)
+    }
+
+    /// Imported sources require an explicit, still-valid physical route.
+    fn require_capture_routing(&mut self, index: Option<usize>, cx: &mut Context<Self>) -> bool {
+        let (outputs, inputs) = self.imported_retake_device_channels(cx);
+        self.state.update(cx, |state, cx| {
+            let text =
+                crate::app::i18n::TakeReviewTranslations::for_language(state.app.ui_state.language);
+            let rec = &mut state.app.measurement_state.recording_state;
+            if rec.has_imported_takes()
+                && index
+                    .and_then(|index| rec.validated_imported_route(index, outputs, inputs))
+                    .is_none()
+            {
+                rec.auto_record_remaining = false;
+                rec.set_status(
+                    text.imported_routing_required,
+                    crate::app::types::recording::RecordingStatusSeverity::Warning,
+                );
+                cx.notify();
+                false
+            } else {
+                if rec.has_imported_takes() {
+                    rec.auto_record_remaining = false;
+                }
+                true
+            }
+        })
+    }
+
     /// Start recording all channels sequentially
     pub fn start_recording_all_channels(&mut self, cx: &mut Context<Self>) {
+        if !self.require_capture_routing(None, cx) {
+            return;
+        }
         #[cfg(feature = "dev-api")]
         if self.complete_qa_fake_capture(cx) {
             return;
@@ -1141,18 +1194,44 @@ impl PlayerView {
                 );
                 return true;
             }
+            recording.take_review.clear();
             let frequencies = (0..points)
                 .map(|index| {
                     let fraction = index as f32 / (fixture.points - 1) as f32;
                     20.0 * 1000.0_f32.powf(fraction)
                 })
                 .collect::<Vec<_>>();
+            let Some(directory) = recording.recording_directory.clone() else {
+                recording.set_status(
+                    "QA capture has no output directory",
+                    crate::app::types::recording::RecordingStatusSeverity::Error,
+                );
+                return true;
+            };
+            let csv = frequencies
+                .iter()
+                .map(|frequency| format!("{frequency},0,0\n"))
+                .collect::<String>();
             for channel in &mut recording.channel_recordings {
+                let path = std::path::Path::new(&directory).join(format!(
+                    "capture-{}-{}-{}.csv",
+                    channel.channel_index, channel.mic_index, channel.mic_position_index
+                ));
+                if let Err(error) = std::fs::write(&path, &csv) {
+                    channel.state = ChannelRecordingState::Error;
+                    channel.result = None;
+                    recording.set_status(
+                        format!("QA capture could not write measurement: {error}"),
+                        crate::app::types::recording::RecordingStatusSeverity::Error,
+                    );
+                    return true;
+                }
                 channel.state = ChannelRecordingState::Done;
                 channel.result = Some(RecordingResult {
+                    sample_rate_hz: None,
                     channel: channel.channel_index,
                     wav_path: None,
-                    csv_path: None,
+                    csv_path: Some(path.to_string_lossy().into_owned()),
                     frequencies: frequencies.clone(),
                     magnitude_db: vec![0.0; points],
                     phase_deg: vec![0.0; points],
@@ -1191,6 +1270,47 @@ impl PlayerView {
     /// all N input channels in one pass and populates every mic entry for the speaker.
     #[allow(clippy::type_complexity)]
     pub fn start_recording_channel(&mut self, channel_idx: usize, cx: &mut Context<Self>) {
+        if !self.require_capture_routing(Some(channel_idx), cx) {
+            return;
+        }
+        if self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .recording_state
+            .workflow_is_busy()
+        {
+            return;
+        }
+        let (outputs, inputs) = self.imported_retake_device_channels(cx);
+        let imported_route = self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .recording_state
+            .validated_imported_route(channel_idx, outputs, inputs);
+        if imported_route.is_some()
+            && let Err(error) = self.ensure_named_recording_directory(cx)
+        {
+            self.state.update(cx, |state, cx| {
+                state.app.measurement_state.recording_state.set_status(
+                    format!("Failed to prepare output directory: {error}"),
+                    crate::app::types::recording::RecordingStatusSeverity::Error,
+                );
+                cx.notify();
+            });
+            return;
+        }
+
+        self.state.update(cx, |state, _| {
+            state
+                .app
+                .measurement_state
+                .recording_state
+                .prepare_capture_inputs();
+        });
         use sotf_audio_player::recording_helpers::{
             capture_signal_params, measurement_amplitude, resolve_mic_calibration,
             sanitize_recording_name, signal_type_for,
@@ -1253,17 +1373,15 @@ impl PlayerView {
             // Collect all ear-mic entries for this speaker at the current
             // position. Other positions are separate physical mic placements.
             let mut mics: Vec<MicInfo> = rec_state
-                .channel_recordings
-                .iter()
-                .enumerate()
-                .filter(|(_, r)| {
-                    r.channel_index == speaker_idx && r.mic_position_index == position_idx
-                })
-                .map(|(vi, r)| {
+                .capture_take_indices(channel_idx)
+                .into_iter()
+                .map(|vi| {
+                    let r = &rec_state.channel_recordings[vi];
+                    let mic_index = imported_route.map_or(r.mic_index, |(_, mic)| mic);
                     let input_ch = rec_state
                         .recording_config
                         .channel_mappings
-                        .get(r.mic_index)
+                        .get(mic_index)
                         .or_else(|| rec_state.recording_config.channel_mappings.first())
                         .copied()
                         .unwrap_or(0) as u16;
@@ -1271,13 +1389,17 @@ impl PlayerView {
                     // to the session-global path (B3) — shared helper.
                     let calibration = resolve_mic_calibration(
                         &rec_state.mic_calibration_paths,
-                        r.mic_index,
+                        mic_index,
                         rec_state.mic_calibration_path.as_deref(),
                     );
-                    let safe_name = sanitize_recording_name(&r.channel_name);
+                    let safe_name = if imported_route.is_some() {
+                        format!("imported-{vi}-{}", sanitize_recording_name(&r.channel_name))
+                    } else {
+                        sanitize_recording_name(&r.channel_name)
+                    };
                     MicInfo {
                         vec_idx: Some(vi),
-                        mic_index: r.mic_index,
+                        mic_index,
                         is_loopback: false,
                         speaker_index: speaker_idx,
                         mic_position_index: position_idx,
@@ -1288,8 +1410,9 @@ impl PlayerView {
                 })
                 .collect();
 
-            if rec_state.recording_config.ctc_matrix_strategy
-                == crate::app::types::CtcMatrixExportStrategy::RawSweep
+            if imported_route.is_none()
+                && rec_state.recording_config.ctc_matrix_strategy
+                    == crate::app::types::CtcMatrixExportStrategy::RawSweep
                 && let Some(loopback_input) = rec_state.recording_config.ctc_loopback_input_channel
             {
                 let safe_speaker = sanitize_recording_name(&channel.channel_name);
@@ -1336,12 +1459,16 @@ impl PlayerView {
                 post_silence_s: rec_state.post_silence_s,
                 output_device: rec_state.playback_config.device_name.clone(),
                 input_device: rec_state.recording_config.device_name.clone(),
-                output_channel: output_ch,
+                output_channel: imported_route.map_or(output_ch, |(output, _)| output),
                 sample_rate: rec_state.playback_config.sample_rate,
                 speaker_name,
                 recording_directory: rec_state.recording_directory.clone(),
                 mics,
-                ctc_strategy: rec_state.recording_config.ctc_matrix_strategy,
+                ctc_strategy: if imported_route.is_some() {
+                    crate::app::types::CtcMatrixExportStrategy::ImpulseResponse
+                } else {
+                    rec_state.recording_config.ctc_matrix_strategy
+                },
                 num_sweeps: rec_state.num_sweeps,
             }
         };
@@ -1407,6 +1534,7 @@ impl PlayerView {
             let rec_state = &mut state.app.measurement_state.recording_state;
             rec_state.reset_sweep_cancel();
             for &vi in &mic_vec_indices {
+                rec_state.invalidate_take(vi);
                 if let Some(recording) = rec_state.channel_recordings.get_mut(vi) {
                     recording.state = ChannelRecordingState::Recording;
                     recording.result = None; // Clear old result so graphs reset
@@ -1732,6 +1860,7 @@ impl PlayerView {
                                 }
 
                                 let rec_result = RecordingResult {
+                                    sample_rate_hz: Some(sample_rate),
                                     channel: mic.vec_idx.unwrap_or(usize::MAX),
                                     wav_path: Some(wav_paths[mic_i].to_string_lossy().to_string()),
                                     csv_path: Some(csv_paths[mic_i].to_string_lossy().to_string()),
@@ -2122,21 +2251,22 @@ impl PlayerView {
         log::info!("All recordings reset");
     }
 
-    pub(super) fn rewrite_optional_path_to_dir(path: &mut Option<String>, dir: &std::path::Path) {
-        let Some(existing) = path else {
-            return;
-        };
-        let Some(file_name) = std::path::Path::new(existing).file_name() else {
-            return;
-        };
-        *existing = dir.join(file_name).to_string_lossy().to_string();
+    pub(super) fn rewrite_optional_path_to_dir(
+        path: &mut Option<String>,
+        old_dir: &std::path::Path,
+        dir: &std::path::Path,
+    ) {
+        if let Some(path) = path {
+            Self::rewrite_path_to_dir(path, old_dir, dir);
+        }
     }
 
-    pub(super) fn rewrite_path_to_dir(path: &mut String, dir: &std::path::Path) {
-        let Some(file_name) = std::path::Path::new(path).file_name() else {
-            return;
-        };
-        *path = dir.join(file_name).to_string_lossy().to_string();
+    pub(super) fn rewrite_path_to_dir(
+        path: &mut String,
+        old_dir: &std::path::Path,
+        dir: &std::path::Path,
+    ) {
+        crate::app::types::recording::RecordingState::rebase_owned_path(path, old_dir, dir);
     }
 
     /// Make the on-disk recording directory match the Save-step name.
@@ -2164,7 +2294,12 @@ impl PlayerView {
 
         let target_dir_string = target_dir.to_string_lossy().to_string();
         let Some(current_dir) = current_dir else {
-            std::fs::create_dir_all(&target_dir)
+            if let Some(parent) = target_dir.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("failed to create '{}': {e}", parent.display()))?;
+            }
+            // Reserve a fresh destination rather than overwrite an existing session.
+            std::fs::create_dir(&target_dir)
                 .map_err(|e| format!("failed to create '{}': {}", target_dir.display(), e))?;
             self.state.update(cx, |state, _| {
                 state
@@ -2202,7 +2337,7 @@ impl PlayerView {
                 )
             })?;
         } else {
-            std::fs::create_dir_all(&target_dir)
+            std::fs::create_dir(&target_dir)
                 .map_err(|e| format!("failed to create '{}': {}", target_dir.display(), e))?;
         }
 
@@ -2211,15 +2346,35 @@ impl PlayerView {
             rec.recording_directory = Some(target_dir_string.clone());
             for channel in &mut rec.channel_recordings {
                 if let Some(result) = &mut channel.result {
-                    Self::rewrite_optional_path_to_dir(&mut result.wav_path, &target_dir);
-                    Self::rewrite_optional_path_to_dir(&mut result.csv_path, &target_dir);
+                    Self::rewrite_optional_path_to_dir(
+                        &mut result.wav_path,
+                        &current_path,
+                        &target_dir,
+                    );
+                    Self::rewrite_optional_path_to_dir(
+                        &mut result.csv_path,
+                        &current_path,
+                        &target_dir,
+                    );
                 }
             }
-            Self::rewrite_optional_path_to_dir(&mut rec.probe_capture.wav_path, &target_dir);
-            Self::rewrite_optional_path_to_dir(&mut rec.bass_anchor_capture.wav_path, &target_dir);
-            Self::rewrite_optional_path_to_dir(&mut rec.ctc_reference_sweep_path, &target_dir);
+            Self::rewrite_optional_path_to_dir(
+                &mut rec.probe_capture.wav_path,
+                &current_path,
+                &target_dir,
+            );
+            Self::rewrite_optional_path_to_dir(
+                &mut rec.bass_anchor_capture.wav_path,
+                &current_path,
+                &target_dir,
+            );
+            Self::rewrite_optional_path_to_dir(
+                &mut rec.ctc_reference_sweep_path,
+                &current_path,
+                &target_dir,
+            );
             for loopback in &mut rec.transfer_matrix_loopbacks {
-                Self::rewrite_path_to_dir(&mut loopback.wav_path, &target_dir);
+                Self::rewrite_path_to_dir(&mut loopback.wav_path, &current_path, &target_dir);
             }
         });
 
@@ -2229,6 +2384,51 @@ impl PlayerView {
     /// Save recordings to a JSON file in the recording directory
     /// Outputs autoeq::RoomConfig format compatible with roomeq CLI
     pub(crate) fn save_recordings(&mut self, cx: &mut Context<Self>) {
+        if !self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .recording_state
+            .all_takes_accepted()
+            || self
+                .state
+                .read(cx)
+                .app
+                .measurement_state
+                .recording_state
+                .workflow_is_busy()
+        {
+            self.state.update(cx, |state, cx| {
+                let text = crate::app::i18n::DesktopTranslations::for_language(
+                    state.app.ui_state.language,
+                );
+                state.app.ui_state.toast_message =
+                    Some(crate::app::ToastMessage::warning(text.recording_incomplete));
+                cx.notify();
+            });
+            return;
+        }
+        if !self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .recording_state
+            .session_metadata_is_valid()
+        {
+            self.state.update(cx, |state, cx| {
+                let message = crate::app::i18n::TakeReviewTranslations::dimensions_warning(
+                    state.app.ui_state.language,
+                );
+                state.app.measurement_state.recording_state.set_status(
+                    message,
+                    crate::app::types::recording::RecordingStatusSeverity::Warning,
+                );
+                cx.notify();
+            });
+            return;
+        }
         use crate::app::types::RoomEqMeasurementsFile;
         use autoeq::{OptimizerConfig, RoomConfig};
         use sotf_audio_player::recording_helpers::RECORDINGS_FILENAME;
@@ -2253,8 +2453,57 @@ impl PlayerView {
             }
         };
 
+        // Build references after a managed directory rename has rebased the takes.
+        let imported_config = {
+            let state = self.state.read(cx);
+            let rec = &state.app.measurement_state.recording_state;
+            rec.imported_session
+                .as_ref()
+                .map(|imported| {
+                    let mut configuration =
+                        imported.configuration_with_recordings(&rec.channel_recordings)?;
+                    let metadata = configuration
+                        .recording_config
+                        .get_or_insert_with(Default::default);
+                    rec.model
+                        .apply_session_metadata(metadata, &rec.metadata_channel_names());
+                    metadata.recording_directory = rec.recording_directory.clone();
+                    Ok::<_, String>(configuration)
+                })
+                .transpose()
+        };
+        let imported_config = match imported_config {
+            Ok(configuration) => configuration,
+            Err(error) => {
+                self.state.update(cx, |state, cx| {
+                    state.app.measurement_state.recording_state.set_status(
+                        format!("Failed to save: {error}"),
+                        crate::app::types::recording::RecordingStatusSeverity::Error,
+                    );
+                    cx.notify();
+                });
+                return;
+            }
+        };
+
         // Get recordings, recording directory, configuration, and convert to RoomConfig format
-        let (room_config, recording_dir, ctc_raw_fallback) = {
+        let (room_config, recording_dir, ctc_raw_fallback, save_inputs) = if let Some(
+            configuration,
+        ) = imported_config
+        {
+            let state = self.state.read(cx);
+            (
+                configuration,
+                recording_dir,
+                false,
+                state
+                    .app
+                    .measurement_state
+                    .recording_state
+                    .model
+                    .save_input_snapshot(),
+            )
+        } else {
             let state = self.state.read(cx);
             let rec_state = &state.app.measurement_state.recording_state;
             let recordings = &rec_state.channel_recordings;
@@ -2428,7 +2677,12 @@ impl PlayerView {
                 cea2034_cache: None,
             };
 
-            (room_config, recording_dir, ctc_raw_fallback)
+            (
+                room_config,
+                recording_dir,
+                ctc_raw_fallback,
+                rec_state.model.save_input_snapshot(),
+            )
         };
 
         // Save to recording directory (no dialog needed). B5: canonical
@@ -2437,7 +2691,10 @@ impl PlayerView {
 
         match serde_json::to_string_pretty(&room_config) {
             Ok(json) => {
-                if let Err(e) = std::fs::write(&json_path, json) {
+                if let Err(e) = sotf_audio_player::recording_helpers::save_recording_session_json(
+                    &json_path,
+                    json.as_bytes(),
+                ) {
                     log::error!("Failed to write recordings file: {}", e);
                     self.state.update(cx, |state, _| {
                         state.app.measurement_state.recording_state.status_message =
@@ -2448,6 +2705,12 @@ impl PlayerView {
                 } else {
                     log::info!("Recordings saved to {:?}", json_path);
                     self.state.update(cx, |state, _| {
+                        state
+                            .app
+                            .measurement_state
+                            .recording_state
+                            .take_review
+                            .mark_saved(json_path.display().to_string(), save_inputs);
                         let suffix = if ctc_raw_fallback {
                             " (raw-sweep CTC incomplete; saved measured CTC)"
                         } else {
@@ -2519,11 +2782,12 @@ impl PlayerView {
                         }
                         Err(e) => {
                             log::error!("Failed to read recordings file: {}", e);
-                            state_entity.update(&mut cx.clone(), |state, _| {
+                            state_entity.update(&mut cx.clone(), |state, cx| {
                                 state.app.measurement_state.recording_state.status_message =
                                     format!("Failed to read: {}", e);
                                 state.app.measurement_state.recording_state.status_severity =
                                     crate::app::types::recording::RecordingStatusSeverity::Error;
+                                cx.notify();
                             });
                         }
                     }
@@ -2536,226 +2800,67 @@ impl PlayerView {
     }
 
     /// Internal function to load recordings from parsed JSON
-    /// Supports both new RoomConfig format and legacy RoomEqMeasurementsFile format
-    pub(super) fn load_recordings_internal(
+    /// Supports the current RoomConfig format.
+    pub(crate) fn load_recordings_internal(
         state_entity: Entity<crate::app::state::AppState>,
         cx: &mut gpui::AsyncApp,
         json: &str,
         file_path: &std::path::Path,
         file_dir: Option<std::path::PathBuf>,
     ) {
-        use crate::app::types::{ChannelRecording, ChannelRecordingState, RecordingResult};
-
-        // Try to parse as new RoomConfig format first
-        if let Ok(room_config) = serde_json::from_str::<autoeq::RoomConfig>(json) {
-            log::info!(
-                "Loaded {} speakers from {:?} (RoomConfig format)",
-                room_config.speakers.len(),
-                file_path
-            );
-
-            let file_path_display = file_path.display().to_string();
-            state_entity.update(cx, |state, _| {
-                // Convert speakers to ChannelRecordings
-                let recordings: Vec<ChannelRecording> = room_config
-                    .speakers
-                    .into_iter()
-                    .enumerate()
-                    .filter_map(|(idx, (channel_name, speaker_config))| {
-                        // Extract inline measurement from speaker config
-                        let inline = match speaker_config {
-                            autoeq::SpeakerConfig::Single(source) => match source {
-                                autoeq::MeasurementSource::Single(s) => {
-                                    s.measurement.inline_data().cloned()
-                                }
-                                autoeq::MeasurementSource::Multiple(m) => m
-                                    .measurements
-                                    .first()
-                                    .and_then(|r| r.inline_data())
-                                    .cloned(),
-                                autoeq::MeasurementSource::InMemory(_)
-                                | autoeq::MeasurementSource::InMemoryMultiple(_) => None,
-                            },
-                            _ => None, // Groups not yet supported in this conversion
-                        };
-
-                        inline.map(|inline_data| {
-                            // Convert absolute paths from relative
-                            let wav_path = inline_data.wav_path.as_ref().and_then(|wav| {
-                                file_dir.as_ref().map(|dir| {
-                                    let abs_path = dir.join(wav);
-                                    if abs_path.exists() {
-                                        abs_path.to_string_lossy().to_string()
-                                    } else {
-                                        wav.clone()
-                                    }
-                                })
-                            });
-                            let csv_path = inline_data.csv_path.as_ref().and_then(|csv| {
-                                file_dir.as_ref().map(|dir| {
-                                    let abs_path = dir.join(csv);
-                                    if abs_path.exists() {
-                                        abs_path.to_string_lossy().to_string()
-                                    } else {
-                                        csv.clone()
-                                    }
-                                })
-                            });
-
-                            // Check if inline data is empty - if so, load from CSV
-                            let (frequencies, magnitude_db, phase_deg) = if inline_data
-                                .frequencies
-                                .is_empty()
-                            {
-                                // Try to load from CSV file using autoeq's reader
-                                if let Some(ref csv) = csv_path {
-                                    let csv_full_path = std::path::PathBuf::from(csv);
-                                    if let Ok(curve) =
-                                        autoeq::read::read_curve_from_csv(&csv_full_path)
-                                    {
-                                        log::info!(
-                                            "Loaded {} frequency points from CSV for channel '{}'",
-                                            curve.freq.len(),
-                                            channel_name
-                                        );
-                                        (
-                                            curve.freq.iter().map(|&f| f as f32).collect(),
-                                            curve.spl.iter().map(|&s| s as f32).collect(),
-                                            curve
-                                                .phase
-                                                .map(|p| p.iter().map(|&v| v as f32).collect())
-                                                .unwrap_or_default(),
-                                        )
-                                    } else {
-                                        log::warn!(
-                                            "Failed to load CSV for channel '{}': {:?}",
-                                            channel_name,
-                                            csv_full_path
-                                        );
-                                        (Vec::new(), Vec::new(), Vec::new())
-                                    }
-                                } else {
-                                    log::warn!(
-                                        "No CSV path and empty inline data for channel '{}'",
-                                        channel_name
-                                    );
-                                    (Vec::new(), Vec::new(), Vec::new())
-                                }
-                            } else {
-                                // Use inline data
-                                (
-                                    inline_data.frequencies.iter().map(|&f| f as f32).collect(),
-                                    inline_data.magnitude_db.iter().map(|&m| m as f32).collect(),
-                                    inline_data
-                                        .phase_deg
-                                        .clone()
-                                        .unwrap_or_default()
-                                        .iter()
-                                        .map(|&p| p as f32)
-                                        .collect(),
-                                )
-                            };
-
-                            // Try to load extended metrics from CSV file
-                            let extended_metrics =
-                                crate::components::migration::load_extended_metrics(
-                                    csv_path.as_deref(),
-                                    file_dir.as_deref(),
-                                );
-
-                            let (
-                                thd_percent,
-                                rt60_ms,
-                                clarity_c50_db,
-                                clarity_c80_db,
-                                excess_group_delay_ms,
-                            ) = if let Some(metrics) = extended_metrics {
-                                log::info!(
-                                    "Loaded extended metrics for channel '{}' from CSV",
-                                    channel_name
-                                );
-                                (
-                                    metrics.thd_percent,
-                                    metrics.rt60_ms,
-                                    metrics.clarity_c50_db,
-                                    metrics.clarity_c80_db,
-                                    metrics.excess_group_delay_ms,
-                                )
-                            } else {
-                                (None, None, None, None, None)
-                            };
-
-                            let result = RecordingResult {
-                                channel: idx,
-                                wav_path,
-                                csv_path,
-                                frequencies,
-                                magnitude_db,
-                                phase_deg,
-                                impulse_response: None,
-                                impulse_time_ms: None,
-                                excess_group_delay_ms,
-                                thd_percent,
-                                harmonic_distortion_db: None,
-                                rt60_ms,
-                                clarity_c50_db,
-                                clarity_c80_db,
-                                spectrogram_db: None,
-                                // Loaded files have no engine capture behind
-                                // them — quality data is unavailable.
-                                quality: None,
-                            };
-
-                            let mut rec = ChannelRecording::new(idx, channel_name);
-                            rec.state = ChannelRecordingState::Done;
-                            rec.result = Some(result);
-                            rec
-                        })
-                    })
-                    .collect();
-
-                // Filter out channels with empty frequency data (can happen with
-                // older RoomConfig versions where CSV paths are unresolvable)
-                let recordings: Vec<ChannelRecording> = recordings
-                    .into_iter()
-                    .filter(|r| {
-                        r.result
-                            .as_ref()
-                            .is_some_and(|res| !res.frequencies.is_empty())
-                    })
-                    .collect();
-
-                let rec_state = &mut state.app.measurement_state.recording_state;
-                rec_state.channel_recordings = recordings.clone();
-
-                // Also set the recording directory to the file's directory
-                if let Some(dir) = &file_dir {
-                    rec_state.recording_directory = Some(dir.to_string_lossy().to_string());
-                }
-
-                rec_state.status_message = format!(
-                    "Loaded {} channels from {}",
-                    recordings.len(),
-                    file_path_display
-                );
-                rec_state.status_severity =
-                    crate::app::types::recording::RecordingStatusSeverity::Success;
-            });
-            return;
-        }
-
-        // Not a RoomConfig — there is no legacy fallback any more.
-        log::error!(
-            "{} is not in the autoeq RoomConfig format (no \"speakers\" map)",
-            file_path.display()
+        let imported = sotf_audio_player::recording_types::RecordingImport::from_json(
+            json,
+            file_dir.as_deref(),
         );
-        state_entity.update(cx, |state, _| {
-            state.app.measurement_state.recording_state.status_message = format!(
-                "{} is not in the current RoomConfig format — re-run the Recording wizard to regenerate it.",
-                file_path.display()
-            );
-            state.app.measurement_state.recording_state.status_severity =
-                crate::app::types::recording::RecordingStatusSeverity::Error;
+        state_entity.update(cx, |state, cx| {
+            let rec = &mut state.app.measurement_state.recording_state;
+            match imported {
+                Ok(imported) => {
+                    let names = imported
+                        .channels
+                        .iter()
+                        .map(|channel| channel.channel_name.clone())
+                        .collect::<Vec<_>>();
+                    if let Err(error) = rec.model.restore_session_metadata(
+                        imported.configuration.recording_config.as_ref(),
+                        &names,
+                    ) {
+                        rec.set_status(
+                            format!("Failed to load {}: {error}", file_path.display()),
+                            crate::app::types::recording::RecordingStatusSeverity::Error,
+                        );
+                        cx.notify();
+                        return;
+                    }
+                    let recordings = imported.recordings();
+                    let count = recordings.len();
+                    rec.take_review.clear();
+                    rec.channel_recordings = recordings;
+                    rec.imported_session = Some(imported);
+                    rec.imported_retake_routes.clear();
+                    rec.imported_route_dropdown = None;
+                    rec.imported_route_highlight = None;
+                    // Imported source folders are never owned by the wizard.
+                    rec.recording_directory = None;
+                    rec.save_name = format!(
+                        "{}-copy",
+                        file_path
+                            .file_stem()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or("recording")
+                    );
+                    rec.capture_inputs = Some(rec.model.capture_input_snapshot());
+                    rec.set_status(
+                        format!("Loaded {count} measurements from {}", file_path.display()),
+                        crate::app::types::recording::RecordingStatusSeverity::Success,
+                    );
+                }
+                Err(error) => rec.set_status(
+                    format!("Failed to load {}: {error}", file_path.display()),
+                    crate::app::types::recording::RecordingStatusSeverity::Error,
+                ),
+            }
+            cx.notify();
         });
     }
 

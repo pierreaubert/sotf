@@ -286,16 +286,6 @@ cross-macos-x86:
 cross-macos-dmg:
 	./scripts/build-dmg-sotf.sh
 
-# macOS Systemwide pkg (build only, sign separately with sign-macos.sh)
-[group('cross')]
-cross-macos-systemwide:
-	./scripts/build-systemwide.sh
-
-# Backward-compatible alias for the old cross target name.
-[group('cross')]
-cross-macos-daemon: cross-macos-systemwide
-	@echo "✅ cross-macos-daemon is an alias for cross-macos-systemwide"
-
 # ----------------------------------------------------------------------
 # DEMO ZIP
 # ----------------------------------------------------------------------

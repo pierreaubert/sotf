@@ -1,0 +1,45 @@
+focus Studio
+wait_idle 2s
+resize 600 800
+wait_idle 2s
+assert_in_viewport studio.workspace-picker
+click studio.workspace-picker
+key down
+key enter
+assert screen.focused == "PluginGraph"
+click studio.workspace-picker
+key down
+key enter
+assert screen.focused == "Spectrum"
+click studio.workspace-picker
+key down
+key enter
+assert screen.focused == "Recording"
+click studio.workspace-picker
+key down
+key enter
+assert screen.focused == "RoomEq"
+click studio.workspace-picker
+key down
+key enter
+assert screen.focused == "HeadphoneEq"
+wait_idle 1s
+assert_in_viewport headphone.content
+screenshot studio-calibrate-scale
+click studio.workspace-picker
+key escape
+assert navigation.studio_picker_open == false
+assert screen.focused == "HeadphoneEq"
+click studio.workspace-picker
+key down
+key enter
+assert screen.focused == "Spinorama"
+click studio.workspace-picker
+key down
+key enter
+assert screen.focused == "ListeningTest"
+click studio.workspace-picker
+key down
+key enter
+assert screen.focused == "Studio"
+assert playback.is_playing == false

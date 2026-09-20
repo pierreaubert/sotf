@@ -1,0 +1,34 @@
+focus library
+wait_until library.album_count > 0 timeout=10s
+wait_idle 2s
+assert_visible library.tab.album
+assert_visible library.tab.artist
+assert_visible library.tab.tracks
+assert_absent library.tab.year
+click library.tab.tracks
+assert library.sort_order == "Tracks"
+click library.tab.filter
+wait_idle 2s
+assert_visible library.tab.year
+assert_visible library.filter.stereo
+assert library.sort_order == "Tracks"
+click library.tab.filter
+assert library.sort_order == "Tracks"
+click library.tab.favorites
+wait_until library.filtered_album_count == 0 timeout=2s
+click library.tab.favorites
+wait_until library.filtered_album_count > 0 timeout=2s
+click library.search_input
+type "Country"
+wait_until library.filtered_track_count == 2 timeout=2s
+assert library.sort_order == "Tracks"
+resize 600 800
+wait_idle 2s
+assert_in_viewport library.tab.album
+assert_in_viewport library.tab.artist
+assert_in_viewport library.tab.tracks
+assert_in_viewport library.tab.favorites
+assert_in_viewport library.search_input
+assert_in_viewport library.track.0.play
+screenshot library-toolbar-narrow
+assert toast.type == null

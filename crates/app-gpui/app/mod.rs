@@ -16,6 +16,7 @@ pub mod debug;
 #[cfg(feature = "dev-api")]
 pub mod dev_api;
 pub mod federation;
+mod headphone_audition;
 pub mod i18n;
 pub mod keybindings;
 pub mod library;

@@ -266,6 +266,9 @@ pub struct KeymapConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    /// Committed playback preferences; absent in configurations before this field.
+    #[serde(default)]
+    pub audio: sotf_audio_player::ui_models::audio_preferences::AudioPreferences,
     /// Directories to scan for music files
     pub directories: Vec<DirectoryInfo>,
     /// Last loaded plugin preset name
@@ -372,6 +375,7 @@ impl Config {
 
         if !path.exists() {
             return Ok(Self {
+                audio: Default::default(),
                 directories: Vec::new(),
                 last_loaded_plugin_preset: None,
                 theme: ThemeId::default(),
@@ -414,6 +418,13 @@ impl Config {
             })?;
 
         config
+            .audio
+            .validate()
+            .map_err(|message| ConfigError::ParseError {
+                path: path.clone(),
+                source: <serde_json::Error as serde::de::Error>::custom(message),
+            })?;
+        config
             .recording_config
             .ensure_writable_recording_directory();
         Ok(config)
@@ -422,37 +433,30 @@ impl Config {
     pub fn save(&self) -> Result<(), ConfigError> {
         let path = sotf_audio_player::config::get_gpui_state_path()
             .ok_or(ConfigError::NoConfigDirectory)?;
+        self.save_to_path(&path)
+    }
 
-        let json = serde_json::to_string_pretty(self)
+    /// Replace a complete configuration without truncating the previous file.
+    pub fn save_to_path(&self, path: &std::path::Path) -> Result<(), ConfigError> {
+        use std::io::Write;
+        self.audio
+            .validate()
+            .map_err(|message| ConfigError::SerializeError {
+                source: <serde_json::Error as serde::ser::Error>::custom(message),
+            })?;
+        let json = serde_json::to_vec_pretty(self)
             .map_err(|source| ConfigError::SerializeError { source })?;
-
-        #[cfg(unix)]
-        {
-            use std::fs::OpenOptions;
-            use std::io::Write;
-            use std::os::unix::fs::OpenOptionsExt;
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .mode(0o600)
-                .open(&path)
-                .map_err(|source| ConfigError::WriteError {
-                    path: path.clone(),
-                    source,
-                })?;
-            file.write_all(json.as_bytes())
-                .map_err(|source| ConfigError::WriteError {
-                    path: path.clone(),
-                    source,
-                })
-        }
-        #[cfg(not(unix))]
-        {
-            std::fs::write(&path, json).map_err(|source| ConfigError::WriteError {
-                path: path.clone(),
-                source,
-            })
-        }
+        let parent = path.parent().ok_or(ConfigError::NoConfigDirectory)?;
+        let write_error = |source| ConfigError::WriteError {
+            path: path.to_owned(),
+            source,
+        };
+        let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(write_error)?;
+        temporary.write_all(&json).map_err(write_error)?;
+        temporary.as_file().sync_all().map_err(write_error)?;
+        temporary
+            .persist(path)
+            .map_err(|error| write_error(error.error))?;
+        Ok(())
     }
 }

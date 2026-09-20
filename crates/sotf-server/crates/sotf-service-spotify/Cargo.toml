@@ -17,6 +17,9 @@ librespot-core = { workspace = true }
 librespot-playback = { workspace = true }
 librespot-oauth = { workspace = true }
 librespot-protocol = { workspace = true }
+# Version pin only (see workspace vergen comment): forces the transitive
+# vergen required by librespot-core's build script back to 9.0.6.
+vergen = { workspace = true }
 oauth2 = { workspace = true }
 reqwest = { workspace = true, features = ["json", "query"] }
 # Same reqwest line oauth2 4.4 builds its blocking client against; needed so

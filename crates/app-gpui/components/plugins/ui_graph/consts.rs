@@ -125,8 +125,6 @@ pub(super) fn dispatch_plugin_node_action(
     node_id: NodeId,
     cx: &mut App,
 ) {
-    use crate::components::plugins::editing::PluginEditingManager;
-
     let menu_id = menu_id.as_ref();
 
     // Edit doesn't need an index — it sets the editing target by both
@@ -141,8 +139,15 @@ pub(super) fn dispatch_plugin_node_action(
             .and_then(|v| v.as_str())
             .and_then(|s| sotf_audio_player::GraphNodeId::parse_str(s).ok());
         state.update(cx, |state, _cx| {
-            let original_plugin =
-                plugin_uuid.and_then(|uuid| state.app.plugin_state.graph.nodes.get(&uuid));
+            let original_plugin = plugin_uuid.and_then(|uuid| {
+                state
+                    .app
+                    .plugin_state
+                    .routing_controller()
+                    .graph
+                    .nodes
+                    .get(&uuid)
+            });
             let original_settings =
                 original_plugin.and_then(|node| serde_json::to_string(&node.plugin.settings).ok());
             let original_enabled = original_plugin.map(|node| node.plugin.enabled);
@@ -161,15 +166,34 @@ pub(super) fn dispatch_plugin_node_action(
         return;
     }
 
-    let Some((_uuid, index)) = resolve_plugin_node(canvas, state, node_id, cx) else {
+    let Some(uuid) = resolve_plugin_node(canvas, state, node_id, cx) else {
         return;
     };
 
-    state.update(cx, |state, _cx| match menu_id {
-        NODE_MENU_BYPASS => state.app.toggle_plugin(index),
-        NODE_MENU_SOLO => state.app.toggle_plugin_solo(index),
-        NODE_MENU_REMOVE => state.app.remove_plugin(index),
-        _ => {}
+    state.update(cx, |state, cx| {
+        match menu_id {
+            NODE_MENU_BYPASS => {
+                if let Err(error) = state
+                    .app
+                    .plugin_state
+                    .routing_controller_mut()
+                    .graph
+                    .toggle_plugin(uuid)
+                {
+                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(error));
+                }
+            }
+            NODE_MENU_SOLO => state.app.plugin_state.toggle_routing_solo(uuid),
+            NODE_MENU_REMOVE => state
+                .app
+                .plugin_state
+                .routing_controller_mut()
+                .graph
+                .remove_node(uuid),
+            _ => {}
+        }
+        state.app.plugin_state.graph_state.workflow_canvas = None;
+        cx.notify();
     });
 }
 
@@ -227,7 +251,7 @@ pub(crate) fn reconcile_plugin_graph_with_canvas(
         }
     }
 
-    let plugin_graph = &mut state.app.plugin_state.graph;
+    let plugin_graph = &mut state.app.plugin_state.routing_controller_mut().graph;
 
     // 2) Drop plugin nodes that vanished from the canvas.
     plugin_graph

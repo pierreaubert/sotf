@@ -1,9 +1,13 @@
+#[cfg(feature = "dev-api")]
+use crate::app::dev_api::DevTrackExt;
 use crate::app::i18n::SpeakerGraphTranslations;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Card, HStack, StackSpacing, Text, TextSize, TextWeight, VStack};
+use gpui_ui_kit::{
+    Accordion, AccordionItem, Card, HStack, StackSpacing, Text, TextSize, TextWeight, VStack,
+};
 
 impl PlayerView {
     // ========================================================================
@@ -17,8 +21,31 @@ impl PlayerView {
         let translations = state.app.ui_state.translations.clone();
         let graph_text = SpeakerGraphTranslations::for_language(state.app.ui_state.language);
         let spinorama = &state.app.measurement_state.spinorama_eq_state;
+        let ui = &state.app.ui_state;
+        let sizing = crate::ui::resolve_sizing_context(
+            ui.window_width,
+            ui.window_height,
+            ui.font_scale,
+            ui.min_font_size_px,
+            ui.max_font_size_px,
+        );
+        let content_rems = sizing.desktop_content_width_rems(ui.primary_nav_collapsed);
+        let workflow_rail_rems = if self.workflow_is_compact(cx) {
+            0.0
+        } else {
+            15.0
+        };
+        // Workflow body and graph card each inset their content.
+        let graph_area_width =
+            ((content_rems - workflow_rail_rems - 4.0 * d.card.0) * sizing.effective_rem).max(1.0);
         let result = spinorama.result.as_ref();
         let full_result = spinorama.full_result.as_ref();
+        let (directivity_title, directivity_help) =
+            SpeakerGraphTranslations::directivity_review(state.app.ui_state.language);
+        let owner = cx.entity().downgrade();
+        let stale_text =
+            crate::app::i18n::DesktopTranslations::for_language(state.app.ui_state.language)
+                .stale_result;
 
         VStack::new()
             .spacing(StackSpacing::Md)
@@ -33,6 +60,119 @@ impl PlayerView {
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
+            .when(
+                result.is_some() && !spinorama.result_is_current(),
+                |stack| stack.child(Text::body(stale_text).color(theme.warning)),
+            )
+            // Use the captured result identity, never the editable selection: a
+            // stale result must continue to identify the dataset it actually used.
+            .when_some(spinorama.result_inputs.as_ref(), |stack, inputs| {
+                let config = inputs.get("config");
+                let mode = config
+                    .and_then(|config| config.get("mode"))
+                    .and_then(|value| {
+                        serde_json::from_value::<crate::app::types::SpinoramaOptimizationMode>(
+                            value.clone(),
+                        )
+                        .ok()
+                    });
+                let target = config
+                    .and_then(|config| config.get("target_curve"))
+                    .and_then(|value| {
+                        serde_json::from_value::<crate::app::types::SpinoramaTargetCurve>(
+                            value.clone(),
+                        )
+                        .ok()
+                    });
+                let identity = div()
+                    .flex()
+                    .flex_col()
+                    .min_w_0()
+                    .gap(d.gap)
+                    .children(
+                        [
+                            (translations.spinorama_selected_speaker, "speaker"),
+                            (graph_text.origin_version, "version"),
+                            (translations.spinorama_frequency_response, "curve"),
+                        ]
+                        .into_iter()
+                        .filter_map(|(label, key)| {
+                            inputs
+                                .get(key)
+                                .and_then(serde_json::Value::as_str)
+                                .map(|value| {
+                                    let value = if key == "version" {
+                                        match inputs
+                                            .get("measurement")
+                                            .and_then(serde_json::Value::as_str)
+                                        {
+                                            Some(measurement) => format!("{value} · {measurement}"),
+                                            None => value.to_string(),
+                                        }
+                                    } else if key == "curve" {
+                                        // Dispatch defaults an empty curve to PIR; otherwise
+                                        // both supported objectives use the configured target.
+                                        if value.is_empty() {
+                                            "Estimated In-Room Response".to_string()
+                                        } else {
+                                            target
+                                                .map(|target| target.api_name())
+                                                .unwrap_or(value)
+                                                .to_string()
+                                        }
+                                    } else {
+                                        value.to_string()
+                                    };
+                                    div()
+                                        .min_w_0()
+                                        .child(Text::caption(label).color(theme.text_secondary))
+                                        .child(Text::body(value).color(theme.text_primary))
+                                })
+                        }),
+                    )
+                    .when_some(mode, |identity, mode| {
+                        identity.child(
+                            div()
+                                .min_w_0()
+                                .child(
+                                    Text::caption(translations.spinorama_optimization_mode)
+                                        .color(theme.text_secondary),
+                                )
+                                .child(Text::body(mode.as_str()).color(theme.text_primary)),
+                        )
+                    });
+                #[cfg(feature = "dev-api")]
+                let identity = identity.dev_track("spinorama.review.identity");
+                stack.child(identity)
+            })
+            .when(result.is_some() || full_result.is_some(), |stack| {
+                stack.child(
+                    Accordion::new()
+                        .aria_label(directivity_title)
+                        .bordered(false)
+                        .expanded(spinorama.expanded_sections.clone())
+                        .item(
+                            AccordionItem::new("spinorama-directivity-review", directivity_title)
+                                .content(Text::body(directivity_help).color(theme.text_secondary)),
+                        )
+                        .on_change(move |id, expanded, _, cx| {
+                            let _ = owner.update(cx, |view, cx| {
+                                view.state.update(cx, |state, _| {
+                                    let sections = &mut state
+                                        .app
+                                        .measurement_state
+                                        .spinorama_eq_state
+                                        .expanded_sections;
+                                    sections.retain(|section| section != id);
+                                    if expanded {
+                                        sections.push(id.clone());
+                                    }
+                                });
+                                cx.notify();
+                            });
+                        }),
+                )
+            })
             // Graphs card (if full_result is available)
             .when_some(full_result.cloned(), |vstack, full_res| {
                 let theme_for_graphs = theme.clone();
@@ -160,7 +300,8 @@ impl PlayerView {
                                 &full_res,
                                 graph_text,
                                 &theme_for_graphs,
-                                1200.0,
+                                graph_area_width,
+                                sizing.effective_rem,
                             )),
                     )
             })

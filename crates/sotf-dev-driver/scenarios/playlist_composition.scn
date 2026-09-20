@@ -1,0 +1,47 @@
+focus library
+wait_until library.album_count > 0 timeout=10s
+wait_idle 2s
+click library.tab.search
+click library.search_input
+type "Demo"
+wait_until library.filtered_album_count > 0 timeout=2s
+click library.layout.toggle
+wait_until library.list_view == true timeout=2s
+wait_idle 2s
+click library.list.album.0
+wait_until library.detail.open == true timeout=2s
+click library.detail.play
+wait_until playback.is_playing == true timeout=4s
+assert playback.current_title == "Country"
+assert queue.length == 1
+focus Playlists
+wait_idle 2s
+click playlist.create
+click playlist.name_input
+type "Current track collection"
+click playlist.save
+wait_until playlists.count == 1 timeout=2s
+click playlist.open.0
+assert playlists.active_track_count == 0
+click playlist.add_current_track
+wait_until playlists.active_track_count == 1 timeout=2s
+assert playlists.active_first_track == "country.flac"
+assert queue.length == 1
+assert playback.current_title == "Country"
+assert playlists.error == null
+action PlayPause
+wait_until playback.is_playing == false timeout=3s
+click playlist.track_queue.0
+wait_until queue.length == 2 timeout=2s
+assert playback.is_playing == false
+assert playback.current_title == "Country"
+assert playlists.active_track_count == 1
+click playlist.track.0
+wait_until playback.is_playing == true timeout=4s
+assert playback.current_title == "Country"
+resize 600 800
+wait_idle 2s
+assert_in_viewport playlist.add_current_track
+assert_visible playlist.track_queue.0
+screenshot playlist-composition-narrow
+assert toast.type != "Error"

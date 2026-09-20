@@ -1,0 +1,83 @@
+# Keep a submitted answer, pause/resume without changing it, then end the next question.
+focus library
+wait_until library.album_count > 0 timeout=10s
+wait_idle 2s
+action AddToQueue
+wait_until queue.length > 0 timeout=3s
+action PlayPause
+wait_until playback.is_playing == true timeout=3s
+action ListeningResetGuide
+click listening.guide.acknowledge
+wait_until listening.guide_open == false timeout=2s
+wait_idle 250ms
+scroll listening.eq.source.add -600
+wait_idle 300ms
+click listening.eq.start
+wait_until listening.eq.has_question == true timeout=3s
+wait_idle 500ms
+click listening.eq.filtered
+wait_until listening.eq.filtered == true timeout=2s
+wait_idle 500ms
+assert toast.type == null
+click listening.eq.pause
+wait_until listening.eq.paused == true timeout=2s
+wait_until playback.is_playing == false timeout=3s
+key enter
+assert listening.eq.submitted == 0
+key 1
+assert listening.eq.filtered == true
+click listening.eq.pause
+wait_until listening.eq.paused == false timeout=2s
+wait_until playback.is_playing == true timeout=2s
+key enter
+wait_until listening.eq.submitted == 1 timeout=2s
+click listening.eq.next
+wait_until listening.eq.answered == false timeout=2s
+wait_idle 250ms
+click listening.eq.end
+wait_until listening.eq.confirm_end == true timeout=2s
+key enter
+assert listening.eq.submitted == 1
+screenshot practice-end-confirmation
+click listening.eq.keep-practicing
+wait_until listening.eq.confirm_end == false timeout=2s
+assert listening.eq.has_question == true
+click listening.eq.end
+wait_until listening.eq.confirm_end == true timeout=2s
+click listening.eq.confirm-end
+wait_until listening.eq.ended_early == true timeout=2s
+assert listening.eq.submitted == 1
+assert listening.eq.has_question == false
+assert listening.eq.progress_sessions == 1
+assert listening.eq.filtered == false
+wait_idle 1s
+assert toast.type == null
+assert_in_viewport listening.eq.retry
+screenshot practice-partial-summary
+# Repeated keyboard submission must not create another answer/history entry.
+key enter
+assert listening.eq.submitted == 1
+assert listening.eq.progress_sessions == 1
+
+# An empty session ended while paused adds no history entry.
+click listening.eq.retry
+wait_until listening.eq.has_question == true timeout=2s
+assert listening.eq.ended_early == false
+assert listening.eq.submitted == 0
+click listening.eq.pause
+wait_until listening.eq.paused == true timeout=2s
+click listening.eq.end
+wait_until listening.eq.confirm_end == true timeout=2s
+click listening.eq.confirm-end
+wait_until listening.eq.ended_early == true timeout=2s
+assert listening.eq.submitted == 0
+assert listening.eq.progress_sessions == 1
+assert listening.eq.has_question == false
+assert listening.eq.paused == false
+wait_until playback.is_playing == false timeout=3s
+wait_idle 250ms
+assert_in_viewport listening.eq.new-practice
+screenshot practice-empty-summary
+click listening.eq.new-practice
+wait_until listening.eq.has_session == false timeout=2s
+assert_visible listening.eq.start

@@ -18,3 +18,14 @@ pub(super) const ROOM_EQ_CHANNEL_COLORS: [u32; 10] = [
 ];
 
 pub(super) const ROOM_EQ_DRIVER_OPACITIES: [f32; 4] = [1.0, 0.78, 0.58, 0.42];
+
+/// Fixed-canvas chart width for a computed available width.
+///
+/// ui.md Phase 4 rollout: legibility floors must never exceed the space the
+/// chart actually has. At normal widths this is identical to
+/// `available.clamp(floor, ceiling)`; on narrow windows the floor yields to
+/// the available width instead of forcing horizontal overflow.
+pub fn room_eq_chart_width(available_px: f32, floor_px: f32, ceiling_px: f32) -> f32 {
+    let available = available_px.max(1.0);
+    available.clamp(floor_px.min(available), ceiling_px)
+}

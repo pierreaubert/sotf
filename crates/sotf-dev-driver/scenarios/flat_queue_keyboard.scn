@@ -1,0 +1,33 @@
+focus library
+wait_until library.album_count > 0 timeout=10s
+wait_idle 2s
+click library.tab.search
+click library.search_input
+type "Demo"
+wait_until library.filtered_album_count > 0 timeout=2s
+click library.layout.toggle
+wait_until library.list_view == true timeout=2s
+wait_idle 2s
+click library.list.album.0
+wait_until library.detail.open == true timeout=2s
+click library.detail.track.0.add
+click library.detail.track.0.add
+click library.detail.track.0.add
+wait_until queue.upcoming_count == 3 timeout=2s
+focus Queue
+wait_idle 2s
+click queue.upcoming.0.remove
+wait_until queue.upcoming_count == 2 timeout=2s
+key enter
+wait_until queue.upcoming_count == 1 timeout=2s
+assert playback.is_playing == false
+click queue.undo_remove
+wait_until queue.upcoming_count == 2 timeout=2s
+key enter
+assert queue.upcoming_count == 2
+assert playback.is_playing == false
+resize 600 800
+wait_idle 2s
+assert_in_viewport queue.upcoming.0.remove
+screenshot flat-queue-keyboard-scaled
+assert toast.type != "Error"

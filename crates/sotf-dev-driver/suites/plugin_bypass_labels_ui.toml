@@ -1,0 +1,32 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "/tmp/sotf-plugin-bypass-labels"
+readiness_timeout = "20s"
+size = "600x1000"
+
+[[scenario]]
+name = "bypass-french"
+path = "crates/sotf-dev-driver/scenarios/plugin_bypass_labels.scn"
+timeout = "30s"
+language = "French"
+theme = "Light"
+font_scale = 1.5
+reduced_motion = true
+
+[[scenario]]
+name = "bypass-german"
+path = "crates/sotf-dev-driver/scenarios/plugin_bypass_labels.scn"
+timeout = "30s"
+language = "German"
+theme = "Light"
+font_scale = 1.5
+reduced_motion = true
+
+[[scenario]]
+name = "bypass-spanish"
+path = "crates/sotf-dev-driver/scenarios/plugin_bypass_labels.scn"
+timeout = "30s"
+language = "Spanish"
+theme = "Light"
+font_scale = 1.5
+reduced_motion = true

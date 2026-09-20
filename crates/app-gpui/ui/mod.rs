@@ -28,6 +28,7 @@ include!("volume.rs");
 pub(crate) mod layout_tree;
 
 mod consts;
+mod desktop;
 mod misc;
 mod player_view;
 

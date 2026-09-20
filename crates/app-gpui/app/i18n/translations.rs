@@ -221,7 +221,14 @@ impl HeadphoneEasyTranslations {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct HeadphoneEqDeliveryDescriptions {
+    pub apply_export_description: &'static str,
+    pub export_description: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct HeadphoneEqTranslations {
+    pub delivery: HeadphoneEqDeliveryDescriptions,
     pub title: &'static str,
     pub measurement_step: &'static str,
     pub optimization_step: &'static str,
@@ -249,9 +256,7 @@ pub struct HeadphoneEqTranslations {
     pub no_results: &'static str,
     pub no_results_description: &'static str,
     pub apply_export: &'static str,
-    pub apply_export_description: &'static str,
     pub export: &'static str,
-    pub export_description: &'static str,
     pub no_target_curve: &'static str,
 }
 
@@ -287,9 +292,11 @@ impl HeadphoneEqTranslations {
                 no_results: "No Results",
                 no_results_description: "Go back and run optimization to generate an EQ curve.",
                 apply_export: "Apply & Export",
-                apply_export_description: "Apply the EQ to playback or export it in various formats.",
+                delivery: HeadphoneEqDeliveryDescriptions {
+                    apply_export_description: "Apply the EQ to playback or export it in various formats.",
+                    export_description: "Select an export format and save the EQ.",
+                },
                 export: "Export",
-                export_description: "Select an export format and save the EQ.",
                 no_target_curve: "No target curve selected",
             },
             Language::French => Self {
@@ -320,9 +327,11 @@ impl HeadphoneEqTranslations {
                 no_results: "Aucun résultat",
                 no_results_description: "Revenez en arrière et lancez l’optimisation pour générer une courbe.",
                 apply_export: "Appliquer et exporter",
-                apply_export_description: "Appliquez l’égalisation à la lecture ou exportez-la dans divers formats.",
+                delivery: HeadphoneEqDeliveryDescriptions {
+                    apply_export_description: "Appliquez l’égalisation à la lecture ou exportez-la dans divers formats.",
+                    export_description: "Sélectionnez un format d’exportation et enregistrez l’égalisation.",
+                },
                 export: "Exporter",
-                export_description: "Sélectionnez un format d’exportation et enregistrez l’égalisation.",
                 no_target_curve: "Aucune courbe cible sélectionnée",
             },
             Language::German => Self {
@@ -353,9 +362,11 @@ impl HeadphoneEqTranslations {
                 no_results: "Keine Ergebnisse",
                 no_results_description: "Gehen Sie zurück und starten Sie die Optimierung, um eine EQ-Kurve zu erzeugen.",
                 apply_export: "Anwenden und exportieren",
-                apply_export_description: "Wenden Sie den EQ auf die Wiedergabe an oder exportieren Sie ihn.",
+                delivery: HeadphoneEqDeliveryDescriptions {
+                    apply_export_description: "Wenden Sie den EQ auf die Wiedergabe an oder exportieren Sie ihn.",
+                    export_description: "Wählen Sie ein Exportformat und speichern Sie den EQ.",
+                },
                 export: "Exportieren",
-                export_description: "Wählen Sie ein Exportformat und speichern Sie den EQ.",
                 no_target_curve: "Keine Zielkurve ausgewählt",
             },
             Language::Spanish => Self {
@@ -386,9 +397,11 @@ impl HeadphoneEqTranslations {
                 no_results: "Sin resultados",
                 no_results_description: "Vuelve atrás y ejecuta la optimización para generar una curva de EQ.",
                 apply_export: "Aplicar y exportar",
-                apply_export_description: "Aplica el EQ a la reproducción o expórtalo en varios formatos.",
+                delivery: HeadphoneEqDeliveryDescriptions {
+                    apply_export_description: "Aplica el EQ a la reproducción o expórtalo en varios formatos.",
+                    export_description: "Selecciona un formato de exportación y guarda el EQ.",
+                },
                 export: "Exportar",
-                export_description: "Selecciona un formato de exportación y guarda el EQ.",
                 no_target_curve: "No hay ninguna curva objetivo seleccionada",
             },
         }
@@ -411,6 +424,36 @@ pub struct StreamsTranslations {
 }
 
 impl StreamsTranslations {
+    pub fn edit_station(language: Language) -> &'static str {
+        match language {
+            Language::English => "Edit",
+            Language::French => "Modifier",
+            Language::German => "Bearbeiten",
+            Language::Spanish => "Editar",
+            Language::Pseudo => "[Ëdit ···]",
+        }
+    }
+
+    pub fn add_station(language: Language) -> &'static str {
+        match language {
+            Language::English => "Add station",
+            Language::French => "Ajouter une station",
+            Language::German => "Sender hinzufügen",
+            Language::Spanish => "Añadir emisora",
+            Language::Pseudo => "[Ådd ståtiøn ···]",
+        }
+    }
+
+    pub fn cancel_station(language: Language) -> &'static str {
+        match language {
+            Language::English => "Cancel",
+            Language::French => "Annuler",
+            Language::German => "Abbrechen",
+            Language::Spanish => "Cancelar",
+            Language::Pseudo => "[Cåncel ···]",
+        }
+    }
+
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -2081,7 +2124,14 @@ impl EqDiscoveryTranslations {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct RecordingRepeatTranslations {
+    pub sweeps_per_channel: &'static str,
+    pub sweeps_per_channel_hint: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct RecordingWorkflowTranslations {
+    pub repeat: RecordingRepeatTranslations,
     language: Language,
     pub sweep_frequency_range_only: &'static str,
     pub no_channels_configured: &'static str,
@@ -2109,8 +2159,6 @@ pub struct RecordingWorkflowTranslations {
     pub needs_review: &'static str,
     pub accept_anyway: &'static str,
     pub session_quality_title: &'static str,
-    pub sweeps_per_channel: &'static str,
-    pub sweeps_per_channel_hint: &'static str,
     pub positions_mlp_hint: &'static str,
     pub duration_ignored_for_sweeps: &'static str,
 }
@@ -2147,8 +2195,10 @@ impl RecordingWorkflowTranslations {
                 needs_review: "Needs review",
                 accept_anyway: "Accept anyway",
                 session_quality_title: "Take quality",
-                sweeps_per_channel: "Sweeps per channel",
-                sweeps_per_channel_hint: "Repeats per channel for outlier rejection. 2 is not offered: at least 3 sweeps are needed to reject outliers.",
+                repeat: RecordingRepeatTranslations {
+                    sweeps_per_channel: "Sweeps per channel",
+                    sweeps_per_channel_hint: "Repeats per channel for outlier rejection. 2 is not offered: at least 3 sweeps are needed to reject outliers.",
+                },
                 positions_mlp_hint: "The first position should be the main listening position.",
                 duration_ignored_for_sweeps: "Ignored for sweeps — the octave-scaled sweep is self-timed.",
             },
@@ -2180,8 +2230,10 @@ impl RecordingWorkflowTranslations {
                 needs_review: "À vérifier",
                 accept_anyway: "Accepter quand même",
                 session_quality_title: "Qualité des prises",
-                sweeps_per_channel: "Balayages par canal",
-                sweeps_per_channel_hint: "Répétitions par canal pour exclure les valeurs aberrantes. 2 n’est pas proposé : il faut au moins 3 balayages.",
+                repeat: RecordingRepeatTranslations {
+                    sweeps_per_channel: "Balayages par canal",
+                    sweeps_per_channel_hint: "Répétitions par canal pour exclure les valeurs aberrantes. 2 n’est pas proposé : il faut au moins 3 balayages.",
+                },
                 positions_mlp_hint: "La première position doit être la position d’écoute principale.",
                 duration_ignored_for_sweeps: "Ignorée pour les balayages — le balayage par octaves est auto-chronométré.",
             },
@@ -2213,8 +2265,10 @@ impl RecordingWorkflowTranslations {
                 needs_review: "Überprüfung nötig",
                 accept_anyway: "Trotzdem übernehmen",
                 session_quality_title: "Take-Qualität",
-                sweeps_per_channel: "Sweeps pro Kanal",
-                sweeps_per_channel_hint: "Wiederholungen pro Kanal zur Ausreißerverwerfung. 2 wird nicht angeboten: mindestens 3 Sweeps sind nötig.",
+                repeat: RecordingRepeatTranslations {
+                    sweeps_per_channel: "Sweeps pro Kanal",
+                    sweeps_per_channel_hint: "Wiederholungen pro Kanal zur Ausreißerverwerfung. 2 wird nicht angeboten: mindestens 3 Sweeps sind nötig.",
+                },
                 positions_mlp_hint: "Die erste Position sollte die Haupthörposition sein.",
                 duration_ignored_for_sweeps: "Wird bei Sweeps ignoriert — der oktavskalierte Sweep ist selbstgetaktet.",
             },
@@ -2246,8 +2300,10 @@ impl RecordingWorkflowTranslations {
                 needs_review: "Necesita revisión",
                 accept_anyway: "Aceptar igualmente",
                 session_quality_title: "Calidad de las tomas",
-                sweeps_per_channel: "Barridos por canal",
-                sweeps_per_channel_hint: "Repeticiones por canal para rechazar valores atípicos. 2 no se ofrece: se necesitan al menos 3 barridos.",
+                repeat: RecordingRepeatTranslations {
+                    sweeps_per_channel: "Barridos por canal",
+                    sweeps_per_channel_hint: "Repeticiones por canal para rechazar valores atípicos. 2 no se ofrece: se necesitan al menos 3 barridos.",
+                },
                 positions_mlp_hint: "La primera posición debe ser la posición de escucha principal.",
                 duration_ignored_for_sweeps: "Se ignora en los barridos — el barrido por octavas se autocronometra.",
             },
@@ -3698,6 +3754,81 @@ pub struct RoomEqOverviewTranslations {
 }
 
 impl RoomEqReportTranslations {
+    pub fn summary_labels(language: Language) -> [&'static str; 8] {
+        match language {
+            Language::English => [
+                "Version",
+                "Algorithm",
+                "Loss function",
+                "Score Before",
+                "Score After",
+                "Improvement",
+                "Timestamp",
+                "EPA Preference (avg)",
+            ],
+            Language::French => [
+                "Version",
+                "Algorithme",
+                "Fonction de coût",
+                "Score avant",
+                "Score après",
+                "Amélioration",
+                "Horodatage",
+                "Préférence EPA (moyenne)",
+            ],
+            Language::German => [
+                "Version",
+                "Algorithmus",
+                "Verlustfunktion",
+                "Bewertung vorher",
+                "Bewertung nachher",
+                "Verbesserung",
+                "Zeitstempel",
+                "EPA-Präferenz (Mittelwert)",
+            ],
+            Language::Spanish => [
+                "Versión",
+                "Algoritmo",
+                "Función de pérdida",
+                "Puntuación anterior",
+                "Puntuación posterior",
+                "Mejora",
+                "Marca de tiempo",
+                "Preferencia EPA (media)",
+            ],
+            Language::Pseudo => [
+                "[Vëřšïöñ]",
+                "[Ålgöřïţhm]",
+                "[Ŀöšš füñçţïöñ]",
+                "[Šçöřë bëföřë]",
+                "[Šçöřë åfţëř]",
+                "[Ïmþřövëmëñţ]",
+                "[Ţïmëšţåmþ]",
+                "[ËÞÅ þřëfëřëñçë (åvg)]",
+            ],
+        }
+    }
+
+    pub fn source_labels(language: Language) -> [&'static str; 4] {
+        match language {
+            Language::English => ["Measurement sources", "Microphone", "Position", "Unknown"],
+            Language::French => ["Sources des mesures", "Microphone", "Position", "Inconnu"],
+            Language::German => ["Messquellen", "Mikrofon", "Position", "Unbekannt"],
+            Language::Spanish => [
+                "Fuentes de medición",
+                "Micrófono",
+                "Posición",
+                "Desconocido",
+            ],
+            Language::Pseudo => [
+                "[Mëåšüřëmëñţ šöüřçëš]",
+                "[Mïçřöþhöñë]",
+                "[Þöšïţïöñ]",
+                "[Üñķñöwñ]",
+            ],
+        }
+    }
+
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -4102,6 +4233,56 @@ pub struct EqViewTranslations {
 }
 
 impl EqViewTranslations {
+    pub fn wheel_hint(language: Language) -> &'static str {
+        match language {
+            Language::English => {
+                "Scroll to navigate · Alt/Option + scroll: Q · Alt/Option + Shift + scroll: gain"
+            }
+            Language::French => {
+                "Défilement : navigation · Alt/Option + défilement : Q · Alt/Option + Maj + défilement : gain"
+            }
+            Language::German => {
+                "Scrollen: Navigation · Alt/Option + Scrollen: Q · Alt/Option + Umschalt + Scrollen: Verstärkung"
+            }
+            Language::Spanish => {
+                "Desplazar: navegar · Alt/Option + desplazar: Q · Alt/Option + Mayús + desplazar: ganancia"
+            }
+            Language::Pseudo => {
+                "[Scrôll: nàvïgàtïôn · Alt/Option + scrôll: Q · Alt/Option + Shift + scrôll: gàïn]"
+            }
+        }
+    }
+
+    pub fn order(language: Language) -> &'static str {
+        match language {
+            Language::English => "Order",
+            Language::French => "Ordre",
+            Language::German => "Ordnung",
+            Language::Spanish => "Orden",
+            Language::Pseudo => "[Ôrdér]",
+        }
+    }
+
+    pub fn topology(language: Language) -> &'static str {
+        match language {
+            Language::English => "Topology",
+            Language::French => "Topologie",
+            Language::German => "Topologie",
+            Language::Spanish => "Topología",
+            Language::Pseudo => "[Tôpôlôgÿ]",
+        }
+    }
+
+    pub fn oversampling(language: Language) -> &'static str {
+        match language {
+            Language::English => "Oversampling",
+            Language::French => "Suréchantillonnage",
+            Language::German => "Überabtastung",
+            Language::Spanish => "Sobremuestreo",
+            Language::Pseudo => "[Ôvérsàmplïng]",
+        }
+    }
+
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -4423,6 +4604,66 @@ pub struct SpeakerGraphTranslations {
 }
 
 impl SpeakerGraphTranslations {
+    pub fn objective_help(language: Language, score: bool) -> &'static str {
+        match (language, score) {
+            (Language::English, false) => {
+                "Correct the selected response while retaining the full speaker dataset for review."
+            }
+            (Language::English, true) => {
+                "The preference-score objective requires the complete spinorama curves. A single response curve is not sufficient."
+            }
+            (Language::French, false) => {
+                "Corrigez la réponse sélectionnée tout en conservant le jeu de données complet de l’enceinte pour l’examen."
+            }
+            (Language::French, true) => {
+                "L’objectif de score de préférence nécessite les courbes spinorama complètes. Une seule courbe de réponse ne suffit pas."
+            }
+            (Language::German, false) => {
+                "Korrigieren Sie den ausgewählten Frequenzgang und behalten Sie den vollständigen Lautsprecherdatensatz zur Prüfung bei."
+            }
+            (Language::German, true) => {
+                "Das Präferenzscore-Ziel benötigt die vollständigen Spinorama-Kurven. Ein einzelner Frequenzgang reicht nicht aus."
+            }
+            (Language::Spanish, false) => {
+                "Corrija la respuesta seleccionada y conserve el conjunto completo de datos del altavoz para su revisión."
+            }
+            (Language::Spanish, true) => {
+                "El objetivo de puntuación de preferencia requiere las curvas spinorama completas. Una sola curva de respuesta no es suficiente."
+            }
+            (Language::Pseudo, false) => {
+                "[Çöřřëçţ ţhë šëlëçţëð řëšþöñšë; řëţåïñ ţhë füll ðåţåšëţ föř řëvïëw.]"
+            }
+            (Language::Pseudo, true) => {
+                "[Þřëfëřëñçë šçöřë řëqüïřëš çömþlëţë šþïñöřåmå çüřvëš, ñöţ å šïñglë řëšþöñšë.]"
+            }
+        }
+    }
+
+    pub fn directivity_review(language: Language) -> (&'static str, &'static str) {
+        match language {
+            Language::English => (
+                "Directivity and off-axis checks",
+                "Review the source responses together. Equalization changes their frequency response, not the speaker’s physical directivity.",
+            ),
+            Language::French => (
+                "Directivité et réponses hors axe",
+                "Examinez ensemble les réponses sources. L’égalisation modifie leur réponse en fréquence, pas la directivité physique de l’enceinte.",
+            ),
+            Language::German => (
+                "Richtwirkung und außeraxiale Antworten",
+                "Prüfen Sie die ursprünglichen Frequenzgänge gemeinsam. Die Entzerrung verändert deren Frequenzgang, nicht die physische Richtwirkung des Lautsprechers.",
+            ),
+            Language::Spanish => (
+                "Directividad y respuestas fuera de eje",
+                "Revise juntas las respuestas originales. La ecualización cambia su respuesta en frecuencia, no la directividad física del altavoz.",
+            ),
+            Language::Pseudo => (
+                "[Ðïřëçţïvïţÿ åñð öff-åxïš çhëçķš]",
+                "[Řëvïëw ţhë šöüřçë řëšþöñšëš ţögëţhëř. Ëqüålïžåţïöñ ðöëš ñöţ çhåñgë þhÿšïçål ðïřëçţïvïţÿ.]",
+            ),
+        }
+    }
+
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -4766,6 +5007,7 @@ impl KeybindingTranslations {
 
 const FRENCH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
     ("Add album to queue", "Ajouter l’album à la file"),
+    ("Open album details", "Ouvrir les détails de l’album"),
     (
         "Add library directory",
         "Ajouter un dossier à la bibliothèque",
@@ -4884,6 +5126,14 @@ const FRENCH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
         "Lire les extraits d’essai disponibles",
     ),
     (
+        "Toggle optional confidence and notes",
+        "Afficher ou masquer la confiance et les notes facultatives",
+    ),
+    (
+        "Toggle trial details",
+        "Afficher ou masquer les détails des essais",
+    ),
+    (
         "Play selected album from start",
         "Lire l’album sélectionné depuis le début",
     ),
@@ -4969,6 +5219,7 @@ const FRENCH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
 
 const GERMAN_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
     ("Add album to queue", "Album zur Warteschlange hinzufügen"),
+    ("Open album details", "Albumdetails öffnen"),
     ("Add library directory", "Mediathekordner hinzufügen"),
     ("Add plugins", "Plugins hinzufügen"),
     ("Add selected plugin", "Ausgewähltes Plugin hinzufügen"),
@@ -5078,6 +5329,11 @@ const GERMAN_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
         "Verfügbare Testsignale abspielen",
     ),
     (
+        "Toggle optional confidence and notes",
+        "Optionale Sicherheit und Notizen ein-/ausblenden",
+    ),
+    ("Toggle trial details", "Versuchsdetails ein-/ausblenden"),
+    (
         "Play selected album from start",
         "Ausgewähltes Album von Anfang an abspielen",
     ),
@@ -5163,6 +5419,7 @@ const GERMAN_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
 
 const SPANISH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
     ("Add album to queue", "Añadir el álbum a la cola"),
+    ("Open album details", "Abrir los detalles del álbum"),
     (
         "Add library directory",
         "Añadir una carpeta a la biblioteca",
@@ -5276,6 +5533,14 @@ const SPANISH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
     (
         "Play available trial cues",
         "Reproducir las señales de prueba disponibles",
+    ),
+    (
+        "Toggle optional confidence and notes",
+        "Mostrar u ocultar confianza y notas opcionales",
+    ),
+    (
+        "Toggle trial details",
+        "Mostrar u ocultar detalles de las pruebas",
     ),
     (
         "Play selected album from start",
@@ -5513,8 +5778,8 @@ impl AudioDeviceTranslations {
             Language::English => Self {
                 audio_source: "Audio Source",
                 file_player: "File Player",
-                hal_device: "HAL Device",
-                hal_configuration: "HAL Configuration",
+                hal_device: "Systemwide input",
+                hal_configuration: "Systemwide input format",
                 sample_rate: "Sample Rate",
                 channels: "Channels",
                 buffer_size: "Buffer Size",
@@ -5523,8 +5788,8 @@ impl AudioDeviceTranslations {
             Language::French => Self {
                 audio_source: "Source audio",
                 file_player: "Lecteur de fichiers",
-                hal_device: "Périphérique HAL",
-                hal_configuration: "Configuration HAL",
+                hal_device: "Entrée audio système",
+                hal_configuration: "Format de l’entrée audio système",
                 sample_rate: "Fréquence d’échantillonnage",
                 channels: "Canaux",
                 buffer_size: "Taille du tampon",
@@ -5533,8 +5798,8 @@ impl AudioDeviceTranslations {
             Language::German => Self {
                 audio_source: "Audioquelle",
                 file_player: "Dateiplayer",
-                hal_device: "HAL-Gerät",
-                hal_configuration: "HAL-Konfiguration",
+                hal_device: "Systemweiter Eingang",
+                hal_configuration: "Format des systemweiten Eingangs",
                 sample_rate: "Abtastrate",
                 channels: "Kanäle",
                 buffer_size: "Puffergröße",
@@ -5543,8 +5808,8 @@ impl AudioDeviceTranslations {
             Language::Spanish => Self {
                 audio_source: "Fuente de audio",
                 file_player: "Reproductor de archivos",
-                hal_device: "Dispositivo HAL",
-                hal_configuration: "Configuración HAL",
+                hal_device: "Entrada de audio del sistema",
+                hal_configuration: "Formato de entrada del sistema",
                 sample_rate: "Frecuencia de muestreo",
                 channels: "Canales",
                 buffer_size: "Tamaño del búfer",
@@ -6062,8 +6327,25 @@ pub struct UpmixerSummaryTranslations {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct SpatialPluginTranslations {
+    pub view_2d: &'static str,
+    pub view_3d: &'static str,
+    pub spl_mode: &'static str,
+    pub correlation_mode: &'static str,
+    pub reference_channel: &'static str,
+    pub view_label: &'static str,
+    pub orbit_hint: &'static str,
+    pub reset_camera: &'static str,
+    pub correlation_label: &'static str,
+    pub no_layout: &'static str,
+    pub waiting_data: &'static str,
+    pub waiting_correlation: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct PluginCommonTranslations {
     language: Language,
+    pub spatial: SpatialPluginTranslations,
     pub global: &'static str,
     pub bands: &'static str,
     pub detection: &'static str,
@@ -6073,20 +6355,8 @@ pub struct PluginCommonTranslations {
     pub more: &'static str,
     pub configuration: &'static str,
     pub no_controls: &'static str,
-    pub spatial_view_2d: &'static str,
-    pub spatial_view_3d: &'static str,
-    pub spatial_spl_mode: &'static str,
-    pub spatial_correlation_mode: &'static str,
-    pub spatial_reference_channel: &'static str,
     pub previous_value: &'static str,
     pub next_value: &'static str,
-    pub spatial_view_label: &'static str,
-    pub spatial_orbit_hint: &'static str,
-    pub spatial_reset_camera: &'static str,
-    pub spatial_correlation_label: &'static str,
-    pub spatial_no_layout: &'static str,
-    pub spatial_waiting_data: &'static str,
-    pub spatial_waiting_correlation: &'static str,
     pub denoiser_noise_floor: &'static str,
     pub denoiser_snr: &'static str,
     pub denoiser_reduction: &'static str,
@@ -6105,6 +6375,51 @@ pub struct PluginCommonTranslations {
 }
 
 impl PluginCommonTranslations {
+    pub fn plugin_count(self, count: usize) -> String {
+        let noun = match (self.language, count == 1) {
+            (Language::German, true) => "Plugin",
+            (Language::German, false) => "Plugins",
+            (_, true) => "plugin",
+            (_, false) => "plugins",
+        };
+        let label = format!("{count} {noun}");
+        if self.language == Language::Pseudo {
+            super::pseudo_expand(&label)
+        } else {
+            label
+        }
+    }
+    pub fn solo_action(self, soloed: bool) -> &'static str {
+        match (self.language, soloed) {
+            (Language::English, false) => "Solo plugin",
+            (Language::English, true) => "Disable plugin solo",
+            (Language::French, false) => "Mettre le plugin en solo",
+            (Language::French, true) => "Désactiver le solo du plugin",
+            (Language::German, false) => "Plugin solo schalten",
+            (Language::German, true) => "Plugin-Solo deaktivieren",
+            (Language::Spanish, false) => "Poner el plugin en solo",
+            (Language::Spanish, true) => "Desactivar el solo del plugin",
+            (Language::Pseudo, soloed) => {
+                pseudo_static(Self::for_language(Language::English).solo_action(soloed))
+            }
+        }
+    }
+    pub fn bypass_labels(self) -> [&'static str; 4] {
+        match self.language {
+            Language::English => ["Active", "Bypassed", "Bypass plugin", "Activate plugin"],
+            Language::French => [
+                "Actif",
+                "Contourné",
+                "Contourner le plugin",
+                "Activer le plugin",
+            ],
+            Language::German => ["Aktiv", "Umgangen", "Plugin umgehen", "Plugin aktivieren"],
+            Language::Spanish => ["Activo", "Omitido", "Omitir el plugin", "Activar el plugin"],
+            Language::Pseudo => Self::for_language(Language::English)
+                .bypass_labels()
+                .map(pseudo_static),
+        }
+    }
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -6119,20 +6434,22 @@ impl PluginCommonTranslations {
                 more: "More",
                 configuration: "Configuration",
                 no_controls: "No configurable controls",
-                spatial_view_2d: "Show the 2D spatial view",
-                spatial_view_3d: "Show the 3D spatial view",
-                spatial_spl_mode: "Show sound pressure level",
-                spatial_correlation_mode: "Show channel correlation",
-                spatial_reference_channel: "Correlation reference channel",
+                spatial: SpatialPluginTranslations {
+                    view_2d: "Show the 2D spatial view",
+                    view_3d: "Show the 3D spatial view",
+                    spl_mode: "Show sound pressure level",
+                    correlation_mode: "Show channel correlation",
+                    reference_channel: "Correlation reference channel",
+                    view_label: "Spatial view",
+                    orbit_hint: "Drag to orbit · scroll to zoom",
+                    reset_camera: "Reset camera",
+                    correlation_label: "Correlation",
+                    no_layout: "No speaker layout available",
+                    waiting_data: "Waiting for analyzer data",
+                    waiting_correlation: "Waiting for correlation data",
+                },
                 previous_value: "Previous",
                 next_value: "Next",
-                spatial_view_label: "Spatial view",
-                spatial_orbit_hint: "Drag to orbit · scroll to zoom",
-                spatial_reset_camera: "Reset camera",
-                spatial_correlation_label: "Correlation",
-                spatial_no_layout: "No speaker layout available",
-                spatial_waiting_data: "Waiting for analyzer data",
-                spatial_waiting_correlation: "Waiting for correlation data",
                 denoiser_noise_floor: "Noise floor",
                 denoiser_snr: "SNR",
                 denoiser_reduction: "Reduction",
@@ -6173,20 +6490,22 @@ impl PluginCommonTranslations {
                 more: "Plus",
                 configuration: "Configuration",
                 no_controls: "Aucun contrôle configurable",
-                spatial_view_2d: "Afficher la vue spatiale 2D",
-                spatial_view_3d: "Afficher la vue spatiale 3D",
-                spatial_spl_mode: "Afficher le niveau de pression acoustique",
-                spatial_correlation_mode: "Afficher la corrélation des canaux",
-                spatial_reference_channel: "Canal de référence pour la corrélation",
+                spatial: SpatialPluginTranslations {
+                    view_2d: "Afficher la vue spatiale 2D",
+                    view_3d: "Afficher la vue spatiale 3D",
+                    spl_mode: "Afficher le niveau de pression acoustique",
+                    correlation_mode: "Afficher la corrélation des canaux",
+                    reference_channel: "Canal de référence pour la corrélation",
+                    view_label: "Vue spatiale",
+                    orbit_hint: "Faites glisser pour orbiter · faites défiler pour zoomer",
+                    reset_camera: "Réinitialiser la caméra",
+                    correlation_label: "Corrélation",
+                    no_layout: "Aucune disposition d’enceintes disponible",
+                    waiting_data: "En attente des données de l’analyseur",
+                    waiting_correlation: "En attente des données de corrélation",
+                },
                 previous_value: "Précédent",
                 next_value: "Suivant",
-                spatial_view_label: "Vue spatiale",
-                spatial_orbit_hint: "Faites glisser pour orbiter · faites défiler pour zoomer",
-                spatial_reset_camera: "Réinitialiser la caméra",
-                spatial_correlation_label: "Corrélation",
-                spatial_no_layout: "Aucune disposition d’enceintes disponible",
-                spatial_waiting_data: "En attente des données de l’analyseur",
-                spatial_waiting_correlation: "En attente des données de corrélation",
                 denoiser_noise_floor: "Bruit de fond",
                 denoiser_snr: "SNR",
                 denoiser_reduction: "Réduction",
@@ -6227,20 +6546,22 @@ impl PluginCommonTranslations {
                 more: "Mehr",
                 configuration: "Konfiguration",
                 no_controls: "Keine konfigurierbaren Steuerelemente",
-                spatial_view_2d: "Räumliche 2D-Ansicht anzeigen",
-                spatial_view_3d: "Räumliche 3D-Ansicht anzeigen",
-                spatial_spl_mode: "Schalldruckpegel anzeigen",
-                spatial_correlation_mode: "Kanalkorrelation anzeigen",
-                spatial_reference_channel: "Referenzkanal für die Korrelation",
+                spatial: SpatialPluginTranslations {
+                    view_2d: "Räumliche 2D-Ansicht anzeigen",
+                    view_3d: "Räumliche 3D-Ansicht anzeigen",
+                    spl_mode: "Schalldruckpegel anzeigen",
+                    correlation_mode: "Kanalkorrelation anzeigen",
+                    reference_channel: "Referenzkanal für die Korrelation",
+                    view_label: "Räumliche Ansicht",
+                    orbit_hint: "Ziehen zum Drehen · Scrollen zum Zoomen",
+                    reset_camera: "Kamera zurücksetzen",
+                    correlation_label: "Korrelation",
+                    no_layout: "Kein Lautsprecherlayout verfügbar",
+                    waiting_data: "Warten auf Analysedaten",
+                    waiting_correlation: "Warten auf Korrelationsdaten",
+                },
                 previous_value: "Zurück",
                 next_value: "Weiter",
-                spatial_view_label: "Räumliche Ansicht",
-                spatial_orbit_hint: "Ziehen zum Drehen · Scrollen zum Zoomen",
-                spatial_reset_camera: "Kamera zurücksetzen",
-                spatial_correlation_label: "Korrelation",
-                spatial_no_layout: "Kein Lautsprecherlayout verfügbar",
-                spatial_waiting_data: "Warten auf Analysedaten",
-                spatial_waiting_correlation: "Warten auf Korrelationsdaten",
                 denoiser_noise_floor: "Rauschpegel",
                 denoiser_snr: "SNR",
                 denoiser_reduction: "Reduktion",
@@ -6281,20 +6602,22 @@ impl PluginCommonTranslations {
                 more: "Más",
                 configuration: "Configuración",
                 no_controls: "No hay controles configurables",
-                spatial_view_2d: "Mostrar la vista espacial 2D",
-                spatial_view_3d: "Mostrar la vista espacial 3D",
-                spatial_spl_mode: "Mostrar el nivel de presión sonora",
-                spatial_correlation_mode: "Mostrar la correlación de canales",
-                spatial_reference_channel: "Canal de referencia de correlación",
+                spatial: SpatialPluginTranslations {
+                    view_2d: "Mostrar la vista espacial 2D",
+                    view_3d: "Mostrar la vista espacial 3D",
+                    spl_mode: "Mostrar el nivel de presión sonora",
+                    correlation_mode: "Mostrar la correlación de canales",
+                    reference_channel: "Canal de referencia de correlación",
+                    view_label: "Vista espacial",
+                    orbit_hint: "Arrastre para orbitar · desplácese para ampliar",
+                    reset_camera: "Restablecer cámara",
+                    correlation_label: "Correlación",
+                    no_layout: "No hay una disposición de altavoces disponible",
+                    waiting_data: "Esperando datos del analizador",
+                    waiting_correlation: "Esperando datos de correlación",
+                },
                 previous_value: "Anterior",
                 next_value: "Siguiente",
-                spatial_view_label: "Vista espacial",
-                spatial_orbit_hint: "Arrastre para orbitar · desplácese para ampliar",
-                spatial_reset_camera: "Restablecer cámara",
-                spatial_correlation_label: "Correlación",
-                spatial_no_layout: "No hay una disposición de altavoces disponible",
-                spatial_waiting_data: "Esperando datos del analizador",
-                spatial_waiting_correlation: "Esperando datos de correlación",
                 denoiser_noise_floor: "Ruido de fondo",
                 denoiser_snr: "SNR",
                 denoiser_reduction: "Reducción",
@@ -6379,7 +6702,7 @@ impl PluginCommonTranslations {
                 PluginType::Declick => "Detect and repair short clicks in the time domain.",
                 PluginType::HissReducer => "Reduce broadband high-frequency hiss.",
                 PluginType::SpeechDenoiser => "Suppress noise in speech with the RNNoise model.",
-                PluginType::Pnd => "Reduce periodic or tonal noise components.",
+                PluginType::Pnd => "Correct pitch drift while preserving duration.",
                 PluginType::ABCompare => "Compare two processing paths with matched switching.",
                 PluginType::Crossover => "Split channels into frequency bands for loudspeakers.",
                 PluginType::BandSplit => "Split a signal into independently routed bands.",
@@ -6465,7 +6788,7 @@ impl PluginCommonTranslations {
                 PluginType::SpeechDenoiser => {
                     "Supprimez le bruit de la parole avec le modèle RNNoise."
                 }
-                PluginType::Pnd => "Réduisez les composantes de bruit périodiques ou tonales.",
+                PluginType::Pnd => "Corrigez la dérive de hauteur sans modifier la durée.",
                 PluginType::ABCompare => {
                     "Comparez deux chemins de traitement avec une commutation alignée."
                 }
@@ -6567,7 +6890,7 @@ impl PluginCommonTranslations {
                 PluginType::SpeechDenoiser => {
                     "Unterdrücken Sie Sprachrauschen mit dem RNNoise-Modell."
                 }
-                PluginType::Pnd => "Reduzieren Sie periodische oder tonale Rauschanteile.",
+                PluginType::Pnd => "Tonhöhendrift korrigieren und die Dauer beibehalten.",
                 PluginType::ABCompare => {
                     "Vergleichen Sie zwei Verarbeitungswege mit abgestimmtem Umschalten."
                 }
@@ -6657,7 +6980,7 @@ impl PluginCommonTranslations {
                 PluginType::Declick => "Detecte y repare clics breves en el dominio temporal.",
                 PluginType::HissReducer => "Reduzca siseo de alta frecuencia de banda ancha.",
                 PluginType::SpeechDenoiser => "Suprima ruido en voz mediante el modelo RNNoise.",
-                PluginType::Pnd => "Reduzca componentes de ruido periódicas o tonales.",
+                PluginType::Pnd => "Corrija la deriva de tono conservando la duración.",
                 PluginType::ABCompare => "Compare dos rutas de proceso con conmutación igualada.",
                 PluginType::Crossover => "Divida canales en bandas para altavoces.",
                 PluginType::BandSplit => "Separe una señal en bandas enrutables por separado.",
@@ -6716,6 +7039,24 @@ impl PluginCommonTranslations {
             .unwrap_or(label)
     }
 
+    pub fn editor_too_narrow(self) -> &'static str {
+        match self.language {
+            Language::English => "The editor is too narrow. Widen the window or reduce UI zoom.",
+            Language::French => {
+                "L’éditeur est trop étroit. Agrandissez la fenêtre ou réduisez le zoom de l’interface."
+            }
+            Language::German => {
+                "Der Editor ist zu schmal. Verbreitern Sie das Fenster oder verkleinern Sie den UI-Zoom."
+            }
+            Language::Spanish => {
+                "El editor es demasiado estrecho. Amplíe la ventana o reduzca el zoom de la interfaz."
+            }
+            Language::Pseudo => {
+                pseudo_static("The editor is too narrow. Widen the window or reduce UI zoom.")
+            }
+        }
+    }
+
     #[doc(hidden)]
     pub fn has_localized_label(self, label: &str) -> bool {
         let translations = match self.language {
@@ -6734,6 +7075,38 @@ impl PluginCommonTranslations {
 }
 
 const FRENCH_PLUGIN_LABELS: &[(&str, &str)] = &[
+    (
+        "Change-only tracking: no fixed reference pitch.",
+        "Suivi des variations : aucune hauteur de référence fixe.",
+    ),
+    (
+        "Fixed-reference pitch correction.",
+        "Correction de hauteur avec référence fixe.",
+    ),
+    ("FORMANTS", "FORMANTS"),
+    ("Modulation & diffusion", "Modulation et diffusion"),
+    ("Knee & response", "Coude et réponse"),
+    ("Knee & detection", "Coude et détection"),
+    ("Soft Knee", "Coude progressif"),
+    ("ISP Limit", "Limitation inter-échantillons"),
+    ("Feed Forward", "Détection en amont"),
+    ("Timing detail", "Détails temporels"),
+    ("Output leveling", "Ajustement du niveau de sortie"),
+    ("Auto Makeup", "Compensation automatique"),
+    ("Measured Auto Makeup", "Compensation automatique mesurée"),
+    ("Hold & lookahead", "Maintien et anticipation"),
+    ("Timing & lookahead", "Temporisation et anticipation"),
+    ("Dual Release", "Relâchement à deux temps"),
+    ("Detector & linking", "Détecteur et liaison"),
+    ("Knee & hysteresis", "Coude et hystérésis"),
+    ("CONFIG", "CONFIGURATION"),
+    ("PRIMARY", "PRINCIPAL"),
+    ("On", "Activé"),
+    ("Off", "Désactivé"),
+    ("Makeup Gain", "Gain de compensation"),
+    ("Link Channels", "Lier les canaux"),
+    ("Linked", "Liés"),
+    ("Unlinked", "Indépendants"),
     ("SETUP", "CONFIGURATION"),
     ("CHANNELS", "CANAUX"),
     ("GLOBAL", "GLOBAL"),
@@ -6841,6 +7214,10 @@ const FRENCH_PLUGIN_LABELS: &[(&str, &str)] = &[
     ("Safety", "Sécurité"),
     ("Sharpen", "Accentuation"),
     ("Threshold", "Seuil"),
+    ("Range", "Plage"),
+    ("Hyst", "Hystérésis"),
+    ("Hold", "Maintien"),
+    ("Makeup", "Compensation"),
     ("Trans Red", "Réduction des transitoires"),
     ("Variance", "Variance"),
     ("Voice Hi", "Voix haute"),
@@ -6849,6 +7226,41 @@ const FRENCH_PLUGIN_LABELS: &[(&str, &str)] = &[
 ];
 
 const GERMAN_PLUGIN_LABELS: &[(&str, &str)] = &[
+    (
+        "Change-only tracking: no fixed reference pitch.",
+        "Änderungsverfolgung: keine feste Referenztonhöhe.",
+    ),
+    (
+        "Fixed-reference pitch correction.",
+        "Tonhöhenkorrektur mit fester Referenz.",
+    ),
+    ("FORMANTS", "FORMANTEN"),
+    ("Modulation & diffusion", "Modulation und Diffusion"),
+    ("Knee & response", "Knie und Ansprechverhalten"),
+    ("Knee & detection", "Knie und Erkennung"),
+    ("Soft Knee", "Weiches Knie"),
+    ("ISP Limit", "Intersample-Begrenzung"),
+    ("Feed Forward", "Vorwärtsregelung"),
+    ("Timing detail", "Zeitverhalten im Detail"),
+    ("Output leveling", "Ausgangspegelanpassung"),
+    ("Auto Makeup", "Automatische Pegelanpassung"),
+    (
+        "Measured Auto Makeup",
+        "Gemessene automatische Pegelanpassung",
+    ),
+    ("Hold & lookahead", "Haltezeit und Vorausschau"),
+    ("Timing & lookahead", "Zeitverhalten und Vorausschau"),
+    ("Dual Release", "Zweistufige Rücklaufzeit"),
+    ("Detector & linking", "Detektor und Kopplung"),
+    ("Knee & hysteresis", "Knie und Hysterese"),
+    ("CONFIG", "KONFIGURATION"),
+    ("PRIMARY", "HAUPTEINSTELLUNGEN"),
+    ("On", "Ein"),
+    ("Off", "Aus"),
+    ("Makeup Gain", "Aufholverstärkung"),
+    ("Link Channels", "Kanäle koppeln"),
+    ("Linked", "Gekoppelt"),
+    ("Unlinked", "Unabhängig"),
     ("SETUP", "EINRICHTUNG"),
     ("CHANNELS", "KANÄLE"),
     ("GLOBAL", "GLOBAL"),
@@ -6953,6 +7365,10 @@ const GERMAN_PLUGIN_LABELS: &[(&str, &str)] = &[
     ("Safety", "Sicherheit"),
     ("Sharpen", "Schärfung"),
     ("Threshold", "Schwelle"),
+    ("Range", "Bereich"),
+    ("Hyst", "Hysterese"),
+    ("Hold", "Haltezeit"),
+    ("Makeup", "Aufholverstärkung"),
     ("Trans Red", "Transientenreduktion"),
     ("Variance", "Varianz"),
     ("Voice Hi", "Stimme hoch"),
@@ -6961,6 +7377,38 @@ const GERMAN_PLUGIN_LABELS: &[(&str, &str)] = &[
 ];
 
 const SPANISH_PLUGIN_LABELS: &[(&str, &str)] = &[
+    (
+        "Change-only tracking: no fixed reference pitch.",
+        "Seguimiento de cambios: sin tono de referencia fijo.",
+    ),
+    (
+        "Fixed-reference pitch correction.",
+        "Corrección de tono con referencia fija.",
+    ),
+    ("FORMANTS", "FORMANTES"),
+    ("Modulation & diffusion", "Modulación y difusión"),
+    ("Knee & response", "Codo y respuesta"),
+    ("Knee & detection", "Codo y detección"),
+    ("Soft Knee", "Codo suave"),
+    ("ISP Limit", "Limitación entre muestras"),
+    ("Feed Forward", "Detección anticipada"),
+    ("Timing detail", "Detalles temporales"),
+    ("Output leveling", "Ajuste del nivel de salida"),
+    ("Auto Makeup", "Compensación automática"),
+    ("Measured Auto Makeup", "Compensación automática medida"),
+    ("Hold & lookahead", "Retención y anticipación"),
+    ("Timing & lookahead", "Temporización y anticipación"),
+    ("Dual Release", "Relajación de dos etapas"),
+    ("Detector & linking", "Detector y enlace"),
+    ("Knee & hysteresis", "Codo e histéresis"),
+    ("CONFIG", "CONFIGURACIÓN"),
+    ("PRIMARY", "PRINCIPAL"),
+    ("On", "Activado"),
+    ("Off", "Desactivado"),
+    ("Makeup Gain", "Ganancia de compensación"),
+    ("Link Channels", "Vincular canales"),
+    ("Linked", "Vinculados"),
+    ("Unlinked", "Independientes"),
     ("SETUP", "CONFIGURACIÓN"),
     ("CHANNELS", "CANALES"),
     ("GLOBAL", "GLOBAL"),
@@ -7068,6 +7516,10 @@ const SPANISH_PLUGIN_LABELS: &[(&str, &str)] = &[
     ("Safety", "Seguridad"),
     ("Sharpen", "Realce"),
     ("Threshold", "Umbral"),
+    ("Range", "Rango"),
+    ("Hyst", "Histéresis"),
+    ("Hold", "Retención"),
+    ("Makeup", "Compensación"),
     ("Trans Red", "Reducción de transitorios"),
     ("Variance", "Varianza"),
     ("Voice Hi", "Voz alta"),
@@ -7589,7 +8041,7 @@ impl SettingsSurfaceTranslations {
                 metadata_save_failed: "Could not save metadata preferences",
                 anonymous: "Anonymous",
                 credentials_saved: "Credentials saved",
-                anonymous_search_enabled: "Anonymous search enabled",
+                anonymous_search_enabled: "Metadata search does not require an account",
                 miscellaneous: "Miscellaneous",
                 max_cpu_cores: "Maximum CPU Cores",
                 max_cpu_cores_description: "Limit how many CPU cores SOTF can use. Lower values leave more capacity for other applications.",
@@ -7613,7 +8065,7 @@ impl SettingsSurfaceTranslations {
                 metadata_save_failed: "Impossible d’enregistrer les préférences de métadonnées",
                 anonymous: "Anonyme",
                 credentials_saved: "Identifiants enregistrés",
-                anonymous_search_enabled: "Recherche anonyme activée",
+                anonymous_search_enabled: "La recherche de métadonnées ne nécessite pas de compte",
                 miscellaneous: "Divers",
                 max_cpu_cores: "Nombre maximal de cœurs CPU",
                 max_cpu_cores_description: "Limitez le nombre de cœurs CPU utilisables par SOTF. Une valeur basse laisse plus de ressources aux autres applications.",
@@ -7637,7 +8089,7 @@ impl SettingsSurfaceTranslations {
                 metadata_save_failed: "Metadaten-Einstellungen konnten nicht gespeichert werden",
                 anonymous: "Anonym",
                 credentials_saved: "Zugangsdaten gespeichert",
-                anonymous_search_enabled: "Anonyme Suche aktiviert",
+                anonymous_search_enabled: "Die Metadatensuche erfordert kein Konto",
                 miscellaneous: "Verschiedenes",
                 max_cpu_cores: "Maximale CPU-Kerne",
                 max_cpu_cores_description: "Begrenzt die von SOTF nutzbaren CPU-Kerne. Niedrigere Werte lassen anderen Anwendungen mehr Leistung.",
@@ -7661,7 +8113,7 @@ impl SettingsSurfaceTranslations {
                 metadata_save_failed: "No se pudieron guardar las preferencias de metadatos",
                 anonymous: "Anónimo",
                 credentials_saved: "Credenciales guardadas",
-                anonymous_search_enabled: "Búsqueda anónima activada",
+                anonymous_search_enabled: "La búsqueda de metadatos no requiere una cuenta",
                 miscellaneous: "Varios",
                 max_cpu_cores: "Máximo de núcleos de CPU",
                 max_cpu_cores_description: "Limita los núcleos de CPU que puede usar SOTF. Los valores bajos dejan más capacidad para otras aplicaciones.",
@@ -7975,6 +8427,246 @@ pub struct ListeningTestTranslations {
 }
 
 impl ListeningTestTranslations {
+    pub fn preparing_label(&self) -> &'static str {
+        match self.eq.language {
+            Language::English => "Measuring…",
+            Language::French => "Mesure…",
+            Language::German => "Messung…",
+            Language::Spanish => "Midiendo…",
+            Language::Pseudo => pseudo_static("Measuring…"),
+        }
+    }
+
+    pub fn disclosures(&self) -> [&'static str; 2] {
+        match self.language {
+            Language::English => ["Confidence and notes · optional", "Trial details"],
+            Language::French => ["Confiance et notes · facultatif", "Détails des essais"],
+            Language::German => ["Sicherheit und Notizen · optional", "Versuchsdetails"],
+            Language::Spanish => ["Confianza y notas · opcional", "Detalles de las pruebas"],
+            Language::Pseudo => Self::english().disclosures().map(pseudo_static),
+        }
+    }
+
+    pub fn practice_lifecycle(&self) -> [&'static str; 7] {
+        match self.language {
+            Language::English => [
+                "End practice?",
+                "Keep practicing",
+                "End practice",
+                "Practice ended early",
+                "Submitted answers kept in practice history",
+                "Practice paused",
+                "New practice",
+            ],
+            Language::French => [
+                "Terminer l’exercice ?",
+                "Continuer l’exercice",
+                "Terminer l’exercice",
+                "Exercice terminé avant la fin",
+                "Réponses soumises conservées dans l’historique",
+                "Exercice en pause",
+                "Nouvel exercice",
+            ],
+            Language::German => [
+                "Übung beenden?",
+                "Weiterüben",
+                "Übung beenden",
+                "Übung vorzeitig beendet",
+                "Abgegebene Antworten im Übungsverlauf gespeichert",
+                "Übung pausiert",
+                "Neue Übung",
+            ],
+            Language::Spanish => [
+                "¿Finalizar la práctica?",
+                "Seguir practicando",
+                "Finalizar práctica",
+                "Práctica finalizada antes de tiempo",
+                "Respuestas enviadas conservadas en el historial",
+                "Práctica pausada",
+                "Nueva práctica",
+            ],
+            Language::Pseudo => Self::english().practice_lifecycle().map(pseudo_static),
+        }
+    }
+
+    pub fn end_confirmation(&self) -> [&'static str; 4] {
+        match self.language {
+            Language::English => [
+                "End this session?",
+                "Submitted answers will be retained. The unfinished trial will be excluded.",
+                "Keep listening",
+                "End and reveal results",
+            ],
+            Language::French => [
+                "Terminer cette session ?",
+                "Les réponses soumises seront conservées. L’essai inachevé sera exclu.",
+                "Continuer l’écoute",
+                "Terminer et afficher les résultats",
+            ],
+            Language::German => [
+                "Diese Sitzung beenden?",
+                "Abgegebene Antworten bleiben erhalten. Der unvollständige Versuch wird ausgeschlossen.",
+                "Weiterhören",
+                "Beenden und Ergebnisse anzeigen",
+            ],
+            Language::Spanish => [
+                "¿Finalizar esta sesión?",
+                "Se conservarán las respuestas enviadas. Se excluirá la prueba sin terminar.",
+                "Seguir escuchando",
+                "Finalizar y mostrar resultados",
+            ],
+            Language::Pseudo => Self::english().end_confirmation().map(pseudo_static),
+        }
+    }
+
+    pub fn no_answers_submitted(&self) -> &'static str {
+        match self.language {
+            Language::English => "No answers submitted.",
+            Language::French => "Aucune réponse soumise.",
+            Language::German => "Keine Antworten abgegeben.",
+            Language::Spanish => "No se han enviado respuestas.",
+            Language::Pseudo => pseudo_static(Self::english().no_answers_submitted()),
+        }
+    }
+
+    pub fn session_ended_early(&self) -> &'static str {
+        match self.language {
+            Language::English => "Session ended early.",
+            Language::French => "Session terminée avant la fin.",
+            Language::German => "Sitzung vorzeitig beendet.",
+            Language::Spanish => "Sesión finalizada antes de tiempo.",
+            Language::Pseudo => pseudo_static(Self::english().session_ended_early()),
+        }
+    }
+
+    pub fn result_explanation(&self, preference: bool) -> &'static str {
+        match (self.language, preference) {
+            (Language::English, true) => {
+                "Preference records your choices; it has no correct answer."
+            }
+            (Language::English, false) => {
+                "This score alone does not establish an audible difference."
+            }
+            (Language::French, true) => {
+                "La préférence consigne vos choix ; il n’y a pas de bonne réponse."
+            }
+            (Language::French, false) => "Ce score seul ne démontre pas une différence audible.",
+            (Language::German, true) => {
+                "Die Präferenz erfasst Ihre Wahl; es gibt keine richtige Antwort."
+            }
+            (Language::German, false) => "Dieser Wert allein belegt keinen hörbaren Unterschied.",
+            (Language::Spanish, true) => {
+                "La preferencia registra sus elecciones; no hay una respuesta correcta."
+            }
+            (Language::Spanish, false) => {
+                "Esta puntuación por sí sola no demuestra una diferencia audible."
+            }
+            (Language::Pseudo, preference) => {
+                pseudo_static(Self::english().result_explanation(preference))
+            }
+        }
+    }
+
+    pub fn pause_resume(&self, paused: bool) -> &'static str {
+        match (self.language, paused) {
+            (Language::English, false) => "Pause",
+            (Language::English, true) => "Resume listening",
+            (Language::French, false) => "Pause",
+            (Language::French, true) => "Reprendre l’écoute",
+            (Language::German, false) => "Pause",
+            (Language::German, true) => "Weiterhören",
+            (Language::Spanish, false) => "Pausar",
+            (Language::Spanish, true) => "Reanudar la escucha",
+            (Language::Pseudo, paused) => pseudo_static(Self::english().pause_resume(paused)),
+        }
+    }
+
+    pub fn end_session(&self) -> &'static str {
+        match self.language {
+            Language::English => "End session",
+            Language::French => "Terminer la session",
+            Language::German => "Sitzung beenden",
+            Language::Spanish => "Finalizar la sesión",
+            Language::Pseudo => pseudo_static(Self::english().end_session()),
+        }
+    }
+    pub fn workspace(&self) -> ListeningWorkspaceTranslations {
+        let labels = match self.language {
+            Language::English => [
+                "Set up",
+                "Listen",
+                "Results",
+                "View results",
+                "Next trial",
+                "New comparison",
+                "Planned trials",
+                "Setup locked · levels checked",
+                "Answers stay hidden until results.",
+                "Submit answer",
+            ],
+            Language::French => [
+                "Préparer",
+                "Écouter",
+                "Résultats",
+                "Voir les résultats",
+                "Essai suivant",
+                "Nouvelle comparaison",
+                "Essais prévus",
+                "Configuration verrouillée · niveaux vérifiés",
+                "Les réponses restent masquées jusqu’aux résultats.",
+                "Valider la réponse",
+            ],
+            Language::German => [
+                "Vorbereiten",
+                "Hören",
+                "Ergebnisse",
+                "Ergebnisse anzeigen",
+                "Nächster Versuch",
+                "Neuer Vergleich",
+                "Geplante Versuche",
+                "Einrichtung gesperrt · Pegel geprüft",
+                "Antworten bleiben bis zur Auswertung verborgen.",
+                "Antwort abgeben",
+            ],
+            Language::Spanish => [
+                "Preparar",
+                "Escuchar",
+                "Resultados",
+                "Ver resultados",
+                "Siguiente prueba",
+                "Nueva comparación",
+                "Pruebas previstas",
+                "Configuración bloqueada · niveles comprobados",
+                "Las respuestas se ocultan hasta los resultados.",
+                "Enviar respuesta",
+            ],
+            Language::Pseudo => Self::english().workspace().labels().map(pseudo_static),
+        };
+        let [
+            setup,
+            listen,
+            results,
+            view_results,
+            next_trial,
+            new_comparison,
+            planned_trials,
+            locked,
+            answers_hidden,
+            submit,
+        ] = labels;
+        ListeningWorkspaceTranslations {
+            setup,
+            listen,
+            results,
+            view_results,
+            next_trial,
+            new_comparison,
+            planned_trials,
+            locked,
+            answers_hidden,
+            submit,
+        }
+    }
     fn english() -> Self {
         Translations::for_language(Language::English).listening_test
     }
@@ -8117,8 +8809,48 @@ impl ListeningTestTranslations {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ListeningWorkspaceTranslations {
+    pub setup: &'static str,
+    pub listen: &'static str,
+    pub results: &'static str,
+    pub view_results: &'static str,
+    pub next_trial: &'static str,
+    pub new_comparison: &'static str,
+    pub planned_trials: &'static str,
+    pub locked: &'static str,
+    pub answers_hidden: &'static str,
+    pub submit: &'static str,
+}
+
+impl ListeningWorkspaceTranslations {
+    fn labels(self) -> [&'static str; 10] {
+        [
+            self.setup,
+            self.listen,
+            self.results,
+            self.view_results,
+            self.next_trial,
+            self.new_comparison,
+            self.planned_trials,
+            self.locked,
+            self.answers_hidden,
+            self.submit,
+        ]
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct EqTrainingComparisonTranslations {
+    pub requires_ab: &'static str,
+    pub add_ab_plugin: &'static str,
+    pub filtered_active: &'static str,
+    pub original_active: &'static str,
+}
+
 #[derive(Debug, Clone)]
 pub struct EqTrainingTranslations {
+    pub comparison: EqTrainingComparisonTranslations,
     language: Language,
     pub mode_eq: &'static str,
     pub mode_blind: &'static str,
@@ -8134,7 +8866,6 @@ pub struct EqTrainingTranslations {
     pub trials: &'static str,
     pub start: &'static str,
     pub restart: &'static str,
-    pub requires_ab: &'static str,
     pub question: &'static str,
     pub complete: &'static str,
     pub start_prompt: &'static str,
@@ -8145,14 +8876,82 @@ pub struct EqTrainingTranslations {
     pub shortcuts: &'static str,
     pub configure_start: &'static str,
     pub session_started: &'static str,
-    pub add_ab_plugin: &'static str,
-    pub filtered_active: &'static str,
-    pub original_active: &'static str,
     pub correct: &'static str,
     pub learning: EqTrainingLearningTranslations,
 }
 
 impl EqTrainingTranslations {
+    pub fn choose_source(&self) -> &'static str {
+        match self.language {
+            Language::English => "Choose and play audio…",
+            Language::French => "Choisir et lire un fichier audio…",
+            Language::German => "Audiodatei wählen und abspielen…",
+            Language::Spanish => "Elegir y reproducir audio…",
+            Language::Pseudo => pseudo_static("Choose and play audio…"),
+        }
+    }
+
+    pub fn source_position(&self, index: usize, count: usize) -> String {
+        match self.language {
+            Language::English => format!("Source {index}/{count}"),
+            Language::French => format!("Source {index}/{count}"),
+            Language::German => format!("Quelle {index}/{count}"),
+            Language::Spanish => format!("Fuente {index}/{count}"),
+            Language::Pseudo => pseudo_owned(self.language, format!("Source {index}/{count}")),
+        }
+    }
+
+    pub fn source_error(&self, detail: &str) -> String {
+        let label = match self.language {
+            Language::English => "Could not open audio",
+            Language::French => "Impossible d’ouvrir le fichier audio",
+            Language::German => "Audiodatei konnte nicht geöffnet werden",
+            Language::Spanish => "No se pudo abrir el audio",
+            Language::Pseudo => pseudo_static("Could not open audio"),
+        };
+        format!("{label}: {detail}")
+    }
+
+    pub fn frequency_details(&self) -> &'static str {
+        match self.language {
+            Language::English => "Frequency range and filter width",
+            Language::French => "Plage de fréquences et largeur du filtre",
+            Language::German => "Frequenzbereich und Filterbreite",
+            Language::Spanish => "Rango de frecuencias y ancho del filtro",
+            Language::Pseudo => pseudo_static("Frequency range and filter width"),
+        }
+    }
+
+    pub fn gain_choices(&self) -> &'static str {
+        match self.language {
+            Language::English => "Gain choices",
+            Language::French => "Choix de gain",
+            Language::German => "Verstärkungsstufen",
+            Language::Spanish => "Opciones de ganancia",
+            Language::Pseudo => pseudo_static("Gain choices"),
+        }
+    }
+
+    pub fn minimum_frequency(&self) -> &'static str {
+        match self.language {
+            Language::English => "Minimum frequency",
+            Language::French => "Fréquence minimale",
+            Language::German => "Minimale Frequenz",
+            Language::Spanish => "Frecuencia mínima",
+            Language::Pseudo => pseudo_static("Minimum frequency"),
+        }
+    }
+
+    pub fn maximum_frequency(&self) -> &'static str {
+        match self.language {
+            Language::English => "Maximum frequency",
+            Language::French => "Fréquence maximale",
+            Language::German => "Maximale Frequenz",
+            Language::Spanish => "Frecuencia máxima",
+            Language::Pseudo => pseudo_static("Maximum frequency"),
+        }
+    }
+
     fn english() -> Self {
         Translations::for_language(Language::English)
             .listening_test
@@ -8249,6 +9048,27 @@ impl EqTrainingTranslations {
             Language::French => format!("Essai {current}/{total} · Précision {accuracy:.0} %"),
             Language::German => format!("Versuch {current}/{total} · Genauigkeit {accuracy:.0} %"),
             Language::Spanish => format!("Ensayo {current}/{total} · Precisión {accuracy:.0} %"),
+        }
+    }
+
+    pub fn completion_status(&self, correct: usize, total: usize, accuracy: f64) -> String {
+        match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::english().completion_status(correct, total, accuracy),
+            ),
+            Language::English => {
+                format!("Session complete: {correct}/{total} correct ({accuracy:.0}%).")
+            }
+            Language::French => format!(
+                "Session terminée : {correct}/{total} réponses correctes ({accuracy:.0} %)."
+            ),
+            Language::German => {
+                format!("Sitzung abgeschlossen: {correct}/{total} richtig ({accuracy:.0} %).")
+            }
+            Language::Spanish => format!(
+                "Sesión completada: {correct}/{total} respuestas correctas ({accuracy:.0} %)."
+            ),
         }
     }
     pub fn streak(&self, count: usize) -> String {
@@ -9421,7 +10241,12 @@ impl Translations {
                     trials: "Trials",
                     start: "Start session",
                     restart: "Restart session",
-                    requires_ab: "Playback comparison uses an A/B Compare plugin in the active rack.",
+                    comparison: EqTrainingComparisonTranslations {
+                        requires_ab: "Playback comparison uses an A/B Compare plugin in the active rack.",
+                        add_ab_plugin: "Add an A/B Compare plugin to the active rack before training.",
+                        filtered_active: "Filtered cue active.",
+                        original_active: "Original cue active.",
+                    },
                     question: "Which band was changed?",
                     complete: "Session complete",
                     start_prompt: "Start a session to begin",
@@ -9432,9 +10257,6 @@ impl Translations {
                     shortcuts: "Space Play/Pause · 1/2 Compare · ←/→ Select · Enter Submit · N Next",
                     configure_start: "Configure a session, then press Start.",
                     session_started: "Session started. Compare the two cues.",
-                    add_ab_plugin: "Add an A/B Compare plugin to the active rack before training.",
-                    filtered_active: "Filtered cue active.",
-                    original_active: "Original cue active.",
                     correct: "Correct",
                     learning: EqTrainingLearningTranslations {
                         answer: "Answer",
@@ -9630,8 +10452,8 @@ impl Translations {
             settings_tab_servers: "Server",
             settings_tab_metadata: "Metadata",
             settings_tab_release_channel: "Features",
-            settings_release_channel_title: "Feature Release Channel",
-            settings_release_channel_description: "Control which features are visible. Stable shows only production-ready features. Beta and Alpha unlock experimental features.",
+            settings_release_channel_title: "Feature availability",
+            settings_release_channel_description: "Choose which maturity level is visible. Beta includes Stable features; Alpha includes all levels. This does not install an update.",
             playback_no_track: "No track playing",
             playback_default_device: "Default",
 
@@ -9924,7 +10746,12 @@ impl Translations {
                     trials: "Essais",
                     start: "Démarrer la session",
                     restart: "Redémarrer la session",
-                    requires_ab: "La comparaison utilise un plugin Comparaison A/B dans le rack actif.",
+                    comparison: EqTrainingComparisonTranslations {
+                        requires_ab: "La comparaison utilise un plugin Comparaison A/B dans le rack actif.",
+                        add_ab_plugin: "Ajoutez un plugin Comparaison A/B au rack actif avant l’entraînement.",
+                        filtered_active: "Signal filtré actif.",
+                        original_active: "Signal original actif.",
+                    },
                     question: "Quelle bande a été modifiée ?",
                     complete: "Session terminée",
                     start_prompt: "Démarrez une session pour commencer",
@@ -9935,9 +10762,6 @@ impl Translations {
                     shortcuts: "Espace Lecture/Pause · 1/2 Comparer · ←/→ Choisir · Entrée Valider · N Suivant",
                     configure_start: "Configurez une session, puis appuyez sur Démarrer.",
                     session_started: "Session démarrée. Comparez les deux signaux.",
-                    add_ab_plugin: "Ajoutez un plugin Comparaison A/B au rack actif avant l’entraînement.",
-                    filtered_active: "Signal filtré actif.",
-                    original_active: "Signal original actif.",
                     correct: "Correct",
                     learning: EqTrainingLearningTranslations {
                         answer: "Réponse",
@@ -10133,8 +10957,8 @@ impl Translations {
             settings_tab_servers: "Server",
             settings_tab_metadata: "Métadonnées",
             settings_tab_release_channel: "Fonctions",
-            settings_release_channel_title: "Canal de fonctionnalités",
-            settings_release_channel_description: "Contrôlez les fonctionnalités visibles. Stable affiche uniquement les fonctions prêtes pour la production. Bêta et Alpha débloquent les fonctions expérimentales.",
+            settings_release_channel_title: "Disponibilité des fonctionnalités",
+            settings_release_channel_description: "Choisissez le niveau des fonctionnalités visibles. Bêta inclut les fonctions stables ; Alpha inclut tous les niveaux. Ce choix n’installe pas de mise à jour.",
             playback_no_track: "Aucune piste en lecture",
             playback_default_device: "Par défaut",
 
@@ -10427,7 +11251,12 @@ impl Translations {
                     trials: "Versuche",
                     start: "Sitzung starten",
                     restart: "Sitzung neu starten",
-                    requires_ab: "Der Vergleich verwendet ein A/B-Vergleichs-Plugin im aktiven Rack.",
+                    comparison: EqTrainingComparisonTranslations {
+                        requires_ab: "Der Vergleich verwendet ein A/B-Vergleichs-Plugin im aktiven Rack.",
+                        add_ab_plugin: "Fügen Sie vor dem Training ein A/B-Vergleichs-Plugin zum aktiven Rack hinzu.",
+                        filtered_active: "Gefiltertes Signal aktiv.",
+                        original_active: "Originalsignal aktiv.",
+                    },
                     question: "Welches Band wurde geändert?",
                     complete: "Sitzung abgeschlossen",
                     start_prompt: "Starten Sie eine Sitzung",
@@ -10438,9 +11267,6 @@ impl Translations {
                     shortcuts: "Leertaste Start/Pause · 1/2 Vergleichen · ←/→ Wählen · Eingabe Bestätigen · N Weiter",
                     configure_start: "Konfigurieren und starten Sie eine Sitzung.",
                     session_started: "Sitzung gestartet. Vergleichen Sie beide Signale.",
-                    add_ab_plugin: "Fügen Sie vor dem Training ein A/B-Vergleichs-Plugin zum aktiven Rack hinzu.",
-                    filtered_active: "Gefiltertes Signal aktiv.",
-                    original_active: "Originalsignal aktiv.",
                     correct: "Richtig",
                     learning: EqTrainingLearningTranslations {
                         answer: "Antwort",
@@ -10636,8 +11462,8 @@ impl Translations {
             settings_tab_servers: "Server",
             settings_tab_metadata: "Metadaten",
             settings_tab_release_channel: "Funktionen",
-            settings_release_channel_title: "Feature-Kanal",
-            settings_release_channel_description: "Steuern Sie, welche Funktionen sichtbar sind. Stabil zeigt nur produktionsreife Funktionen. Beta und Alpha schalten experimentelle Funktionen frei.",
+            settings_release_channel_title: "Funktionsumfang",
+            settings_release_channel_description: "Wählen Sie den sichtbaren Reifegrad. Beta enthält stabile Funktionen; Alpha enthält alle Stufen. Dabei wird kein Update installiert.",
             playback_no_track: "Kein Titel wird abgespielt",
             playback_default_device: "Standard",
 
@@ -10930,7 +11756,12 @@ impl Translations {
                     trials: "Ensayos",
                     start: "Iniciar sesión",
                     restart: "Reiniciar sesión",
-                    requires_ab: "La comparación usa un plugin de Comparación A/B en el rack activo.",
+                    comparison: EqTrainingComparisonTranslations {
+                        requires_ab: "La comparación usa un plugin de Comparación A/B en el rack activo.",
+                        add_ab_plugin: "Añada un plugin de Comparación A/B al rack activo antes de entrenar.",
+                        filtered_active: "Señal filtrada activa.",
+                        original_active: "Señal original activa.",
+                    },
                     question: "¿Qué banda se modificó?",
                     complete: "Sesión completada",
                     start_prompt: "Inicie una sesión para comenzar",
@@ -10941,9 +11772,6 @@ impl Translations {
                     shortcuts: "Espacio Reproducir/Pausa · 1/2 Comparar · ←/→ Elegir · Intro Confirmar · N Siguiente",
                     configure_start: "Configure una sesión y pulse Iniciar.",
                     session_started: "Sesión iniciada. Compare las dos señales.",
-                    add_ab_plugin: "Añada un plugin de Comparación A/B al rack activo antes de entrenar.",
-                    filtered_active: "Señal filtrada activa.",
-                    original_active: "Señal original activa.",
                     correct: "Correcto",
                     learning: EqTrainingLearningTranslations {
                         answer: "Respuesta",
@@ -11139,8 +11967,8 @@ impl Translations {
             settings_tab_servers: "Server",
             settings_tab_metadata: "Metadatos",
             settings_tab_release_channel: "Funciones",
-            settings_release_channel_title: "Canal de funciones",
-            settings_release_channel_description: "Controle qué funciones son visibles. Estable muestra solo funciones listas para producción. Beta y Alpha desbloquean funciones experimentales.",
+            settings_release_channel_title: "Disponibilidad de funciones",
+            settings_release_channel_description: "Elija el nivel de madurez visible. Beta incluye las funciones estables; Alfa incluye todos los niveles. Esto no instala una actualización.",
             playback_no_track: "No hay pista reproduciéndose",
             playback_default_device: "Predeterminado",
 

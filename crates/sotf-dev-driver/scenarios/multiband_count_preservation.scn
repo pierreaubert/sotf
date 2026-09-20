@@ -1,0 +1,76 @@
+# Per-band IDs are not supported by plugin_query. Validate band-checkpoint.json,
+# multiband-expander.json and multiband-expander-reloaded.json: band 1 threshold -33;
+# global threshold -40 at checkpoint, -25 in final/reloaded artifacts.
+resize 1600 1400
+focus Studio
+plugin_clear
+plugin_add MultibandExpander
+action PluginSelectFirstUser
+wait_idle 1s
+# Coordinates grounded in native captures 1788994532 and 1788994576.
+click_at 815 533
+wait_idle 500ms
+click_at 692 645
+wait_idle 500ms
+assert_accessible spinbutton Threshold value
+click_at 692 629
+key cmd-a
+type "-33"
+key enter
+wait_idle 500ms
+plugin_chain_save $SOTF_QA_DIR/band-checkpoint.json
+assert plugins.plugin.2.param.6.value == -40 tolerance=0.001
+click_at 735 533
+wait_idle 500ms
+click_at 692 645
+wait_idle 500ms
+click_at 692 629
+key cmd-a
+type "-25"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.6.value == -25 tolerance=0.001
+
+click_at 815 533
+wait_idle 500ms
+screenshot multiband-expander-independent-band
+plugin_chain_save $SOTF_QA_DIR/multiband-expander.json
+plugin_remove 2
+plugin_chain_load $SOTF_QA_DIR/multiband-expander.json
+assert plugins.plugin.2.param.6.value == -25 tolerance=0.001
+
+plugin_chain_save $SOTF_QA_DIR/multiband-expander-reloaded.json
+action PluginSelectFirstUser
+wait_idle 1s
+scroll rack.params 5000
+wait_idle 500ms
+click_at 290 663
+key cmd-a
+type "5"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.0.value == 5
+plugin_chain_save $SOTF_QA_DIR/multiband-count-5.json
+assert_accessible slider XOver 4
+screenshot multiband-count-5
+click_at 290 663
+key cmd-a
+type "2"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.0.value == 2
+plugin_chain_save $SOTF_QA_DIR/multiband-count-2.json
+assert_inaccessible slider XOver 2
+assert_inaccessible slider XOver 3
+assert_inaccessible slider XOver 4
+screenshot multiband-count-2
+click_at 290 663
+key cmd-a
+type "4"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.0.value == 4
+plugin_chain_save $SOTF_QA_DIR/multiband-count-4.json
+assert_accessible slider XOver 3
+assert_inaccessible slider XOver 4
+screenshot multiband-count-4

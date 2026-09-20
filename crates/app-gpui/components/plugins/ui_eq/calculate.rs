@@ -1,10 +1,14 @@
 use super::consts::CHART_LEFT_MARGIN;
 use super::consts::CHART_RIGHT_MARGIN;
-use super::consts::filter_log_response;
+use super::consts::{SAMPLE_RATE, filter_log_response_at_rate};
 use sotf_audio_player::EQFilter;
 
 /// Calculate the combined response in dB at a given frequency
 pub fn calculate_response_at_freq(filters: &[EQFilter], freq: f64) -> f64 {
+    calculate_response_at_rate(filters, freq, SAMPLE_RATE)
+}
+
+pub fn calculate_response_at_rate(filters: &[EQFilter], freq: f64, sample_rate: f64) -> f64 {
     if filters.is_empty() {
         return 0.0;
     }
@@ -20,16 +24,20 @@ pub fn calculate_response_at_freq(filters: &[EQFilter], freq: f64) -> f64 {
             }
             true
         })
-        .map(|f| filter_log_response(f, freq))
+        .map(|f| filter_log_response_at_rate(f, freq, sample_rate))
         .sum()
 }
 
 /// Calculate single band response at a frequency
 pub fn calculate_band_response(filter: &EQFilter, freq: f64) -> f64 {
+    calculate_band_response_at_rate(filter, freq, SAMPLE_RATE)
+}
+
+pub fn calculate_band_response_at_rate(filter: &EQFilter, freq: f64, sample_rate: f64) -> f64 {
     if filter.muted {
         return 0.0;
     }
-    filter_log_response(filter, freq)
+    filter_log_response_at_rate(filter, freq, sample_rate)
 }
 
 /// Calculate dynamic y-axis range based on filter gains.

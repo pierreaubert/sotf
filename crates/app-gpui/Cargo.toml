@@ -27,6 +27,7 @@ spotify = ["dep:sotf-service-spotify", "sotf-player/spotify"]
 # and only starts at runtime when `sotf-desktop --qa <dir>` is used.
 qa = []
 dev-api = [
+    "dep:hound",
     "sotf-player/dev-api",
     "visual-qa",
     "dep:sotf-dev-api",
@@ -43,6 +44,7 @@ visual-qa = [
 ]
 
 [dependencies]
+hound = { workspace = true, optional = true }
 # GPUI framework
 gpui = { workspace = true }
 gpui-builder = { workspace = true }

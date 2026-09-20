@@ -232,9 +232,35 @@ pub fn set_plugin_param_value(
             }
         }
         // === MultibandCompressor band-level params (idx >= 100) ===
-        PluginSettings::MultibandCompressor { bands, .. } if param_idx >= 100 => {
+        PluginSettings::MultibandCompressor {
+            num_bands, bands, ..
+        } if param_idx >= 100 => {
             let band_idx = (param_idx / 100) - 1;
             let local_idx = param_idx % 100;
+            // Missing entries inherit the global defaults until independently edited.
+            if band_idx >= *num_bands
+                || !matches!(local_idx, 6..=10 | 13..=17)
+                || !value.is_finite()
+            {
+                return false;
+            }
+            let numeric_key = match local_idx {
+                6 => Some("threshold"),
+                7 => Some("ratio"),
+                8 => Some("attack"),
+                9 => Some("release"),
+                10 => Some("knee"),
+                13 => Some("makeup_gain"),
+                _ => None,
+            };
+            let value = numeric_key.map_or(value, |key| {
+                sotf_plugins::param_specs::find_by_key(
+                    sotf_plugins::param_specs::multiband_compressor::BAND_TEMPLATE,
+                    key,
+                )
+                .clamp_f64(value)
+            });
+            bands.resize_with(bands.len().max(band_idx + 1), Default::default);
             if let Some(band) = bands.get_mut(band_idx) {
                 match local_idx {
                     6 => {
@@ -284,9 +310,34 @@ pub fn set_plugin_param_value(
             }
         }
         // === MultibandExpander band-level params (idx >= 100) ===
-        PluginSettings::MultibandExpander { bands, .. } if param_idx >= 100 => {
+        PluginSettings::MultibandExpander {
+            num_bands, bands, ..
+        } if param_idx >= 100 => {
             let band_idx = (param_idx / 100) - 1;
             let local_idx = param_idx % 100;
+            // Missing entries inherit the global defaults until independently edited.
+            if band_idx >= *num_bands || !matches!(local_idx, 6..=17) || !value.is_finite() {
+                return false;
+            }
+            let numeric_key = match local_idx {
+                6 => Some("threshold"),
+                7 => Some("ratio"),
+                8 => Some("attack"),
+                9 => Some("release"),
+                10 => Some("range"),
+                11 => Some("knee"),
+                12 => Some("hysteresis"),
+                13 => Some("hold"),
+                _ => None,
+            };
+            let value = numeric_key.map_or(value, |key| {
+                sotf_plugins::param_specs::find_by_key(
+                    sotf_plugins::param_specs::multiband_expander::BAND_TEMPLATE,
+                    key,
+                )
+                .clamp_f64(value)
+            });
+            bands.resize_with(bands.len().max(band_idx + 1), Default::default);
             if let Some(band) = bands.get_mut(band_idx) {
                 match local_idx {
                     6 => {
@@ -681,6 +732,94 @@ mod tests {
                 assert!((bands[0].threshold_db.unwrap() - -15.0).abs() < 0.01);
             }
             _ => panic!("expected MultibandCompressor"),
+        }
+    }
+
+    #[test]
+    fn multiband_sparse_overrides_materialize_only_for_valid_edits() {
+        for (kind, name) in [
+            (
+                crate::PluginType::MultibandCompressor,
+                "MultibandCompressor",
+            ),
+            (crate::PluginType::MultibandExpander, "MultibandExpander"),
+        ] {
+            let mut settings = PluginSettings::default_for(&kind).unwrap();
+            let original = serde_json::to_value(&settings).unwrap();
+            let mut changed = false;
+            for (index, value) in [(406, -30.0), (399, 1.0), (306, f64::NAN)] {
+                assert!(!set_plugin_param_value(
+                    &mut settings,
+                    index,
+                    value,
+                    &mut changed
+                ));
+                assert_eq!(serde_json::to_value(&settings).unwrap(), original);
+            }
+            assert!(set_plugin_param_value(
+                &mut settings,
+                306,
+                -33.0,
+                &mut changed
+            ));
+            assert!(set_plugin_param_value(
+                &mut settings,
+                6,
+                -25.0,
+                &mut changed
+            ));
+            let saved = serde_json::to_value(&settings).unwrap();
+            let bands = saved[name]["bands"].as_array().unwrap();
+            assert_eq!(bands.len(), 3);
+            assert!(bands[0]["threshold_db"].is_null());
+            assert!(bands[1]["threshold_db"].is_null());
+            assert_eq!(bands[2]["threshold_db"], -33.0);
+            assert_eq!(saved[name]["threshold_db"], -25.0);
+            let reloaded: PluginSettings = serde_json::from_value(saved.clone()).unwrap();
+            assert_eq!(serde_json::to_value(reloaded).unwrap(), saved);
+        }
+    }
+
+    #[test]
+    fn multiband_count_preserves_retained_band_activation() {
+        for (kind, name) in [
+            (
+                crate::PluginType::MultibandCompressor,
+                "MultibandCompressor",
+            ),
+            (crate::PluginType::MultibandExpander, "MultibandExpander"),
+        ] {
+            let mut settings = PluginSettings::default_for(&kind).unwrap();
+            let mut changed = false;
+            assert!(set_plugin_param_value(
+                &mut settings,
+                117,
+                0.0,
+                &mut changed
+            ));
+            assert!(set_plugin_param_value(
+                &mut settings,
+                106,
+                -33.0,
+                &mut changed
+            ));
+            for count in [5.0, 2.0, 4.0] {
+                assert!(set_plugin_param_value(
+                    &mut settings,
+                    0,
+                    count,
+                    &mut changed
+                ));
+                assert!(changed);
+                let saved = serde_json::to_value(&settings).unwrap();
+                let bands = saved[name]["bands"].as_array().unwrap();
+                assert_eq!(bands.len(), count as usize);
+                assert_eq!(bands[0]["active"], false);
+                assert_eq!(bands[0]["threshold_db"], -33.0);
+                if count >= 4.0 {
+                    assert_eq!(bands[3]["active"], false);
+                }
+            }
         }
     }
 

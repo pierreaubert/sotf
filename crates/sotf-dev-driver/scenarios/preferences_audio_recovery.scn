@@ -1,0 +1,30 @@
+# 2026-09-08: accepted audio apply followed by save failure restored only UI
+# settings. device.rs now awaits restoration or an acknowledged fallback Stop.
+# The fixture models an accepted command with no source available for recovery;
+# it never opens an audio device and does not establish live-device restoration.
+# Run: target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/preferences_audio_recovery_ui.toml -v
+focus Home
+focus Settings
+wait_idle
+assert settings.replay_gain_enabled == true
+action PreferencesBlockConfigSave
+action PreferencesSeedAcceptedAudioApply
+wait_until preferences.audio_applying == false timeout=5s
+assert preferences.audio_dirty == true
+assert settings.replay_gain_enabled == true
+assert preferences.replay_gain_enabled == false
+assert preferences.output_error == "Could not save audio settings. Retry Apply. Could not restore previous playback. Playback stopped; retry Apply"
+assert playback.is_playing == false
+assert screen.focused == "Settings"
+action PreferencesUnblockConfigSave
+assert settings.persisted_audio.replay_gain_enabled == true
+click preferences.done
+assert preferences.close_pending == true
+click preferences.close.apply
+wait_idle
+assert screen.focused == "Home"
+assert preferences.audio_dirty == false
+assert preferences.output_error == null
+assert settings.replay_gain_enabled == false
+assert settings.persisted_audio.replay_gain_enabled == false
+assert playback.is_playing == false

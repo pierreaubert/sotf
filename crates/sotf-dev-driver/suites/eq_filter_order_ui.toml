@@ -1,0 +1,10 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "20s"
+size = "1440x1000"
+
+[[scenario]]
+name = "eq-filter-order"
+path = "crates/sotf-dev-driver/scenarios/eq_filter_order.scn"
+timeout = "60s"

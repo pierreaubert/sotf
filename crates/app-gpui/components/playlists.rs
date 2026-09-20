@@ -80,6 +80,7 @@ impl PlayerView {
         }
         let mut result = div()
             .id("playlists-screen")
+            .track_scroll(&self.scroll.playlists)
             .flex()
             .flex_col()
             .size_full()
@@ -135,8 +136,13 @@ impl PlayerView {
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Sm)
                     .theme(theme.to_button_theme())
-                    .on_click(move |_, cx| {
-                        undo_view.update(cx, |this, cx| this.undo_playlist_delete(cx));
+                    .on_click_event(move |_, window, cx| {
+                        undo_view.update(cx, |this, cx| {
+                            this.undo_playlist_delete(cx);
+                            if this.state.read(cx).app.playlist.deleted_playlist.is_none() {
+                                this.focus_handle.focus(window, cx);
+                            }
+                        });
                     }),
                 "playlist.undo_delete"
             ));
@@ -183,9 +189,14 @@ impl PlayerView {
                                         .variant(ButtonVariant::Primary)
                                         .size(ButtonSize::Sm)
                                         .theme(theme.to_button_theme())
-                                        .on_click(move |_, cx| {
+                                        .on_click_event(move |_, window, cx| {
                                             save_view.update(cx, |this, cx| {
-                                                this.save_playlist_dialog(cx)
+                                                this.save_playlist_dialog(cx);
+                                                if this.state.read(cx).app.playlist.dialog
+                                                    == PlaylistDialog::None
+                                                {
+                                                    this.focus_handle.focus(window, cx);
+                                                }
                                             });
                                         }),
                                     "playlist.save"
@@ -195,11 +206,12 @@ impl PlayerView {
                                         .variant(ButtonVariant::Secondary)
                                         .size(ButtonSize::Sm)
                                         .theme(theme.to_button_theme())
-                                        .on_click(move |_, cx| {
+                                        .on_click_event(move |_, window, cx| {
                                             cancel_view.update(cx, |this, cx| {
                                                 this.state.update(cx, |state, _| {
                                                     state.app.playlist.dialog = PlaylistDialog::None
                                                 });
+                                                this.focus_handle.focus(window, cx);
                                                 cx.notify();
                                             });
                                         }),
@@ -222,9 +234,15 @@ impl PlayerView {
                                 .variant(ButtonVariant::Primary)
                                 .size(ButtonSize::Sm)
                                 .theme(theme.to_button_theme())
-                                .on_click(move |_, cx| {
-                                    confirm_view
-                                        .update(cx, |this, cx| this.delete_selected_playlist(cx));
+                                .on_click_event(move |_, window, cx| {
+                                    confirm_view.update(cx, |this, cx| {
+                                        this.delete_selected_playlist(cx);
+                                        if this.state.read(cx).app.playlist.dialog
+                                            == PlaylistDialog::None
+                                        {
+                                            this.focus_handle.focus(window, cx);
+                                        }
+                                    });
                                 }),
                             "playlist.delete_confirm"
                         ))
@@ -233,11 +251,12 @@ impl PlayerView {
                                 .variant(ButtonVariant::Secondary)
                                 .size(ButtonSize::Sm)
                                 .theme(theme.to_button_theme())
-                                .on_click(move |_, cx| {
+                                .on_click_event(move |_, window, cx| {
                                     cancel_view.update(cx, |this, cx| {
                                         this.state.update(cx, |state, _| {
                                             state.app.playlist.dialog = PlaylistDialog::None
                                         });
+                                        this.focus_handle.focus(window, cx);
                                         cx.notify();
                                     });
                                 }),
@@ -310,6 +329,11 @@ impl PlayerView {
             );
         }
         if let Some(playlist) = active_playlist {
+            let composition = crate::app::i18n::PlaylistCompositionTranslations::for_language(
+                self.state.read(cx).app.ui_state.language,
+            );
+            let can_add_current =
+                Self::current_playlist_track_path(&self.state.read(cx).app).is_some();
             let delete_view = view.clone();
             let queue_view = view.clone();
             let play_view = view.clone();
@@ -320,6 +344,22 @@ impl PlayerView {
                     .flex_wrap()
                     .items_center()
                     .gap(d.gap)
+                    .child(dev_track!(
+                        Button::new("playlist-add-current-track", composition[0])
+                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Sm)
+                            .theme(theme.to_button_theme())
+                            .disabled(!can_add_current)
+                            .on_click({
+                                let add_view = view.clone();
+                                move |_, cx| {
+                                    add_view.update(cx, |this, cx| {
+                                        this.add_current_track_to_playlist(cx)
+                                    });
+                                }
+                            }),
+                        "playlist.add_current_track"
+                    ))
                     .child(dev_track!(
                         Button::new(
                             "playlist-add-library-album",
@@ -417,32 +457,86 @@ impl PlayerView {
             result = result.child(Heading::h4(playlist.name));
             if playlist.entries.is_empty() {
                 result = result.child(
-                    Text::new(text.empty_playlist)
+                    Text::new(composition[1])
                         .size(TextSize::Xs)
                         .color(theme.text_secondary),
                 );
             }
             let track_count = playlist.entries.len();
             for (index, entry) in playlist.entries.into_iter().enumerate() {
+                let resolved = self
+                    .state
+                    .read(cx)
+                    .app
+                    .library_state
+                    .library
+                    .albums
+                    .iter()
+                    .flat_map(|album| album.tracks.iter())
+                    .find(|track| track.path == entry.track_path)
+                    .cloned();
                 let up_view = view.clone();
                 let down_view = view.clone();
                 let remove_view = view.clone();
-                let track_label = entry
+                let fallback_label = entry
                     .track_path
                     .file_name()
                     .and_then(|name| name.to_str())
                     .map(str::to_owned)
                     .unwrap_or_else(|| entry.track_path.display().to_string());
+                let track_label = resolved
+                    .as_ref()
+                    .and_then(|track| track.title.clone())
+                    .unwrap_or(fallback_label);
+                let duration = resolved
+                    .as_ref()
+                    .and_then(|track| track.duration_secs)
+                    .map(|seconds| format!("{}:{:02}", seconds / 60, seconds % 60))
+                    .unwrap_or_else(|| "—".into());
+                let play_path = entry.track_path.clone();
+                let queue_path = entry.track_path.clone();
+                let play_track_view = view.clone();
+                let queue_track_view = view.clone();
                 let row = Card::new().style(|card| card.flex_none()).content(
-                    HStack::new()
-                        .spacing(StackSpacing::Sm)
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .items_center()
+                        .gap(d.gap)
                         .child(dev_track!(
-                            div().flex_1().min_w_0().child(
-                                Text::new(format!("{}. {track_label}", index + 1))
-                                    .size(TextSize::Xs)
-                                    .color(theme.text_secondary),
-                            ),
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .child(
+                                    Button::new(
+                                        format!("playlist-track-play-{index}"),
+                                        format!("{}. {track_label}", index + 1)
+                                    )
+                                    .variant(ButtonVariant::Ghost)
+                                    .size(ButtonSize::Sm)
+                                    .theme(theme.to_button_theme())
+                                    .disabled(resolved.is_none())
+                                    .on_click(move |_, cx| {
+                                        play_track_view.update(cx, |this, cx| {
+                                            this.activate_playlist_track(&play_path, true, cx)
+                                        });
+                                    }),
+                                )
+                                .child(Text::caption(duration)),
                             format!("playlist.track.{index}")
+                        ))
+                        .child(dev_track!(
+                            Button::new(format!("playlist-track-queue-{index}"), text.queue)
+                                .variant(ButtonVariant::Ghost)
+                                .size(ButtonSize::Xs)
+                                .theme(theme.to_button_theme())
+                                .disabled(resolved.is_none())
+                                .on_click(move |_, cx| {
+                                    queue_track_view.update(cx, |this, cx| {
+                                        this.activate_playlist_track(&queue_path, false, cx)
+                                    });
+                                }),
+                            format!("playlist.track_queue.{index}")
                         ))
                         .child(dev_track!(
                             Button::new(
@@ -883,6 +977,84 @@ impl PlayerView {
                 }
                 Err(error) => app.playlist.error = Some(error),
             }
+        });
+        cx.notify();
+    }
+
+    fn activate_playlist_track(
+        &mut self,
+        path: &std::path::Path,
+        play: bool,
+        cx: &mut Context<Self>,
+    ) {
+        use crate::components::home::album_detail::AlbumAction;
+        self.state.update(cx, |state, cx| {
+            let selection = state
+                .app
+                .library_state
+                .library
+                .albums
+                .iter()
+                .find_map(|album| {
+                    album
+                        .tracks
+                        .iter()
+                        .position(|track| track.path == path)
+                        .map(|index| (album.clone(), index))
+                });
+            if let Some((album, index)) = selection {
+                Self::apply_album_action(
+                    state,
+                    &album,
+                    Some(index),
+                    if play {
+                        AlbumAction::Play
+                    } else {
+                        AlbumAction::Append
+                    },
+                );
+                cx.notify();
+            }
+        });
+        cx.notify();
+    }
+
+    /// Playlists persist library file paths. Do not use a stale queued file
+    /// while system input is selected, or save a station's synthetic path.
+    fn current_playlist_track_path(app: &crate::app::App) -> Option<std::path::PathBuf> {
+        if app.audio_device_state.playback_source != crate::app::types::PlaybackSource::File {
+            return None;
+        }
+        let item = app.queue_state.get(app.queue_state.current_index?)?;
+        let track = item.current_track()?;
+        app.library_state
+            .library
+            .albums
+            .iter()
+            .any(|album| {
+                album
+                    .tracks
+                    .iter()
+                    .any(|candidate| candidate.path == track.path)
+            })
+            .then(|| track.path.clone())
+    }
+
+    fn add_current_track_to_playlist(&mut self, cx: &mut Context<Self>) {
+        let text = self.playlist_translations(cx);
+        self.state.update(cx, |state, cx| {
+            let app = &mut state.app;
+            let Some(path) = Self::current_playlist_track_path(app) else {
+                return;
+            };
+            let result = app
+                .library_state
+                .library
+                .get_database()
+                .ok_or_else(|| text.library_database_unavailable().to_string())
+                .and_then(|db| app.playlist.controller.add_tracks(db, &[path]));
+            app.playlist.error = result.err();
+            cx.notify();
         });
         cx.notify();
     }

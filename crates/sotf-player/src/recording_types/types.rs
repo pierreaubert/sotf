@@ -96,6 +96,10 @@ pub struct MicrophonePresetsConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordingResult {
     pub channel: usize,
+    /// Sample rate of this take, independent of current device settings.
+    /// Legacy and response-only imports may not supply a sample rate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sample_rate_hz: Option<u32>,
     pub wav_path: Option<String>,
     pub csv_path: Option<String>,
     pub frequencies: Vec<f32>,
@@ -115,4 +119,40 @@ pub struct RecordingResult {
     /// captured before quality gating or loaded from older session files.
     #[serde(default)]
     pub quality: Option<TakeQualitySummary>,
+}
+
+impl RecordingResult {
+    /// Whether the measured frequency response carries enough timing evidence
+    /// to reconstruct an impulse without inventing phase or sample rate.
+    pub fn can_reconstruct_impulse(&self) -> bool {
+        self.sample_rate_hz.is_some_and(|rate| rate > 0)
+            && self.frequencies.len() >= 2
+            && self.magnitude_db.len() == self.frequencies.len()
+            && self.phase_deg.len() == self.frequencies.len()
+            && self
+                .frequencies
+                .iter()
+                .all(|value| value.is_finite() && *value > 0.0)
+            && self.frequencies.windows(2).all(|pair| pair[1] > pair[0])
+            && self
+                .magnitude_db
+                .iter()
+                .chain(&self.phase_deg)
+                .all(|value| value.is_finite())
+    }
+
+    /// Measured impulse and its original millisecond axis, when valid.
+    /// This evidence does not require guessing a legacy take's sample rate.
+    pub fn measured_impulse(&self) -> Option<(&[f32], &[f32])> {
+        let times = self.impulse_time_ms.as_deref()?;
+        let impulse = self.impulse_response.as_deref()?;
+        if times.is_empty()
+            || times.len() != impulse.len()
+            || times.iter().chain(impulse).any(|value| !value.is_finite())
+            || times.windows(2).any(|pair| pair[1] <= pair[0])
+        {
+            return None;
+        }
+        Some((times, impulse))
+    }
 }

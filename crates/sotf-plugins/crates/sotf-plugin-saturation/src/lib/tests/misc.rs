@@ -1,4 +1,0 @@
-pub(super) fn rms(buf: &[f32]) -> f32 {
-    let sum: f32 = buf.iter().map(|x| x * x).sum();
-    (sum / buf.len() as f32).sqrt()
-}

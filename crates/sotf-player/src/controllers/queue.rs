@@ -38,6 +38,23 @@ pub struct PlaylistQueueAppend {
     pub first_added_index: Option<usize>,
 }
 
+/// Address of a track in the album-backed queue. Upcoming addresses exclude
+/// the playing track and every already-played item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QueueTrackPosition {
+    pub item: usize,
+    pub track: usize,
+}
+
+/// Single-use undo record. Restore only the removed track, never a stale
+/// playback cursor or an entire queue snapshot.
+#[derive(Debug)]
+pub struct UpcomingTrackRemoval {
+    position: QueueTrackPosition,
+    album: Album,
+    item_removed: bool,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct QueueController {
     queue: Queue,
@@ -153,6 +170,244 @@ impl QueueController {
             Some(source) => Ok(QueuePlaybackEffect::Play(source)),
             None => Ok(QueuePlaybackEffect::None),
         }
+    }
+
+    /// Play a single-file selection, reusing its existing queue position when
+    /// present. Other queued albums and their order are preserved.
+    pub fn play_single_file_now(&mut self, album: Album) -> Result<QueuePlaybackEffect, String> {
+        if album.tracks.len() != 1 || album.tracks[0].source.is_some() {
+            return Err("A single local audio file is required".into());
+        }
+        #[cfg(not(feature = "testing"))]
+        validate_album_has_files(&album)?;
+        let path = &album.tracks[0].path;
+        let existing = self
+            .queue
+            .items
+            .iter()
+            .enumerate()
+            .find_map(|(item_index, item)| {
+                item.album
+                    .tracks
+                    .iter()
+                    .position(|track| track.source.is_none() && &track.path == path)
+                    .map(|track_index| (item_index, track_index))
+            });
+        if let Some((item_index, track_index)) = existing {
+            self.queue.items[item_index].current_track_index = track_index;
+            self.queue.current_index = Some(item_index);
+            return Ok(self
+                .queue
+                .current_track_source()
+                .map_or(QueuePlaybackEffect::None, QueuePlaybackEffect::Play));
+        }
+        self.play_album_now(album)
+    }
+
+    /// Schedule an album immediately after the current track, preserving the
+    /// remainder of the current album and every previously queued item.
+    /// Does not start or interrupt playback. With no current item, insert first.
+    pub fn enqueue_next(&mut self, album: Album) -> Result<usize, String> {
+        validate_album_has_tracks(&album)?;
+        #[cfg(not(feature = "testing"))]
+        validate_album_has_files(&album)?;
+        let current = self
+            .queue
+            .current_index
+            .filter(|&index| index < self.queue.items.len());
+        let insertion = current.map_or(0, |index| index + 1);
+        let remainder = current.and_then(|index| {
+            let item = &mut self.queue.items[index];
+            let split = item.current_track_index.saturating_add(1);
+            if split >= item.album.tracks.len() {
+                return None;
+            }
+            let mut tail = item.album.clone();
+            tail.tracks = item.album.tracks.split_off(split);
+            Some(QueueItem::new(tail))
+        });
+        let added = if remainder.is_some() { 2 } else { 1 };
+        if let Some(remainder) = remainder {
+            self.queue.items.insert(insertion, remainder);
+        }
+        self.queue.items.insert(insertion, QueueItem::new(album));
+        if self.selected_index >= insertion && self.queue.items.len() > added {
+            self.selected_index += added;
+        }
+        Ok(insertion)
+    }
+
+    pub fn upcoming_track_positions(&self) -> Vec<QueueTrackPosition> {
+        let current = self.queue.current_index;
+        if let Some(index) = current
+            && self
+                .queue
+                .items
+                .get(index)
+                .and_then(QueueItem::current_track)
+                .is_none()
+        {
+            return Vec::new();
+        }
+        self.queue
+            .items
+            .iter()
+            .enumerate()
+            .skip(current.unwrap_or(0))
+            .flat_map(|(item, queued)| {
+                let start = if current == Some(item) {
+                    queued.current_track_index + 1
+                } else {
+                    0
+                };
+                (start..queued.album.tracks.len())
+                    .map(move |track| QueueTrackPosition { item, track })
+            })
+            .collect()
+    }
+
+    /// Resolve a rendered row against the live upcoming queue. Both its album
+    /// position and source must still match: source alone is ambiguous when a
+    /// track occurs more than once. Playback advancement may change the flat
+    /// index without changing this address.
+    pub fn resolve_upcoming_track(
+        &self,
+        position: QueueTrackPosition,
+        source: &AudioSource,
+    ) -> Option<usize> {
+        let track = self
+            .queue
+            .items
+            .get(position.item)?
+            .album
+            .tracks
+            .get(position.track)?;
+        if track.audio_source() != *source {
+            return None;
+        }
+        self.upcoming_track_positions()
+            .iter()
+            .position(|candidate| *candidate == position)
+    }
+
+    /// Remove one upcoming track without changing playback. Indices refer to
+    /// `upcoming_track_positions`, so the current track cannot be removed here.
+    pub fn remove_upcoming_track(&mut self, index: usize) -> Option<UpcomingTrackRemoval> {
+        let position = self.upcoming_track_positions().get(index).copied()?;
+        let item_removed = self.queue.items[position.item].album.tracks.len() == 1;
+        let album = self.take_upcoming_track(position)?;
+        Some(UpcomingTrackRemoval {
+            position,
+            album,
+            item_removed,
+        })
+    }
+
+    /// Undo a removal after arbitrary playback navigation. Callers discard the
+    /// record on intervening content edits; navigation alone keeps it valid.
+    pub fn undo_upcoming_track_removal(&mut self, mut removal: UpcomingTrackRemoval) -> bool {
+        let position = removal.position;
+        if removal.item_removed {
+            if position.item > self.queue.items.len() {
+                return false;
+            }
+            self.queue
+                .items
+                .insert(position.item, QueueItem::new(removal.album));
+            if let Some(current) = self.queue.current_index.as_mut()
+                && *current >= position.item
+            {
+                *current += 1;
+            }
+            if self.selected_index >= position.item {
+                self.selected_index += 1;
+            }
+        } else {
+            let Some(item) = self.queue.items.get_mut(position.item) else {
+                return false;
+            };
+            if position.track > item.album.tracks.len() {
+                return false;
+            }
+            let Some(track) = removal.album.tracks.pop() else {
+                return false;
+            };
+            item.album.tracks.insert(position.track, track);
+            if self.queue.current_index == Some(position.item)
+                && item.current_track_index >= position.track
+            {
+                item.current_track_index += 1;
+            }
+        }
+        self.selected_index = self
+            .selected_index
+            .min(self.queue.items.len().saturating_sub(1));
+        true
+    }
+
+    /// Move one upcoming track to its final flat-list index. Split only the
+    /// destination album when necessary; keep the moved track's album metadata.
+    pub fn move_upcoming_track(&mut self, from: usize, to: usize) -> bool {
+        let positions = self.upcoming_track_positions();
+        if from == to || to >= positions.len() {
+            return false;
+        }
+        let Some(position) = positions.get(from).copied() else {
+            return false;
+        };
+        let Some(album) = self.take_upcoming_track(position) else {
+            return false;
+        };
+        let target = self.upcoming_track_positions().get(to).copied();
+        let insertion = match target {
+            Some(target) if target.track == 0 => target.item,
+            Some(target) => {
+                let item = &mut self.queue.items[target.item];
+                let mut remainder = item.album.clone();
+                remainder.tracks = item.album.tracks.split_off(target.track);
+                self.queue
+                    .items
+                    .insert(target.item + 1, QueueItem::new(remainder));
+                target.item + 1
+            }
+            None => self.queue.items.len(),
+        };
+        self.queue.items.insert(insertion, QueueItem::new(album));
+        self.selected_index = insertion;
+        true
+    }
+
+    fn take_upcoming_track(&mut self, position: QueueTrackPosition) -> Option<Album> {
+        // This private helper receives an address validated against the current
+        // upcoming list; still reject invalid bounds without mutating anything.
+        let item = self.queue.items.get_mut(position.item)?;
+        if position.track >= item.album.tracks.len() {
+            return None;
+        }
+        let track = item.album.tracks.remove(position.track);
+        let mut album = item.album.clone();
+        album.tracks = vec![track];
+        if item.album.tracks.is_empty() {
+            self.queue.items.remove(position.item);
+        }
+        self.selected_index = self
+            .selected_index
+            .min(self.queue.items.len().saturating_sub(1));
+        Some(album)
+    }
+
+    /// Explicitly play an upcoming row without changing the queue contents.
+    pub fn play_upcoming_track(&mut self, index: usize) -> QueuePlaybackEffect {
+        let Some(position) = self.upcoming_track_positions().get(index).copied() else {
+            return QueuePlaybackEffect::None;
+        };
+        self.queue.current_index = Some(position.item);
+        self.queue.items[position.item].current_track_index = position.track;
+        self.selected_index = position.item;
+        self.queue
+            .current_track_source()
+            .map(QueuePlaybackEffect::Play)
+            .unwrap_or(QueuePlaybackEffect::None)
     }
 
     /// Start playback from the first album in the queue.
@@ -370,6 +625,33 @@ fn validate_album_has_files(album: &Album) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn single_file_playback_reuses_track_position_without_reordering_queue() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut original = make_album("Original", 2);
+        original.tracks[1].path = file.path().into();
+        let selected = Album {
+            tracks: vec![original.tracks[1].clone()],
+            ..Default::default()
+        };
+        let mut controller = QueueController::new();
+        add_test_album(&mut controller, original);
+        add_test_album(&mut controller, make_album("Later", 1));
+        for _ in 0..2 {
+            assert_eq!(
+                controller.play_single_file_now(selected.clone()).unwrap(),
+                QueuePlaybackEffect::Play(AudioSource::File(file.path().into()))
+            );
+            assert_eq!(controller.len(), 2);
+            assert_eq!(controller.current_index(), Some(0));
+            assert_eq!(controller[0].current_track_index, 1);
+            assert_eq!(controller[1].album.title, "Later");
+        }
+        assert!(controller.play_single_file_now(Album::default()).is_err());
+        assert_eq!(controller.current_index(), Some(0));
+        assert_eq!(controller.len(), 2);
+    }
+
     fn make_album(title: &str, track_count: usize) -> Album {
         Album {
             title: title.to_string(),
@@ -388,6 +670,249 @@ mod tests {
     /// file-existence validation (test paths are fake).
     fn add_test_album(ctrl: &mut QueueController, album: Album) {
         ctrl.queue.add(album);
+    }
+
+    fn next_test_album(title: &str, count: usize) -> Album {
+        let mut album = make_album(title, count);
+        for (index, track) in album.tracks.iter_mut().enumerate() {
+            track.source = Some(AudioSource::Url {
+                url: format!("https://example.com/{title}/{index}.flac"),
+                format_hint: None,
+                seekable: true,
+            });
+        }
+        album
+    }
+
+    #[test]
+    fn playing_upcoming_track_resolves_flat_position_without_editing_content() {
+        let mut ctrl = QueueController::new();
+        ctrl.add_album(next_test_album("A", 3)).unwrap();
+        ctrl.add_album(next_test_album("B", 2)).unwrap();
+        ctrl.queue.current_index = Some(0);
+        ctrl.queue.items[0].current_track_index = 1;
+        let expected = ctrl.queue.items[1].album.tracks[1].audio_source();
+        assert_eq!(
+            ctrl.play_upcoming_track(2),
+            QueuePlaybackEffect::Play(expected.clone())
+        );
+        assert_eq!(ctrl.queue.current_index, Some(1));
+        assert_eq!(ctrl.queue.items[1].current_track_index, 1);
+        assert_eq!(ctrl.selected_index, 1);
+        assert_eq!(ctrl.queue.items[0].album.tracks.len(), 3);
+        assert_eq!(ctrl.queue.items[1].album.tracks.len(), 2);
+        assert_eq!(ctrl.play_upcoming_track(0), QueuePlaybackEffect::None);
+        assert_eq!(ctrl.queue.current_track_source(), Some(expected));
+    }
+
+    #[test]
+    fn rendered_upcoming_address_is_revalidated_after_playback_or_content_changes() {
+        let mut ctrl = QueueController::new();
+        ctrl.add_album(next_test_album("A", 3)).unwrap();
+        ctrl.queue.current_index = Some(0);
+        let position = QueueTrackPosition { item: 0, track: 2 };
+        let source = ctrl.queue.items[0].album.tracks[2].audio_source();
+        assert_eq!(ctrl.resolve_upcoming_track(position, &source), Some(1));
+        ctrl.queue.items[0].current_track_index = 1;
+        assert_eq!(ctrl.resolve_upcoming_track(position, &source), Some(0));
+        ctrl.queue.items[0].current_track_index = 2;
+        assert_eq!(ctrl.resolve_upcoming_track(position, &source), None);
+
+        ctrl.queue.current_index = None;
+        let first_source = ctrl.queue.items[0].album.tracks[0].audio_source();
+        ctrl.remove_upcoming_track(0).unwrap();
+        assert_eq!(
+            ctrl.resolve_upcoming_track(QueueTrackPosition { item: 0, track: 0 }, &first_source),
+            None
+        );
+        assert_eq!(ctrl.resolve_upcoming_track(position, &source), None);
+    }
+
+    #[test]
+    fn undo_last_stopped_track_restores_valid_selection_without_playback() {
+        let mut ctrl = QueueController::new();
+        ctrl.add_album(next_test_album("A", 1)).unwrap();
+        let expected = upcoming_sources(&ctrl);
+        let removed = ctrl.remove_upcoming_track(0).unwrap();
+        assert!(ctrl.queue.items.is_empty());
+        assert!(ctrl.undo_upcoming_track_removal(removed));
+        assert_eq!(ctrl.selected_index, 0);
+        assert_eq!(ctrl.queue.current_index, None);
+        assert_eq!(upcoming_sources(&ctrl), expected);
+        assert!(matches!(
+            ctrl.play_upcoming_track(0),
+            QueuePlaybackEffect::Play(_)
+        ));
+        assert_eq!(ctrl.queue.current_index, Some(0));
+    }
+
+    fn upcoming_sources(ctrl: &QueueController) -> Vec<(String, AudioSource)> {
+        ctrl.upcoming_track_positions()
+            .iter()
+            .map(|position| {
+                let album = &ctrl.queue.items[position.item].album;
+                (
+                    album.title.clone(),
+                    album.tracks[position.track].audio_source(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn moving_upcoming_tracks_preserves_current_and_album_identity() {
+        let mut ctrl = QueueController::new();
+        let a = next_test_album("A", 3);
+        let b = next_test_album("B", 2);
+        let a_tail = a.tracks[2].audio_source();
+        let b_first = b.tracks[0].audio_source();
+        let b_last = b.tracks[1].audio_source();
+        ctrl.add_album(a).unwrap();
+        ctrl.add_album(b).unwrap();
+        ctrl.set_current_index(Some(0));
+        ctrl.queue.items[0].current_track_index = 1;
+        let playing = ctrl.queue.current_track_source();
+        assert!(ctrl.move_upcoming_track(2, 0));
+        assert_eq!(
+            upcoming_sources(&ctrl),
+            vec![
+                ("B".into(), b_last.clone()),
+                ("A".into(), a_tail.clone()),
+                ("B".into(), b_first.clone()),
+            ]
+        );
+        assert_eq!(ctrl.queue.current_track_source(), playing);
+        assert_eq!(ctrl.current_index(), Some(0));
+        assert_eq!(ctrl.queue.items[0].current_track_index, 1);
+        assert!(ctrl.move_upcoming_track(0, 2));
+        assert_eq!(
+            upcoming_sources(&ctrl),
+            vec![
+                ("A".into(), a_tail.clone()),
+                ("B".into(), b_first.clone()),
+                ("B".into(), b_last.clone()),
+            ]
+        );
+        assert_eq!(ctrl.queue.current_track_source(), playing);
+        assert_eq!(ctrl.next_track(), QueuePlaybackEffect::Play(a_tail));
+        assert_eq!(ctrl.next_track(), QueuePlaybackEffect::Play(b_first));
+        assert_eq!(ctrl.next_track(), QueuePlaybackEffect::Play(b_last));
+    }
+
+    #[test]
+    fn removing_upcoming_tracks_never_removes_current_or_history() {
+        let mut ctrl = QueueController::new();
+        ctrl.add_album(next_test_album("History", 1)).unwrap();
+        ctrl.add_album(next_test_album("Current", 3)).unwrap();
+        ctrl.add_album(next_test_album("Later", 1)).unwrap();
+        ctrl.set_current_index(Some(1));
+        ctrl.queue.items[1].current_track_index = 1;
+        let playing = ctrl.queue.current_track_source();
+        assert_eq!(ctrl.upcoming_track_positions().len(), 2);
+        assert!(ctrl.remove_upcoming_track(0).is_some());
+        assert_eq!(ctrl.queue.items[1].album.tracks.len(), 2);
+        assert!(ctrl.remove_upcoming_track(0).is_some());
+        assert!(ctrl.remove_upcoming_track(0).is_none());
+        assert_eq!(ctrl.queue.items.len(), 2);
+        assert_eq!(ctrl.queue.items[0].album.title, "History");
+        assert_eq!(ctrl.queue.current_track_source(), playing);
+        assert_eq!(ctrl.current_index(), Some(1));
+        assert_eq!(ctrl.queue.items[1].current_track_index, 1);
+    }
+
+    #[test]
+    fn undo_upcoming_removal_preserves_playback_that_advanced() {
+        let mut ctrl = QueueController::new();
+        ctrl.add_album(next_test_album("A", 4)).unwrap();
+        ctrl.add_album(next_test_album("B", 1)).unwrap();
+        ctrl.add_album(next_test_album("C", 1)).unwrap();
+        ctrl.start();
+        let removed = ctrl.remove_upcoming_track(0).unwrap();
+        ctrl.next_track();
+        let playing = ctrl.current_track_source();
+        assert!(ctrl.undo_upcoming_track_removal(removed));
+        assert_eq!(ctrl.current_track_source(), playing);
+        assert_eq!(ctrl.queue.items[0].current_track_index, 2);
+        // B is a whole queue item; undo after crossing its old position must
+        // shift the current item index, never rewind C or restart audio.
+        let removed_b = ctrl.remove_upcoming_track(1).unwrap();
+        ctrl.next_track();
+        ctrl.next_track();
+        let playing_c = ctrl.current_track_source();
+        assert_eq!(ctrl.current_index(), Some(1));
+        assert!(ctrl.undo_upcoming_track_removal(removed_b));
+        assert_eq!(ctrl.current_index(), Some(2));
+        assert_eq!(ctrl.current_track_source(), playing_c);
+    }
+
+    #[test]
+    fn stopped_upcoming_edits_do_not_start_playback_and_reject_invalid_indices() {
+        let mut ctrl = QueueController::new();
+        ctrl.add_album(next_test_album("A", 3)).unwrap();
+        let before = upcoming_sources(&ctrl);
+        assert!(!ctrl.move_upcoming_track(0, 3));
+        assert!(!ctrl.move_upcoming_track(3, 0));
+        assert!(!ctrl.move_upcoming_track(0, 0));
+        assert!(ctrl.remove_upcoming_track(3).is_none());
+        assert_eq!(upcoming_sources(&ctrl), before);
+        assert!(ctrl.move_upcoming_track(0, 2));
+        assert_eq!(
+            upcoming_sources(&ctrl),
+            vec![before[1].clone(), before[2].clone(), before[0].clone()]
+        );
+        assert_eq!(ctrl.current_index(), None);
+        ctrl.queue.current_index = Some(99);
+        assert!(ctrl.upcoming_track_positions().is_empty());
+        assert!(ctrl.remove_upcoming_track(0).is_none());
+        assert!(!ctrl.move_upcoming_track(0, 1));
+    }
+
+    #[test]
+    fn enqueue_next_preserves_current_track_and_album_remainder() {
+        let mut ctrl = QueueController::new();
+        ctrl.add_album(next_test_album("A", 3)).unwrap();
+        ctrl.add_album(next_test_album("Later", 1)).unwrap();
+        ctrl.start();
+        ctrl.next_track();
+        ctrl.selected_index = 1;
+        let playing = ctrl.current_track_source();
+        assert_eq!(ctrl.enqueue_next(next_test_album("Next", 2)).unwrap(), 1);
+        assert_eq!(ctrl.current_track_source(), playing);
+        assert_eq!(ctrl.current_index(), Some(0));
+        assert_eq!(ctrl.selected_index, 3);
+        assert_eq!(ctrl[0].album.tracks.len(), 2);
+        assert_eq!(ctrl[2].album.title, "A");
+        assert_eq!(ctrl[2].album.tracks[0].title.as_deref(), Some("Track 3"));
+        assert_eq!(ctrl[3].album.title, "Later");
+        for title in ["Next", "Next", "A", "Later"] {
+            assert!(matches!(ctrl.next_track(), QueuePlaybackEffect::Play(_)));
+            assert_eq!(ctrl[ctrl.current_index().unwrap()].album.title, title);
+        }
+    }
+
+    #[test]
+    fn enqueue_next_without_playback_inserts_first_without_starting() {
+        let mut ctrl = QueueController::new();
+        assert_eq!(ctrl.enqueue_next(next_test_album("First", 1)).unwrap(), 0);
+        assert_eq!(ctrl.current_index(), None);
+        assert_eq!(ctrl.selected_index, 0);
+        ctrl.enqueue_next(next_test_album("New", 1)).unwrap();
+        assert_eq!(ctrl.current_index(), None);
+        assert_eq!(ctrl.selected_index, 1);
+        assert_eq!(ctrl[0].album.title, "New");
+        assert_eq!(ctrl[1].album.title, "First");
+    }
+
+    #[test]
+    fn enqueue_next_rejection_does_not_split_current_album() {
+        let mut ctrl = QueueController::new();
+        ctrl.add_album(next_test_album("A", 3)).unwrap();
+        ctrl.start();
+        let source = ctrl.current_track_source();
+        assert!(ctrl.enqueue_next(Album::default()).is_err());
+        assert_eq!(ctrl.len(), 1);
+        assert_eq!(ctrl[0].album.tracks.len(), 3);
+        assert_eq!(ctrl.current_track_source(), source);
     }
 
     #[test]
@@ -425,6 +950,26 @@ mod tests {
         let source = ctrl.queue.current_track_source();
         assert!(source.is_some());
         assert_eq!(ctrl.current_index(), Some(1));
+    }
+
+    #[test]
+    fn test_play_album_now_appends_without_displacing_existing_queue() {
+        let mut ctrl = QueueController::new();
+        add_test_album(&mut ctrl, next_test_album("A", 2));
+        add_test_album(&mut ctrl, next_test_album("B", 2));
+        ctrl.start();
+        assert_eq!(ctrl.current_index(), Some(0));
+
+        let effect = ctrl
+            .play_album_now(next_test_album("C", 3))
+            .expect("play now accepts a valid album");
+        assert!(matches!(effect, QueuePlaybackEffect::Play(_)));
+
+        // Append-and-jump policy: existing items keep identity and order,
+        // so play-now displaces nothing and needs no snapshot recovery.
+        let titles: Vec<_> = ctrl.iter().map(|item| item.album.title.as_str()).collect();
+        assert_eq!(titles, ["A", "B", "C"]);
+        assert_eq!(ctrl.current_index(), Some(2));
     }
 
     #[test]

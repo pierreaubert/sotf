@@ -21,6 +21,14 @@ const TUTORIAL_IMAGES: [&str; TUTORIAL_SCREEN_COUNT] = [
     "tutorial/settings.webp",
 ];
 
+// All tutorial illustrations are 2276x1746 screenshots. DialogSize::Lg is
+// 40rem wide and the dialog content insets 1rem per side, so the picture is
+// exactly 38rem wide: derive its height from this aspect. Without an
+// explicit height `img` keeps intrinsic pixel height (1746px) and the bitmap
+// letterboxes inside a much taller box, leaving a large void above it.
+const TUTORIAL_IMAGE_WIDTH_REMS: f32 = 38.0;
+const TUTORIAL_IMAGE_ASPECT: f32 = 2276.0 / 1746.0;
+
 macro_rules! dev_track {
     ($element:expr, $selector:expr) => {{
         #[cfg(feature = "dev-api")]
@@ -71,7 +79,8 @@ impl PlayerView {
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Md)
-                    // Screenshot image
+                    // Screenshot image: explicit aspect-correct height so the
+                    // box matches the bitmap (see consts above).
                     .child(
                         div()
                             .w_full()
@@ -79,7 +88,12 @@ impl PlayerView {
                             .overflow_hidden()
                             .border_1()
                             .border_color(theme.border)
-                            .child(img(screen_image).w_full().object_fit(ObjectFit::ScaleDown)),
+                            .child(
+                                img(screen_image)
+                                    .w_full()
+                                    .h(rems(TUTORIAL_IMAGE_WIDTH_REMS / TUTORIAL_IMAGE_ASPECT))
+                                    .object_fit(ObjectFit::ScaleDown),
+                            ),
                     )
                     // Text content
                     .children(screen.content.iter().map(|&line| {

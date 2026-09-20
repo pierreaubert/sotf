@@ -831,6 +831,16 @@ impl PlayerView {
     }
 
     pub(crate) fn start_room_eq_optimization(&mut self, cx: &mut Context<Self>) {
+        if self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .room_eq_state
+            .is_optimizing()
+        {
+            return;
+        }
         use crate::app::types::{ChannelOptResult, EqFilterConfig, OptimizationStatus};
         use autoeq::roomeq::CallbackAction;
         use sotf_audio_player::autoeq::{
@@ -994,6 +1004,8 @@ impl PlayerView {
 
         // Update state to running and clear progress history
         let cancel_flag = self.state.update(cx, |state, _cx| {
+            let room = &mut state.app.measurement_state.room_eq_state;
+            room.result_inputs = Some(room.optimization_input_snapshot());
             state
                 .app
                 .measurement_state
@@ -1565,6 +1577,7 @@ impl PlayerView {
                         room_eq.channel_results = all_results;
                         room_eq.overall_progress = 1.0;
                         room_eq.current_channel = None;
+                        room_eq.delivery.calculated();
                         room_eq.dsp_output = Some(dsp_output);
                         room_eq.step = crate::app::types::RoomEqStep::Review;
                         finalize_pipeline_step_state(room_eq, true);

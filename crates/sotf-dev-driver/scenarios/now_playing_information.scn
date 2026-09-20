@@ -1,0 +1,36 @@
+focus library
+wait_until library.album_count > 0 timeout=10s
+wait_idle 2s
+plugin_add Gain
+click library.tab.search
+click library.search_input
+type "Demo"
+click library.album.0
+wait_until library.detail.open == true timeout=2s
+click library.detail.play
+wait_until playback.is_playing == true timeout=4s
+focus NowPlaying
+wait_until now_playing.signal_ready == true timeout=15s
+wait_idle 2s
+assert now_playing.signal_open == false
+assert_absent now-playing.signal-path
+click now-playing.signal-path-toggle
+assert now_playing.signal_open == true
+assert_visible now-playing.signal-path
+assert_visible now-playing.view-album
+assert now_playing.details_open == false
+assert_absent now-playing.track-information
+click now-playing.details-toggle
+assert now_playing.details_open == true
+assert_visible now-playing.track-information
+key enter
+wait_until now_playing.details_open == false timeout=2s
+click now-playing.details-toggle
+wait_idle 2s
+screenshot now-playing-information
+resize 600 800
+wait_idle 2s
+assert_in_viewport now-playing.details-toggle
+assert_visible now-playing.track-information
+screenshot now-playing-information-narrow
+assert toast.type == null

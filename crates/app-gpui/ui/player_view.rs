@@ -28,6 +28,69 @@ pub(crate) struct CommandPaletteState {
     pub(crate) focus_handle: FocusHandle,
 }
 
+pub(super) struct ViewWindowState {
+    pub(super) needs_initial_focus: bool,
+    /// Off-screen QA uses synthetic dimensions instead of native window bounds.
+    pub(super) suppress_geometry_sync: bool,
+    pub(super) navigation_focus: FocusHandle,
+    pub(super) compact_navigation: Option<bool>,
+}
+
+pub(crate) struct ViewScrollHandles {
+    pub(crate) library_grid: ScrollHandle,
+    pub(crate) library_screen: ScrollHandle,
+    pub(crate) home: ScrollHandle,
+    pub(crate) playlists: ScrollHandle,
+    pub(crate) spectrum: ScrollHandle,
+    pub(crate) routing: ScrollHandle,
+    pub(crate) studio_workspace: ScrollHandle,
+    pub(crate) rack_detail: ScrollHandle,
+    pub(crate) rack_config: ScrollHandle,
+    pub(crate) rack_add_menu: ScrollHandle,
+    pub(crate) listening_practice: ScrollHandle,
+    pub(crate) listening_courses: ScrollHandle,
+    pub(crate) listening_history: ScrollHandle,
+    pub(crate) listening_comparison: ScrollHandle,
+    pub(crate) preferences: ScrollHandle,
+    pub(crate) recording: ScrollHandle,
+    pub(crate) room_eq: ScrollHandle,
+    pub(crate) headphone_eq: ScrollHandle,
+    pub(crate) spinorama_eq: ScrollHandle,
+}
+
+impl ViewScrollHandles {
+    /// Preserve visible positions without sharing layout measurements between windows.
+    #[cfg(feature = "visual-qa")]
+    pub(crate) fn detached_copy(&self) -> Self {
+        fn copy(handle: &ScrollHandle) -> ScrollHandle {
+            let result = ScrollHandle::new();
+            result.set_offset(handle.offset());
+            result
+        }
+        Self {
+            library_grid: copy(&self.library_grid),
+            library_screen: copy(&self.library_screen),
+            home: copy(&self.home),
+            playlists: copy(&self.playlists),
+            spectrum: copy(&self.spectrum),
+            routing: copy(&self.routing),
+            studio_workspace: copy(&self.studio_workspace),
+            rack_detail: copy(&self.rack_detail),
+            rack_config: copy(&self.rack_config),
+            rack_add_menu: copy(&self.rack_add_menu),
+            listening_practice: copy(&self.listening_practice),
+            listening_courses: copy(&self.listening_courses),
+            listening_history: copy(&self.listening_history),
+            listening_comparison: copy(&self.listening_comparison),
+            preferences: copy(&self.preferences),
+            recording: copy(&self.recording),
+            room_eq: copy(&self.room_eq),
+            headphone_eq: copy(&self.headphone_eq),
+            spinorama_eq: copy(&self.spinorama_eq),
+        }
+    }
+}
+
 /// `PlayerView` is GPUI's view type. The code-review (`reviews/review-app-gpui.md`)
 /// flags `impl PlayerView { … }` as a god-class spread across ~12 files (ui/mod.rs,
 /// components/recording/capture.rs, components/plugins/ui_rack.rs,
@@ -47,15 +110,11 @@ pub struct PlayerView {
     pub(crate) eq_chart_focus_handle: FocusHandle,
     pub(crate) plugin_exact_entry_focus_handle: FocusHandle,
     pub(super) last_saved_window_bounds: Option<Bounds<Pixels>>,
-    /// Scroll handle for library grid view
-    pub(crate) grid_scroll_handle: ScrollHandle,
-    /// Retains the desktop Home position while a full shelf is open.
-    pub(crate) home_scroll_handle: ScrollHandle,
-    /// Track if we've done initial focus (for macOS menu activation)
-    pub(super) needs_initial_focus: bool,
-    /// Off-screen visual QA pins synthetic viewport dimensions in AppState;
-    /// do not replace them with the hidden platform window's default bounds.
-    pub(super) suppress_geometry_sync: bool,
+    /// Transient screen positions, kept separate from persisted application data.
+    pub(crate) scroll: ViewScrollHandles,
+    /// Each window owns its measured plot geometry, including off-screen QA views.
+    pub(crate) spectrum_plot_size: Option<(f32, f32)>,
+    pub(super) window_state: ViewWindowState,
     /// Frame counter for throttling updates (increments every 100ms)
     pub(super) update_frame_count: u64,
     /// Task for debounced window geometry saving. Only one task is in
@@ -297,7 +356,7 @@ impl PlayerView {
                         let scroll_check_data = if view.state.read(cx).app.ui_state.current_screen
                             == Screen::Library
                         {
-                            let scroll_y: f32 = view.grid_scroll_handle.offset().y.into();
+                            let scroll_y: f32 = view.scroll.library_grid.offset().y.into();
                             let state = view.state.read(cx);
                             let item_count = state.app.library_state.items_per_page;
                             let total_albums = state.app.filtered_albums().len();
@@ -352,6 +411,7 @@ impl PlayerView {
                         // to avoid multiple observer triggers.
                         let frame_count = view.update_frame_count;
                         let compressor_cache = &mut view.compressor_engine_idx_cache;
+                        let mut plugin_update_applied = false;
                         view.state.update(cx, |state, _cx| {
                             let (playback_state, was_playing) =
                                 Self::sync_playback_data(state, frame_count, compressor_cache);
@@ -366,12 +426,39 @@ impl PlayerView {
                                 log::warn!("Failed to seek ear-training loop: {error}");
                             }
 
-                            if let Some(update_type) = state
-                                .app
-                                .plugin_state
-                                .update_state
-                                .pending_plugin_update
-                                .take()
+                            plugin_update_applied |=
+                                Self::poll_plugin_update_acknowledgement(state);
+                            // Input fingerprints include measurement curves. Rescan
+                            // them at control cadence, while processing navigation
+                            // cleanup and pending updates on every tick.
+                            if let Err(error) =
+                                state.app.synchronize_headphone_audition_with_input_check(
+                                    frame_count.is_multiple_of(10),
+                                )
+                            {
+                                state.app.ui_state.toast_message =
+                                    Some(crate::app::ToastMessage::error(error));
+                            }
+                            if state.app.plugin_state.update_state.pending_ack.is_some()
+                                && state
+                                    .app
+                                    .plugin_state
+                                    .update_state
+                                    .pending_plugin_update
+                                    .is_some()
+                            {
+                                // Rebuild the latest desired graph after acknowledgement so edits
+                                // to different parameters cannot be lost while the actor is busy.
+                                state.app.plugin_state.update_state.pending_plugin_update =
+                                    Some(crate::app::types::PluginUpdateType::Structural);
+                            }
+                            if state.app.plugin_state.update_state.pending_ack.is_none()
+                                && let Some(update_type) = state
+                                    .app
+                                    .plugin_state
+                                    .update_state
+                                    .pending_plugin_update
+                                    .take()
                             {
                                 log::warn!(
                                     "[GPUI] Applying pending plugin update: {:?}",
@@ -381,6 +468,7 @@ impl PlayerView {
                                 // the compressor index cache.
                                 *compressor_cache = None;
                                 Self::apply_plugin_update(state, update_type);
+                                plugin_update_applied = true;
                             }
 
                             #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
@@ -398,8 +486,19 @@ impl PlayerView {
                             Self::handle_engine_state(state, &playback_state, was_playing);
                             Self::handle_gapless_prequeue(state, &playback_state);
                             Self::tick_background_tasks(state);
+                            if Self::finish_pending_audio_apply(state, _cx) {
+                                plugin_update_applied = true;
+                            }
                             state.app.refresh_scheduled_theme();
                         });
+
+                        // Acknowledgements change pending/disabled plugin and audition
+                        // controls even when playback is idle. The compact tick snapshot
+                        // does not include those editor states; invalidate it explicitly.
+                        // The QA clock also consumes this gate on its next frame.
+                        if plugin_update_applied {
+                            view.last_tick_snapshot = None;
+                        }
 
                         // Background stats computation (outside state update)
                         let (needs_stats, is_stats_computing) = {
@@ -467,10 +566,34 @@ impl PlayerView {
             eq_chart_focus_handle,
             plugin_exact_entry_focus_handle,
             last_saved_window_bounds: None,
-            grid_scroll_handle: ScrollHandle::new(),
-            home_scroll_handle: ScrollHandle::new(),
-            needs_initial_focus: start_runtime,
-            suppress_geometry_sync: !start_runtime,
+            scroll: ViewScrollHandles {
+                library_grid: ScrollHandle::new(),
+                library_screen: ScrollHandle::new(),
+                home: ScrollHandle::new(),
+                playlists: ScrollHandle::new(),
+                spectrum: ScrollHandle::new(),
+                routing: ScrollHandle::new(),
+                studio_workspace: ScrollHandle::new(),
+                rack_detail: ScrollHandle::new(),
+                rack_config: ScrollHandle::new(),
+                rack_add_menu: ScrollHandle::new(),
+                listening_practice: ScrollHandle::new(),
+                listening_courses: ScrollHandle::new(),
+                listening_history: ScrollHandle::new(),
+                listening_comparison: ScrollHandle::new(),
+                preferences: ScrollHandle::new(),
+                recording: ScrollHandle::new(),
+                room_eq: ScrollHandle::new(),
+                headphone_eq: ScrollHandle::new(),
+                spinorama_eq: ScrollHandle::new(),
+            },
+            spectrum_plot_size: None,
+            window_state: ViewWindowState {
+                needs_initial_focus: start_runtime,
+                suppress_geometry_sync: !start_runtime,
+                navigation_focus: cx.focus_handle(),
+                compact_navigation: None,
+            },
             update_frame_count: 0,
             geometry_save_task: None,
             geometry_save_pending: false,
@@ -1182,8 +1305,128 @@ impl PlayerView {
     }
 
     pub(super) fn cancel(&mut self, _: &Cancel, window: &mut Window, cx: &mut Context<Self>) {
+        if self.state.read(cx).app.ui_state.current_screen == Screen::Library
+            && self.state.read(cx).app.library_state.sort_menu_open
+        {
+            self.state.update(cx, |state, _| {
+                state.app.library_state.sort_menu_open = false;
+                state.app.library_state.sort_highlighted_index = None;
+            });
+            self.focus_handle.focus(window, cx);
+            cx.notify();
+            return;
+        }
+        if self.state.read(cx).app.ui_state.current_screen == Screen::Streams
+            && self.state.read(cx).app.ui_state.input_mode == crate::app::InputMode::Normal
+            && self.state.read(cx).app.stream_state.editor_open
+        {
+            self.state
+                .update(cx, |state, _| state.app.stream_state.clear_editor());
+            self.focus_handle.focus(window, cx);
+            cx.notify();
+            return;
+        }
+        if self.state.read(cx).app.ui_state.current_screen == Screen::Library
+            && self.state.read(cx).app.ui_state.input_mode == crate::app::InputMode::Normal
+            && self.state.read(cx).app.library_state.album_detail.is_some()
+        {
+            self.close_album_detail(window, cx);
+            return;
+        }
+
         if self.state.read(cx).app.ui_state.input_mode == crate::app::InputMode::CommandPalette {
             self.close_command_palette(window, cx);
+            return;
+        }
+        if self
+            .state
+            .read(cx)
+            .app
+            .ui_state
+            .navigation
+            .studio_picker_open
+        {
+            self.state.update(cx, |state, _| {
+                state.app.ui_state.navigation.studio_picker_open = false;
+                state.app.ui_state.navigation.studio_picker_highlight = None;
+            });
+            self.focus_handle.focus(window, cx);
+            cx.notify();
+            return;
+        }
+        if self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .headphone_eq_state
+            .dropdowns
+            .target_open
+        {
+            self.state.update(cx, |state, _| {
+                let dropdowns = &mut state.app.measurement_state.headphone_eq_state.dropdowns;
+                dropdowns.target_open = false;
+                dropdowns.target_highlight = None;
+            });
+            self.focus_handle.focus(window, cx);
+            cx.notify();
+            return;
+        }
+        if self.state.read(cx).app.ui_state.show_studio_menu {
+            self.state.update(cx, |state, _| {
+                state.app.ui_state.show_studio_menu = false;
+                state.app.ui_state.navigation.compact_highlight = None;
+            });
+            self.focus_handle.focus(window, cx);
+            cx.notify();
+            return;
+        }
+        if self.state.read(cx).app.ui_state.current_screen == Screen::PluginGraph
+            && self
+                .state
+                .read(cx)
+                .app
+                .plugin_state
+                .graph_state
+                .connection_form
+                .open
+                .is_some()
+        {
+            self.state.update(cx, |state, _| {
+                state.app.plugin_state.graph_state.connection_form.open = None;
+            });
+            self.focus_handle.focus(window, cx);
+            cx.notify();
+            return;
+        }
+        if self.state.read(cx).app.ui_state.current_screen == Screen::Settings
+            && self.state.read(cx).app.ui_state.input_mode == crate::app::InputMode::Normal
+        {
+            let root_focused = self.focus_handle.is_focused(window);
+            self.state.update(cx, |state, _| {
+                let navigation = &mut state.app.settings.navigation;
+                let dropdowns = &state.app.audio_device_state.hal_dropdowns;
+                if navigation.category_open {
+                    navigation.category_open = false;
+                } else if state.app.audio_device_state.output_ui.open {
+                    state.app.audio_device_state.output_ui.open = false;
+                    state.app.audio_device_state.output_ui.highlight = None;
+                } else if dropdowns.sample_rate_open
+                    || dropdowns.channel_count_open
+                    || dropdowns.buffer_size_open
+                {
+                    state.app.audio_device_state.close_hal_dropdowns();
+                } else if navigation.close_pending {
+                    navigation.close_pending = false;
+                } else if root_focused {
+                    Self::request_preferences_close(&mut state.app);
+                }
+            });
+            // Escape from a child first restores screen focus, preserving the
+            // setting value and unrelated Library search. A second Escape
+            // requests closing and goes through the same dirty-draft guard as Done.
+            self.focus_handle.focus(window, cx);
+            cx.notify();
             return;
         }
         let cancels_graph_connection = {
@@ -1204,6 +1447,22 @@ impl PlayerView {
             cx.notify();
             return;
         }
+        let cancels_listening_preparation = {
+            let state = self.state.read(cx);
+            state.app.ui_state.current_screen == Screen::ListeningTest
+                && state.app.ui_state.input_mode == crate::app::InputMode::Normal
+                && state
+                    .app
+                    .plugin_state
+                    .plugin_ui_state
+                    .listening_workspace
+                    .preparation_request
+                    .is_some()
+        };
+        if cancels_listening_preparation {
+            self.cancel_listening_preparation(cx);
+            return;
+        }
         let was_search =
             self.state.read(cx).app.ui_state.input_mode == crate::app::InputMode::Search;
         let mut keep_graph_modal_open = false;
@@ -1212,14 +1471,35 @@ impl PlayerView {
                 let graph_state = &state.app.plugin_state.graph_state;
                 let current_settings = graph_state
                     .editing_graph_node_uuid
-                    .and_then(|uuid| state.app.plugin_state.graph.nodes.get(&uuid))
+                    .and_then(|uuid| {
+                        state
+                            .app
+                            .plugin_state
+                            .routing_controller()
+                            .graph
+                            .nodes
+                            .get(&uuid)
+                    })
                     .map(|node| &node.plugin.settings);
                 let current_enabled = graph_state
                     .editing_graph_node_uuid
-                    .and_then(|uuid| state.app.plugin_state.graph.nodes.get(&uuid))
+                    .and_then(|uuid| {
+                        state
+                            .app
+                            .plugin_state
+                            .routing_controller()
+                            .graph
+                            .nodes
+                            .get(&uuid)
+                    })
                     .map(|node| node.plugin.enabled);
                 let settings_are_dirty =
                     graph_state.settings_are_dirty(current_settings, current_enabled);
+                if graph_state.confirm_close_dirty {
+                    state.app.plugin_state.graph_state.confirm_close_dirty = false;
+                    keep_graph_modal_open = true;
+                    return;
+                }
                 if settings_are_dirty {
                     state.app.plugin_state.graph_state.confirm_close_dirty = true;
                     keep_graph_modal_open = true;
@@ -1412,6 +1692,30 @@ impl PlayerView {
     }
 
     pub(super) fn add_to_queue(&mut self, _: &AddToQueue, _: &mut Window, cx: &mut Context<Self>) {
+        let screen = self.state.read(cx).app.ui_state.current_screen;
+        if matches!(screen, Screen::Home | Screen::HomeShelf) {
+            self.state.update(cx, |state, _| {
+                crate::components::home::home_screen::queue_selected_home_album(state);
+            });
+            cx.notify();
+            return;
+        }
+        if screen != Screen::Library {
+            return;
+        }
+        let detail = self.state.read(cx).app.library_state.album_detail.clone();
+        if let Some(album) = detail {
+            self.state.update(cx, |state, _| {
+                Self::apply_album_action(
+                    state,
+                    &album,
+                    None,
+                    crate::components::home::album_detail::AlbumAction::Append,
+                );
+            });
+            cx.notify();
+            return;
+        }
         log::info!("[UI] AddToQueue action handler triggered");
         self.state
             .update(cx, |state, _cx| match state.app.add_album_to_queue() {
@@ -1725,6 +2029,17 @@ impl PlayerView {
             device_name.as_deref(),
         );
 
+        let preview_rate_changed = state
+            .app
+            .measurement_state
+            .headphone_eq_state
+            .audition
+            .as_ref()
+            .is_some_and(|audition| audition.sample_rate_hz != sample_rate);
+        if preview_rate_changed && let Err(error) = state.app.stop_headphone_audition() {
+            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(error));
+            return;
+        }
         state
             .app
             .plugin_state
@@ -1770,7 +2085,7 @@ impl PlayerView {
         // decoder thread through the service-stream resolver installed at
         // startup (`install_service_stream_resolver`); failures surface as
         // engine ServiceError playback errors.
-        let play_result = state.player.load_or_switch_source_at(
+        let play_result = state.player.load_or_switch_source_at_with_receipt(
             source,
             plugins,
             output_channels,
@@ -1779,6 +2094,10 @@ impl PlayerView {
             prefer_smooth_switch,
         );
 
+        state.app.audio_device_state.audio_apply.last_submission =
+            play_result.as_ref().ok().cloned();
+
+        Self::acknowledge_headphone_audition(state, play_result.is_ok());
         if let Err(e) = play_result {
             log::error!("Failed to play track: {}", e);
             state.app.playback.is_playing = false;
@@ -1787,6 +2106,8 @@ impl PlayerView {
                 .record_playback_error(format!("Play track failed: {}", e));
         } else {
             state.app.playback.is_playing = true;
+            state.app.audio_device_state.playback_source = crate::app::types::PlaybackSource::File;
+            state.app.audio_device_state.pending_output_restart = None;
             if track_queue_playback {
                 if let Some(queue_index) = state.app.playback.current_queue_index {
                     state.app.record_playback_started(
@@ -1871,6 +2192,11 @@ impl PlayerView {
         {
             let plugin_idx = action.plugin_idx;
             let param_idx = action.param_idx;
+            let graph_target = {
+                let state = self.state.read(cx);
+                let graph = &state.app.plugin_state.graph_state;
+                (graph.editing_graph_node_uuid, graph.draft_generation)
+            };
             let weak_state = self.state.downgrade();
             cx.spawn(async move |_, cx| {
                 let file = rfd::AsyncFileDialog::new()
@@ -1885,6 +2211,11 @@ impl PlayerView {
                     };
                     let path = file.path().to_string_lossy().to_string();
                     state_entity.update(&mut cx.clone(), |state, cx| {
+                        let graph = &state.app.plugin_state.graph_state;
+                        if (graph.editing_graph_node_uuid, graph.draft_generation) != graph_target {
+                            return;
+                        }
+
                         if let Err(e) = state
                             .app
                             .set_plugin_param_string(plugin_idx, param_idx, path)
@@ -1911,6 +2242,11 @@ impl PlayerView {
         {
             let plugin_idx = action.plugin_idx;
             let param_idx = action.param_idx;
+            let graph_target = {
+                let state = self.state.read(cx);
+                let graph = &state.app.plugin_state.graph_state;
+                (graph.editing_graph_node_uuid, graph.draft_generation)
+            };
             let weak_state = self.state.downgrade();
             cx.spawn(async move |_, cx| {
                 let file = rfd::AsyncFileDialog::new()
@@ -1925,6 +2261,11 @@ impl PlayerView {
                     };
                     let path = file.path().to_string_lossy().to_string();
                     state_entity.update(&mut cx.clone(), |state, cx| {
+                        let graph = &state.app.plugin_state.graph_state;
+                        if (graph.editing_graph_node_uuid, graph.draft_generation) != graph_target {
+                            return;
+                        }
+
                         if let Err(e) = state
                             .app
                             .set_plugin_param_string(plugin_idx, param_idx, path)

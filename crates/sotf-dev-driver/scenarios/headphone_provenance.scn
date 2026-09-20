@@ -1,0 +1,34 @@
+action HeadphoneSetFileFixture {"mode":"provenance"}
+wait_until headphone.loading == false timeout=5s
+assert headphone.file_preview_point_count == 3
+assert headphone.identity.model == "Reference headphone, revision B"
+assert headphone.identity.rig == "IEC 60318-4 fixture"
+assert headphone.identity.sample == "Unit 2, left ear"
+assert headphone.identity.compensation == "Uncompensated"
+wait_idle 1s
+scroll_into_view headphone.content headphone.measurement-identity
+click headphone.measurement-identity
+assert headphone.identity_expanded == true
+scroll_into_view headphone.content headphone.identity.compensation
+assert_in_viewport headphone.identity.rig
+assert_in_viewport headphone.identity.compensation
+screenshot headphone-provenance
+
+action HeadphoneSetFileFixture {"mode":"stale-provenance"}
+wait_until headphone.loading == false timeout=5s
+assert toast.type == "Error"
+assert headphone.identity.model == "Reference headphone, revision B"
+assert headphone.identity.rig == "IEC 60318-4 fixture"
+assert headphone.identity.sample == "Unit 2, left ear"
+assert headphone.identity.compensation == "Uncompensated"
+screenshot headphone-stale-provenance-rejected
+
+action HeadphoneSetFileFixture {"mode":"replacement"}
+wait_until headphone.loading == false timeout=5s
+assert headphone.file_preview_point_count == 2
+assert headphone.identity.model == null
+assert headphone.identity.rig == null
+assert headphone.identity.sample == null
+assert headphone.identity.compensation == null
+assert playback.is_playing == false
+screenshot headphone-provenance-replaced

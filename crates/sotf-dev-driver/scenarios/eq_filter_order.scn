@@ -1,0 +1,26 @@
+# 2026-09-09: verify stored higher-order EQ and incompatible SVF controls.
+focus Studio
+plugin_clear
+plugin_add EQ
+action PluginSelectFirstUser
+wait_idle
+screenshot eq-order-initial
+scroll_into_view rack.params eq.order.8
+assert plugins.plugin.2.param.1.value == 1.4 tolerance=0.001
+click eq.order.8
+plugin_chain_save $SOTF_QA_DIR/eq-order-8.json
+screenshot eq-order-8
+scroll_into_view rack.params eq.config.toggle
+click eq.config.toggle
+scroll_into_view rack.params eq.global.topology-svf
+click eq.global.topology-svf
+plugin_chain_save $SOTF_QA_DIR/eq-order-svf-rejected.json
+scroll_into_view rack.params eq.order.2
+click eq.order.2
+scroll_into_view rack.params eq.global.topology-svf
+click eq.global.topology-svf
+plugin_chain_save $SOTF_QA_DIR/eq-order-svf.json
+scroll_into_view rack.params eq.order.8
+click eq.order.8
+plugin_chain_save $SOTF_QA_DIR/eq-order-high-rejected.json
+assert playback.is_playing == false

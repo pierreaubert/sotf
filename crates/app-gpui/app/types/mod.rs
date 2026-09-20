@@ -664,6 +664,7 @@ pub struct OptimizationUiState {
 
 pub mod calibration;
 pub mod maturity;
+pub mod preferences;
 pub mod queue;
 pub mod settings;
 pub mod stats;
@@ -677,6 +678,7 @@ pub mod spinorama_eq;
 // Re-export commonly used types for convenience
 pub use calibration::CalibrationData;
 pub use headphone_eq::{HeadphoneEqBiquad, HeadphoneEqResult, HeadphoneEqState, HeadphoneEqStep};
+pub use preferences::{PreferencesCategory, PreferencesNavigation, PreferencesSetting};
 pub use queue::QueueItem;
 pub use recording::{
     ChannelMapping, ChannelRecording, ChannelRecordingState, CtcMatrixExportStrategy,

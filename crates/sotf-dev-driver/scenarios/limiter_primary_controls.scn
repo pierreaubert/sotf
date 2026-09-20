@@ -1,0 +1,89 @@
+focus Studio
+plugin_clear
+plugin_add Limiter
+action PluginSelectFirstUser
+wait_idle 1s
+resize 1000 900
+wait_idle 1s
+scroll_into_view rack.params plugin.control.2.0
+click plugin.control.2.0
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "-3"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.0.value == -3 tolerance=0.001
+scroll_into_view rack.params plugin.control.2.1
+click plugin.control.2.1
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "120"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.1.value == 120 tolerance=0.001
+scroll_into_view rack.params plugin.control.2.7
+click plugin.control.2.7
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.7.exact
+click plugin.param.2.7.exact
+key cmd-a
+type "75"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.7.value == 0.75 tolerance=0.001
+scroll_into_view rack.params plugin.choice.2.4.1
+click plugin.choice.2.4.1
+assert plugins.plugin.2.param.4.value == 1
+scroll_into_view rack.params plugin.choice.2.4.0
+click plugin.choice.2.4.0
+assert plugins.plugin.2.param.4.value == 0
+assert plugins.plugin.2.param.0.value == -3 tolerance=0.001
+assert plugins.plugin.2.param.1.value == 120 tolerance=0.001
+assert plugins.plugin.2.param.7.value == 0.75 tolerance=0.001
+screenshot limiter-primary-1000
+resize 600 1000
+wait_idle 1s
+scroll_into_view rack.params plugin.control.2.0
+click plugin.control.2.0
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.0.exact
+click plugin.param.2.0.exact
+key cmd-a
+type "-6"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.0.value == -6 tolerance=0.001
+scroll_into_view rack.params plugin.control.2.1
+click plugin.control.2.1
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.1.exact
+click plugin.param.2.1.exact
+key cmd-a
+type "200"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.1.value == 200 tolerance=0.001
+scroll_into_view rack.params plugin.control.2.7
+click plugin.control.2.7
+wait_idle 500ms
+scroll_into_view rack.params plugin.param.2.7.exact
+click plugin.param.2.7.exact
+key cmd-a
+type "100"
+key enter
+wait_idle 500ms
+assert plugins.plugin.2.param.7.value == 1 tolerance=0.001
+scroll_into_view rack.params plugin.choice.2.4.1
+click plugin.choice.2.4.1
+assert plugins.plugin.2.param.4.value == 1
+scroll_into_view rack.params plugin.choice.2.4.0
+click plugin.choice.2.4.0
+assert plugins.plugin.2.param.4.value == 0
+assert plugins.plugin.2.param.0.value == -6 tolerance=0.001
+assert plugins.plugin.2.param.1.value == 200 tolerance=0.001
+assert plugins.plugin.2.param.7.value == 1 tolerance=0.001
+screenshot limiter-primary-600

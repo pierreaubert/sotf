@@ -11,6 +11,7 @@ use crate::app::i18n::EqViewTranslations;
 use crate::components::PluginEditingManager;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
+use crate::eq_layout::{medium_graph_width, narrow_graph_width};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -106,7 +107,7 @@ pub(crate) fn render_eq_bottom_strip(
         theme,
     ));
 
-    let graph_width = (state.available_width - 104.0 * state.layout_scale).max(360.0);
+    let graph_width = medium_graph_width(state.available_width, state.layout_scale);
     let graph_height = MEDIUM_GRAPH_HEIGHT * state.layout_scale;
     root = root.child(
         div()
@@ -134,6 +135,7 @@ pub(crate) fn render_eq_bottom_strip(
                     graph_width,
                     graph_height,
                     state.layout_scale,
+                    state.sample_rate,
                     chart_focus_handle,
                 ),
             )),
@@ -204,20 +206,26 @@ pub(crate) fn render_eq_inspector(
 
     let graph_height = COMPACT_GRAPH_HEIGHT * state.layout_scale;
     root = root
-        .child(div().id("eq-narrow-graph").h(px(graph_height)).child(
-            render_eq_visualization_sized(
-                entity.clone(),
-                plugin_idx,
-                display_filters,
-                Some(selected_band_idx),
-                indexing,
-                theme,
-                state.available_width.max(320.0),
-                graph_height,
-                state.layout_scale,
-                chart_focus_handle,
-            ),
-        ))
+        .child(
+            div()
+                .id("eq-narrow-graph")
+                .w_full()
+                .min_w_0()
+                .h(px(graph_height))
+                .child(render_eq_visualization_sized(
+                    entity.clone(),
+                    plugin_idx,
+                    display_filters,
+                    Some(selected_band_idx),
+                    indexing,
+                    theme,
+                    narrow_graph_width(state.available_width),
+                    graph_height,
+                    state.layout_scale,
+                    state.sample_rate,
+                    chart_focus_handle,
+                )),
+        )
         .child(render_eq_property_strip(
             &d,
             entity.clone(),
@@ -552,7 +560,7 @@ fn render_compact_global_bar(
 }
 
 /// Expandable panel containing global controls and channel mode.
-fn render_compact_config_panel(
+pub(crate) fn render_compact_config_panel(
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -634,6 +642,89 @@ fn render_compact_config_panel(
     // Global controls based on EQ variant
     match &state.mode {
         EqViewMode::Standard => {
+            use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Text};
+            let mut quality = div().flex().flex_wrap().items_center().gap(d.gap);
+            for (id, label, active, control) in [
+                (
+                    "topology-biquad",
+                    "Biquad".to_string(),
+                    state.topology == 0.0,
+                    EqGlobalControl::StandardTopology(0.0),
+                ),
+                (
+                    "topology-svf",
+                    "SVF".to_string(),
+                    state.topology == 1.0,
+                    EqGlobalControl::StandardTopology(1.0),
+                ),
+                (
+                    "auto-gain",
+                    text.auto_gain.to_string(),
+                    state.auto_gain_enabled,
+                    EqGlobalControl::StandardAutoGain,
+                ),
+                (
+                    "oversampling-1",
+                    "1×".to_string(),
+                    state.oversampling == 1.0,
+                    EqGlobalControl::StandardOversampling(1.0),
+                ),
+                (
+                    "oversampling-2",
+                    "2×".to_string(),
+                    state.oversampling == 2.0,
+                    EqGlobalControl::StandardOversampling(2.0),
+                ),
+                (
+                    "oversampling-4",
+                    "4×".to_string(),
+                    state.oversampling == 4.0,
+                    EqGlobalControl::StandardOversampling(4.0),
+                ),
+            ] {
+                if id == "topology-biquad" {
+                    quality = quality.child(
+                        Text::label(EqViewTranslations::topology(
+                            entity.read(cx).app.ui_state.language,
+                        ))
+                        .color(theme.text_secondary),
+                    );
+                }
+                if id == "oversampling-1" {
+                    quality = quality.child(
+                        Text::label(EqViewTranslations::oversampling(
+                            entity.read(cx).app.ui_state.language,
+                        ))
+                        .color(theme.text_secondary),
+                    );
+                }
+                let entity = entity.clone();
+                let button = Button::new(SharedString::from(format!("eq-{id}")), label)
+                    .disabled(
+                        id == "topology-svf"
+                            && state
+                                .filters
+                                .iter()
+                                .chain(state.channel_filters.iter().flatten().flatten())
+                                .any(|filter| filter.order != 2),
+                    )
+                    .size(ButtonSize::Sm)
+                    .variant(if active {
+                        ButtonVariant::Primary
+                    } else {
+                        ButtonVariant::Ghost
+                    })
+                    .theme(theme.to_button_theme())
+                    .on_click(move |_, cx| {
+                        super::render::adjust_eq_global_control(
+                            &entity, plugin_idx, control, 0.0, cx,
+                        );
+                    });
+                #[cfg(feature = "dev-api")]
+                let button = button.dev_track(format!("eq.global.{id}"));
+                quality = quality.child(button);
+            }
+            col = col.child(quality);
             // Filter count and topology are per-filter concerns (add button in
             // the band strip, topology in the band editor) — only the global
             // TDF-II toggle stays here.
@@ -831,7 +922,7 @@ where
 }
 
 /// Config toggle button in the global bar.
-fn config_toggle_button(
+pub(crate) fn config_toggle_button(
     d: &Ds,
     entity: Entity<AppState>,
     _plugin_idx: usize,
@@ -840,7 +931,7 @@ fn config_toggle_button(
 ) -> impl IntoElement {
     let keyboard_entity = entity.clone();
     let focus_color = theme.border_focused;
-    div()
+    let button = div()
         .id(("eq-config-toggle", _plugin_idx))
         .px(d.pad_y)
         .py(d.pad_y_half)
@@ -887,7 +978,10 @@ fn config_toggle_button(
             theme.text_on_accent
         } else {
             theme.text_secondary
-        }))
+        }));
+    #[cfg(feature = "dev-api")]
+    let button = button.dev_track("eq.config.toggle");
+    button
 }
 
 /// Helper: readable label for a channel index.

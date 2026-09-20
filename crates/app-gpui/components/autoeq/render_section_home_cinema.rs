@@ -99,6 +99,7 @@
 
         if config.system_optimization.use_phase_alignment {
             let mut min_freq_input = NumberInput::new((base_id.clone(), "hc-phase-min-freq"))
+                .scroll_requires_alt(true)
                 .value(config.system_optimization.phase_min_freq)
                 .min(20.0).max(1000.0).step(1.0).decimals(0)
                 .label(translations.autoeq_form.min_frequency_hz)
@@ -112,6 +113,7 @@
             }
 
             let mut max_freq_input = NumberInput::new((base_id.clone(), "hc-phase-max-freq"))
+                .scroll_requires_alt(true)
                 .value(config.system_optimization.phase_max_freq)
                 .min(20.0).max(1000.0).step(1.0).decimals(0)
                 .label(translations.autoeq_form.max_frequency_hz)
@@ -150,6 +152,7 @@
             );
 
             let mut p_max_delay = NumberInput::new((base_id.clone(), "hc-phase-max-delay"))
+                .scroll_requires_alt(true)
                 .value(config.system_optimization.phase_max_delay_ms)
                 .min(ParamLimits::DELAY_MS.min).max(ParamLimits::DELAY_MS.max).step(ParamLimits::DELAY_MS.step)
                 .decimals(1)
@@ -216,6 +219,7 @@
 
             if config.system_optimization.multi_seat_strategy == "primary" {
                 let mut primary_seat_input = NumberInput::new((base_id.clone(), "hc-multi-seat-primary"))
+                    .scroll_requires_alt(true)
                     .value(config.system_optimization.multi_seat_primary_seat as f64)
                     .min(0.0).max(16.0).step(1.0).decimals(0)
                 .label(translations.autoeq_form.primary_seat)
@@ -231,6 +235,7 @@
             }
 
             let mut dev_input = NumberInput::new((base_id.clone(), "hc-multi-seat-max-dev"))
+                .scroll_requires_alt(true)
                 .value(config.system_optimization.multi_seat_max_deviation_db)
                 .min(1.0).max(12.0).step(0.5).decimals(1)
                 .label(translations.autoeq_form.max_deviation_db)

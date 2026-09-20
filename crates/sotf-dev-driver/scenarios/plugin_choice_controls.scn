@@ -1,0 +1,48 @@
+# 2026-09-08: generated mode choices were mouse-only divs.
+# ui_layout_renderer/render.rs now uses selected, disabled toolkit Buttons.
+# Screenshot captures must release their PlayerView before later resize/interaction.
+# Run with: target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/plugin_choice_controls_ui.toml -v
+focus Studio
+plugin_clear
+plugin_add Dither
+action PluginSelectFirstUser
+wait_idle
+assert screen.focused == "Studio"
+assert_accessible button Bit Depth: 16
+assert_accessible button Bit Depth: 20
+assert_accessible button Bit Depth: 24
+assert_accessible button Dither Type: TPDF
+assert_accessible button Dither Type: None (round)
+assert_accessible button Dither Type: Truncate
+assert_selected plugin.choice.2.0.0 == true
+click plugin.choice.2.0.1
+assert plugins.plugin.2.param.0.value == 1
+assert_selected plugin.choice.2.0.1 == true
+assert_selected plugin.choice.2.0.0 == false
+# Change the model without moving focus, then reactivate the focused choice.
+plugin_param_set 2 0 0
+key space
+assert plugins.plugin.2.param.0.value == 1
+click plugin.choice.2.2.2
+assert plugins.plugin.2.param.2.value == 2
+assert_selected plugin.choice.2.2.2 == true
+screenshot dither-choice-controls
+resize 620 900
+wait_idle
+assert_in_viewport plugin.choice.2.0.0
+assert_in_viewport plugin.choice.2.0.1
+assert_in_viewport plugin.choice.2.0.2
+scroll_into_view rack.params plugin.choice.2.2.2
+assert_in_viewport plugin.choice.2.2.2
+plugin_param_set 2 2 0
+click plugin.choice.2.2.2
+assert plugins.plugin.2.param.2.value == 2
+screenshot dither-choice-controls-narrow
+resize 1000 900
+wait_idle
+assert_in_viewport plugin.choice.2.2.0
+click plugin.choice.2.2.0
+assert plugins.plugin.2.param.2.value == 0
+assert_selected plugin.choice.2.2.0 == true
+screenshot dither-choice-controls-restored
+assert playback.is_playing == false

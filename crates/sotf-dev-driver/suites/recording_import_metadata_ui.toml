@@ -1,0 +1,30 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "/tmp/sotf-recording-metadata-ui"
+demo_audio_dir = "data_tests/audio"
+readiness_timeout = "30s"
+size = "1440x900"
+
+[[scenario]]
+name = "recording-import-metadata"
+path = "crates/sotf-dev-driver/scenarios/recording_import_metadata.scn"
+timeout = "120s"
+tags = ["recording", "metadata", "fixture", "offline"]
+[scenario.fake_recording]
+channels = 2
+points = 48
+import_json = '''{"version": "1.1.0", "speakers": {"L": {"name": "Left speaker", "crossover": "main", "measurements": [{"speaker_name": "Woofer", "measurements": [{"name": "Seat 1", "frequencies": [100, 1000], "magnitude_db": [-3, 0], "wav_path": "Woofer-0.wav"}, {"name": "Seat 2", "frequencies": [100, 1000], "magnitude_db": [-4, -1], "wav_path": "Woofer-1.wav"}]}, {"speaker_name": "Tweeter", "measurements": [{"name": "Seat 1", "frequencies": [100, 1000], "magnitude_db": [-4, -1], "wav_path": "Tweeter-0.wav"}, {"name": "Seat 2", "frequencies": [100, 1000], "magnitude_db": [-5, -2], "wav_path": "Tweeter-1.wav"}]}]}}, "recording_config": {"room_dimensions": {"width": 4.0, "length": 5.0, "height": 2.5}, "setup_description": "Original setup", "channel_speakers": {"L": "Original speaker"}, "playback_device_name": "Historical interface", "signal_level_db": -18.0, "mic_calibration_path": "/fixtures/historical-mic.cal"}}'''
+
+[[scenario]]
+name = "recording-import-metadata-narrow-german"
+path = "crates/sotf-dev-driver/scenarios/recording_import_metadata_narrow.scn"
+timeout = "120s"
+viewport = "600x1000"
+language = "German"
+font_scale = 1.5
+theme = "Light"
+tags = ["recording", "metadata", "fixture", "offline"]
+[scenario.fake_recording]
+channels = 2
+points = 48
+import_json = '''{"version": "1.1.0", "speakers": {"L": {"name": "Left speaker", "crossover": "main", "measurements": [{"speaker_name": "Woofer", "measurements": [{"name": "Seat 1", "frequencies": [100, 1000], "magnitude_db": [-3, 0], "wav_path": "Woofer-0.wav"}, {"name": "Seat 2", "frequencies": [100, 1000], "magnitude_db": [-4, -1], "wav_path": "Woofer-1.wav"}]}, {"speaker_name": "Tweeter", "measurements": [{"name": "Seat 1", "frequencies": [100, 1000], "magnitude_db": [-4, -1], "wav_path": "Tweeter-0.wav"}, {"name": "Seat 2", "frequencies": [100, 1000], "magnitude_db": [-5, -2], "wav_path": "Tweeter-1.wav"}]}]}}, "recording_config": {"room_dimensions": {"width": 4.0, "length": 5.0, "height": 2.5}, "setup_description": "Original setup", "channel_speakers": {"L": "Original speaker"}, "playback_device_name": "Historical interface", "signal_level_db": -18.0, "mic_calibration_path": "/fixtures/historical-mic.cal"}}'''
