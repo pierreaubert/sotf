@@ -23,6 +23,7 @@ pub(super) fn bare_chain(name: &str, drivers: Option<Vec<DriverDspChain>>) -> Ch
         post_ir: None,
         fir_temporal_masking: None,
         direct_early_late_correction: None,
+        joint_sub: None,
     }
 }
 
@@ -32,6 +33,7 @@ fn bare_driver(name: &str, index: usize) -> DriverDspChain {
         index,
         plugins: vec![],
         initial_curve: None,
+        measured_band_hz: None,
     }
 }
 
@@ -42,6 +44,7 @@ pub(super) fn bare_output(channels: Vec<(String, ChannelDspChain)>) -> DspChainO
         channels: channels.into_iter().collect(),
         metadata: None,
         deployed_source_curves: Default::default(),
+        correction_decisions: None,
     }
 }
 
@@ -257,6 +260,10 @@ fn test_build_room_eq_graph_ctc_uses_stereo_input_and_speaker_branches() {
     output.metadata = Some(OptimizationMetadata {
         final_convolution_sha256: None,
         qa_seed_distribution: None,
+        operation_gates: None,
+        provisional_decisions: Vec::new(),
+        audibility_veto: None,
+        veto_adjudication: None,
         pre_score: 1.0,
         post_score: 0.5,
         algorithm: "test".to_string(),
@@ -409,6 +416,10 @@ fn test_build_room_eq_graph_tracks_global_variable_channel_widths() {
     output.metadata = Some(OptimizationMetadata {
         final_convolution_sha256: None,
         qa_seed_distribution: None,
+        operation_gates: None,
+        provisional_decisions: Vec::new(),
+        audibility_veto: None,
+        veto_adjudication: None,
         pre_score: 1.0,
         post_score: 0.5,
         algorithm: "test".to_string(),
@@ -540,6 +551,10 @@ fn test_physical_graph_uses_route_gain_without_chain_override() {
     output.metadata = Some(OptimizationMetadata {
         final_convolution_sha256: None,
         qa_seed_distribution: None,
+        operation_gates: None,
+        provisional_decisions: Vec::new(),
+        audibility_veto: None,
+        veto_adjudication: None,
         pre_score: 1.0,
         post_score: 0.5,
         algorithm: "test".to_string(),
@@ -564,17 +579,21 @@ fn test_physical_graph_uses_route_gain_without_chain_override() {
             enabled: true,
             crossover_type: "LR24".to_string(),
             crossover_frequency_hz: Some(80.0),
-            lfe_low_pass_hz: 120.0,
             redirected_bass_enabled: true,
-            lfe_channel: "LFE".to_string(),
-            lfe_playback_gain_db: 10.0,
-            lfe_gain_applied_to_chain: true,
+            routing_title: "Bass management".into(),
+            crossover_cancellation: Vec::new(),
+            lfe: Some(autoeq::roomeq::home_cinema::LfeBassManagementReport {
+                input_channel: "LFE".to_string(),
+                playback_gain_db: 10.0,
+                low_pass_hz: 120.0,
+                gain_applied_to_chain: true,
+            }),
             sub_trim_db: 0.0,
             max_sub_boost_db: 6.0,
             headroom_margin_db: -3.0,
             applied_sub_gain_db: Some(-17.0),
             gain_limited: false,
-            physical_sub_output: "LFE".to_string(),
+            physical_sub_outputs: vec!["LFE".to_string()],
             redirected_bass_channel_count: 1,
             main_high_pass_hz: Some(80.0),
             sub_low_pass_hz: Some(80.0),
@@ -583,6 +602,8 @@ fn test_physical_graph_uses_route_gain_without_chain_override() {
             signal_flow_advisories: Vec::new(),
             routing_graph: Some(BassManagementRoutingGraph {
                 physical_sub_output: "LFE".to_string(),
+                physical_sub_outputs: vec!["LFE".to_string()],
+                stereo_routing: None,
                 input_channels: vec!["L".to_string(), "LFE".to_string()],
                 output_channels: vec!["L".to_string(), "LFE".to_string()],
                 input_trim_db: Default::default(),
@@ -710,6 +731,10 @@ fn test_physical_graph_rejects_unconnected_declared_output() {
     output.metadata = Some(OptimizationMetadata {
         final_convolution_sha256: None,
         qa_seed_distribution: None,
+        operation_gates: None,
+        provisional_decisions: Vec::new(),
+        audibility_veto: None,
+        veto_adjudication: None,
         pre_score: 1.0,
         post_score: 0.5,
         algorithm: "test".to_string(),
@@ -734,17 +759,21 @@ fn test_physical_graph_rejects_unconnected_declared_output() {
             enabled: true,
             crossover_type: "LR24".to_string(),
             crossover_frequency_hz: Some(80.0),
-            lfe_low_pass_hz: 120.0,
             redirected_bass_enabled: false,
-            lfe_channel: "B".to_string(),
-            lfe_playback_gain_db: 0.0,
-            lfe_gain_applied_to_chain: false,
+            routing_title: "Bass management".into(),
+            crossover_cancellation: Vec::new(),
+            lfe: Some(autoeq::roomeq::home_cinema::LfeBassManagementReport {
+                input_channel: "B".to_string(),
+                playback_gain_db: 0.0,
+                low_pass_hz: 120.0,
+                gain_applied_to_chain: false,
+            }),
             sub_trim_db: 0.0,
             max_sub_boost_db: 6.0,
             headroom_margin_db: -3.0,
             applied_sub_gain_db: Some(0.0),
             gain_limited: false,
-            physical_sub_output: "B".to_string(),
+            physical_sub_outputs: vec!["B".to_string()],
             redirected_bass_channel_count: 0,
             main_high_pass_hz: None,
             sub_low_pass_hz: None,
@@ -753,6 +782,8 @@ fn test_physical_graph_rejects_unconnected_declared_output() {
             signal_flow_advisories: Vec::new(),
             routing_graph: Some(BassManagementRoutingGraph {
                 physical_sub_output: "B".to_string(),
+                physical_sub_outputs: vec!["B".to_string()],
+                stereo_routing: None,
                 input_channels: vec!["A".to_string(), "B".to_string()],
                 output_channels: vec!["A".to_string(), "B".to_string()],
                 input_trim_db: Default::default(),

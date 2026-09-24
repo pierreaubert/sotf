@@ -1351,6 +1351,7 @@ fn room_eq_workflow_navigation_enforces_each_data_gate() {
         .room_eq_state
         .channel_measurements
         .push(ChannelMeasurement {
+            acquisition: None,
             driver_measurement_sets: Vec::new(),
             provenance: Vec::new(),
             channel_name: "L".to_string(),

@@ -32,6 +32,9 @@ use crate::app::{App, FilePickerMode, FilePickerOrigin, InputMode};
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    if super::capture::handle_capture_keys(app, key) {
+        return None;
+    }
     use sotf_audio_player::recording_types::{ChannelRecordingState, RecordingStep};
 
     // Esc: exit editing if active, then two-level focus (content → step tab → configure tab)

@@ -384,6 +384,10 @@ fn draw_metadata_services_screen(f: &mut Frame, area: Rect, app: &App) {
 }
 
 pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
+    if app.recording.multi_capture.active {
+        super::capture::draw_capture(f, area, app);
+        return;
+    }
     let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     use ratatui::widgets::Tabs;
     use sotf_audio_player::recording_helpers::{
@@ -448,7 +452,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 .borders(Borders::ALL)
                 .border_type(step_tab_border)
                 .border_style(Style::default().fg(step_tab_border_color))
-                .title(i18n.ui("Recording")),
+                .title(format!("{} · F8: Multi-mic capture", i18n.ui("Recording"))),
         )
         .select(step_idx)
         .highlight_style(Style::default().fg(app.theme.accent_primary));

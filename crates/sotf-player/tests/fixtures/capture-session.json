@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "geometry": "spread",
+  "sample_rate_hz": 48000,
+  "output_device": "Measurement DAC",
+  "microphones": [
+    {
+      "id": "seat-left",
+      "device": "UMIK-1 A",
+      "input_channel": 0,
+      "calibration_file": "umik-a-90deg.txt",
+      "calibration_orientation": "ninety_degrees",
+      "gain_db": 0.0,
+      "position_m": [0.0, 0.0, 0.0],
+      "position_uncertainty_mm": 1.0
+    },
+    {
+      "id": "seat-right",
+      "device": "UMIK-1 B",
+      "input_channel": 0,
+      "calibration_file": "umik-b-90deg.txt",
+      "calibration_orientation": "ninety_degrees",
+      "gain_db": 0.0,
+      "position_m": [1.0, 0.0, 0.0],
+      "position_uncertainty_mm": 1.0
+    }
+  ],
+  "sources": [
+    {"id": "left", "output_channel": 0},
+    {"id": "right", "output_channel": 1}
+  ],
+  "sweep": {
+    "duration_secs": 5.0,
+    "start_hz": 20.0,
+    "end_hz": 20000.0,
+    "amplitude": 0.1
+  }
+}

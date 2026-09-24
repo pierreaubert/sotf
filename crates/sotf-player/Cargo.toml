@@ -98,6 +98,8 @@ symphonia-format-isomp4 = { workspace = true }
 
 # Audio feature analysis (pure Rust replacement for bliss-audio)
 math-dsp = { workspace = true }
+math-rir = { workspace = true }
+hound = { workspace = true }
 rubato = { workspace = true }
 audioadapter-buffers = { workspace = true }
 num_cpus = { workspace = true }

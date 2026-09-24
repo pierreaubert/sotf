@@ -16,6 +16,10 @@ path = "bin/sotf_player_cli.rs"
 name = "sotf-recorder-cli"
 path = "bin/sotf_recorder_cli.rs"
 
+[[bin]]
+name = "roomeq-capture"
+path = "bin/roomeq_capture.rs"
+
 [dependencies]
 tokio = { workspace = true }
 ndarray = { workspace = true }

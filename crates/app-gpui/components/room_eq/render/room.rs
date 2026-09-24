@@ -477,8 +477,14 @@ fn room_eq_report_bass_management_from_report(
         })
         .map(|route| route.destination.clone())
         .collect();
-    if physical_outputs.is_empty() && !report.physical_sub_output.is_empty() {
-        physical_outputs.insert(report.physical_sub_output.clone());
+    if physical_outputs.is_empty() {
+        physical_outputs.extend(
+            report
+                .physical_sub_outputs
+                .iter()
+                .filter(|name| !name.is_empty())
+                .cloned(),
+        );
     }
 
     let mut advisories: BTreeSet<String> = BTreeSet::new();
@@ -518,7 +524,7 @@ fn room_eq_report_bass_management_from_report(
         enabled: report.enabled,
         crossover_type: report.crossover_type.clone(),
         crossover_frequency_hz: report.crossover_frequency_hz,
-        lfe_playback_gain_db: report.lfe_playback_gain_db,
+        lfe_playback_gain_db: report.lfe.as_ref().map_or(0.0, |lfe| lfe.playback_gain_db),
         applied_sub_gain_db: report.applied_sub_gain_db,
         input_channels: report
             .routing_graph

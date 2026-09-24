@@ -13,6 +13,8 @@ mod bass_anchor;
 mod capture;
 mod config;
 mod evaluating;
+#[cfg(not(target_os = "ios"))]
+mod multi_capture;
 mod probe;
 mod saving;
 mod spl_calibration;
@@ -23,7 +25,18 @@ use gpui::prelude::*;
 
 impl PlayerView {
     /// Main recording screen renderer - dispatches to the appropriate step
-    pub(crate) fn render_recording_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_recording_screen(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        #[cfg(not(target_os = "ios"))]
+        if self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .multi_capture
+            .active
+        {
+            return self.render_multi_capture_panel(cx).into_any_element();
+        }
         let current_step = self
             .state
             .read(cx)
@@ -47,6 +60,12 @@ impl PlayerView {
             RecordingStep::Saving => self.render_recording_saving_step(cx).into_any_element(),
         };
 
+        #[cfg(not(target_os = "ios"))]
+        let step_content = gpui_ui_kit::VStack::new()
+            .spacing(gpui_ui_kit::StackSpacing::Md)
+            .child(self.render_multi_capture_launcher(cx))
+            .child(step_content)
+            .into_any_element();
         self.render_workflow_shell("recording-content", step_content, cx)
     }
 }

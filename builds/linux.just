@@ -9,6 +9,7 @@ install-linux-root:
 	   curl \
 	   build-essential \
 	   gcc g++ pkg-config cmake ninja-build \
+	   clang mold \
 	   libssl-dev \
 	   ca-certificates \
 	   patchelf

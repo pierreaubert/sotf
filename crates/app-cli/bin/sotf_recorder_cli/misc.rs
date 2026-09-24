@@ -58,6 +58,9 @@ pub(super) fn list_audio_devices() -> Result<(), String> {
             } else {
                 println!("  [{}] {}{}", idx, device.name, default_marker);
             }
+            if let Some(id) = &device.device_id {
+                println!("      Device ID: {id}");
+            }
         }
     }
 
@@ -83,6 +86,9 @@ pub(super) fn list_audio_devices() -> Result<(), String> {
                 );
             } else {
                 println!("  [{}] {}{}", idx, device.name, default_marker);
+            }
+            if let Some(id) = &device.device_id {
+                println!("      Device ID: {id}");
             }
         }
     }

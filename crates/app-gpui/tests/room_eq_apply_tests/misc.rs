@@ -433,6 +433,7 @@ fn build_channel_dsp_from_real_emitters(
         post_ir: None,
         fir_temporal_masking: None,
         direct_early_late_correction: None,
+        joint_sub: None,
     }
 }
 

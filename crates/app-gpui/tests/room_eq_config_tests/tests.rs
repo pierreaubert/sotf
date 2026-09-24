@@ -52,6 +52,7 @@ fn test_room_eq_to_room_config_simple() {
 
     // Add a dummy measurement
     state.channel_measurements.push(ChannelMeasurement {
+        acquisition: None,
         driver_measurement_sets: Vec::new(),
         provenance: Vec::new(),
         channel_name: "L".to_string(),
@@ -240,6 +241,7 @@ fn test_room_eq_to_room_config_advanced() {
 
     // Add measurement
     state.channel_measurements.push(ChannelMeasurement {
+        acquisition: None,
         driver_measurement_sets: Vec::new(),
         provenance: Vec::new(),
         channel_name: "L".to_string(),
@@ -324,6 +326,7 @@ fn test_room_eq_validation() {
 
     // Add measurement to make it a valid RoomConfig otherwise
     state.channel_measurements.push(ChannelMeasurement {
+        acquisition: None,
         driver_measurement_sets: Vec::new(),
         provenance: Vec::new(),
         channel_name: "L".to_string(),

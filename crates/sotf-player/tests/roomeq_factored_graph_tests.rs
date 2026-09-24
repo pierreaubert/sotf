@@ -1,4 +1,4 @@
-//! Integration tests for the RoomEQ factored graph builder against the
+//! Integration tests for the RoomEQ per-route graph builder against the
 //! real-world `gen514` 5.1.4 home-cinema fixture.
 //!
 //! The fixture is a slim of `data_generated/gen514/dsp.json` with the large
@@ -23,97 +23,149 @@ fn load_gen514_fixture() -> DspChainOutput {
 }
 
 #[test]
-fn gen514_factored_graph_has_one_node_per_role_for_10_channels() {
+fn gen514_per_route_graph_preserves_ports_and_route_count() {
     let output = load_gen514_fixture();
     let config = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
-
-    // 10 input channels: L, R, C, LFE, SL, SR, TFL, TFR, TBL, TBR.
-    let labels: Vec<&str> = config
+    let labels: Vec<_> = config
         .nodes
         .iter()
-        .filter_map(|n| n.parameters.get("label").and_then(|l| l.as_str()))
+        .filter_map(|node| node.parameters["label"].as_str())
         .collect();
-
-    for required in [
-        "room_eq_gain_pre",
-        "room_eq_eq_pre",
-        "room_eq_xover_hp",
-        "room_eq_delay_hp",
-        "room_eq_xover_lp",
-        "room_eq_delay_lp",
-        "room_eq_matrix_to_sub_bus",
-        "room_eq_eq_post",
-        "room_eq_gain_post",
-    ] {
-        let count = labels.iter().filter(|l| **l == required).count();
-        assert_eq!(
-            count, 1,
-            "factored graph must emit exactly one '{required}', got {count} in {labels:?}"
-        );
+    for label in ["room_eq_logical_inputs", "room_eq_physical_outputs"] {
+        assert_eq!(labels.iter().filter(|value| **value == label).count(), 1);
     }
-
-    // Every node carries the full 10-channel width — no per-channel
-    // sub-graphs at narrower widths.
-    for node in &config.nodes {
-        assert_eq!(
-            node.input_channels,
-            10,
-            "node '{}' should be at 10-channel width, got {}",
-            node.parameters
-                .get("label")
-                .and_then(|l| l.as_str())
-                .unwrap_or("<unlabeled>"),
-            node.input_channels
-        );
-    }
-}
-
-#[test]
-fn gen514_factored_graph_matrix_sums_redirected_bass_onto_lfe_row() {
-    let output = load_gen514_fixture();
-    let config = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
-
-    let matrix_node = config
-        .nodes
-        .iter()
-        .find(|n| {
-            n.parameters.get("label").and_then(|l| l.as_str()) == Some("room_eq_matrix_to_sub_bus")
-        })
-        .expect("factored sub-bus matrix node");
-    let matrix: Vec<f32> = matrix_node.parameters["matrix"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_f64().unwrap() as f32)
-        .collect();
-    let n = 10usize;
-    assert_eq!(matrix.len(), n * n);
-
-    // gen514 input_channels order: [L, R, C, LFE, SL, SR, TFL, TFR, TBL, TBR].
-    // LFE is at index 3. Every main source has a redirected_bass_lowpass_to_sub
-    // route into LFE; LFE has its own lfe_lowpass_to_sub. So row 3 should have
-    // 10 non-zero entries.
-    let lfe_row: Vec<f32> = (0..n).map(|src| matrix[3 * n + src]).collect();
-    let nonzero = lfe_row.iter().filter(|c| **c > 0.0).count();
-    assert_eq!(
-        nonzero, 10,
-        "LFE row should sum from every source: {lfe_row:?}"
-    );
-
-    // Other rows should be all zero (no other sub destinations in gen514).
-    for dst in (0..n).filter(|&d| d != 3) {
-        for src in 0..n {
-            assert_eq!(
-                matrix[dst * n + src],
-                0.0,
-                "matrix[{dst}][{src}] must be 0 for non-LFE destination row"
-            );
+    for index in 0..10 {
+        for prefix in ["room_eq_input_", "room_eq_output_sum_"] {
+            let expected = format!("{prefix}{index}");
+            assert_eq!(labels.iter().filter(|value| **value == expected).count(), 1);
         }
     }
+    // Nine mains each have a high-pass and bass route; LFE has one bass route.
+    assert_eq!(
+        labels
+            .iter()
+            .filter(|label| label.starts_with("room_eq_route_"))
+            .count(),
+        19
+    );
+    assert!(config.nodes.iter().all(|node| node.input_channels == 10));
 }
 
 #[test]
-fn gen514_factored_graph_nodes_instantiate_via_factory() {
+fn gen514_per_route_graph_preserves_transfers_and_destination_sums() {
+    let output = load_gen514_fixture();
+    let routing = output
+        .metadata
+        .as_ref()
+        .unwrap()
+        .bass_management
+        .as_ref()
+        .unwrap()
+        .routing_graph
+        .as_ref()
+        .unwrap();
+    let config = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
+    let mut visited = std::collections::HashSet::new();
+    let mut sub_sources = std::collections::HashSet::new();
+    for node in &config.nodes {
+        if !node.parameters["label"]
+            .as_str()
+            .is_some_and(|label| label.starts_with("room_eq_route_"))
+        {
+            continue;
+        }
+        let matrix = node.parameters["matrix"].as_array().unwrap();
+        assert_eq!(matrix.len(), 100);
+        let nonzero: Vec<_> = matrix
+            .iter()
+            .enumerate()
+            .filter(|(_, value)| value.as_f64().unwrap() != 0.0)
+            .collect();
+        assert_eq!(
+            nonzero.len(),
+            1,
+            "route must select exactly one source/destination"
+        );
+        let (cell, value) = nonzero[0];
+        assert_eq!(value.as_f64(), Some(1.0));
+        let (source, destination) = (cell % 10, cell / 10);
+        assert!(visited.insert((source, destination)), "duplicate route");
+        let expected = routing
+            .routes
+            .iter()
+            .find(|route| route.source_index == source && route.destination_index == destination)
+            .expect("route must exist in fixture");
+        if destination == 3 {
+            sub_sources.insert(source);
+        }
+        let mut cursor = node.id;
+        let mut gain = None;
+        let mut crossover = None;
+        let mut delay = None;
+        let mut reached_sum = false;
+        for _ in 0..config.nodes.len() {
+            let edges: Vec<_> = config
+                .edges
+                .iter()
+                .filter(|edge| edge.from_node == cursor)
+                .collect();
+            assert_eq!(
+                edges.len(),
+                1,
+                "route must remain isolated until destination sum"
+            );
+            let next = config
+                .nodes
+                .iter()
+                .find(|node| node.id == edges[0].to_node)
+                .unwrap();
+            let label = next.parameters["label"].as_str().unwrap_or("");
+            if label.starts_with("room_eq_output_sum_") {
+                assert_eq!(label, format!("room_eq_output_sum_{destination}"));
+                reached_sum = true;
+                break;
+            }
+            match next.plugin_type.as_str() {
+                "matrix" => {
+                    assert!(gain.is_none());
+                    gain = next.parameters["matrix"][destination * 10 + destination].as_f64();
+                }
+                "crossover" => {
+                    assert!(crossover.is_none());
+                    crossover = Some(&next.parameters);
+                }
+                "delay" => {
+                    assert!(delay.is_none());
+                    delay = next.parameters["delay_ms"].as_f64();
+                }
+                other => panic!("unexpected route processor {other}"),
+            }
+            cursor = next.id;
+        }
+        assert!(reached_sum, "route must terminate at its destination sum");
+        let expected_gain = 10.0_f64.powf(expected.gain_db / 20.0)
+            * if expected.polarity_inverted {
+                -1.0
+            } else {
+                1.0
+            };
+        assert!((gain.unwrap_or(1.0) - expected_gain).abs() < 1e-6);
+        assert!((delay.unwrap_or(0.0) - expected.delay_ms).abs() < 1e-6);
+        let crossover = crossover.expect("each fixture route has a crossover");
+        let (frequency, branch) = if let Some(hz) = expected.high_pass_hz {
+            (hz, "high")
+        } else {
+            (expected.low_pass_hz.unwrap(), "low")
+        };
+        assert!((crossover["frequency"].as_f64().unwrap() - frequency).abs() < 1e-6);
+        assert_eq!(crossover["output"].as_str(), Some(branch));
+    }
+    assert_eq!(visited.len(), routing.routes.len());
+    assert_eq!(sub_sources, (0..10).collect());
+}
+
+#[test]
+fn gen514_per_route_graph_nodes_instantiate_via_factory() {
     let output = load_gen514_fixture();
     let config = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
     for node in &config.nodes {
@@ -130,39 +182,28 @@ fn gen514_factored_graph_nodes_instantiate_via_factory() {
         )
         .unwrap_or_else(|err| {
             panic!(
-                "gen514 factored node '{label}' (type={}) failed to instantiate: {err}",
+                "gen514 per-route node '{label}' (type={}) failed to instantiate: {err}",
                 node.plugin_type
             )
         });
     }
 }
 
-/// Serialise the factored graph as a stable text snapshot. Format:
+/// Serialise the per-route graph as a stable text snapshot. Format:
 ///
 ///     [nodes]
 ///     <id> <plugin_type> <label> ch=<input_channels>
 ///     ...
 ///     [edges]
-///     <from_label> -> <to_label>
+///     <from_id> -> <to_id>
 ///     ...
 ///
-/// Edges are sorted by `(from_label, to_label)` to make textual diffs
+/// Edges are sorted by `(from_id, to_id)` to make textual diffs
 /// stable across non-semantic reorderings. The snapshot intentionally
 /// omits per-channel parameter arrays (gains, filters, frequencies) so
 /// the fixture stays readable and the test doesn't churn on every
 /// numeric refinement to the optimizer — only on topology changes.
 fn serialise_topology(config: &sotf_audio::engine::PluginGraphConfig) -> String {
-    let label_for = |id: usize| -> String {
-        config
-            .nodes
-            .iter()
-            .find(|n| n.id == id)
-            .and_then(|n| n.parameters.get("label"))
-            .and_then(|l| l.as_str())
-            .unwrap_or("<unlabeled>")
-            .to_string()
-    };
-
     let mut out = String::new();
     out.push_str("[nodes]\n");
     let mut nodes: Vec<_> = config.nodes.iter().collect();
@@ -180,10 +221,10 @@ fn serialise_topology(config: &sotf_audio::engine::PluginGraphConfig) -> String 
     }
 
     out.push_str("\n[edges]\n");
-    let mut edges: Vec<(String, String)> = config
+    let mut edges: Vec<(usize, usize)> = config
         .edges
         .iter()
-        .map(|e| (label_for(e.from_node), label_for(e.to_node)))
+        .map(|e| (e.from_node, e.to_node))
         .collect();
     edges.sort();
     for (from, to) in edges {
@@ -197,11 +238,11 @@ fn serialise_topology(config: &sotf_audio::engine::PluginGraphConfig) -> String 
 /// without those changes registering in the looser role-presence tests.
 ///
 /// To update after a deliberate topology change:
-///   `INSTA_UPDATE=overwrite cargo test gen514_factored_graph_topology_matches_golden_snapshot`
+///   `INSTA_UPDATE=overwrite cargo test gen514_per_route_graph_topology_matches_golden_snapshot`
 /// — or just paste the failing output (in the panic message below) into
 /// `tests/fixtures/roomeq_gen514_topology.txt`.
 #[test]
-fn gen514_factored_graph_topology_matches_golden_snapshot() {
+fn gen514_per_route_graph_topology_matches_golden_snapshot() {
     let output = load_gen514_fixture();
     let config = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
     let actual = serialise_topology(&config);
@@ -232,14 +273,14 @@ fn gen514_factored_graph_topology_matches_golden_snapshot() {
         // Show a readable diff in the failure message: caller can copy the
         // "actual" block into the fixture if the change is intentional.
         panic!(
-            "gen514 factored graph topology drifted from the golden snapshot.\n\
+            "gen514 per-route graph topology drifted from the golden snapshot.\n\
              --- expected ({path}) ---\n\
              {expected}\n\
              --- actual ---\n\
              {actual}\n\
              --- end ---\n\
              If the change is intentional, run:\n  \
-             INSTA_UPDATE=overwrite cargo test gen514_factored_graph_topology_matches_golden_snapshot",
+             INSTA_UPDATE=overwrite cargo test gen514_per_route_graph_topology_matches_golden_snapshot",
             path = golden_path.display()
         );
     }

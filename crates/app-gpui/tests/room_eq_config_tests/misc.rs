@@ -26,6 +26,7 @@ pub(super) fn chain(
         post_ir: None,
         fir_temporal_masking: None,
         direct_early_late_correction: None,
+        joint_sub: None,
     }
 }
 
@@ -36,6 +37,7 @@ fn driver(name: &str, index: usize, plugins: Vec<DspPluginConfig>) -> DriverDspC
         index,
         plugins,
         initial_curve: None,
+        measured_band_hz: None,
     }
 }
 
@@ -50,6 +52,7 @@ pub(super) fn output(
         channels,
         metadata: None,
         deployed_source_curves: Default::default(),
+        correction_decisions: None,
     }
 }
 

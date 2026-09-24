@@ -13,12 +13,36 @@ use error_output::redact_secrets;
 use misc::list_audio_devices;
 use types::Cli;
 
+#[path = "sotf_recorder_cli/capture.rs"]
+mod capture;
+
 fn main() {
     let cli = Cli::parse();
-    error_output::set_show_urls(cli.show_urls);
+    error_output::set_show_urls(cli.actions.show_urls);
+
+    if let Some(path) = &cli.actions.capture_session {
+        let result = cli
+            .output_dir
+            .as_deref()
+            .ok_or_else(|| "--output-dir is required".to_owned())
+            .and_then(|output| capture::record(path, output));
+        if let Err(error) = result {
+            eprintln!("Error: {}", redact_secrets(&error));
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    if let Some(path) = &cli.actions.validate_capture_session {
+        if let Err(error) = capture::validate(path) {
+            eprintln!("Error: {}", redact_secrets(&error));
+            std::process::exit(1);
+        }
+        return;
+    }
 
     // Handle --list-devices flag
-    if cli.list_devices {
+    if cli.actions.list_devices {
         if let Err(e) = list_audio_devices() {
             let e = redact_secrets(&e.to_string());
             log::error!("Error: {}", e);

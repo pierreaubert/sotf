@@ -3,6 +3,8 @@
 #	  cargo install just
 # ----------------------------------------------------------------------
 
+cargo := `if command -v mbx >/dev/null 2>&1; then echo mbx; else echo cargo; fi`
+
 _default:
 	just --list
 
@@ -50,7 +52,7 @@ check:
 	set -euo pipefail
 	CLANG_CACHE_DIR="${TMPDIR:-/tmp}/sotf-clang-module-cache"
 	mkdir -p "$CLANG_CACHE_DIR"
-	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" cargo check --workspace --lib --bins --tests --examples {{test_features}}
+	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" {{cargo}} check --workspace --lib --bins --tests --examples {{test_features}}
 
 [group('test')]
 test:
@@ -58,7 +60,7 @@ test:
 	set -euo pipefail
 	CLANG_CACHE_DIR="${TMPDIR:-/tmp}/sotf-clang-module-cache"
 	mkdir -p "$CLANG_CACHE_DIR"
-	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" cargo test --workspace --lib --bins --tests --examples {{test_features}}
+	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" {{cargo}} test --workspace --lib --bins --tests --examples {{test_features}}
 
 [group('test')]
 test-negative:
@@ -66,7 +68,7 @@ test-negative:
 	set -euo pipefail
 	CLANG_CACHE_DIR="${TMPDIR:-/tmp}/sotf-clang-module-cache"
 	mkdir -p "$CLANG_CACHE_DIR"
-	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" cargo test --test negative --release {{release_test_features}}
+	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" {{cargo}} test --test negative --release {{release_test_features}}
 
 [group('test')]
 test-proptest:
@@ -74,11 +76,11 @@ test-proptest:
 	set -euo pipefail
 	CLANG_CACHE_DIR="${TMPDIR:-/tmp}/sotf-clang-module-cache"
 	mkdir -p "$CLANG_CACHE_DIR"
-	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" PROPTEST_CASES=10000 cargo test --test proptest_tests --release {{release_test_features}}
+	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" PROPTEST_CASES=10000 {{cargo}} test --test proptest_tests --release {{release_test_features}}
 
 [group('test')]
 ntest:
-	CARGO_PROFILE_RELEASE_LTO=off cargo nextest run --release --no-fail-fast --workspace --lib --bins --examples {{release_test_features}}
+	CARGO_PROFILE_RELEASE_LTO=off {{cargo}} nextest run --release --no-fail-fast --workspace --lib --bins --examples {{release_test_features}}
 
 [group('test')]
 itest:
@@ -90,8 +92,8 @@ itest:
 	# test load.
 	EXCLUDE='not (test(test_play_to_audible_latency) | test(test_loudness_compensation_zero_alloc) | test(test_upmixer_plugin_timing))'
 	SERIAL='test(test_play_to_audible_latency) | test(test_loudness_compensation_zero_alloc) | test(test_upmixer_plugin_timing)'
-	PROPTEST_CASES=10000 CARGO_PROFILE_RELEASE_LTO=off cargo nextest run --release --no-fail-fast --workspace --tests {{release_test_features}} -E "$EXCLUDE"
-	PROPTEST_CASES=10000 CARGO_PROFILE_RELEASE_LTO=off cargo nextest run --release --no-fail-fast --workspace --tests {{release_test_features}} --test-threads=1 -E "$SERIAL"
+	PROPTEST_CASES=10000 CARGO_PROFILE_RELEASE_LTO=off {{cargo}} nextest run --release --no-fail-fast --workspace --tests {{release_test_features}} -E "$EXCLUDE"
+	PROPTEST_CASES=10000 CARGO_PROFILE_RELEASE_LTO=off {{cargo}} nextest run --release --no-fail-fast --workspace --tests {{release_test_features}} --test-threads=1 -E "$SERIAL"
 
 [group('test')]
 atest: test-negative test-proptest ntest itest
@@ -100,39 +102,39 @@ atest: test-negative test-proptest ntest itest
 
 [group('test')]
 test-unit-core:
-	cargo test -p sotf-testkit
-	cargo test -p sotf-engine --no-default-features --lib
-	cargo test -p sotf-player --lib
-	cargo test -p sotf-plugins --lib --features qa
+	{{cargo}} test -p sotf-testkit
+	{{cargo}} test -p sotf-engine --no-default-features --lib
+	{{cargo}} test -p sotf-player --lib
+	{{cargo}} test -p sotf-plugins --lib --features qa
 
 # Decoder and manager integration tests. Tests that require a virtual device
 # skip through the shared testkit helper when the device is unavailable.
 
 [group('test')]
 test-integration-engine:
-	cargo test -p sotf-engine --no-default-features --test decoder_integration_tests
-	cargo test -p sotf-engine --no-default-features --test engine_manager_tests
-	cargo test -p sotf-engine --no-default-features --test engine_types_tests
+	{{cargo}} test -p sotf-engine --no-default-features --test decoder_integration_tests
+	{{cargo}} test -p sotf-engine --no-default-features --test engine_manager_tests
+	{{cargo}} test -p sotf-engine --no-default-features --test engine_types_tests
 
 [group('test')]
 test-integration-player:
-	cargo test -p sotf-player --test error_handling_tests
-	cargo test -p sotf-player --test plugin_chain_tests
-	cargo test -p sotf-player --test library_tests
+	{{cargo}} test -p sotf-player --test error_handling_tests
+	{{cargo}} test -p sotf-player --test plugin_chain_tests
+	{{cargo}} test -p sotf-player --test library_tests
 
 # Device-selection helpers are deterministic and do not enumerate hardware.
 # Platform smoke tests live in ../sotf-systemwide (systemwide-lab recipe).
 
 [group('test')]
 test-device-fakes:
-	cargo test -p sotf-engine --lib devices::tests
+	{{cargo}} test -p sotf-engine --lib devices::tests
 
 [group('test')]
 test-realtime-safety:
-	cargo test -p sotf-plugins --test realtime_allocation_tests
-	cargo test -p sotf-plugins --test rt_safety_tests
-	cargo test -p sotf-engine --test engine_allocation_tests
-	cargo test -p sotf-engine --features playback-runtime-harness --test playback_runtime_allocation_tests
+	{{cargo}} test -p sotf-plugins --test realtime_allocation_tests
+	{{cargo}} test -p sotf-plugins --test rt_safety_tests
+	{{cargo}} test -p sotf-engine --test engine_allocation_tests
+	{{cargo}} test -p sotf-engine --features playback-runtime-harness --test playback_runtime_allocation_tests
 
 [group('test')]
 test-pr: test-unit-core test-integration-engine test-integration-player test-device-fakes test-realtime-safety
@@ -148,17 +150,17 @@ test-pr: test-unit-core test-integration-engine test-integration-player test-dev
 # Generates an LCOV report for CI / Codecov upload.
 [group('coverage')]
 coverage:
-	cargo llvm-cov --workspace --lib --bins --tests --examples {{test_features}} --lcov --output-path target/lcov.info
+	{{cargo}} llvm-cov --workspace --lib --bins --tests --examples {{test_features}} --lcov --output-path target/lcov.info
 
 # Generates an HTML coverage report and opens it.
 [group('coverage')]
 coverage-html:
-	cargo llvm-cov --workspace --lib --bins --tests --examples {{test_features}} --html --open
+	{{cargo}} llvm-cov --workspace --lib --bins --tests --examples {{test_features}} --html --open
 
 # Prints a text summary to stdout (fastest coverage recipe).
 [group('coverage')]
 coverage-summary:
-	cargo llvm-cov --workspace --lib --bins --tests --examples {{test_features}} --text --summary-only
+	{{cargo}} llvm-cov --workspace --lib --bins --tests --examples {{test_features}} --text --summary-only
 
 # Core coverage report used by the coverage ratchet. Thresholds are applied
 # after the baseline is recorded; this command intentionally only reports.
@@ -166,14 +168,14 @@ coverage-summary:
 [group('coverage')]
 coverage-core:
 	mkdir -p target/coverage
-	cargo llvm-cov --package sotf-engine --no-default-features --lib --tests --json --summary-only --fail-under-lines 55 --output-path target/coverage/sotf-engine.json
-	cargo llvm-cov --package sotf-player --lib --tests --json --summary-only --output-path target/coverage/sotf-player.json
-	cargo llvm-cov --package sotf-plugins --lib --tests --features qa --json --summary-only --output-path target/coverage/sotf-plugins.json
+	{{cargo}} llvm-cov --package sotf-engine --no-default-features --lib --tests --json --summary-only --fail-under-lines 55 --output-path target/coverage/sotf-engine.json
+	{{cargo}} llvm-cov --package sotf-player --lib --tests --json --summary-only --output-path target/coverage/sotf-player.json
+	{{cargo}} llvm-cov --package sotf-plugins --lib --tests --features qa --json --summary-only --output-path target/coverage/sotf-plugins.json
 
 # Removes stale coverage artifacts.
 [group('coverage')]
 coverage-clean:
-	cargo llvm-cov clean
+	{{cargo}} llvm-cov clean
 
 # ----------------------------------------------------------------------
 # LINT
@@ -181,7 +183,7 @@ coverage-clean:
 
 [group('lint')]
 lint:
-	cargo clippy --all {{test_features}} -- -D warnings
+	{{cargo}} clippy --all {{test_features}} -- -D warnings
 
 # Short release-mode realtime smoke gate. For a historical comparison use
 # `just perf-regression baseline.csv candidate.csv`.
@@ -189,7 +191,7 @@ lint:
 [group('bench')]
 perf-smoke:
 	mkdir -p target/perf
-	cargo run --release -p sotf-plugins --bin daw-scale-stress -- --chain mixed --mode serial --tracks 16 --plugins 4 --blocks 256 --warmup-blocks 64 > target/perf/daw-smoke.csv
+	{{cargo}} run --release -p sotf-plugins --bin daw-scale-stress -- --chain mixed --mode serial --tracks 16 --plugins 4 --blocks 256 --warmup-blocks 64 > target/perf/daw-smoke.csv
 	./scripts/daw-perf-gate.sh target/perf/daw-smoke.csv
 
 [group('bench')]
@@ -208,21 +210,21 @@ test-nightly: ntest itest test-proptest coverage-core perf-smoke
 # 127.0.0.1:7777 (override via SOTF_DEV_API_PORT). Release builds never include it.
 [group('run')]
 run-gpui:
-	cargo build --bin sotf-desktop {{test_features}}
+	{{cargo}} build --bin sotf-desktop {{test_features}}
 	codesign --force --deep --sign - --entitlements scripts/debug.entitlements target/debug/sotf-desktop
 	./target/debug/sotf-desktop
 
 # Run the GPUI player (release mode)
 [group('run')]
 run-gpui-release:
-	cargo build --release --bin sotf-desktop {{prod_features}}
+	{{cargo}} build --release --bin sotf-desktop {{prod_features}}
 	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/sotf-desktop
 	./target/release/sotf-desktop
 
 # Run the GPUI player (release mode)
 [group('run')]
 run-gpui-leaks:
-	RUSTFLAGS="-C debuginfo=2" cargo build --release --bin sotf-desktop {{test_features}}
+	RUSTFLAGS="-C debuginfo=2" {{cargo}} build --release --bin sotf-desktop {{test_features}}
 	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/sotf-desktop
 	./target/release/sotf-desktop
 
@@ -230,33 +232,33 @@ run-gpui-leaks:
 [group('run')]
 [macos]
 run-tui:
-	cargo run --release --bin sotf-tui {{test_features_macos}}
+	{{cargo}} run --release --bin sotf-tui {{test_features_macos}}
 
 [group('run')]
 [linux]
 run-tui:
-	cargo run --release --bin sotf-tui {{test_features_linux}}
+	{{cargo}} run --release --bin sotf-tui {{test_features_linux}}
 
 [group('run')]
 [windows]
 run-tui:
-	cargo run --release --bin sotf-tui {{test_features_windows}}
+	{{cargo}} run --release --bin sotf-tui {{test_features_windows}}
 
 # Run the TUI player (with debug info for leak detection)
 [group('run')]
 [macos]
 run-tui-leaks:
-	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui {{test_features_macos}}
+	RUSTFLAGS="-C debuginfo=2" {{cargo}} run --release --bin sotf-tui {{test_features_macos}}
 
 [group('run')]
 [linux]
 run-tui-leaks:
-	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui {{test_features_linux}}
+	RUSTFLAGS="-C debuginfo=2" {{cargo}} run --release --bin sotf-tui {{test_features_linux}}
 
 [group('run')]
 [windows]
 run-tui-leaks:
-	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui {{test_features_windows}}
+	RUSTFLAGS="-C debuginfo=2" {{cargo}} run --release --bin sotf-tui {{test_features_windows}}
 
 # ----------------------------------------------------------------------
 # FORMAT
@@ -265,7 +267,7 @@ run-tui-leaks:
 alias format := fmt
 
 fmt:
-	cargo fmt --all
+	{{cargo}} fmt --all
 
 # ----------------------------------------------------------------------
 # DIST — release-cut profile (fat LTO + codegen-units = 1)
@@ -279,20 +281,20 @@ dist: dist-sotf-gpui dist-sotf-tui dist-sotf-recorder
 
 [group('dist')]
 dist-sotf-gpui:
-	cargo build --profile dist --bin sotf-desktop -p sotf-gpui --features onnx
+	{{cargo}} build --profile dist --bin sotf-desktop -p sotf-gpui --features onnx
 
 [group('dist')]
 dist-sotf-tui:
-	cargo build --profile dist --bin sotf-tui -p sotf-tui --features "onnx, streaming, hls"
+	{{cargo}} build --profile dist --bin sotf-tui -p sotf-tui --features "onnx, streaming, hls"
 
 [group('dist')]
 dist-sotf-recorder:
-	cargo build --profile dist --bin sotf-recorder-cli -p app-cli
+	{{cargo}} build --profile dist --bin sotf-recorder-cli -p app-cli
 
 # Whole workspace under the dist profile (slow — 10+ minutes typical).
 [group('dist')]
 dist-workspace:
-	cargo build --profile dist --workspace
+	{{cargo}} build --profile dist --workspace
 
 # ----------------------------------------------------------------------
 # BUILD
@@ -302,23 +304,23 @@ dist-workspace:
 [group('build')]
 [macos]
 tui:
-	cargo run --release --bin sotf-tui -p sotf-tui {{test_features_macos}}
+	{{cargo}} run --release --bin sotf-tui -p sotf-tui {{test_features_macos}}
 
 [group('build')]
 [linux]
 tui:
-	cargo run --release --bin sotf-tui -p sotf-tui {{test_features_linux}}
+	{{cargo}} run --release --bin sotf-tui -p sotf-tui {{test_features_linux}}
 
 [group('build')]
 [windows]
 tui:
-	cargo run --release --bin sotf-tui -p sotf-tui {{test_features_windows}}
+	{{cargo}} run --release --bin sotf-tui -p sotf-tui {{test_features_windows}}
 
 alias terminal := gpui
 
 [group('build')]
 gpui:
-	cargo run --release --bin sotf-desktop -p sotf-gpui {{release_test_features}}
+	{{cargo}} run --release --bin sotf-desktop -p sotf-gpui {{release_test_features}}
 
 alias desktop := gpui
 alias native := gpui
@@ -328,6 +330,6 @@ alias native := gpui
 # ----------------------------------------------------------------------
 
 clean:
-	cargo clean
+	{{cargo}} clean
 	find . -name '*~' -exec rm {} \; -print
 	find . -name 'Cargo.lock' -exec rm {} \; -print

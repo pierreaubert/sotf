@@ -155,6 +155,7 @@ fn compute_lr_slope_computes_negative_slope() {
     let freqs: Vec<f32> = (1..=50).map(|i| 200.0 + i as f32 * 396.0).collect();
     let mags: Vec<f32> = freqs.iter().map(|f| 20.0 - 3.0 * f.log10()).collect();
     let measurements = vec![ChannelMeasurement {
+        acquisition: None,
         driver_measurement_sets: Vec::new(),
         provenance: Vec::new(),
         channel_name: "L".to_string(),

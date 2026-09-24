@@ -1,6 +1,19 @@
 use sotf_audio_player::ui_models::recording::RecordingScreenModel;
 use std::collections::HashMap;
 
+/// Keyboard and path-entry state for the simultaneous capture panel.
+#[derive(Debug, Default)]
+pub struct MultiCaptureTuiState {
+    pub active: bool,
+    pub selected_field: usize,
+    pub editing: bool,
+    pub scroll: u16,
+    pub plan_path: String,
+    pub raw_directory: String,
+    pub processed_directory: String,
+    pub workflow: sotf_audio_player::ui_models::capture::CaptureWorkflow,
+}
+
 /// TUI state for the Recording wizard. Holds only TUI-specific view state;
 /// all domain state lives in the embedded [`RecordingScreenModel`].
 // Note: not `Clone` because the nested save receiver (mpsc::Receiver) is not
@@ -18,6 +31,7 @@ pub struct RecordingSaveTuiState {
 
 #[derive(Debug)]
 pub struct RecordingTuiState {
+    pub multi_capture: MultiCaptureTuiState,
     /// Shared, UI-agnostic Recording wizard domain model.
     pub model: RecordingScreenModel,
 
@@ -65,6 +79,7 @@ pub struct RecordingTuiState {
 impl Default for RecordingTuiState {
     fn default() -> Self {
         Self {
+            multi_capture: MultiCaptureTuiState::default(),
             model: RecordingScreenModel {
                 signal_level_db: -20.0,
                 save_name: String::new(),

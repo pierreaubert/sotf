@@ -102,11 +102,13 @@ pub fn build_speakers_from_recordings(
             MeasurementSource::Single(MeasurementSingle {
                 measurement: measurement_refs.into_iter().next().unwrap(),
                 speaker_name,
+                provenance: Default::default(),
             })
         } else {
             MeasurementSource::Multiple(MeasurementMultiple {
                 measurements: measurement_refs,
                 speaker_name,
+                provenance: Default::default(),
             })
         };
 

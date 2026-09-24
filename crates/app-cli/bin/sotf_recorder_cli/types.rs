@@ -6,10 +6,8 @@ use std::path::PathBuf;
 #[command(name = "sotf_recorder")]
 #[command(about = "Generate and record test signals with analysis", long_about = None)]
 pub(super) struct Cli {
-    /// Show full URLs (including any embedded secrets) in error output.
-    /// Debug escape hatch; off by default so secrets stay redacted.
-    #[arg(long, default_value_t = false)]
-    pub(super) show_urls: bool,
+    #[command(flatten)]
+    pub(super) actions: RecorderActions,
 
     /// Signal type: tone, two-tone, sweep, white-noise, pink-noise, m-noise, mls, dirac
     #[arg(long)]
@@ -46,10 +44,6 @@ pub(super) struct Cli {
     /// Audio device name (use --list-devices to see available devices). If not specified, uses default device.
     #[arg(long)]
     pub(super) device: Option<String>,
-
-    /// List available audio devices and exit
-    #[arg(long)]
-    pub(super) list_devices: bool,
 
     // Signal-specific parameters
     /// Tone frequency in Hz (for tone signal)
@@ -98,4 +92,30 @@ pub(super) struct Cli {
     /// Can be specified multiple times. Example: --mic-calibration 0:/path/to/umik1.txt
     #[arg(long = "mic-calibration", value_name = "CHANNEL:PATH")]
     pub(super) mic_calibration: Vec<String>,
+}
+
+/// Recorder inspection actions and error-display policy.
+#[derive(clap::Args)]
+pub(super) struct RecorderActions {
+    /// Show full URLs (including any embedded secrets) in error output.
+    /// Debug escape hatch; off by default so secrets stay redacted.
+    #[arg(long, default_value_t = false)]
+    pub(super) show_urls: bool,
+
+    /// List available audio devices and exit.
+    #[arg(long)]
+    pub(super) list_devices: bool,
+
+    /// Validate a multi-microphone session JSON without opening audio devices.
+    #[arg(long, value_name = "JSON", conflicts_with_all = ["list_devices", "capture_session"])]
+    pub(super) validate_capture_session: Option<PathBuf>,
+
+    /// Capture all session microphones simultaneously; saves raw takes for processing.
+    #[arg(
+        long,
+        value_name = "JSON",
+        conflicts_with = "list_devices",
+        requires = "output_dir"
+    )]
+    pub(super) capture_session: Option<PathBuf>,
 }

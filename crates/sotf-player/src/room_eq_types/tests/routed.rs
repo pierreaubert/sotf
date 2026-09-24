@@ -135,6 +135,10 @@ pub(super) fn routed_bass_output() -> DspChainOutput {
     output.metadata = Some(OptimizationMetadata {
         final_convolution_sha256: None,
         qa_seed_distribution: None,
+        operation_gates: None,
+        provisional_decisions: Vec::new(),
+        audibility_veto: None,
+        veto_adjudication: None,
         pre_score: 1.0,
         post_score: 0.5,
         algorithm: "test".to_string(),
@@ -159,17 +163,21 @@ pub(super) fn routed_bass_output() -> DspChainOutput {
             enabled: true,
             crossover_type: "LR24".to_string(),
             crossover_frequency_hz: Some(80.0),
-            lfe_low_pass_hz: 120.0,
             redirected_bass_enabled: true,
-            lfe_channel: "LFE".to_string(),
-            lfe_playback_gain_db: 10.0,
-            lfe_gain_applied_to_chain: false,
+            routing_title: "Bass management".into(),
+            crossover_cancellation: Vec::new(),
+            lfe: Some(autoeq::roomeq::home_cinema::LfeBassManagementReport {
+                input_channel: "LFE".to_string(),
+                playback_gain_db: 10.0,
+                low_pass_hz: 120.0,
+                gain_applied_to_chain: false,
+            }),
             sub_trim_db: 0.0,
             max_sub_boost_db: 6.0,
             headroom_margin_db: -3.0,
             applied_sub_gain_db: Some(0.0),
             gain_limited: false,
-            physical_sub_output: "Sub".to_string(),
+            physical_sub_outputs: vec!["Sub".to_string()],
             redirected_bass_channel_count: 1,
             main_high_pass_hz: Some(80.0),
             sub_low_pass_hz: Some(80.0),
@@ -186,6 +194,8 @@ pub(super) fn routed_bass_output() -> DspChainOutput {
             signal_flow_advisories: Vec::new(),
             routing_graph: Some(BassManagementRoutingGraph {
                 physical_sub_output: "Sub".to_string(),
+                physical_sub_outputs: vec!["Sub".to_string()],
+                stereo_routing: None,
                 input_channels: vec!["L".to_string(), "Sub".to_string()],
                 output_channels: vec!["L".to_string(), "Sub".to_string()],
                 input_trim_db: Default::default(),
@@ -254,6 +264,7 @@ pub(super) fn routed_physical_sub_output() -> DspChainOutput {
         index: 0,
         plugins: vec![],
         initial_curve: None,
+        measured_band_hz: None,
     }]);
     output.channels.insert("LFE".to_string(), sub_chain);
 
@@ -262,9 +273,10 @@ pub(super) fn routed_physical_sub_output() -> DspChainOutput {
         .as_mut()
         .and_then(|metadata| metadata.bass_management.as_mut())
         .expect("bass management report");
-    report.physical_sub_output = "LFE".to_string();
+    report.physical_sub_outputs = vec!["LFE".to_string()];
     let graph = report.routing_graph.as_mut().expect("routing graph");
     graph.physical_sub_output = "LFE".to_string();
+    graph.physical_sub_outputs = vec!["LFE".to_string()];
     graph.input_channels = vec!["L".to_string(), "LFE".to_string(), "SubA".to_string()];
     graph.output_channels = vec!["L".to_string(), "LFE".to_string(), "SubA".to_string()];
     for route in &mut graph.routes {
@@ -536,7 +548,10 @@ fn test_physical_graph_uses_complete_route_gain_with_lfe_chain_flag() {
         .bass_management
         .as_mut()
         .unwrap()
-        .lfe_gain_applied_to_chain = true;
+        .lfe
+        .as_mut()
+        .unwrap()
+        .gain_applied_to_chain = true;
     let graph = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
     let route = graph
         .nodes

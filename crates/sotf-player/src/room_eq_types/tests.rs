@@ -28,6 +28,31 @@ use routed::routed_bass_output;
 use routed::routed_physical_sub_output;
 
 #[test]
+fn loaded_measurement_snapshot_uses_frozen_data_without_reopening_source() {
+    let reference = autoeq::read::MeasurementRef::Loaded {
+        original: Box::new(autoeq::read::MeasurementRef::Named {
+            path: "missing-capture.csv".into(),
+            name: Some("seat A".into()),
+        }),
+        loaded_response: Box::new(autoeq::Curve {
+            freq: vec![100.0, 200.0].into(),
+            spl: vec![75.0, 76.0].into(),
+            phase: Some(vec![12.0, 14.0].into()),
+            ..Default::default()
+        }),
+    };
+    let (frequency, magnitude, phase, wav, csv) =
+        RoomEqMeasurementsFile::load_measurement_ref(&reference, &|path| {
+            format!("/capture/{path}")
+        });
+    assert_eq!(frequency, vec![100.0, 200.0]);
+    assert_eq!(magnitude, vec![75.0, 76.0]);
+    assert_eq!(phase, vec![12.0, 14.0]);
+    assert!(wav.is_none());
+    assert_eq!(csv.as_deref(), Some("/capture/missing-capture.csv"));
+}
+
+#[test]
 fn ctc_system_config_maps_speaker_names_to_logical_roles() {
     let system = ctc_system_config_for_speaker_names(["L", "R", "LFE [mic 1]"], None)
         .expect("speaker names produce a system config");

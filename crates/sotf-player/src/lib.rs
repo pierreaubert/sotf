@@ -3,6 +3,7 @@ pub mod album_art_generation;
 pub mod audio_device;
 pub mod autoeq;
 pub mod bliss;
+pub mod capture_session;
 pub mod config;
 /// Shared business logic for SOTF audio players (TUI, GPUI, etc.)
 ///

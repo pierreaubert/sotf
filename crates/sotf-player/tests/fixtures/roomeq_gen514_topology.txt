@@ -1,21 +1,274 @@
 [nodes]
-0 gain room_eq_gain_pre ch=10
-1 eq room_eq_eq_pre ch=10
-2 crossover room_eq_xover_hp ch=10
-3 delay room_eq_delay_hp ch=10
-4 crossover room_eq_xover_lp ch=10
-5 delay room_eq_delay_lp ch=10
-6 matrix room_eq_matrix_to_sub_bus ch=10
-7 eq room_eq_eq_post ch=10
-8 gain room_eq_gain_post ch=10
+0 matrix room_eq_logical_inputs ch=10
+1 matrix room_eq_input_0 ch=10
+2 matrix room_eq_signed_gain ch=10
+3 eq <unlabeled> ch=10
+4 matrix room_eq_input_1 ch=10
+5 matrix room_eq_signed_gain ch=10
+6 eq <unlabeled> ch=10
+7 matrix room_eq_input_2 ch=10
+8 matrix room_eq_signed_gain ch=10
+9 eq <unlabeled> ch=10
+10 matrix room_eq_input_3 ch=10
+11 matrix room_eq_signed_gain ch=10
+12 eq <unlabeled> ch=10
+13 matrix room_eq_input_4 ch=10
+14 matrix room_eq_signed_gain ch=10
+15 eq <unlabeled> ch=10
+16 matrix room_eq_input_5 ch=10
+17 matrix room_eq_signed_gain ch=10
+18 eq <unlabeled> ch=10
+19 matrix room_eq_input_6 ch=10
+20 matrix room_eq_signed_gain ch=10
+21 eq <unlabeled> ch=10
+22 matrix room_eq_input_7 ch=10
+23 matrix room_eq_signed_gain ch=10
+24 eq <unlabeled> ch=10
+25 matrix room_eq_input_8 ch=10
+26 matrix room_eq_signed_gain ch=10
+27 eq <unlabeled> ch=10
+28 matrix room_eq_input_9 ch=10
+29 eq <unlabeled> ch=10
+30 matrix room_eq_output_sum_0 ch=10
+31 matrix room_eq_output_sum_1 ch=10
+32 matrix room_eq_output_sum_2 ch=10
+33 matrix room_eq_output_sum_3 ch=10
+34 matrix room_eq_output_sum_4 ch=10
+35 matrix room_eq_output_sum_5 ch=10
+36 matrix room_eq_output_sum_6 ch=10
+37 matrix room_eq_output_sum_7 ch=10
+38 matrix room_eq_output_sum_8 ch=10
+39 matrix room_eq_output_sum_9 ch=10
+40 matrix room_eq_route_0 ch=10
+41 matrix room_eq_signed_gain ch=10
+42 crossover <unlabeled> ch=10
+43 delay <unlabeled> ch=10
+44 matrix room_eq_route_1 ch=10
+45 matrix room_eq_signed_gain ch=10
+46 crossover <unlabeled> ch=10
+47 delay <unlabeled> ch=10
+48 matrix room_eq_route_2 ch=10
+49 matrix room_eq_signed_gain ch=10
+50 crossover <unlabeled> ch=10
+51 delay <unlabeled> ch=10
+52 matrix room_eq_route_3 ch=10
+53 matrix room_eq_signed_gain ch=10
+54 crossover <unlabeled> ch=10
+55 delay <unlabeled> ch=10
+56 matrix room_eq_route_4 ch=10
+57 matrix room_eq_signed_gain ch=10
+58 crossover <unlabeled> ch=10
+59 delay <unlabeled> ch=10
+60 matrix room_eq_route_5 ch=10
+61 matrix room_eq_signed_gain ch=10
+62 crossover <unlabeled> ch=10
+63 delay <unlabeled> ch=10
+64 matrix room_eq_route_6 ch=10
+65 matrix room_eq_signed_gain ch=10
+66 crossover <unlabeled> ch=10
+67 delay <unlabeled> ch=10
+68 matrix room_eq_route_7 ch=10
+69 matrix room_eq_signed_gain ch=10
+70 crossover <unlabeled> ch=10
+71 delay <unlabeled> ch=10
+72 matrix room_eq_route_8 ch=10
+73 matrix room_eq_signed_gain ch=10
+74 crossover <unlabeled> ch=10
+75 delay <unlabeled> ch=10
+76 matrix room_eq_route_9 ch=10
+77 matrix room_eq_signed_gain ch=10
+78 crossover <unlabeled> ch=10
+79 delay <unlabeled> ch=10
+80 matrix room_eq_route_10 ch=10
+81 matrix room_eq_signed_gain ch=10
+82 crossover <unlabeled> ch=10
+83 delay <unlabeled> ch=10
+84 matrix room_eq_route_11 ch=10
+85 matrix room_eq_signed_gain ch=10
+86 crossover <unlabeled> ch=10
+87 delay <unlabeled> ch=10
+88 matrix room_eq_route_12 ch=10
+89 matrix room_eq_signed_gain ch=10
+90 crossover <unlabeled> ch=10
+91 delay <unlabeled> ch=10
+92 matrix room_eq_route_13 ch=10
+93 matrix room_eq_signed_gain ch=10
+94 crossover <unlabeled> ch=10
+95 delay <unlabeled> ch=10
+96 matrix room_eq_route_14 ch=10
+97 matrix room_eq_signed_gain ch=10
+98 crossover <unlabeled> ch=10
+99 delay <unlabeled> ch=10
+100 matrix room_eq_route_15 ch=10
+101 matrix room_eq_signed_gain ch=10
+102 crossover <unlabeled> ch=10
+103 delay <unlabeled> ch=10
+104 matrix room_eq_route_16 ch=10
+105 matrix room_eq_signed_gain ch=10
+106 crossover <unlabeled> ch=10
+107 delay <unlabeled> ch=10
+108 matrix room_eq_route_17 ch=10
+109 matrix room_eq_signed_gain ch=10
+110 crossover <unlabeled> ch=10
+111 delay <unlabeled> ch=10
+112 matrix room_eq_route_18 ch=10
+113 matrix room_eq_signed_gain ch=10
+114 crossover <unlabeled> ch=10
+115 delay <unlabeled> ch=10
+116 matrix room_eq_physical_outputs ch=10
+117 eq <unlabeled> ch=10
+118 eq <unlabeled> ch=10
+119 eq <unlabeled> ch=10
+120 eq <unlabeled> ch=10
+121 eq <unlabeled> ch=10
+122 eq <unlabeled> ch=10
+123 eq <unlabeled> ch=10
+124 eq <unlabeled> ch=10
+125 eq <unlabeled> ch=10
+126 eq <unlabeled> ch=10
 
 [edges]
-room_eq_delay_hp -> room_eq_eq_post
-room_eq_delay_lp -> room_eq_matrix_to_sub_bus
-room_eq_eq_post -> room_eq_gain_post
-room_eq_eq_pre -> room_eq_xover_hp
-room_eq_eq_pre -> room_eq_xover_lp
-room_eq_gain_pre -> room_eq_eq_pre
-room_eq_matrix_to_sub_bus -> room_eq_eq_post
-room_eq_xover_hp -> room_eq_delay_hp
-room_eq_xover_lp -> room_eq_delay_lp
+0 -> 1
+0 -> 4
+0 -> 7
+0 -> 10
+0 -> 13
+0 -> 16
+0 -> 19
+0 -> 22
+0 -> 25
+0 -> 28
+1 -> 2
+2 -> 3
+3 -> 40
+3 -> 44
+4 -> 5
+5 -> 6
+6 -> 48
+6 -> 52
+7 -> 8
+8 -> 9
+9 -> 56
+9 -> 60
+10 -> 11
+11 -> 12
+12 -> 64
+13 -> 14
+14 -> 15
+15 -> 68
+15 -> 72
+16 -> 17
+17 -> 18
+18 -> 76
+18 -> 80
+19 -> 20
+20 -> 21
+21 -> 84
+21 -> 88
+22 -> 23
+23 -> 24
+24 -> 92
+24 -> 96
+25 -> 26
+26 -> 27
+27 -> 100
+27 -> 104
+28 -> 29
+29 -> 108
+29 -> 112
+30 -> 117
+31 -> 118
+32 -> 119
+33 -> 120
+34 -> 121
+35 -> 122
+36 -> 123
+37 -> 124
+38 -> 125
+39 -> 126
+40 -> 41
+41 -> 42
+42 -> 43
+43 -> 30
+44 -> 45
+45 -> 46
+46 -> 47
+47 -> 33
+48 -> 49
+49 -> 50
+50 -> 51
+51 -> 31
+52 -> 53
+53 -> 54
+54 -> 55
+55 -> 33
+56 -> 57
+57 -> 58
+58 -> 59
+59 -> 32
+60 -> 61
+61 -> 62
+62 -> 63
+63 -> 33
+64 -> 65
+65 -> 66
+66 -> 67
+67 -> 33
+68 -> 69
+69 -> 70
+70 -> 71
+71 -> 33
+72 -> 73
+73 -> 74
+74 -> 75
+75 -> 34
+76 -> 77
+77 -> 78
+78 -> 79
+79 -> 33
+80 -> 81
+81 -> 82
+82 -> 83
+83 -> 35
+84 -> 85
+85 -> 86
+86 -> 87
+87 -> 33
+88 -> 89
+89 -> 90
+90 -> 91
+91 -> 36
+92 -> 93
+93 -> 94
+94 -> 95
+95 -> 33
+96 -> 97
+97 -> 98
+98 -> 99
+99 -> 37
+100 -> 101
+101 -> 102
+102 -> 103
+103 -> 33
+104 -> 105
+105 -> 106
+106 -> 107
+107 -> 38
+108 -> 109
+109 -> 110
+110 -> 111
+111 -> 33
+112 -> 113
+113 -> 114
+114 -> 115
+115 -> 39
+117 -> 116
+118 -> 116
+119 -> 116
+120 -> 116
+121 -> 116
+122 -> 116
+123 -> 116
+124 -> 116
+125 -> 116
+126 -> 116

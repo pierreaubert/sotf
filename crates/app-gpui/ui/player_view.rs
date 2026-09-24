@@ -412,6 +412,7 @@ impl PlayerView {
                         let frame_count = view.update_frame_count;
                         let compressor_cache = &mut view.compressor_engine_idx_cache;
                         let mut plugin_update_applied = false;
+                        let mut capture_updated = false;
                         view.state.update(cx, |state, _cx| {
                             let (playback_state, was_playing) =
                                 Self::sync_playback_data(state, frame_count, compressor_cache);
@@ -486,6 +487,7 @@ impl PlayerView {
                             Self::handle_engine_state(state, &playback_state, was_playing);
                             Self::handle_gapless_prequeue(state, &playback_state);
                             Self::tick_background_tasks(state);
+                            capture_updated = state.app.measurement_state.poll_capture();
                             if Self::finish_pending_audio_apply(state, _cx) {
                                 plugin_update_applied = true;
                             }
@@ -493,10 +495,12 @@ impl PlayerView {
                         });
 
                         // Acknowledgements change pending/disabled plugin and audition
-                        // controls even when playback is idle. The compact tick snapshot
+                        // controls even when playback is idle. Capture progress and
+                        // completion also change controls without playback activity.
+                        // The compact tick snapshot
                         // does not include those editor states; invalidate it explicitly.
                         // The QA clock also consumes this gate on its next frame.
-                        if plugin_update_applied {
+                        if plugin_update_applied || capture_updated {
                             view.last_tick_snapshot = None;
                         }
 

@@ -85,6 +85,7 @@ fn test_room_config_roundtrip() {
                 csv_path: Some("recording_L.csv".to_string()),
             }),
             speaker_name: None,
+            provenance: Default::default(),
         })),
     );
 

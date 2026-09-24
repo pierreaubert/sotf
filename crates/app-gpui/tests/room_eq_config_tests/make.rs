@@ -134,7 +134,11 @@ fn test_room_eq_to_room_config_preserves_imported_system_and_crossovers() {
         subwoofers: Some(autoeq::roomeq::SubwooferSystemConfig {
             config: autoeq::roomeq::SubwooferStrategy::Single,
             crossover: Some("cli_xover".into()),
-            mapping: HashMap::new(),
+            routing: Default::default(),
+            outputs: vec![autoeq::roomeq::SubwooferOutput {
+                id: "LFE".into(),
+                speaker: "LFE".into(),
+            }],
         }),
         bass_management: Some(autoeq::roomeq::BassManagementConfig {
             max_sub_boost_db: 3.0,
@@ -252,11 +256,13 @@ fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
         epa_config: None,
         group_delay: None,
         from_measurement_slope_override: None,
+        ..Default::default()
     }
 }
 
 fn make_dummy_measurement(channel: &str) -> ChannelMeasurement {
     ChannelMeasurement {
+        acquisition: None,
         driver_measurement_sets: Vec::new(),
         provenance: Vec::new(),
         channel_name: channel.to_string(),

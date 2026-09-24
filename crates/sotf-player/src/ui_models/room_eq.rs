@@ -697,6 +697,7 @@ impl RoomEqScreenModel {
                     };
 
                     ChannelMeasurement {
+                        acquisition: None,
                         driver_measurement_sets: Vec::new(),
                         provenance: recordings
                             .iter()
@@ -932,6 +933,15 @@ impl RoomEqScreenModel {
             {
                 match speaker_config.config_type {
                     crate::room_eq_types::SpeakerConfigType::Single => {
+                        let acquisition =
+                            meas.acquisition
+                                .as_ref()
+                                .map_or_else(Default::default, |evidence| {
+                                    evidence.for_responses(
+                                        std::iter::once(&meas.measurement)
+                                            .chain(&meas.multi_mic_measurements),
+                                    )
+                                });
                         let to_named_measurement = |curve: autoeq::Curve, index: usize| {
                             autoeq::read::MeasurementRef::Inline(autoeq::read::InlineMeasurement {
                                 frequencies: curve.freq.to_vec(),
@@ -954,6 +964,7 @@ impl RoomEqScreenModel {
                                         autoeq::read::MeasurementSingle {
                                             measurement: to_named_measurement(curve, 0),
                                             speaker_name: None,
+                                            provenance: acquisition,
                                         },
                                     ),
                                 ),
@@ -971,6 +982,7 @@ impl RoomEqScreenModel {
                                         autoeq::read::MeasurementMultiple {
                                             measurements,
                                             speaker_name: None,
+                                            provenance: acquisition,
                                         },
                                     ),
                                 ),
@@ -981,6 +993,15 @@ impl RoomEqScreenModel {
                         let mut driver_measurements = Vec::new();
                         if !meas.driver_measurement_sets.is_empty() {
                             for driver in &meas.driver_measurement_sets {
+                                let acquisition = driver.acquisition.as_ref().map_or_else(
+                                    Default::default,
+                                    |evidence| {
+                                        evidence.for_responses(
+                                            std::iter::once(&driver.measurement)
+                                                .chain(&driver.multi_mic_measurements),
+                                        )
+                                    },
+                                );
                                 let to_ref =
                                     |result: &crate::recording_types::RecordingResult,
                                      index: usize| {
@@ -1005,6 +1026,7 @@ impl RoomEqScreenModel {
                                         autoeq::read::MeasurementSingle {
                                             measurement: primary,
                                             speaker_name: driver.name.clone(),
+                                            provenance: acquisition,
                                         },
                                     )
                                 } else {
@@ -1021,6 +1043,7 @@ impl RoomEqScreenModel {
                                         autoeq::read::MeasurementMultiple {
                                             measurements,
                                             speaker_name: driver.name.clone(),
+                                            provenance: acquisition,
                                         },
                                     )
                                 };
@@ -1317,6 +1340,7 @@ mod tests {
 
     fn make_measurement(channel_name: &str) -> ChannelMeasurement {
         ChannelMeasurement {
+            acquisition: None,
             driver_measurement_sets: Vec::new(),
             provenance: Vec::new(),
             channel_name: channel_name.to_string(),
@@ -1461,6 +1485,7 @@ mod tests {
                 channels: HashMap::new(),
                 metadata: None,
                 deployed_source_curves: Default::default(),
+                correction_decisions: None,
             }),
             artifact_dir: PathBuf::from("/tmp/room_eq"),
         });
@@ -1547,6 +1572,158 @@ mod tests {
         let restored: ChannelMeasurement = serde_json::from_value(json).unwrap();
         assert!(restored.provenance.is_empty());
         assert!(restored.driver_measurement_sets.is_empty());
+        assert!(restored.acquisition.is_none());
+    }
+
+    fn capture_model(
+        bound_us: f64,
+        grouped: bool,
+    ) -> (RoomEqScreenModel, autoeq::MeasurementProvenance) {
+        let takes: Vec<_> = (0..2)
+            .map(|index| {
+                serde_json::json!({
+                    "microphone_id": format!("mic-{index}"), "device_id": format!("device-{index}"),
+                    "offset_samples": 123.5, "skew_ppm": 80.0,
+                    "residual_uncertainty_us": bound_us, "correction_applied": "resampled",
+                    "timing_reference_id": "surveyed-emitter", "calibration_id": "cal-sha256",
+                    "gain_db": 0.0, "calibration_orientation": "on_axis",
+                    "position_m": [index as f64 * 0.06, 0.0, 0.0], "position_uncertainty_mm": 0.5,
+                    "preserves_acoustic_delay": true, "quality_passed": true
+                })
+            })
+            .collect();
+        let provenance: autoeq::MeasurementProvenance = serde_json::from_value(serde_json::json!({
+            "capture_kind": "stationary_ir", "timing_reference_id": "surveyed-emitter",
+            "capture": {"geometry": "compact", "takes": takes,
+                "reflection_report": {"source_id": "L", "direct_sound": null,
+                    "early_reflections": [], "issues": ["No resolved direction"]}}
+        }))
+        .unwrap();
+        let source = autoeq::MeasurementSource::Multiple(autoeq::read::MeasurementMultiple {
+            measurements: (0..2)
+                .map(|index| {
+                    autoeq::read::MeasurementRef::Inline(autoeq::read::InlineMeasurement {
+                        frequencies: vec![100.0, 1000.0, 10000.0],
+                        magnitude_db: vec![index as f64; 3],
+                        phase_deg: Some(vec![index as f64 * 5.0; 3]),
+                        name: Some(format!("mic-{index}")),
+                        wav_path: None,
+                        csv_path: None,
+                    })
+                })
+                .collect(),
+            speaker_name: None,
+            provenance: provenance.clone(),
+        });
+        let mut config = autoeq::RoomConfig::default();
+        config.speakers.insert(
+            "L".into(),
+            if grouped {
+                autoeq::SpeakerConfig::Group(autoeq::roomeq::SpeakerGroup {
+                    measurements: vec![source.clone(), source],
+                    name: "L".into(),
+                    speaker_name: None,
+                    crossover: None,
+                })
+            } else {
+                autoeq::SpeakerConfig::Single(source)
+            },
+        );
+        let channels = crate::room_eq_types::RoomEqMeasurementsFile::load_from_json(
+            &serde_json::to_string(&config).unwrap(),
+            None,
+        )
+        .unwrap();
+        // Exercise saved frontend state as well as RoomConfig import/export.
+        let channels = serde_json::from_str(&serde_json::to_string(&channels).unwrap()).unwrap();
+        let mut model = RoomEqScreenModel::default();
+        model.apply(RoomEqViewEvent::LoadMeasurements(channels));
+        (model, provenance)
+    }
+
+    #[test]
+    fn capture_acquisition_round_trips_without_upgrading_failed_clock_evidence() {
+        for bound_us in [10.0, 55.0] {
+            for grouped in [false, true] {
+                let (model, expected) = capture_model(bound_us, grouped);
+                let config = model.to_room_config();
+                let sources = match &config.speakers["L"] {
+                    autoeq::SpeakerConfig::Single(source) => vec![source],
+                    autoeq::SpeakerConfig::Group(group) => group.measurements.iter().collect(),
+                    _ => panic!("unexpected source type"),
+                };
+                for source in sources {
+                    let autoeq::MeasurementSource::Multiple(source) = source else {
+                        panic!("lost mic set")
+                    };
+                    assert_eq!(source.provenance, expected);
+                    assert_eq!(
+                        source
+                            .provenance
+                            .capture
+                            .as_ref()
+                            .unwrap()
+                            .coherent_reference(2)
+                            .is_ok(),
+                        bound_us < 50.0
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn changed_capture_responses_revoke_quality_but_retain_raw_clock_facts() {
+        for mutation in 0..3 {
+            let (mut model, expected) = capture_model(10.0, false);
+            let channel = &mut model.channel_measurements[0];
+            match mutation {
+                0 => channel.measurement.phase_deg[0] += 1.0,
+                1 => {
+                    channel.multi_mic_measurements.clear();
+                }
+                _ => std::mem::swap(
+                    &mut channel.measurement,
+                    &mut channel.multi_mic_measurements[0],
+                ),
+            }
+            let config = model.to_room_config();
+            let autoeq::SpeakerConfig::Single(source) = &config.speakers["L"] else {
+                panic!("lost source")
+            };
+            let provenance = match source {
+                autoeq::MeasurementSource::Single(source) => &source.provenance,
+                autoeq::MeasurementSource::Multiple(source) => &source.provenance,
+                _ => panic!("lost declaration"),
+            };
+            assert!(provenance.timing_reference_id.is_none());
+            let capture = provenance.capture.as_ref().unwrap();
+            assert!(capture.takes.iter().all(|take| !take.quality_passed));
+            assert_eq!(
+                capture.takes[0].offset_samples,
+                expected.capture.as_ref().unwrap().takes[0].offset_samples
+            );
+            assert!(capture.coherent_reference(2).is_err());
+        }
+    }
+
+    #[test]
+    fn malformed_response_cannot_preserve_acquisition_authorization() {
+        let (_, provenance) = capture_model(10.0, false);
+        let mut response = make_recording_result(0);
+        response.phase_deg = vec![10.0];
+        let acquisition =
+            crate::room_eq_types::MeasurementAcquisition::new(provenance, [&response]);
+        let exported = acquisition.for_responses([&response]);
+        assert!(exported.timing_reference_id.is_none());
+        assert!(
+            exported
+                .capture
+                .unwrap()
+                .takes
+                .iter()
+                .all(|take| !take.quality_passed)
+        );
     }
 
     #[test]
@@ -1571,6 +1748,7 @@ mod tests {
                 measurements: vec![
                     autoeq::MeasurementSource::Multiple(autoeq::read::MeasurementMultiple {
                         speaker_name: Some("Woofer".into()),
+                        provenance: Default::default(),
                         measurements: vec![
                             response("Woofer seat A", 1.0),
                             response("Woofer seat B", 2.0),
@@ -1578,6 +1756,7 @@ mod tests {
                     }),
                     autoeq::MeasurementSource::Single(autoeq::read::MeasurementSingle {
                         speaker_name: Some("Tweeter".into()),
+                        provenance: Default::default(),
                         measurement: response("Tweeter seat A", 3.0),
                     }),
                 ],

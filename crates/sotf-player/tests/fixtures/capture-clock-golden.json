@@ -1,0 +1,8 @@
+{
+  "sample_rate_hz": 48000,
+  "offset_samples": [1800.25, 2200.75],
+  "skew_ppm": [80.0, -120.0],
+  "microphone_positions_m": [[0.0, 0.0, 0.0], [0.06, 0.0, 0.0]],
+  "timing_emitter_position_m": [1.0, 0.0, 0.0],
+  "sound_speed_m_s": 343.0
+}

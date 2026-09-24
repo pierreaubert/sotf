@@ -26,6 +26,7 @@ mod excursion_protection_config;
 mod identity;
 mod infer;
 mod linear;
+mod measurement_acquisition;
 mod misc;
 mod mixed_mode_ui_config;
 mod mixed_phase_ui_config;
@@ -68,6 +69,8 @@ pub use dsp_chain_output_ext::*;
 pub use epa_temporal_masking_config::*;
 pub use epa_temporal_profile::*;
 pub use excursion_protection_config::*;
+#[doc(inline)]
+pub use measurement_acquisition::MeasurementAcquisition;
 pub use misc::*;
 pub use mixed_mode_ui_config::*;
 pub use mixed_phase_ui_config::*;

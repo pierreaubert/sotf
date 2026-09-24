@@ -226,6 +226,9 @@ pub struct MeasurementProvenance {
 /// Measurement data for a single channel (may have multiple drivers)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DriverMeasurementSet {
+    /// Backend evidence bound to this driver's ordered response data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acquisition: Option<super::MeasurementAcquisition>,
     pub name: Option<String>,
     pub measurement: RecordingResult,
     #[serde(default)]
@@ -237,6 +240,9 @@ pub struct DriverMeasurementSet {
 /// Measurement data for a single channel (may have multiple drivers)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelMeasurement {
+    /// Backend evidence bound to this source's ordered response data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acquisition: Option<super::MeasurementAcquisition>,
     /// Complete per-driver source sets. Empty for legacy flat group records.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub driver_measurement_sets: Vec<DriverMeasurementSet>,

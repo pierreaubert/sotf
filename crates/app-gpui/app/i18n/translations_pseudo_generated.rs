@@ -5,6 +5,47 @@
 mod pseudo_generated {
 use super::*;
 
+impl MultiCaptureTranslations {
+    pub(super) fn pseudo() -> Self {
+        Self {
+                stages: [
+                    pseudo_static("No plan loaded"),
+                    pseudo_static("Loading"),
+                    pseudo_static("Ready"),
+                    pseudo_static("Recording"),
+                    pseudo_static("Cancelling"),
+                    pseudo_static("Raw session ready"),
+                    pseudo_static("Processing"),
+                    pseudo_static("Complete"),
+                    pseudo_static("Cancelled"),
+                    pseudo_static("Failed"),
+                ],
+                launcher: pseudo_static("Multi-mic capture"),
+                launcher_aria: pseudo_static("Open simultaneous multi-microphone capture"),
+                title: pseudo_static("Multi-microphone RoomEQ capture"),
+                back: pseudo_static("Back to recording"),
+                back_aria: pseudo_static("Return to the regular recording wizard"),
+                plan: pseudo_static("Session plan JSON"),
+                raw: pseudo_static("Raw directory (new for recording)"),
+                processed: pseudo_static("Processed directory (new)"),
+                load: pseudo_static("Load and review plan"),
+                record: pseudo_static("Record all microphones"),
+                cancel: pseudo_static("Cancel recording"),
+                process: pseudo_static("Process raw session"),
+                import: pseudo_static("Import into RoomEQ"),
+                overview: pseudo_static("2–4 simultaneous microphones · sequential source sweeps · offline clock correction"),
+                setup_hint: pseudo_static("Output directories must be new; their parent directories must exist. Keep microphones stationary, gains fixed, and the room quiet."),
+                validation_hint: pseudo_static("Validation does not certify hardware or take quality. Processing must finish before another operation; only recording can be cancelled."),
+                initial_hint: pseudo_static("Load a plan and review microphone geometry, device routes, calibration, and fixed gains before recording. Existing raw sessions can be processed without loading a plan."),
+                loaded_plan: pseudo_static("Loaded plan"),
+                qa: pseudo_static("Capture QA"),
+                manifest: pseudo_static("RoomEQ manifest"),
+                legacy_busy: pseudo_static("Finish the current recording operation first"),
+                imported: pseudo_static("Imported processed measurements with capture provenance. Open RoomEQ to configure optimization."),
+            }
+    }
+}
+
 impl RoomEqEasyTranslations {
     pub(super) fn pseudo() -> Self {
         Self {

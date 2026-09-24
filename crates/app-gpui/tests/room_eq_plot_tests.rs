@@ -79,6 +79,7 @@ fn room_eq_report_uses_dsp_output_curves_without_recomputing() {
         channels,
         metadata: None,
         deployed_source_curves: Default::default(),
+        correction_decisions: None,
     };
 
     let report = room_eq_report_data_from_dsp_output(&output);
@@ -138,6 +139,7 @@ fn room_eq_report_channel_without_embedded_data_uses_legacy_fallback_guard() {
         channels,
         metadata: None,
         deployed_source_curves: Default::default(),
+        correction_decisions: None,
     };
 
     let report = room_eq_report_data_from_dsp_output(&output);
@@ -201,6 +203,7 @@ fn make_report_channel(
         post_ir: None,
         fir_temporal_masking: None,
         direct_early_late_correction: None,
+        joint_sub: None,
     }
 }
 
@@ -217,6 +220,7 @@ fn make_empty_report_channel(name: &str) -> autoeq::roomeq::ChannelDspChain {
         post_ir: None,
         fir_temporal_masking: None,
         direct_early_late_correction: None,
+        joint_sub: None,
     }
 }
 
@@ -226,6 +230,8 @@ fn curve_data(spl: Vec<f64>) -> autoeq::roomeq::CurveData {
         spl,
         phase: None,
         norm_range: None,
+        noise_floor_db: None,
+        coherence: None,
     }
 }
 

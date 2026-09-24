@@ -62,7 +62,7 @@ fn build_room_config() -> RoomConfig {
     };
 
     RoomConfig {
-        version: "2.0.0".to_string(),
+        version: autoeq::roomeq::default_config_version(),
         system: None,
         speakers,
         crossovers: None,

@@ -141,6 +141,9 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     if poll_recording(app) {
                         app.ui.needs_redraw = true;
                     }
+                    if app.recording.multi_capture.workflow.poll() {
+                        app.ui.needs_redraw = true;
+                    }
                     if poll_probe_capture(app) {
                         app.ui.needs_redraw = true;
                     }

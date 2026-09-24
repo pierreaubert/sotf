@@ -332,6 +332,13 @@ impl Render for PlayerView {
         // Determine key context based on input mode
         // Use "TextInput" context when typing to disable single-letter keybindings
         let key_context = if Self::is_text_input_mode(input_mode)
+            || (current_screen == Screen::Recording
+                && self
+                    .state
+                    .read(cx)
+                    .app
+                    .measurement_state
+                    .capture_panel_open())
             || (matches!(current_screen, Screen::Settings | Screen::SettingsDetail)
                 && (gpui_ui_kit::is_input_editing()
                     || self

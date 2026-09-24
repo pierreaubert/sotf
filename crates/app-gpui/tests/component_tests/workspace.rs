@@ -1367,6 +1367,7 @@ fn correction_application_labels_cover_supported_languages() {
 
 fn snapshot_measurement(channel: &str) -> sotf_audio_player::room_eq_types::ChannelMeasurement {
     sotf_audio_player::room_eq_types::ChannelMeasurement {
+        acquisition: None,
         driver_measurement_sets: Vec::new(),
         provenance: Vec::new(),
         channel_name: channel.to_string(),

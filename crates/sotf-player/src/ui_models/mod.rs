@@ -4,6 +4,8 @@
 //! so that `app-gpui` and `app-tui` remain thin rendering layers.
 
 pub mod audio_preferences;
+#[cfg(not(target_os = "ios"))]
+pub mod capture;
 pub mod correction_delivery;
 pub mod headphone_eq;
 pub mod recording;

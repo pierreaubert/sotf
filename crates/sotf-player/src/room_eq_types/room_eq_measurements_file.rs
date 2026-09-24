@@ -486,6 +486,7 @@ impl RoomEqMeasurementsFile {
                                 .into_iter()
                                 .next()?;
                             Some(super::types::DriverMeasurementSet {
+                                acquisition: driver.acquisition,
                                 name,
                                 measurement: driver.measurement,
                                 multi_mic_measurements: driver.multi_mic_measurements,
@@ -495,6 +496,7 @@ impl RoomEqMeasurementsFile {
                         .collect::<Option<Vec<_>>>()?;
                     let measurement = driver_measurement_sets.first()?.measurement.clone();
                     return Some(ChannelMeasurement {
+                        acquisition: None,
                         driver_measurement_sets,
                         provenance: Vec::new(),
                         channel_name,
@@ -509,6 +511,15 @@ impl RoomEqMeasurementsFile {
                 // MeasurementSource::Multiple) round-trip with all takes
                 // preserved. The first ref becomes the primary measurement;
                 // any extras are stored as multi_mic_measurements.
+                let acquisition_provenance = match &speaker_config {
+                    autoeq::SpeakerConfig::Single(autoeq::MeasurementSource::Single(source)) => {
+                        source.provenance.clone()
+                    }
+                    autoeq::SpeakerConfig::Single(autoeq::MeasurementSource::Multiple(source)) => {
+                        source.provenance.clone()
+                    }
+                    _ => Default::default(),
+                };
                 let measurement_refs: Vec<autoeq::read::MeasurementRef> = match speaker_config {
                     autoeq::SpeakerConfig::Single(source) => match source {
                         autoeq::MeasurementSource::Single(s) => vec![s.measurement],
@@ -563,7 +574,8 @@ impl RoomEqMeasurementsFile {
                     .filter(|res| !res.frequencies.is_empty())
                     .collect();
 
-                Some(ChannelMeasurement {
+                let mut channel = ChannelMeasurement {
+                    acquisition: None,
                     driver_measurement_sets: Vec::new(),
                     provenance,
                     channel_name,
@@ -589,7 +601,15 @@ impl RoomEqMeasurementsFile {
                     is_group: false,
                     group_drivers: Vec::new(),
                     multi_mic_measurements,
-                })
+                };
+                if acquisition_provenance != autoeq::MeasurementProvenance::default() {
+                    channel.acquisition = Some(super::MeasurementAcquisition::new(
+                        acquisition_provenance,
+                        std::iter::once(&channel.measurement)
+                            .chain(&channel.multi_mic_measurements),
+                    ));
+                }
+                Some(channel)
             })
             .filter(|ch| !ch.measurement.frequencies.is_empty())
             .collect()
@@ -602,6 +622,40 @@ impl RoomEqMeasurementsFile {
         resolve_path: &dyn Fn(&str) -> String,
     ) -> MeasurementData {
         match measurement_ref {
+            autoeq::read::MeasurementRef::Loaded {
+                original,
+                loaded_response,
+            } => {
+                let inline = original.inline_data();
+                (
+                    loaded_response
+                        .freq
+                        .iter()
+                        .map(|&value| value as f32)
+                        .collect(),
+                    loaded_response
+                        .spl
+                        .iter()
+                        .map(|&value| value as f32)
+                        .collect(),
+                    loaded_response
+                        .phase
+                        .as_ref()
+                        .map(|phase| phase.iter().map(|&value| value as f32).collect())
+                        .unwrap_or_default(),
+                    inline
+                        .and_then(|data| data.wav_path.as_deref())
+                        .map(resolve_path),
+                    inline
+                        .and_then(|data| data.csv_path.as_deref())
+                        .map(resolve_path)
+                        .or_else(|| {
+                            original
+                                .path()
+                                .map(|path| resolve_path(&path.to_string_lossy()))
+                        }),
+                )
+            }
             autoeq::read::MeasurementRef::Inline(data) => {
                 let wav_path = data.wav_path.as_deref().map(resolve_path);
                 let csv_path = data.csv_path.as_deref().map(resolve_path);

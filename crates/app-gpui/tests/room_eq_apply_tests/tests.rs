@@ -61,6 +61,8 @@ fn review_display_curve_prefers_dsp_chain_final_curve() {
             spl: vec![-80.0, -10.0, -8.0],
             phase: None,
             norm_range: None,
+            coherence: None,
+            noise_floor_db: None,
         }),
         eq_response: None,
         target_curve: None,
@@ -68,6 +70,7 @@ fn review_display_curve_prefers_dsp_chain_final_curve() {
         post_ir: None,
         fir_temporal_masking: None,
         direct_early_late_correction: None,
+        joint_sub: None,
     };
 
     let points = room_eq_display_response_points(Some(&chain), Some(&fallback)).unwrap();
@@ -97,6 +100,8 @@ fn review_initial_curve_prefers_dsp_chain_initial_curve() {
             spl: vec![-60.0, -15.0, -9.0],
             phase: None,
             norm_range: None,
+            coherence: None,
+            noise_floor_db: None,
         }),
         final_curve: None,
         eq_response: None,
@@ -105,6 +110,7 @@ fn review_initial_curve_prefers_dsp_chain_initial_curve() {
         post_ir: None,
         fir_temporal_masking: None,
         direct_early_late_correction: None,
+        joint_sub: None,
     };
 
     let points = room_eq_initial_response_points(Some(&chain), Some(&fallback)).unwrap();
@@ -138,6 +144,8 @@ fn review_display_curve_finds_chain_by_embedded_channel_name() {
             spl: vec![-70.0, -12.0],
             phase: None,
             norm_range: None,
+            coherence: None,
+            noise_floor_db: None,
         }),
         eq_response: None,
         target_curve: None,
@@ -145,6 +153,7 @@ fn review_display_curve_finds_chain_by_embedded_channel_name() {
         post_ir: None,
         fir_temporal_masking: None,
         direct_early_late_correction: None,
+        joint_sub: None,
     };
     let mut channels = std::collections::HashMap::new();
     channels.insert("Front Right".to_string(), chain);

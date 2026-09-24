@@ -133,6 +133,7 @@ mod tests {
 
     fn measurement(channel: usize, name: &str) -> ChannelMeasurement {
         ChannelMeasurement {
+            acquisition: None,
             driver_measurement_sets: Vec::new(),
             provenance: Vec::new(),
             channel_name: name.to_string(),

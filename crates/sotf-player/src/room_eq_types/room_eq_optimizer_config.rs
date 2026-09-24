@@ -446,6 +446,8 @@ impl RoomEqOptimizerConfig {
                 pre_ringing_threshold_db: self.mixed_phase.pre_ringing_threshold_db,
                 min_spatial_depth: self.mixed_phase.min_spatial_depth,
                 phase_smoothing_octaves: self.mixed_phase.phase_smoothing_octaves,
+                assessment: Default::default(),
+                max_correction_latency_ms: None,
             })
         } else {
             None

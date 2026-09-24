@@ -1,6 +1,7 @@
 //! Recording wizard event handlers
 
 mod adjust;
+mod capture;
 mod consts;
 mod handle;
 mod misc;
