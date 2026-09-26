@@ -103,6 +103,7 @@ fn test_room_config_roundtrip() {
             ..Default::default()
         }),
         ctc: None,
+        reporting: None,
         cea2034_cache: None,
     };
 

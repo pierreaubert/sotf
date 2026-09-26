@@ -2674,6 +2674,7 @@ impl PlayerView {
                 provenance: Default::default(),
                 recording_config: Some(recording_config),
                 ctc,
+                reporting: None,
                 cea2034_cache: None,
             };
 

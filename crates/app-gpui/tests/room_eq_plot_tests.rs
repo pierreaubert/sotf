@@ -204,6 +204,12 @@ fn make_report_channel(
         fir_temporal_masking: None,
         direct_early_late_correction: None,
         joint_sub: None,
+        early_late_curves: None,
+        early_reflections: None,
+        t60_octaves: None,
+        waterfall: None,
+        resonance_decays: None,
+        wavelet: None,
     }
 }
 
@@ -221,6 +227,12 @@ fn make_empty_report_channel(name: &str) -> autoeq::roomeq::ChannelDspChain {
         fir_temporal_masking: None,
         direct_early_late_correction: None,
         joint_sub: None,
+        early_late_curves: None,
+        early_reflections: None,
+        t60_octaves: None,
+        waterfall: None,
+        resonance_decays: None,
+        wavelet: None,
     }
 }
 

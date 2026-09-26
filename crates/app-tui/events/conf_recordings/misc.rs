@@ -559,6 +559,7 @@ pub(crate) fn save_recordings(app: &mut App) {
         provenance: Default::default(),
         recording_config: Some(configuration),
         ctc,
+        reporting: None,
         cea2034_cache: None,
     };
 

@@ -434,6 +434,12 @@ fn build_channel_dsp_from_real_emitters(
         fir_temporal_masking: None,
         direct_early_late_correction: None,
         joint_sub: None,
+        early_late_curves: None,
+        early_reflections: None,
+        t60_octaves: None,
+        waterfall: None,
+        resonance_decays: None,
+        wavelet: None,
     }
 }
 

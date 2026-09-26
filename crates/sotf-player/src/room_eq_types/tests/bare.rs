@@ -24,6 +24,12 @@ pub(super) fn bare_chain(name: &str, drivers: Option<Vec<DriverDspChain>>) -> Ch
         fir_temporal_masking: None,
         direct_early_late_correction: None,
         joint_sub: None,
+        early_late_curves: None,
+        early_reflections: None,
+        t60_octaves: None,
+        waterfall: None,
+        resonance_decays: None,
+        wavelet: None,
     }
 }
 
@@ -315,6 +321,7 @@ fn test_build_room_eq_graph_ctc_uses_stereo_input_and_speaker_branches() {
         perceptual_policy: None,
         bootstrap_uncertainty: None,
         validation_bundle: None,
+        t60_flatness_tolerance_s: None,
     });
 
     let graph = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
@@ -471,6 +478,7 @@ fn test_build_room_eq_graph_tracks_global_variable_channel_widths() {
         perceptual_policy: None,
         bootstrap_uncertainty: None,
         validation_bundle: None,
+        t60_flatness_tolerance_s: None,
     });
 
     let graph = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap();
@@ -679,6 +687,7 @@ fn test_physical_graph_uses_route_gain_without_chain_override() {
         perceptual_policy: None,
         bootstrap_uncertainty: None,
         validation_bundle: None,
+        t60_flatness_tolerance_s: None,
     });
 
     // The canonical route gain is complete. Redundant route-owned chain gain
@@ -823,6 +832,7 @@ fn test_physical_graph_rejects_unconnected_declared_output() {
         perceptual_policy: None,
         bootstrap_uncertainty: None,
         validation_bundle: None,
+        t60_flatness_tolerance_s: None,
     });
 
     let error = build_room_eq_plugin_graph_config(&output, 48_000.0).unwrap_err();

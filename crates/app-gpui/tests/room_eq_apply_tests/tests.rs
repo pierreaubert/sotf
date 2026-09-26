@@ -71,6 +71,12 @@ fn review_display_curve_prefers_dsp_chain_final_curve() {
         fir_temporal_masking: None,
         direct_early_late_correction: None,
         joint_sub: None,
+        early_late_curves: None,
+        early_reflections: None,
+        t60_octaves: None,
+        waterfall: None,
+        resonance_decays: None,
+        wavelet: None,
     };
 
     let points = room_eq_display_response_points(Some(&chain), Some(&fallback)).unwrap();
@@ -111,6 +117,12 @@ fn review_initial_curve_prefers_dsp_chain_initial_curve() {
         fir_temporal_masking: None,
         direct_early_late_correction: None,
         joint_sub: None,
+        early_late_curves: None,
+        early_reflections: None,
+        t60_octaves: None,
+        waterfall: None,
+        resonance_decays: None,
+        wavelet: None,
     };
 
     let points = room_eq_initial_response_points(Some(&chain), Some(&fallback)).unwrap();
@@ -154,6 +166,12 @@ fn review_display_curve_finds_chain_by_embedded_channel_name() {
         fir_temporal_masking: None,
         direct_early_late_correction: None,
         joint_sub: None,
+        early_late_curves: None,
+        early_reflections: None,
+        t60_octaves: None,
+        waterfall: None,
+        resonance_decays: None,
+        wavelet: None,
     };
     let mut channels = std::collections::HashMap::new();
     channels.insert("Front Right".to_string(), chain);

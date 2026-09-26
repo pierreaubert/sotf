@@ -251,6 +251,7 @@ pub(super) fn routed_bass_output() -> DspChainOutput {
         perceptual_policy: None,
         bootstrap_uncertainty: None,
         validation_bundle: None,
+        t60_flatness_tolerance_s: None,
     });
     output
 }
