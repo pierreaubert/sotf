@@ -57,8 +57,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         meters_width += 1; // right padding even if no groups
     }
 
-    // Use fixed width for right column to avoid extra space
-    let right_col_width = meters_width.max(20) as u16; // Minimum 26 for LUFS/Volume boxes
+    // Use fixed width for the meters column to avoid extra space.
+    // Floor of 20 fits the LUFS readout; the middle loudness+volume
+    // column is fixed at 26 separately below.
+    let right_col_width = meters_width.max(20) as u16;
 
     // Check window height for responsive layout
     let window_width = f.area().width;

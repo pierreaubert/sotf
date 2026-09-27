@@ -82,16 +82,6 @@ fn draw_practice_setup(f: &mut Frame, area: Rect, app: &App) {
         Line::from(""),
         Line::from(format!("{} {source}", crate::tui_text!(app, "Source:"))),
         Line::from(format!("{} {loop_text}", crate::tui_text!(app, "Loop:"))),
-        Line::from(""),
-        Line::from(crate::tui_text!(app, "e exercise · a adaptive · c change")),
-        Line::from(crate::tui_text!(
-            app,
-            "b/B bands · g/G gain · v/V Q · t/T trials"
-        )),
-        Line::from(crate::tui_text!(
-            app,
-            "i add source · ,/. source · [/] loop · \\ toggle"
-        )),
     ];
     f.render_widget(
         Paragraph::new(lines).wrap(Wrap { trim: true }).block(

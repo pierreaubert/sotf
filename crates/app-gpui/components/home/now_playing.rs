@@ -2,10 +2,13 @@
 use crate::app::dev_api::DevTrackExt;
 use crate::app::types::{Screen, SettingsTab};
 use crate::components::design::Ds;
+use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Text};
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant, Text,
+};
 
 macro_rules! tracked {
     ($element:expr, $id:expr) => {{
@@ -180,23 +183,40 @@ impl PlayerView {
         body = body.child(actions);
         body = body.child(self.render_now_playing_signal_path(cx));
         let details_open = state.app.playback.track_information_open;
-        body = body.child(div().flex().child(tracked!(
-            Button::new(
-                "now-track-information",
-                format!("{} {}", if details_open { "▾" } else { "▸" }, labels[1])
-            )
-            .size(ButtonSize::Sm)
-            .variant(ButtonVariant::Ghost)
-            .theme(theme.to_button_theme())
-            .on_click_event(cx.listener(|view, _, _, cx| {
-                view.state.update(cx, |state, _| {
-                    state.app.playback.track_information_open =
-                        !state.app.playback.track_information_open;
-                });
-                cx.notify();
-            })),
-            "now-playing.details-toggle"
-        )));
+        let details_state = self.state.clone();
+        let details_view = cx.entity().clone();
+        body = body.child(
+            div()
+                .flex()
+                .items_center()
+                .gap(d.gap)
+                .child(tracked!(
+                    IconButton::with_child(
+                        "now-track-information",
+                        Icon::new(if details_open {
+                            IconName::ChevronDown
+                        } else {
+                            IconName::ChevronRight
+                        })
+                        .small()
+                        .color(theme.text_primary),
+                    )
+                    .size(IconButtonSize::Sm)
+                    .variant(IconButtonVariant::Ghost)
+                    .selected(details_open)
+                    .theme(theme.to_icon_button_theme())
+                    .aria_label(labels[1].to_string())
+                    .on_click_event(move |_, _, cx| {
+                        details_state.update(cx, |state, _| {
+                            state.app.playback.track_information_open =
+                                !state.app.playback.track_information_open;
+                        });
+                        details_view.update(cx, |_view, cx| cx.notify());
+                    }),
+                    "now-playing.details-toggle"
+                ))
+                .child(Text::body(labels[1].to_string())),
+        );
         if details_open {
             let mut details = div().flex().flex_col().gap(d.gap).py(d.pad_y);
             if let Some(track) = track.filter(|_| !system_input) {
@@ -255,27 +275,40 @@ impl PlayerView {
         let labels =
             crate::app::i18n::NowPlayingTranslations::for_language(state.app.ui_state.language);
         let signal_path_open = state.app.playback.signal_path_open;
-        let panel = div()
-            .flex()
-            .flex_col()
-            .gap(d.gap)
-            .py(d.card)
-            .child(tracked!(
-                Button::new(
-                    "now-signal-path",
-                    format!("{} {}", if signal_path_open { "▾" } else { "▸" }, labels[0])
-                )
-                .size(ButtonSize::Sm)
-                .variant(ButtonVariant::Ghost)
-                .theme(theme.to_button_theme())
-                .on_click_event(cx.listener(|view, _, _, cx| {
-                    view.state.update(cx, |state, _| {
-                        state.app.playback.signal_path_open = !state.app.playback.signal_path_open;
-                    });
-                    cx.notify();
-                })),
-                "now-playing.signal-path-toggle"
-            ));
+        let path_state = self.state.clone();
+        let path_view = cx.entity().clone();
+        let panel = div().flex().flex_col().gap(d.gap).py(d.card).child(
+            div()
+                .flex()
+                .items_center()
+                .gap(d.gap)
+                .child(tracked!(
+                    IconButton::with_child(
+                        "now-signal-path",
+                        Icon::new(if signal_path_open {
+                            IconName::ChevronDown
+                        } else {
+                            IconName::ChevronRight
+                        })
+                        .small()
+                        .color(theme.text_primary),
+                    )
+                    .size(IconButtonSize::Sm)
+                    .variant(IconButtonVariant::Ghost)
+                    .selected(signal_path_open)
+                    .theme(theme.to_icon_button_theme())
+                    .aria_label(labels[0].to_string())
+                    .on_click_event(move |_, _, cx| {
+                        path_state.update(cx, |state, _| {
+                            state.app.playback.signal_path_open =
+                                !state.app.playback.signal_path_open;
+                        });
+                        path_view.update(cx, |_view, cx| cx.notify());
+                    }),
+                    "now-playing.signal-path-toggle"
+                ))
+                .child(Text::body(labels[0].to_string())),
+        );
         if !signal_path_open {
             return panel.into_any_element();
         }

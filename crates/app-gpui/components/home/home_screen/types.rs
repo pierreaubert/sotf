@@ -702,13 +702,16 @@ impl PlayerView {
                         let button_theme = theme.clone();
                         el.child(dev_track!(
                             dev_track!(
-                                Button::new(
+                                IconButton::with_child(
                                     SharedString::from(format!("home-shelf-navigation-{shelf_id}")),
-                                    text.see_all,
+                                    Icon::new(IconName::ChevronRight)
+                                        .size(IconSize::Sm)
+                                        .color(theme.text_primary),
                                 )
-                                .variant(ButtonVariant::Secondary)
-                                .size(ButtonSize::Xs)
-                                .theme(button_theme.to_button_theme())
+                                .variant(IconButtonVariant::Ghost)
+                                .size(IconButtonSize::Xs)
+                                .theme(button_theme.to_icon_button_theme())
+                                .aria_label(text.see_all)
                                 .on_click_event(
                                     move |_event, _window, cx| {
                                         state_for_open.update(cx, |state, cx| {

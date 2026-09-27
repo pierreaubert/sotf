@@ -8,7 +8,7 @@ pub(crate) fn draw_volume_box(f: &mut Frame, area: Rect, app: &App) {
         .add_modifier(Modifier::BOLD);
     let text = Line::from(vec![
         Span::styled("[-_] ", key_style),
-        Span::styled(format!("{}%", volume_pct), volume_style),
+        Span::styled(format!("{:>3}%", volume_pct), volume_style),
         Span::styled(" [=+]", key_style),
     ]);
 

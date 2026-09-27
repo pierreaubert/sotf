@@ -94,18 +94,18 @@ final class QRScanner: NSObject, AVCaptureMetadataOutputObjectsDelegate {
         controller.view.layer.addSublayer(previewLayer)
 
         let cancelButton = UIButton(type: .system)
-        cancelButton.setTitle("Cancel", for: .normal)
-        cancelButton.setTitleColor(.white, for: .normal)
-        cancelButton.titleLabel?.font = .systemFont(ofSize: 18, weight: .semibold)
+        cancelButton.setImage(UIImage(systemName: "xmark"), for: .normal)
+        cancelButton.tintColor = .white
         cancelButton.backgroundColor = UIColor.black.withAlphaComponent(0.55)
-        cancelButton.layer.cornerRadius = 10
+        cancelButton.layer.cornerRadius = 22
+        cancelButton.accessibilityLabel = "Cancel"
         cancelButton.translatesAutoresizingMaskIntoConstraints = false
         cancelButton.addTarget(self, action: #selector(cancelScanner), for: .touchUpInside)
         controller.view.addSubview(cancelButton)
         NSLayoutConstraint.activate([
             cancelButton.topAnchor.constraint(equalTo: controller.view.safeAreaLayoutGuide.topAnchor, constant: 16),
             cancelButton.trailingAnchor.constraint(equalTo: controller.view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            cancelButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 96),
+            cancelButton.widthAnchor.constraint(equalToConstant: 44),
             cancelButton.heightAnchor.constraint(equalToConstant: 44),
         ])
 

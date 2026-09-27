@@ -31,8 +31,8 @@ pub(crate) fn draw_tools_screen(f: &mut Frame, area: Rect, app: &App) {
             let is_selected = *tool == app.ui.selected_tool;
             let style = if is_selected {
                 Style::default()
-                    .fg(app.theme.bg_primary)
-                    .bg(app.theme.accent_primary)
+                    .fg(app.theme.fg_selected)
+                    .bg(app.theme.bg_selected)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(app.theme.fg_primary)
@@ -87,7 +87,7 @@ pub(crate) fn draw_ab_testing_screen(f: &mut Frame, area: Rect, app: &App) {
         .split(area);
 
     let help = i18n.dynamic(
-        "A/B Testing · a/b=Capture  p=Prepare  Tab=Mode  Enter/n=New trial  q/w/e=Cue  1/2=Answer  s/l=Save/Load  Esc=Back"
+        "a/b=Capture  p=Prepare  Tab=Mode  Enter/n=New  q/w/e=Cue  1/2=Answer  s/l=Save/Load  Esc=Back"
             .to_string(),
     );
     draw_help_box_with_text(f, chunks[0], app, &help);

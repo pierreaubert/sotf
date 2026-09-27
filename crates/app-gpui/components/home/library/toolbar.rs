@@ -1,10 +1,14 @@
 use crate::app::i18n::{LibraryToolbarTranslations, PhoneTranslations};
 use crate::app::{InputMode, LibrarySortOrder};
 use crate::components::design::Ds;
+use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Select, SelectOption, Text};
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant, Select,
+    SelectOption, Text,
+};
 use sotf_audio_player::controllers::LibraryResultOrder;
 
 #[cfg(feature = "dev-api")]
@@ -119,30 +123,38 @@ impl PlayerView {
             let select = select.dev_track("library-result-order");
             views = views.child(div().w(rems(12.0)).child(select));
         }
+        let toolbar_state = self.state.clone();
+        let toolbar_view = cx.entity().clone();
         let mut utilities = div().flex().flex_wrap().items_center().gap(d.gap);
         if !matches!(
             app.library_state.sort_order,
             LibrarySortOrder::Artist | LibrarySortOrder::Tracks
         ) && app.remote.server_store.selected_server_id.is_none()
         {
-            let button = Button::new(
+            let is_list_view = app.library_state.album_list_view;
+            let layout_state = toolbar_state.clone();
+            let layout_view = toolbar_view.clone();
+            let button = IconButton::with_child(
                 "library-album-layout",
-                if app.library_state.album_list_view {
-                    text[4]
+                Icon::new(if is_list_view {
+                    IconName::List
                 } else {
-                    text[5]
-                },
+                    IconName::LayoutGrid
+                })
+                .small()
+                .color(theme.text_primary),
             )
-            .size(ButtonSize::Sm)
-            .variant(ButtonVariant::Ghost)
-            .theme(theme.to_button_theme())
-            .on_click_event(cx.listener(|view, _, _, cx| {
-                view.state.update(cx, |state, _| {
+            .size(IconButtonSize::Sm)
+            .variant(IconButtonVariant::Ghost)
+            .theme(theme.to_icon_button_theme())
+            .aria_label(if is_list_view { text[4] } else { text[5] })
+            .on_click_event(move |_, _, cx| {
+                layout_state.update(cx, |state, _| {
                     state.app.library_state.album_list_view =
                         !state.app.library_state.album_list_view;
                 });
-                cx.notify();
-            }));
+                layout_view.update(cx, |_view, cx| cx.notify());
+            });
             #[cfg(feature = "dev-api")]
             let button = button.dev_track("library.layout.toggle");
             utilities = utilities.child(button);
@@ -151,26 +163,41 @@ impl PlayerView {
             ("filter", text[1], app.ui_state.filter_menu_open),
             ("favorites", text[2], app.library_state.show_favorites_only),
         ] {
-            let button = Button::new(format!("library-tool-{id}"), label)
-                .size(ButtonSize::Sm)
-                .selected(selected)
-                .variant(if selected {
-                    ButtonVariant::Primary
-                } else {
-                    ButtonVariant::Ghost
-                })
-                .theme(theme.to_button_theme())
-                .on_click_event(cx.listener(move |view, _, _, cx| {
-                    view.state.update(cx, |state, _| match id {
-                        "filter" => {
-                            state.app.ui_state.filter_menu_open =
-                                !state.app.ui_state.filter_menu_open
-                        }
-                        "favorites" => state.app.toggle_favorites_filter(),
-                        _ => {}
-                    });
-                    cx.notify();
-                }));
+            let icon = match id {
+                "filter" => IconName::Funnel,
+                _ => {
+                    if selected {
+                        IconName::HeartFilled
+                    } else {
+                        IconName::Heart
+                    }
+                }
+            };
+            let tool_state = toolbar_state.clone();
+            let tool_view = toolbar_view.clone();
+            let button = IconButton::with_child(
+                format!("library-tool-{id}"),
+                Icon::new(icon).small().color(theme.text_primary),
+            )
+            .size(IconButtonSize::Sm)
+            .selected(selected)
+            .variant(if selected {
+                IconButtonVariant::Filled
+            } else {
+                IconButtonVariant::Ghost
+            })
+            .theme(theme.to_icon_button_theme())
+            .aria_label(label)
+            .on_click_event(move |_, _, cx| {
+                tool_state.update(cx, |state, _| match id {
+                    "filter" => {
+                        state.app.ui_state.filter_menu_open = !state.app.ui_state.filter_menu_open
+                    }
+                    "favorites" => state.app.toggle_favorites_filter(),
+                    _ => {}
+                });
+                tool_view.update(cx, |_view, cx| cx.notify());
+            });
             #[cfg(feature = "dev-api")]
             let button = button.dev_track(format!("library.tab.{id}"));
             utilities = utilities.child(button);

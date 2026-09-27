@@ -1916,6 +1916,7 @@ impl PlayerView {
     }
     fn render_phone_now_playing(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let text = self.phone_translations(cx);
         let (
             theme,
             title,
@@ -1940,10 +1941,10 @@ impl PlayerView {
                 state.app.ui_state.theme.clone(),
                 track
                     .and_then(|track| track.title.clone())
-                    .unwrap_or_else(|| "Nothing playing".to_string()),
+                    .unwrap_or_else(|| text.nothing_playing.to_string()),
                 track
                     .and_then(|track| track.artist.clone())
-                    .unwrap_or_else(|| "Choose music from Library".to_string()),
+                    .unwrap_or_else(|| text.choose_music.to_string()),
                 item.map(|item| item.album.title.clone())
                     .unwrap_or_else(|| "SOTF".to_string()),
                 item.and_then(|item| item.album.album_art_path.clone()),
@@ -2051,10 +2052,10 @@ impl PlayerView {
                         div()
                             .id("phone-now-scrubber")
                             .w_full()
-                            .h(rems(0.375))
-                            .rounded_full()
-                            .bg(theme.feedback.progress_bar_bg)
-                            .overflow_hidden()
+                            .min_h(rems(2.75))
+                            .flex()
+                            .flex_col()
+                            .justify_center()
                             .cursor_pointer()
                             .on_mouse_down(MouseButton::Left, {
                                 let state_entity = self.state.clone();
@@ -2084,10 +2085,18 @@ impl PlayerView {
                             })
                             .child(
                                 div()
-                                    .h_full()
-                                    .w(relative(progress))
+                                    .w_full()
+                                    .h(rems(0.375))
                                     .rounded_full()
-                                    .bg(theme.feedback.progress_bar_fill),
+                                    .bg(theme.feedback.progress_bar_bg)
+                                    .overflow_hidden()
+                                    .child(
+                                        div()
+                                            .h_full()
+                                            .w(relative(progress))
+                                            .rounded_full()
+                                            .bg(theme.feedback.progress_bar_fill),
+                                    ),
                             ),
                     )
                     .child(
@@ -2402,7 +2411,7 @@ impl PlayerView {
                 tool_text.spectrum,
                 IconName::AudioWaveform,
             ),
-            (Screen::EqCurve, tool_text.eq, IconName::AudioWaveform),
+            (Screen::EqCurve, tool_text.eq, IconName::ChartLine),
             (Screen::RoomEq, translations.screen_room_eq, IconName::Brain),
             (
                 Screen::HeadphoneEq,
@@ -2417,13 +2426,13 @@ impl PlayerView {
             (
                 Screen::Streams,
                 translations.screen_streams,
-                IconName::ListMusic,
+                IconName::Radio,
             ),
             (Screen::PluginGraph, tool_text.plugin_graph, IconName::Plug),
             (
                 Screen::ListeningTest,
                 translations.screen_listening_test,
-                IconName::Headphones,
+                IconName::Ear,
             ),
             (
                 Screen::Spinorama,
@@ -2615,7 +2624,7 @@ impl PlayerView {
         );
         let back_element = phone_dev_track!(back_element, "phone.plugin-rack.back");
 
-        let edit_label = if rack_editing { "Done" } else { text.edit };
+        let edit_label = if rack_editing { text.done() } else { text.edit };
         let edit_id: ElementId = "phone-plugin-rack-edit".into();
         let edit_focus = interactive_focus_handle(&edit_id, cx);
         let edit_props =
@@ -2703,7 +2712,6 @@ impl PlayerView {
                 move |style| style.border_2().border_color(theme.text_on_accent)
             })
             .child(Icon::new(IconName::Plus).size(IconSize::Sm))
-            .child(text.add)
             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                 add_mouse(cx);
             })
@@ -4651,7 +4659,7 @@ impl PlayerView {
                 let theme = theme.clone();
                 move |style| style.border_2().border_color(theme.text_primary)
             })
-            .child(text.play)
+            .child(Icon::new(IconName::Play).size(IconSize::Sm))
             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                 cx.stop_propagation();
                 play_mouse_activate(cx);
@@ -4741,6 +4749,7 @@ impl PlayerView {
     fn render_phone_wizard_button(
         &self,
         label: String,
+        icon: IconName,
         selector: &'static str,
         primary: bool,
         activate: std::rc::Rc<dyn Fn(&mut App)>,
@@ -4748,16 +4757,20 @@ impl PlayerView {
         _d: &Ds,
         _cx: &mut Context<Self>,
     ) -> AnyElement {
-        let variant = if primary {
-            gpui_ui_kit::ButtonVariant::Primary
+        let (variant, icon_color) = if primary {
+            (gpui_ui_kit::IconButtonVariant::Filled, theme.text_on_accent)
         } else {
-            gpui_ui_kit::ButtonVariant::Secondary
+            (gpui_ui_kit::IconButtonVariant::Outline, theme.text_primary)
         };
-        let button = gpui_ui_kit::Button::new(selector.replace('.', "-"), label)
-            .variant(variant)
-            .size(gpui_ui_kit::ButtonSize::Sm)
-            .theme(theme.to_button_theme())
-            .on_click(move |_window, cx| activate(cx));
+        let button = gpui_ui_kit::IconButton::with_child(
+            selector.replace('.', "-"),
+            Icon::new(icon).small().color(icon_color),
+        )
+        .variant(variant)
+        .size(gpui_ui_kit::IconButtonSize::Sm)
+        .theme(theme.to_icon_button_theme())
+        .aria_label(label)
+        .on_click(move |_window, cx| activate(cx));
         phone_dev_track!(button, selector)
     }
 
@@ -4965,6 +4978,7 @@ impl PlayerView {
                                         });
                                         el.child(self.render_phone_wizard_button(
                                             text.back.to_string(),
+                                            IconName::ChevronLeft,
                                             "phone.wizard.back",
                                             false,
                                             back,
@@ -4975,6 +4989,7 @@ impl PlayerView {
                                         .child(
                                             self.render_phone_wizard_button(
                                                 text.next.to_string(),
+                                                IconName::ChevronRight,
                                                 "phone.wizard.next",
                                                 true,
                                                 next,

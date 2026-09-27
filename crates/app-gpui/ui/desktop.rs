@@ -2,9 +2,13 @@ use super::PlayerView;
 use crate::app::Screen;
 use crate::app::i18n::{DesktopTranslations, SpectrumTranslations};
 use crate::components::design::Ds;
+use crate::components::icons::{Icon, IconName};
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Select, SelectOption, Text};
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant, Select,
+    SelectOption, Text,
+};
 
 impl PlayerView {
     pub(super) fn studio_workspace_navigation(
@@ -258,20 +262,24 @@ impl PlayerView {
             )
     }
 
-    fn desktop_destinations(&self, cx: &Context<Self>) -> Vec<(Screen, &'static str)> {
+    fn desktop_destinations(&self, cx: &Context<Self>) -> Vec<(Screen, &'static str, IconName)> {
         let state = self.state.read(cx);
         let t = &state.app.ui_state.translations;
         [
-            (Screen::Home, t.screen_home),
-            (Screen::Library, t.screen_library),
-            (Screen::NowPlaying, t.screen_now_playing),
-            (Screen::Queue, t.screen_queue),
-            (Screen::Playlists, t.screen_playlists),
-            (Screen::Streams, t.screen_streams),
-            (Screen::StudioHub, t.screen_studio),
+            (Screen::Home, t.screen_home, IconName::Home),
+            (Screen::Library, t.screen_library, IconName::Library),
+            (Screen::NowPlaying, t.screen_now_playing, IconName::Music),
+            (Screen::Queue, t.screen_queue, IconName::ListMusic),
+            (Screen::Playlists, t.screen_playlists, IconName::Album),
+            (Screen::Streams, t.screen_streams, IconName::Radio),
+            (
+                Screen::StudioHub,
+                t.screen_studio,
+                IconName::SlidersHorizontal,
+            ),
         ]
         .into_iter()
-        .filter(|(screen, _)| state.app.ui_state.release_channel.allows(screen.maturity()))
+        .filter(|(screen, _, _)| state.app.ui_state.release_channel.allows(screen.maturity()))
         .collect()
     }
 
@@ -297,28 +305,33 @@ impl PlayerView {
             .bg(theme.surface)
             .border_r_1()
             .border_color(theme.border);
-        for (screen, label) in self.desktop_destinations(cx) {
+        for (screen, label, icon) in self.desktop_destinations(cx) {
             let entity = self.state.clone();
             let selected =
                 current == screen || screen == Screen::StudioHub && current.is_studio_tool();
-            let button = Button::new(SharedString::from(format!("desktop-nav-{screen:?}")), label)
-                .size(ButtonSize::Sm)
-                .variant(if selected {
-                    ButtonVariant::Primary
-                } else {
-                    ButtonVariant::Ghost
-                })
-                .theme(theme.to_button_theme())
-                .on_click_event(move |_, _, cx| {
-                    entity.update(cx, |state, cx| {
-                        if screen == Screen::StudioHub {
-                            state.app.enter_studio_mode("DesktopNavigation");
-                        } else {
-                            state.app.set_screen(screen, "DesktopNavigation");
-                        }
-                        cx.notify();
-                    });
+            let button = IconButton::with_child(
+                SharedString::from(format!("desktop-nav-{screen:?}")),
+                Icon::new(icon).small().color(theme.text_primary),
+            )
+            .size(IconButtonSize::Sm)
+            .variant(if selected {
+                IconButtonVariant::Filled
+            } else {
+                IconButtonVariant::Ghost
+            })
+            .selected(selected)
+            .theme(theme.to_icon_button_theme())
+            .aria_label(label)
+            .on_click_event(move |_, _, cx| {
+                entity.update(cx, |state, cx| {
+                    if screen == Screen::StudioHub {
+                        state.app.enter_studio_mode("DesktopNavigation");
+                    } else {
+                        state.app.set_screen(screen, "DesktopNavigation");
+                    }
+                    cx.notify();
                 });
+            });
             #[cfg(feature = "dev-api")]
             let button = {
                 use crate::app::dev_api::DevTrackExt;
@@ -332,7 +345,15 @@ impl PlayerView {
                     button.into_any_element()
                 }
             };
-            sidebar = sidebar.child(button);
+            sidebar = sidebar.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(d.gap)
+                    .min_h(rems(2.75))
+                    .child(button)
+                    .child(Text::body(label)),
+            );
         }
         let entity = self.state.clone();
         sidebar
@@ -365,7 +386,7 @@ impl PlayerView {
         };
         let selected = destinations
             .iter()
-            .position(|(screen, _)| *screen == current)
+            .position(|(screen, _, _)| *screen == current)
             .unwrap_or(0);
         let change = self.state.downgrade();
         let toggle = self.state.downgrade();
@@ -384,7 +405,9 @@ impl PlayerView {
                         destinations
                             .iter()
                             .enumerate()
-                            .map(|(index, (_, label))| SelectOption::new(index.to_string(), *label))
+                            .map(|(index, (_, label, _))| {
+                                SelectOption::new(index.to_string(), *label)
+                            })
                             .collect(),
                     )
                     .selected(selected.to_string())
@@ -412,7 +435,7 @@ impl PlayerView {
                     })
                     .on_change(move |value: &SharedString, _, cx| {
                         if let Ok(index) = value.parse::<usize>()
-                            && let Some((screen, _)) = destinations.get(index)
+                            && let Some((screen, _, _)) = destinations.get(index)
                         {
                             let Some(change) = change.upgrade() else {
                                 return;

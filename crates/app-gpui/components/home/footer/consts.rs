@@ -614,13 +614,11 @@ impl PlayerView {
                     .object_fit(gpui::ObjectFit::Cover),
             )
         } else {
-            art_div
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_color(text_muted)
-                .text_3xl()
-                .child("♪")
+            art_div.flex().items_center().justify_center().child(
+                Icon::new(IconName::Music)
+                    .size(IconSize::Xl)
+                    .color(text_muted),
+            )
         }
     }
 

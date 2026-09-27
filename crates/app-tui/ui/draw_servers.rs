@@ -66,9 +66,9 @@ fn draw_api_section(f: &mut Frame, area: Rect, app: &App) {
         (
             "Enabled",
             if api.enabled {
-                crate::tui_text!(app, "YES")
+                crate::tui_text!(app, "on")
             } else {
-                crate::tui_text!(app, "no")
+                crate::tui_text!(app, "off")
             },
             true,
         ),

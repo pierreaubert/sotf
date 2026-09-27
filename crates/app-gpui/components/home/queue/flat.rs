@@ -1,10 +1,13 @@
 use crate::app::i18n::FlatQueueTranslations;
 use crate::app::{Screen, ToastMessage};
 use crate::components::design::Ds;
+use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Text};
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant, Text,
+};
 use sotf_audio_player::QueuePlaybackEffect;
 
 #[cfg(feature = "dev-api")]
@@ -146,6 +149,7 @@ impl PlayerView {
                                     .duration_secs
                                     .map(|seconds| format!("{}:{:02}", seconds / 60, seconds % 60))
                                     .unwrap_or_else(|| "—".into());
+                                let view_state = view.state.clone();
                                 let mut buttons = Vec::new();
                                 for (action, label, disabled) in [
                                     ("play", title, false),
@@ -154,61 +158,84 @@ impl PlayerView {
                                     ("remove", labels[6].to_owned(), false),
                                 ] {
                                     let source = track.audio_source();
-                                    let button =
+                                    // Row actions render as icon buttons; the
+                                    // play button keeps its text label because
+                                    // the track title doubles as the row title.
+                                    let icon = match action {
+                                        "up" => Some(IconName::ChevronUp),
+                                        "down" => Some(IconName::ChevronDown),
+                                        "remove" => Some(IconName::X),
+                                        _ => None,
+                                    };
+                                    let state_entity = view_state.clone();
+                                    let on_click =
+                                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                            state_entity.update(cx, |state, cx| {
+                                                let Some(live_index) = state
+                                                    .app
+                                                    .queue_state
+                                                    .resolve_upcoming_track(position, &source)
+                                                else {
+                                                    return;
+                                                };
+                                                if let Err(error) = state.player.cancel_next() {
+                                                    state.app.ui_state.toast_message = Some(
+                                                        ToastMessage::error(error.to_string()),
+                                                    );
+                                                    cx.notify();
+                                                    return;
+                                                }
+                                                match action {
+                                                    "play" => {
+                                                        if let QueuePlaybackEffect::Play(source) =
+                                                            state
+                                                                .app
+                                                                .play_upcoming_track(live_index)
+                                                        {
+                                                            Self::play_track(state, source);
+                                                        }
+                                                    }
+                                                    "up" if live_index > 0 => {
+                                                        state.app.move_upcoming_track(
+                                                            live_index,
+                                                            live_index - 1,
+                                                        );
+                                                    }
+                                                    "down" => {
+                                                        state.app.move_upcoming_track(
+                                                            live_index,
+                                                            live_index + 1,
+                                                        );
+                                                    }
+                                                    "remove" => {
+                                                        state.app.remove_upcoming_track(live_index);
+                                                    }
+                                                    _ => {}
+                                                }
+                                                cx.notify();
+                                            });
+                                        };
+                                    let button = if let Some(icon) = icon {
+                                        IconButton::with_child(
+                                            format!("flat-queue-{index}-{action}"),
+                                            Icon::new(icon).small().color(theme.text_primary),
+                                        )
+                                        .size(IconButtonSize::Sm)
+                                        .variant(IconButtonVariant::Ghost)
+                                        .theme(theme.to_icon_button_theme())
+                                        .aria_label(label)
+                                        .disabled(disabled)
+                                        .on_click_event(on_click)
+                                        .into_any_element()
+                                    } else {
                                         Button::new(format!("flat-queue-{index}-{action}"), label)
                                             .size(ButtonSize::Sm)
                                             .variant(ButtonVariant::Ghost)
                                             .theme(theme.to_button_theme())
                                             .disabled(disabled)
-                                            .on_click_event(cx.listener(move |view, _, _, cx| {
-                                                view.state.update(cx, |state, cx| {
-                                                    let Some(live_index) = state
-                                                        .app
-                                                        .queue_state
-                                                        .resolve_upcoming_track(position, &source)
-                                                    else {
-                                                        return;
-                                                    };
-                                                    if let Err(error) = state.player.cancel_next() {
-                                                        state.app.ui_state.toast_message = Some(
-                                                            ToastMessage::error(error.to_string()),
-                                                        );
-                                                        cx.notify();
-                                                        return;
-                                                    }
-                                                    match action {
-                                                        "play" => {
-                                                            if let QueuePlaybackEffect::Play(
-                                                                source,
-                                                            ) = state
-                                                                .app
-                                                                .play_upcoming_track(live_index)
-                                                            {
-                                                                Self::play_track(state, source);
-                                                            }
-                                                        }
-                                                        "up" if live_index > 0 => {
-                                                            state.app.move_upcoming_track(
-                                                                live_index,
-                                                                live_index - 1,
-                                                            );
-                                                        }
-                                                        "down" => {
-                                                            state.app.move_upcoming_track(
-                                                                live_index,
-                                                                live_index + 1,
-                                                            );
-                                                        }
-                                                        "remove" => {
-                                                            state
-                                                                .app
-                                                                .remove_upcoming_track(live_index);
-                                                        }
-                                                        _ => {}
-                                                    }
-                                                    cx.notify();
-                                                });
-                                            }));
+                                            .on_click_event(on_click)
+                                            .into_any_element()
+                                    };
                                     buttons.push(tracked!(
                                         button,
                                         format!("queue.upcoming.{index}.{action}")

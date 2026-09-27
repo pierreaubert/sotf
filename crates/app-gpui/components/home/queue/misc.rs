@@ -790,9 +790,11 @@ impl PlayerView {
                                         .flex()
                                         .items_center()
                                         .justify_center()
-                                        .text_color(theme.text_muted)
-                                    .text_size(d.text_sm)
-                                        .child("♪")
+                                        .child(
+                                            Icon::new(IconName::Music)
+                                                .small()
+                                                .color(theme.text_muted),
+                                        )
                                 }
                             })
                         })

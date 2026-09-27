@@ -31,6 +31,7 @@ pub(crate) fn draw_help_box_with_text(f: &mut Frame, area: Rect, app: &App, text
     let help = Paragraph::new(text.to_string())
         .style(Style::default().fg(app.theme.title_color))
         .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true })
         .block(
             Block::default()
                 .borders(Borders::ALL)

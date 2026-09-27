@@ -50,6 +50,19 @@ pub enum IconName {
     ListMusic,
     Library,
     AudioWaveform,
+    Radio,
+    ChartLine,
+    Ear,
+
+    // Actions (extra)
+    RotateCw,
+    LayoutGrid,
+    List,
+    Funnel,
+
+    // Settings
+    Languages,
+    Keyboard,
 
     // General
     Folder,
@@ -101,6 +114,15 @@ impl IconName {
             IconName::ListMusic => "icons/list-music.svg",
             IconName::Library => "icons/library.svg",
             IconName::AudioWaveform => "icons/audio-waveform.svg",
+            IconName::Radio => "icons/radio.svg",
+            IconName::ChartLine => "icons/chart-line.svg",
+            IconName::Ear => "icons/ear.svg",
+            IconName::RotateCw => "icons/rotate-cw.svg",
+            IconName::LayoutGrid => "icons/layout-grid.svg",
+            IconName::List => "icons/list.svg",
+            IconName::Funnel => "icons/funnel.svg",
+            IconName::Languages => "icons/languages.svg",
+            IconName::Keyboard => "icons/keyboard.svg",
             IconName::Folder => "icons/folder.svg",
             IconName::Heart => "icons/heart.svg",
             IconName::HeartFilled => "icons/heart-filled.svg",

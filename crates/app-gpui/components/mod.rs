@@ -43,8 +43,8 @@ pub fn settings_tab_icon_name(tab: SettingsTab) -> IconName {
     match tab {
         SettingsTab::Library => IconName::Library,
         SettingsTab::Theme => IconName::PenTool,
-        SettingsTab::Language => IconName::User,
-        SettingsTab::Keybindings => IconName::Settings,
+        SettingsTab::Language => IconName::Languages,
+        SettingsTab::Keybindings => IconName::Keyboard,
         SettingsTab::AudioDevice => IconName::Speaker,
         SettingsTab::Misc => IconName::SlidersHorizontal,
         SettingsTab::Federation => IconName::Plug,

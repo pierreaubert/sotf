@@ -515,6 +515,8 @@ impl PhoneTranslations {
                 see_all: pseudo_static("See all"),
                 search_library: pseudo_static("Search albums, artists, tracks"),
                 queue_empty: pseudo_static("Queue is empty."),
+                nothing_playing: pseudo_static("Nothing playing"),
+                choose_music: pseudo_static("Choose music from Library"),
                 up_next: pseudo_static("Up Next"),
                 plugin_chain: pseudo_static("Plugin Chain"),
                 add: pseudo_static("Add"),

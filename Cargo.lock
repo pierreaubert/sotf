@@ -809,6 +809,8 @@ dependencies = [
  "autoeq-fir",
  "autoeq-measurements",
  "autoeq-optim",
+ "autoeq-plot",
+ "autoeq-report-wasm",
  "autoeq-workflow",
  "math-iir-fir",
  "math-optimisation",
@@ -901,6 +903,33 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+]
+
+[[package]]
+name = "autoeq-plot"
+version = "0.5.5"
+dependencies = [
+ "anyhow",
+ "autoeq-core",
+ "autoeq-measurements",
+ "autoeq-optim",
+ "autoeq-report-wasm",
+ "math-iir-fir",
+ "ndarray 0.17.2",
+ "serde_json",
+]
+
+[[package]]
+name = "autoeq-report-wasm"
+version = "0.5.0"
+dependencies = [
+ "base64 0.22.1",
+ "gpui-d3rs 0.9.19",
+ "js-sys",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
@@ -3602,7 +3631,7 @@ name = "gpui-audio-kit"
 version = "0.9.8"
 source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=c597d1df374cedd0db83c14664328cc5d8a4dc29#c597d1df374cedd0db83c14664328cc5d8a4dc29"
 dependencies = [
- "gpui-d3rs",
+ "gpui-d3rs 0.9.19 (git+https://github.com/pierreaubert/gpui-toolkit?rev=c597d1df374cedd0db83c14664328cc5d8a4dc29)",
  "gpui-design",
  "gpui-toolkit-gpui",
  "gpui-ui-kit",
@@ -3620,6 +3649,21 @@ dependencies = [
 [[package]]
 name = "gpui-d3rs"
 version = "0.9.19"
+dependencies = [
+ "delaunator",
+ "gpui-profiler 0.9.3",
+ "math-delaunay",
+ "regex",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "thiserror 2.0.21",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "gpui-d3rs"
+version = "0.9.19"
 source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=c597d1df374cedd0db83c14664328cc5d8a4dc29#c597d1df374cedd0db83c14664328cc5d8a4dc29"
 dependencies = [
  "bytemuck",
@@ -3628,7 +3672,7 @@ dependencies = [
  "fontique",
  "glam 0.33.9",
  "gpui-design",
- "gpui-profiler",
+ "gpui-profiler 0.9.3 (git+https://github.com/pierreaubert/gpui-toolkit?rev=c597d1df374cedd0db83c14664328cc5d8a4dc29)",
  "gpui-toolkit-gpui",
  "gpui-toolkit-gpui-macos",
  "gpui-toolkit-gpui-wgpu",
@@ -3742,6 +3786,10 @@ dependencies = [
 [[package]]
 name = "gpui-profiler"
 version = "0.9.3"
+
+[[package]]
+name = "gpui-profiler"
+version = "0.9.3"
 source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=c597d1df374cedd0db83c14664328cc5d8a4dc29#c597d1df374cedd0db83c14664328cc5d8a4dc29"
 
 [[package]]
@@ -3751,7 +3799,7 @@ source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=c597d1df374cedd0d
 dependencies = [
  "glam 0.33.9",
  "gpui-builder",
- "gpui-d3rs",
+ "gpui-d3rs 0.9.19 (git+https://github.com/pierreaubert/gpui-toolkit?rev=c597d1df374cedd0db83c14664328cc5d8a4dc29)",
  "gpui-design",
  "gpui-miniapp",
  "gpui-toolkit-gpui",
@@ -4217,7 +4265,7 @@ version = "0.9.42"
 source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=c597d1df374cedd0db83c14664328cc5d8a4dc29#c597d1df374cedd0db83c14664328cc5d8a4dc29"
 dependencies = [
  "gpui-builder",
- "gpui-d3rs",
+ "gpui-d3rs 0.9.19 (git+https://github.com/pierreaubert/gpui-toolkit?rev=c597d1df374cedd0db83c14664328cc5d8a4dc29)",
  "gpui-design",
  "gpui-toolkit-gpui",
  "gpui-ui-kit-macros",
@@ -5881,6 +5929,17 @@ name = "maplit"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
+
+[[package]]
+name = "math-analog"
+version = "0.5.3"
+source = "git+https://github.com/pierreaubert/math-audio#cabbc6dc1c3d0c8aad275ac33ec015d174859c89"
+dependencies = [
+ "math-dsp",
+ "math-iir-fir",
+ "rustfft 6.4.1",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "math-delaunay"
@@ -7668,6 +7727,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "plugins-inference"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "rtrb",
+]
+
+[[package]]
 name = "plugins-spatial"
 version = "0.5.0"
 dependencies = [
@@ -8329,6 +8396,16 @@ name = "rangemap"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a611d15b50743feb4c76b7d03edcb0e64f399c26961e4efe6975bc398be6aa3d"
+
+[[package]]
+name = "rappct"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11762a6aea3b0a87a51b21cb2085d252f10c01cd0f3f505e1da002cf6e2427da"
+dependencies = [
+ "thiserror 2.0.21",
+ "windows 0.62.2",
+]
 
 [[package]]
 name = "ratatui"
@@ -10175,7 +10252,7 @@ dependencies = [
  "glam 0.33.9",
  "gpui-audio-kit",
  "gpui-builder",
- "gpui-d3rs",
+ "gpui-d3rs 0.9.19 (git+https://github.com/pierreaubert/gpui-toolkit?rev=c597d1df374cedd0db83c14664328cc5d8a4dc29)",
  "gpui-design",
  "gpui-ios",
  "gpui-keybinding",
@@ -10256,6 +10333,7 @@ dependencies = [
  "math-iir-fir",
  "memmap2",
  "rand 0.10.3",
+ "rappct",
  "rayon",
  "realfft",
  "rtrb",
@@ -10459,6 +10537,46 @@ dependencies = [
  "serde",
  "serde_json",
  "sotf-host",
+]
+
+[[package]]
+name = "sotf-plugin-analog-common"
+version = "0.5.0"
+dependencies = [
+ "math-analog",
+ "sotf-host",
+]
+
+[[package]]
+name = "sotf-plugin-analog-compressor"
+version = "0.5.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sotf-host",
+ "sotf-plugin-analog-common",
+]
+
+[[package]]
+name = "sotf-plugin-analog-eq"
+version = "0.5.0"
+dependencies = [
+ "math-iir-fir",
+ "serde",
+ "serde_json",
+ "sotf-host",
+ "sotf-plugin-analog-common",
+]
+
+[[package]]
+name = "sotf-plugin-analog-limiter"
+version = "0.5.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sotf-host",
+ "sotf-plugin-analog-common",
+ "sotf-plugin-limiter",
 ]
 
 [[package]]
@@ -10850,8 +10968,8 @@ dependencies = [
  "math-dsp",
  "math-iir-fir",
  "ndarray 0.17.2",
+ "plugins-inference",
  "realfft",
- "rtrb",
  "rustfft 6.4.1",
  "serde",
  "serde_json",
@@ -10915,6 +11033,10 @@ dependencies = [
  "sotf-plugin-ab-compare",
  "sotf-plugin-aec",
  "sotf-plugin-ambisonics",
+ "sotf-plugin-analog-common",
+ "sotf-plugin-analog-compressor",
+ "sotf-plugin-analog-eq",
+ "sotf-plugin-analog-limiter",
  "sotf-plugin-band-merge",
  "sotf-plugin-band-split",
  "sotf-plugin-beamformer",

@@ -1222,7 +1222,7 @@ impl PlayerView {
             .child(self.render_sidebar_screen_item(
                 "nav-streams",
                 translations.screen_streams,
-                IconName::ListMusic,
+                IconName::Radio,
                 Screen::Streams,
                 current_screen == Screen::Streams,
                 collapsed,
@@ -1699,11 +1699,7 @@ impl PlayerView {
         self.render_sidebar_item_base(
             "nav-devices",
             label,
-            if collapsed {
-                IconName::Cog
-            } else {
-                IconName::Speaker
-            },
+            IconName::Speaker,
             false,
             collapsed,
             theme,

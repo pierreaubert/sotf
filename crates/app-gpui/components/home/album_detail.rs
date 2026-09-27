@@ -1,9 +1,12 @@
 use crate::app::{AppState, Screen, ToastMessage};
 use crate::components::design::Ds;
+use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Text};
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant, Text,
+};
 use sotf_audio_player::{Album, QueuePlaybackEffect};
 use std::sync::Arc;
 
@@ -188,46 +191,62 @@ impl PlayerView {
                     duration % 60
                 ))),
         );
+        let detail_state = self.state.clone();
+        let detail_view = cx.entity().clone();
         let mut actions = div().flex().flex_wrap().gap(d.gap);
-        for (suffix, label, action) in [
-            ("play", text[1], AlbumAction::Play),
-            ("next", text[2], AlbumAction::Next),
-            ("add", text[3], AlbumAction::Append),
+        for (suffix, label, action, icon) in [
+            ("play", text[1], AlbumAction::Play, IconName::Play),
+            ("next", text[2], AlbumAction::Next, IconName::SkipForward),
+            ("add", text[3], AlbumAction::Append, IconName::Plus),
         ] {
             let album = Arc::clone(&album);
+            let action_state = detail_state.clone();
+            let action_view = detail_view.clone();
             actions = actions.child(tracked!(
-                Button::new(format!("album-detail-{suffix}"), label)
-                    .size(ButtonSize::Sm)
-                    .variant(if matches!(action, AlbumAction::Play) {
-                        ButtonVariant::Primary
-                    } else {
-                        ButtonVariant::Secondary
-                    })
-                    .disabled(album.tracks.is_empty())
-                    .theme(theme.to_button_theme())
-                    .on_click_event(cx.listener(move |view, _, _, cx| {
-                        view.state.update(cx, |state, _| {
-                            Self::apply_album_action(state, &album, None, action)
-                        });
-                        cx.notify();
-                    })),
+                IconButton::with_child(
+                    format!("album-detail-{suffix}"),
+                    Icon::new(icon).small().color(theme.text_primary),
+                )
+                .size(IconButtonSize::Sm)
+                .variant(if matches!(action, AlbumAction::Play) {
+                    IconButtonVariant::Filled
+                } else {
+                    IconButtonVariant::Outline
+                })
+                .disabled(album.tracks.is_empty())
+                .theme(theme.to_icon_button_theme())
+                .aria_label(label)
+                .on_click_event(move |_, _, cx| {
+                    action_state.update(cx, |state, _| {
+                        Self::apply_album_action(state, &album, None, action)
+                    });
+                    action_view.update(cx, |_view, cx| cx.notify());
+                }),
                 format!("library.detail.{suffix}")
             ));
         }
         if let Some(id) = album.id {
+            let fav_state = detail_state.clone();
+            let fav_view = detail_view.clone();
             actions = actions.child(tracked!(
-                Button::new(
+                IconButton::with_child(
                     "album-detail-favorite",
-                    if album.is_favorite { text[5] } else { text[4] }
+                    Icon::new(if album.is_favorite {
+                        IconName::HeartFilled
+                    } else {
+                        IconName::Heart
+                    })
+                    .small()
+                    .color(theme.text_primary),
                 )
-                .size(ButtonSize::Sm)
-                .variant(ButtonVariant::Ghost)
-                .theme(theme.to_button_theme())
-                .on_click_event(cx.listener(move |view, _, _, cx| {
-                    view.state
-                        .update(cx, |state, _| state.app.toggle_album_favorite(id));
-                    cx.notify();
-                })),
+                .size(IconButtonSize::Sm)
+                .variant(IconButtonVariant::Ghost)
+                .theme(theme.to_icon_button_theme())
+                .aria_label(if album.is_favorite { text[5] } else { text[4] })
+                .on_click_event(move |_, _, cx| {
+                    fav_state.update(cx, |state, _| state.app.toggle_album_favorite(id));
+                    fav_view.update(cx, |_view, cx| cx.notify());
+                }),
                 "library.detail.favorite"
             ));
         }
@@ -288,12 +307,19 @@ impl PlayerView {
                 )
                 .child(Text::caption(duration))
                 .child(tracked!(
-                    Button::new(format!("album-track-{index}-add"), text[3])
-                        .size(ButtonSize::Sm)
-                        .variant(ButtonVariant::Ghost)
-                        .theme(theme.to_button_theme())
-                        .on_click_event(cx.listener(move |view, _, _, cx| {
-                            view.state.update(cx, |state, _| {
+                    {
+                        let track_state = detail_state.clone();
+                        let track_view = detail_view.clone();
+                        IconButton::with_child(
+                            format!("album-track-{index}-add"),
+                            Icon::new(IconName::Plus).small().color(theme.text_primary),
+                        )
+                        .size(IconButtonSize::Sm)
+                        .variant(IconButtonVariant::Ghost)
+                        .theme(theme.to_icon_button_theme())
+                        .aria_label(text[3])
+                        .on_click_event(move |_, _, cx| {
+                            track_state.update(cx, |state, _| {
                                 Self::apply_album_action(
                                     state,
                                     &add_album,
@@ -301,8 +327,9 @@ impl PlayerView {
                                     AlbumAction::Append,
                                 )
                             });
-                            cx.notify();
-                        })),
+                            track_view.update(cx, |_view, cx| cx.notify());
+                        })
+                    },
                     format!("library.detail.track.{index}.add")
                 ));
             tracks = tracks.child(row);

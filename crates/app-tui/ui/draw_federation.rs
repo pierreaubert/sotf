@@ -295,9 +295,9 @@ fn draw_diagnostic_panel(f: &mut Frame, area: Rect, app: &App) {
 
     for (label, result) in diag.steps() {
         let (icon, color) = match result {
-            StepResult::Ok(_) => (" OK  ", app.theme.accent_success),
-            StepResult::Fail(_) => (" FAIL", app.theme.accent_error),
-            StepResult::Skipped(_) => (" SKIP", app.theme.fg_secondary),
+            StepResult::Ok(_) => (" + ", app.theme.accent_success),
+            StepResult::Fail(_) => (" x ", app.theme.accent_error),
+            StepResult::Skipped(_) => (" - ", app.theme.fg_secondary),
         };
         lines.push(Line::from(vec![
             Span::styled(

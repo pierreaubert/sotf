@@ -100,7 +100,7 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                         .title(crate::tui_text!(
                             app,
                             format!(
-                                "Albums ({}){}  'a' add, 't' tree, 'f' fav, 'F' filter",
+                                "Albums ({}){}  a add · t tree · f fav · F filter",
                                 albums.len(),
                                 if app.library_view.show_favorites_only {
                                     crate::tui_text!(app, " [♥ Favorites]")

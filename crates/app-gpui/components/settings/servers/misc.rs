@@ -1,11 +1,13 @@
 use crate::app::i18n::ServerSettingsTranslations;
 use crate::components::design::Ds;
+use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     Button, ButtonSet, ButtonSetOption, ButtonSetSize, ButtonSize, ButtonVariant, Divider, HStack,
-    Input, InputSize, QrCode, StackSpacing, Text, TextSize, TextWeight, VStack,
+    IconButton, IconButtonSize, IconButtonVariant, Input, InputSize, QrCode, StackSpacing, Text,
+    TextSize, TextWeight, VStack,
 };
 use std::rc::Rc;
 
@@ -663,31 +665,32 @@ impl PlayerView {
                     )
                     .child(div().flex_1())
                     .child(self.render_scan_sotf_qr_button(theme, d, cx))
-                    .child(
-                        Button::new(
+                    .child({
+                        let discovery_state = self.state.clone();
+                        let discovery_view = cx.entity().clone();
+                        IconButton::with_child(
                             "discover-sotf-remotes",
-                            if discovery_running {
-                                "Scanning..."
-                            } else {
-                                "Refresh"
-                            },
+                            Icon::new(IconName::RotateCw).color(theme.text_primary),
                         )
                         .variant(if discovery_running {
-                            ButtonVariant::Ghost
+                            IconButtonVariant::Ghost
                         } else {
-                            ButtonVariant::Secondary
+                            IconButtonVariant::Outline
                         })
-                        .size(ButtonSize::Xs)
-                        .theme(theme.to_button_theme())
-                        .on_click_event(cx.listener(
-                            move |view, _: &ClickEvent, _window, cx| {
-                                view.state.update(cx, |state, _cx| {
-                                    state.app.start_remote_server_discovery();
-                                });
-                                cx.notify();
-                            },
-                        )),
-                    ),
+                        .size(IconButtonSize::Sm)
+                        .theme(theme.to_icon_button_theme())
+                        .aria_label(if discovery_running {
+                            "Scanning..."
+                        } else {
+                            "Refresh"
+                        })
+                        .on_click_event(move |_, _, cx| {
+                            discovery_state.update(cx, |state, _cx| {
+                                state.app.start_remote_server_discovery();
+                            });
+                            discovery_view.update(cx, |_view, cx| cx.notify());
+                        })
+                    }),
             )
             .child(Divider::new().color(theme.border))
             .child(
