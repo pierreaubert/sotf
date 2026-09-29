@@ -12,14 +12,16 @@ use sotf_audio_player::PluginType;
 /// Get a color for a plugin type
 pub(super) fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
     match plugin_type {
-        PluginType::EQ => theme.info,
+        PluginType::EQ | PluginType::AnalogEq => theme.info,
         PluginType::Gain | PluginType::Dither => theme.success,
         PluginType::Compressor
         | PluginType::Limiter
         | PluginType::Gate
         | PluginType::Expander
         | PluginType::MultibandCompressor
-        | PluginType::MultibandExpander => theme.warning,
+        | PluginType::MultibandExpander
+        | PluginType::AnalogLimiter
+        | PluginType::AnalogCompressor => theme.warning,
         PluginType::AAE
         | PluginType::Upmixer
         | PluginType::BinauralDecoder
@@ -107,7 +109,10 @@ pub(super) fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) 
         | PluginType::Declick
         | PluginType::HissReducer
         | PluginType::SpeechDenoiser
-        | PluginType::Pnd => (2, 2),
+        | PluginType::Pnd
+        | PluginType::AnalogEq
+        | PluginType::AnalogLimiter
+        | PluginType::AnalogCompressor => (2, 2),
         // Upmixer/AAE: stereo in, multi-channel out
         PluginType::Upmixer | PluginType::AAE => (2, 5),
         // Binaural decoder: multi-channel in, stereo out

@@ -44,6 +44,11 @@ pub(crate) enum SharedCommand {
     FocusedMeterSolo,
     FocusedMeterDim,
     FocusedMeterClear,
+    FocusedLoudnessStart,
+    FocusedLoudnessPause,
+    FocusedLoudnessContinue,
+    FocusedLoudnessReset,
+    FocusedLoudnessRetry,
     ExitLevelMeters,
 }
 
@@ -443,6 +448,46 @@ const NORMAL_ROOT_KEYBINDINGS: &[TuiKeybindingHelp] = &[
 ];
 
 const LEVEL_METER_KEYBINDINGS: &[TuiKeybindingHelp] = &[
+    binding(
+        "i",
+        "Start I/LRA",
+        None,
+        &[TuiKeyContext::LevelMeters],
+        &[KeyChord::plain(KeyCode::Char('i'))],
+        TuiCommand::Shared(SharedCommand::FocusedLoudnessStart),
+    ),
+    binding(
+        "p",
+        "Pause I/LRA",
+        None,
+        &[TuiKeyContext::LevelMeters],
+        &[KeyChord::plain(KeyCode::Char('p'))],
+        TuiCommand::Shared(SharedCommand::FocusedLoudnessPause),
+    ),
+    binding(
+        "o",
+        "Continue I/LRA",
+        None,
+        &[TuiKeyContext::LevelMeters],
+        &[KeyChord::plain(KeyCode::Char('o'))],
+        TuiCommand::Shared(SharedCommand::FocusedLoudnessContinue),
+    ),
+    binding(
+        "r",
+        "Reset I/LRA",
+        None,
+        &[TuiKeyContext::LevelMeters],
+        &[KeyChord::plain(KeyCode::Char('r'))],
+        TuiCommand::Shared(SharedCommand::FocusedLoudnessReset),
+    ),
+    binding(
+        "t",
+        "Retry last I/LRA control",
+        None,
+        &[TuiKeyContext::LevelMeters],
+        &[KeyChord::plain(KeyCode::Char('t'))],
+        TuiCommand::Shared(SharedCommand::FocusedLoudnessRetry),
+    ),
     binding(
         "Left/Right",
         "  Navigate between channel groups",

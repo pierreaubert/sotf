@@ -21,4 +21,5 @@ pub use registry::DevElementState;
 pub use registry::clear as clear_tracked_elements;
 #[doc(hidden)]
 pub use server::merge_missing_tracked_elements;
-pub use server::start;
+#[doc(hidden)]
+pub use server::{DevApiTestHandle, start, start_for_testing};

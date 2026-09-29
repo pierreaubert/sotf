@@ -58,6 +58,49 @@ pub(super) fn loudness_redraw_signature(l: Option<&sotf_audio_player::LoudnessDa
     sig = sig
         .wrapping_mul(0x9E37_79B9_7F4A_7C15)
         .wrapping_add(q(l.integrated_lufs));
+    let maximum = match l.maximum_true_peak_dbtp {
+        Some(value) if value.is_finite() => q(value).wrapping_add(1),
+        Some(_) => u64::MAX - 1,
+        None => u64::MAX,
+    };
+    sig = sig
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(maximum);
+    for maximum in [l.maximum_momentary_lufs, l.maximum_shortterm_lufs] {
+        let value = match maximum {
+            Some(value) if value.is_finite() => q(value).wrapping_add(1),
+            Some(_) => u64::MAX - 1,
+            None => u64::MAX,
+        };
+        sig = sig.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(value);
+    }
+    if let Some(range) = l.loudness_range {
+        let status = match range.status {
+            sotf_plugins::analyzer::LoudnessRangeStatus::WarmingUp => 1,
+            sotf_plugins::analyzer::LoudnessRangeStatus::BelowGate => 2,
+            sotf_plugins::analyzer::LoudnessRangeStatus::Valid => 3,
+            sotf_plugins::analyzer::LoudnessRangeStatus::CapacityExceeded => 4,
+            sotf_plugins::analyzer::LoudnessRangeStatus::MeasurementError => 5,
+        };
+        let value = match range.range_lu {
+            Some(value) if value.is_finite() && value >= 0.0 => q(value).wrapping_add(1),
+            Some(_) => u64::MAX - 1,
+            None => u64::MAX,
+        };
+        sig = sig.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(status);
+        sig = sig.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(value);
+        sig = sig
+            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            .wrapping_add(u64::from(range.is_stable));
+    } else {
+        sig = sig.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(0);
+    }
+    sig = sig
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(u64::from(l.true_peak_is_compliant));
+    for p in l.true_peaks_dbtp.iter() {
+        sig = sig.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(q(*p));
+    }
     for p in l.channel_peaks.iter() {
         let v = if *p > 0.0 {
             (20.0 * (*p).log10()).max(-120.0)
@@ -897,7 +940,7 @@ pub(super) fn parse_keystroke(s: &str) -> anyhow::Result<crossterm::event::KeyEv
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sotf_audio_player::SignalPath;
+    use sotf_audio_player::{LoudnessData, SignalPath};
 
     #[test]
     fn signal_path_signature_changes_with_resampling_and_health() {
@@ -942,5 +985,83 @@ mod tests {
         unhealthy_path.health.underruns = 1;
         let sig_unhealthy = signal_path_redraw_signature(Some(&unhealthy_path));
         assert_ne!(sig_resampled, sig_unhealthy);
+    }
+    #[test]
+    fn loudness_signature_tracks_programme_precision_and_interval_peaks() {
+        let mut data = LoudnessData::new(2);
+        data.maximum_true_peak_dbtp = Some(-1.24);
+        data.maximum_momentary_lufs = Some(-9.4);
+        data.maximum_shortterm_lufs = Some(-11.2);
+        data.true_peak_is_compliant = true;
+        data.true_peaks_dbtp = std::sync::Arc::new(vec![-3.5, -6.0]);
+        let original = loudness_redraw_signature(Some(&data));
+        assert_eq!(original, loudness_redraw_signature(Some(&data)));
+
+        data.maximum_momentary_lufs = Some(-9.41);
+        assert_eq!(original, loudness_redraw_signature(Some(&data)));
+        data.maximum_momentary_lufs = Some(-9.34);
+        let visible_momentary_change = loudness_redraw_signature(Some(&data));
+        assert_ne!(original, visible_momentary_change);
+        data.maximum_momentary_lufs = Some(-9.4);
+        data.maximum_shortterm_lufs = None;
+        let reset_shortterm = loudness_redraw_signature(Some(&data));
+        assert_ne!(original, reset_shortterm);
+        data.maximum_shortterm_lufs = Some(-11.2);
+
+        data.maximum_true_peak_dbtp = Some(-1.26);
+        let visible_tenth_db_change = loudness_redraw_signature(Some(&data));
+        assert_ne!(original, visible_tenth_db_change);
+
+        data.maximum_true_peak_dbtp = Some(-1.24);
+        data.true_peaks_dbtp = std::sync::Arc::new(vec![-3.6, -6.0]);
+        let later_interval = loudness_redraw_signature(Some(&data));
+        assert_ne!(original, later_interval);
+
+        data.true_peaks_dbtp = std::sync::Arc::new(vec![-3.5, -6.0]);
+        data.maximum_true_peak_dbtp = None;
+        let reset = loudness_redraw_signature(Some(&data));
+        assert_ne!(original, reset);
+
+        data.true_peak_is_compliant = false;
+        let unsupported = loudness_redraw_signature(Some(&data));
+        assert_ne!(reset, unsupported);
+    }
+
+    #[test]
+    fn loudness_signature_tracks_lra_display_and_first_minute_transition() {
+        use sotf_plugins::analyzer::{LoudnessRangeData, LoudnessRangeMode, LoudnessRangeStatus};
+
+        let mut data = LoudnessData::new(2);
+        data.loudness_range = Some(LoudnessRangeData {
+            range_lu: Some(0.0),
+            is_stable: false,
+            status: LoudnessRangeStatus::Valid,
+            mode: LoudnessRangeMode::Rolling,
+            retained_windows: 1,
+            observed_windows: 1,
+            capacity_windows: 36_000,
+            timebase_is_exact: true,
+        });
+        let unstable = loudness_redraw_signature(Some(&data));
+
+        data.loudness_range.as_mut().unwrap().is_stable = true;
+        let stable = loudness_redraw_signature(Some(&data));
+        assert_ne!(
+            unstable, stable,
+            "the one-frame 60-second boundary changes visible marker state"
+        );
+
+        data.loudness_range.as_mut().unwrap().range_lu = Some(2.04);
+        let visible_two_lu = loudness_redraw_signature(Some(&data));
+        data.loudness_range.as_mut().unwrap().range_lu = Some(2.03);
+        let same_visible_tenth = loudness_redraw_signature(Some(&data));
+        assert_eq!(visible_two_lu, same_visible_tenth);
+        data.loudness_range.as_mut().unwrap().range_lu = Some(2.06);
+        let changed_visible_tenth = loudness_redraw_signature(Some(&data));
+        assert_ne!(visible_two_lu, changed_visible_tenth);
+
+        data.loudness_range.as_mut().unwrap().status = LoudnessRangeStatus::BelowGate;
+        let unavailable = loudness_redraw_signature(Some(&data));
+        assert_ne!(changed_visible_tenth, unavailable);
     }
 }

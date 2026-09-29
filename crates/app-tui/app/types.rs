@@ -218,6 +218,41 @@ pub struct PendingParameterUpdate {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoudnessControlOperation {
+    Start,
+    Pause,
+    Continue,
+    Reset,
+}
+
+impl LoudnessControlOperation {
+    pub fn parameter_name(self) -> &'static str {
+        match self {
+            Self::Start => "start",
+            Self::Pause => "pause",
+            Self::Continue => "continue",
+            Self::Reset => "reset",
+        }
+    }
+
+    pub fn help_label(self) -> &'static str {
+        match self {
+            Self::Start => "Start I/LRA",
+            Self::Pause => "Pause I/LRA",
+            Self::Continue => "Continue I/LRA",
+            Self::Reset => "Reset I/LRA",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PendingLoudnessControl {
+    pub runtime_instance_id: u64,
+    pub request_id: u64,
+    pub operation: LoudnessControlOperation,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FederationMode {
     List,
     EditSource,

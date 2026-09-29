@@ -41,6 +41,62 @@ pub(crate) fn draw_loudness_and_volume_column(f: &mut Frame, area: Rect, app: &m
     draw_volume_box(f, chunks[2], app);
 }
 
+fn lufs_maximum_summary_rows(label: &str, width: u16) -> u16 {
+    // Reserve enough room for a plausible low LUFS value such as "-120.0".
+    // Labels stack with the value when the translated line would be clipped.
+    let maximum_value_width = 6;
+    if label.chars().count() + 1 + maximum_value_width <= usize::from(width) {
+        1
+    } else {
+        2
+    }
+}
+
+fn draw_lufs_maximum_summary(
+    f: &mut Frame,
+    label_buf: &mut MeterLabelBuf,
+    label: &str,
+    maximum: Option<f64>,
+    area: Rect,
+    color: Color,
+) -> u16 {
+    let rows = lufs_maximum_summary_rows(label, area.width);
+    if rows == 2 {
+        f.render_widget(
+            Paragraph::new(label).style(Style::default().fg(color)),
+            Rect {
+                x: area.x,
+                y: area.y,
+                width: area.width,
+                height: 1,
+            },
+        );
+    }
+
+    label_buf.len = 0;
+    if rows == 1 {
+        let _ = write!(label_buf, "{label} ");
+    }
+    match maximum {
+        Some(value) if value.is_finite() => {
+            let _ = write!(label_buf, "{value:.1}");
+        }
+        _ => {
+            let _ = write!(label_buf, "—");
+        }
+    }
+    f.render_widget(
+        Paragraph::new(label_buf.as_str()).style(Style::default().fg(color)),
+        Rect {
+            x: area.x,
+            y: area.y + rows - 1,
+            width: area.width,
+            height: 1,
+        },
+    );
+    rows
+}
+
 pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
     let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     let block = Block::default()
@@ -69,42 +125,99 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
         // True Peak Section
         // ============================================================================
 
-        if !loudness.true_peaks_dbtp.is_empty() && y_offset < inner.height {
-            // Find max true peak for display
-            let max_true_peak = loudness
-                .true_peaks_dbtp
-                .iter()
-                .copied()
-                .fold(f64::NEG_INFINITY, f64::max);
+        let unavailable = match loudness.maximum_true_peak_dbtp {
+            Some(value) => !value.is_finite(),
+            None => !loudness.true_peak_is_compliant,
+        };
+        let unavailable_label = i18n.ui("Max TP");
+        let unavailable_text = i18n.ui("Unavailable");
+        let unavailable_line_width =
+            unavailable_label.chars().count() + 2 + unavailable_text.chars().count();
+        let max_tp_rows: u16 = if unavailable && usize::from(inner.width) < unavailable_line_width {
+            2
+        } else {
+            1
+        };
+        let maximum_momentary_label = i18n.ui("Max momentary");
+        let maximum_shortterm_label = i18n.ui("Max short-term");
+        let maximum_momentary_rows =
+            lufs_maximum_summary_rows(maximum_momentary_label, inner.width);
+        let maximum_shortterm_rows =
+            lufs_maximum_summary_rows(maximum_shortterm_label, inner.width);
+        let required_lufs_rows = 1 + maximum_momentary_rows + maximum_shortterm_rows + 3;
+        let optional_meter_rows = usize::from(
+            inner
+                .height
+                .saturating_sub(max_tp_rows.saturating_add(required_lufs_rows)),
+        );
+        let num_peak_bars = loudness.true_peaks_dbtp.len().min(2);
+        let visible_peak_bars = num_peak_bars.min(optional_meter_rows);
+        let optional_after_peaks = optional_meter_rows.saturating_sub(visible_peak_bars);
+        let show_true_peak_scale = optional_after_peaks >= 1;
+        let show_lufs_scale = optional_after_peaks >= 2;
 
-            // Header: "True Peak      [XX.X]" — write into the
-            // reused stack buffer to avoid a per-frame `format!`.
-            label_buf.len = 0;
-            if max_true_peak.is_finite() {
-                let _ = write!(
-                    &mut label_buf,
-                    "{}      [{:>4.1}]",
-                    i18n.ui("True Peak"),
-                    max_true_peak
-                );
+        if y_offset < inner.height {
+            // Stack the heading and status whenever their localized combined
+            // width exceeds the available inner width, so narrow terminals do
+            // not clip the unavailable state.
+            if unavailable && usize::from(inner.width) < unavailable_line_width {
+                for text in [unavailable_label, unavailable_text] {
+                    if y_offset >= inner.height {
+                        break;
+                    }
+                    f.render_widget(
+                        Paragraph::new(text).style(Style::default().fg(app.theme.title_color)),
+                        Rect {
+                            x: inner.x,
+                            y: inner.y + y_offset,
+                            width: inner.width,
+                            height: 1,
+                        },
+                    );
+                    y_offset += 1;
+                }
             } else {
-                let _ = write!(&mut label_buf, "{}        [-∞]", i18n.ui("True Peak"));
+                label_buf.len = 0;
+                match loudness.maximum_true_peak_dbtp {
+                    Some(value) if value.is_finite() => {
+                        let _ =
+                            write!(&mut label_buf, "{}: {:>4.1} dBTP", i18n.ui("Max TP"), value);
+                    }
+                    Some(_) => {
+                        let _ = write!(
+                            &mut label_buf,
+                            "{}: {}",
+                            i18n.ui("Max TP"),
+                            i18n.ui("Unavailable")
+                        );
+                    }
+                    None if loudness.true_peak_is_compliant => {
+                        let _ = write!(&mut label_buf, "{}: — dBTP", i18n.ui("Max TP"));
+                    }
+                    None => {
+                        let _ = write!(
+                            &mut label_buf,
+                            "{}: {}",
+                            i18n.ui("Max TP"),
+                            i18n.ui("Unavailable")
+                        );
+                    }
+                }
+                f.render_widget(
+                    Paragraph::new(label_buf.as_str())
+                        .style(Style::default().fg(app.theme.title_color)),
+                    Rect {
+                        x: inner.x,
+                        y: inner.y + y_offset,
+                        width: inner.width,
+                        height: 1,
+                    },
+                );
+                y_offset += 1;
             }
-            f.render_widget(
-                Paragraph::new(label_buf.as_str())
-                    .style(Style::default().fg(app.theme.title_color)),
-                Rect {
-                    x: inner.x,
-                    y: inner.y + y_offset,
-                    width: inner.width,
-                    height: 1,
-                },
-            );
-            y_offset += 1;
 
             // Render true peak bars for each channel (max 2 bars to save space)
-            let num_peak_bars = loudness.true_peaks_dbtp.len().min(2);
-            for ch_idx in 0..num_peak_bars {
+            for ch_idx in 0..visible_peak_bars {
                 if y_offset >= inner.height {
                     break;
                 }
@@ -165,7 +278,7 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
 
             // Scale labels: "-60" at left, "0" at 60/66 position, "+6" at right.
             // Rendered as separate static spans instead of building a whitespace string.
-            if y_offset < inner.height {
+            if show_true_peak_scale && y_offset < inner.height {
                 let width = inner.width as usize;
                 // True peak scale: -60 dBTP to +6 dBTP (total range 66 dB)
                 // Position of 0 dBTP: 60/66 ≈ 0.909
@@ -277,6 +390,32 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
                 );
             };
 
+        // Maximum Momentary and Short-term summaries are independent of the
+        // current-window validity flags. The finite latches remain meaningful
+        // across publication/cache transitions that invalidate current values.
+        for (label, maximum) in [
+            (maximum_momentary_label, loudness.maximum_momentary_lufs),
+            (maximum_shortterm_label, loudness.maximum_shortterm_lufs),
+        ] {
+            let rows = lufs_maximum_summary_rows(label, inner.width);
+            if y_offset.saturating_add(rows) <= inner.height {
+                let drawn_rows = draw_lufs_maximum_summary(
+                    f,
+                    &mut label_buf,
+                    label,
+                    maximum,
+                    Rect {
+                        x: inner.x,
+                        y: inner.y + y_offset,
+                        width: inner.width,
+                        height: inner.height - y_offset,
+                    },
+                    app.theme.title_color,
+                );
+                y_offset = y_offset.saturating_add(drawn_rows);
+            }
+        }
+
         // M (Momentary)
         if y_offset < inner.height {
             draw_lufs_bar(
@@ -314,7 +453,7 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
         }
 
         // Scale labels: "-60" at left, "0" at right
-        if y_offset < inner.height {
+        if show_lufs_scale && y_offset < inner.height {
             let scale_style = Style::default().fg(app.theme.fg_muted);
             f.render_widget(
                 Paragraph::new("-60").style(scale_style),
@@ -423,6 +562,53 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
                         },
                     );
                 }
+                y_offset += 1;
+            }
+        }
+
+        // LRA is secondary to the current M/S/I values and their maxima.
+        // Draw its entire numeric/status block only when it fits the remaining
+        // inner area, so a short terminal never overwrites the box border.
+        let range = loudness.loudness_range.as_ref();
+        let finite_valid_range = range
+            .filter(|data| data.status == sotf_plugins::analyzer::LoudnessRangeStatus::Valid)
+            .and_then(|data| {
+                data.range_lu
+                    .filter(|value| value.is_finite() && *value >= 0.0)
+            });
+        let show_unstable =
+            finite_valid_range.is_some() && range.is_some_and(|data| !data.is_stable);
+        label_buf.len = 0;
+        if let Some(value) = finite_valid_range {
+            let _ = write!(&mut label_buf, "LRA: {value:.1} LU");
+        } else {
+            let _ = write!(&mut label_buf, "LRA: {}", i18n.ui("Unavailable"));
+        }
+        let lra_text = label_buf.as_str();
+        let unstable_text = i18n.ui("Not stable");
+        let lra_rows = if show_unstable { 2 } else { 1 };
+        let lra_fits_width = lra_text.chars().count() <= usize::from(inner.width)
+            && (!show_unstable || unstable_text.chars().count() <= usize::from(inner.width));
+        if lra_fits_width && y_offset.saturating_add(lra_rows) <= inner.height {
+            f.render_widget(
+                Paragraph::new(lra_text).style(Style::default().fg(app.theme.title_color)),
+                Rect {
+                    x: inner.x,
+                    y: inner.y + y_offset,
+                    width: inner.width,
+                    height: 1,
+                },
+            );
+            if show_unstable {
+                f.render_widget(
+                    Paragraph::new(unstable_text).style(Style::default().fg(app.theme.title_color)),
+                    Rect {
+                        x: inner.x,
+                        y: inner.y + y_offset + 1,
+                        width: inner.width,
+                        height: 1,
+                    },
+                );
             }
         }
     } else {
@@ -484,7 +670,36 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
     let loudness = app.playback.loudness_info.as_ref().unwrap();
 
     // Draw border with simple title
-    let title_lines = [Line::from(i18n.ui("Levels (help: ?)"))];
+    let control_status = if let Some(error) = app.plugin_rack.loudness_control_error.as_ref() {
+        error.clone()
+    } else if let Some(pending) = app.plugin_rack.pending_loudness_control {
+        if pending.runtime_instance_id != loudness.integrated_control_instance_id {
+            i18n.ui("Monitor changed; request not confirmed")
+                .to_string()
+        } else if loudness.integrated_control_request_id > pending.request_id {
+            i18n.ui("Request superseded").to_string()
+        } else if loudness.integrated_control_request_id == pending.request_id {
+            if loudness.integrated_measurement_running {
+                i18n.ui("Integrated/LRA running").to_string()
+            } else {
+                i18n.ui("Integrated/LRA paused").to_string()
+            }
+        } else {
+            format!(
+                "{} · {}",
+                i18n.ui(pending.operation.help_label()),
+                i18n.ui("Waiting for meter update")
+            )
+        }
+    } else if loudness.integrated_measurement_running {
+        i18n.ui("Integrated/LRA running").to_string()
+    } else {
+        i18n.ui("Integrated/LRA paused").to_string()
+    };
+    let title_lines = [Line::from(format!(
+        "{} · {control_status}",
+        i18n.ui("Levels (help: ?)")
+    ))];
     let title_height = 1;
 
     // Highlight border when focused
@@ -960,6 +1175,7 @@ mod tests {
     use crate::theme::Theme;
     use ratatui::{Terminal, backend::TestBackend};
     use sotf_audio::LoudnessData;
+    use sotf_plugins::analyzer::{LoudnessRangeData, LoudnessRangeMode, LoudnessRangeStatus};
     use std::sync::Arc;
 
     fn test_app_with_loudness() -> App {
@@ -975,14 +1191,52 @@ mod tests {
             peak: 0.5,
             channel_peaks: Arc::new(vec![0.5, 0.3]),
             true_peaks_dbtp: Arc::new(vec![-3.5, -6.0]),
+            maximum_true_peak_dbtp: Some(-1.2),
+            maximum_momentary_lufs: Some(-9.4),
+            maximum_shortterm_lufs: Some(-11.2),
+            momentary_valid: false,
+            shortterm_valid: false,
             true_peak_is_compliant: true,
             integrated_window_seconds: 3_600,
             correlation_lr: Some(0.8),
             correlation_matrix: Arc::new(Vec::new()),
             correlation_samples_seen: 0,
+            loudness_range: Some(LoudnessRangeData {
+                range_lu: Some(0.0),
+                is_stable: false,
+                status: LoudnessRangeStatus::Valid,
+                mode: LoudnessRangeMode::Rolling,
+                retained_windows: 1,
+                observed_windows: 1,
+                capacity_windows: 36_000,
+                timebase_is_exact: true,
+            }),
             ..Default::default()
         });
         app
+    }
+
+    #[test]
+    fn unsupported_programme_max_is_visible_without_interval_channels() {
+        let mut app = App::new(Theme::default(), /* read_only */ true);
+        app.ui.language = crate::i18n::Language::German;
+        app.playback.loudness_info = Some(LoudnessData::new(0));
+        let backend = TestBackend::new(24, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                draw_lufs_box(f, area, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
+        assert!(
+            content.contains("Max TP") && content.contains("Nicht verfügbar"),
+            "expected the localized unsupported status to wrap within a 22-column inner box; got {content:?}"
+        );
     }
 
     /// Smoke / regression test: `draw_lufs_box` must render the loudness box
@@ -991,7 +1245,7 @@ mod tests {
     /// terminal buffer.
     #[test]
     fn draw_lufs_box_renders_all_sections() {
-        let backend = TestBackend::new(40, 20);
+        let backend = TestBackend::new(24, 20);
         let mut terminal = Terminal::new(backend).unwrap();
         let app = test_app_with_loudness();
         terminal
@@ -1004,8 +1258,13 @@ mod tests {
         let buffer = terminal.backend().buffer();
         let content: String = buffer.content.iter().map(|c| c.symbol()).collect();
         assert!(
-            content.contains("True Peak"),
-            "expected True Peak header; got {:?}",
+            content.contains("Max TP: -1.2 dBTP"),
+            "expected programme maximum header; got {:?}",
+            content
+        );
+        assert!(
+            content.contains("-3.5"),
+            "expected latest interval true-peak bar value; got {:?}",
             content
         );
         assert!(
@@ -1014,9 +1273,246 @@ mod tests {
             content
         );
         assert!(
+            content.contains("Max momentary -9.4") && content.contains("Max short-term -11.2"),
+            "expected latched M/S maxima despite invalid current-window flags; got {:?}",
+            content
+        );
+        assert!(
+            content.contains("LRA: 0.0 LU") && content.contains("Not stable"),
+            "valid zero LU must display as an unstable early LRA value; got {content:?}"
+        );
+        assert!(
             content.contains("Stereo width"),
             "expected Stereo width section; got {:?}",
             content
         );
+    }
+
+    fn rendered_lufs_content(app: &App, width: u16, height: u16) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                draw_lufs_box(frame, area, app);
+            })
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
+    }
+
+    #[test]
+    fn lra_display_requires_valid_finite_range_and_localizes_instability() {
+        let mut app = test_app_with_loudness();
+        for (language, marker) in [
+            (crate::i18n::Language::French, "Pas encore stable"),
+            (crate::i18n::Language::German, "Noch nicht stabil"),
+            (crate::i18n::Language::Spanish, "Aún no estable"),
+        ] {
+            app.ui.language = language;
+            let content = rendered_lufs_content(&app, 24, 20);
+            assert!(content.contains("LRA: 0.0 LU"), "{content:?}");
+            assert!(content.contains(marker), "{content:?}");
+        }
+
+        {
+            let loudness = app.playback.loudness_info.as_mut().unwrap();
+            loudness.loudness_range.as_mut().unwrap().is_stable = true;
+        }
+        app.ui.language = crate::i18n::Language::German;
+        let stable = rendered_lufs_content(&app, 24, 20);
+        assert!(stable.contains("LRA: 0.0 LU"), "{stable:?}");
+        assert!(!stable.contains("Noch nicht stabil"), "{stable:?}");
+
+        {
+            let loudness = app.playback.loudness_info.as_mut().unwrap();
+            let range = loudness.loudness_range.as_mut().unwrap();
+            range.range_lu = None;
+            range.status = LoudnessRangeStatus::BelowGate;
+        }
+        let unavailable = rendered_lufs_content(&app, 24, 20);
+        assert!(
+            unavailable.contains("LRA: Nicht verfügbar"),
+            "{unavailable:?}"
+        );
+        assert!(
+            !unavailable.contains("Noch nicht stabil"),
+            "{unavailable:?}"
+        );
+
+        {
+            let loudness = app.playback.loudness_info.as_mut().unwrap();
+            let range = loudness.loudness_range.as_mut().unwrap();
+            range.range_lu = Some(f64::INFINITY);
+            range.status = LoudnessRangeStatus::Valid;
+            range.is_stable = false;
+        }
+        let malformed = rendered_lufs_content(&app, 24, 20);
+        assert!(malformed.contains("LRA: Nicht verfügbar"), "{malformed:?}");
+        assert!(!malformed.contains("Noch nicht stabil"), "{malformed:?}");
+    }
+
+    #[test]
+    fn short_lufs_box_keeps_existing_maxima_bars_and_border_before_lra() {
+        let app = test_app_with_loudness();
+        let backend = TestBackend::new(24, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                draw_lufs_box(frame, area, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
+        assert!(content.contains("Max momentary -9.4"), "{content:?}");
+        assert!(content.contains("Max short-term -11.2"), "{content:?}");
+        assert!(
+            content.contains("-10.5") && content.contains("-14.0"),
+            "{content:?}"
+        );
+        assert!(
+            !content.contains("Not stable"),
+            "incomplete LRA rows must be omitted: {content:?}"
+        );
+        for x in 1..23 {
+            assert_eq!(
+                buffer[(x, 9)].symbol(),
+                "─",
+                "LRA summary must not overwrite the bottom border at x={x}"
+            );
+        }
+    }
+
+    #[test]
+    fn lufs_maxima_and_current_bars_survive_short_terminal_heights() {
+        for (language, momentary_label, shortterm_label) in [
+            (crate::i18n::Language::French, "M max", "S max"),
+            (crate::i18n::Language::German, "Max M", "Max S"),
+        ] {
+            for (width, height) in [(24, 12), (24, 10)] {
+                let backend = TestBackend::new(width, height);
+                let mut terminal = Terminal::new(backend).unwrap();
+                let mut app = test_app_with_loudness();
+                app.ui.language = language;
+                terminal.draw(|f| draw_lufs_box(f, f.area(), &app)).unwrap();
+
+                let buffer = terminal.backend().buffer();
+                let content: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
+                let max_m_label = format!("{momentary_label} -9.4");
+                let max_s_label = format!("{shortterm_label} -11.2");
+                assert!(
+                    content.contains(&max_m_label),
+                    "{language:?} {width}x{height}: {content:?}"
+                );
+                assert!(
+                    content.contains(&max_s_label),
+                    "{language:?} {width}x{height}: {content:?}"
+                );
+                assert!(content.contains("M -10.5"), "{width}x{height}: {content:?}");
+                assert!(content.contains("S -12.0"), "{width}x{height}: {content:?}");
+                assert!(content.contains("I -14.0"), "{width}x{height}: {content:?}");
+
+                let row_text: Vec<String> = buffer
+                    .content
+                    .chunks(usize::from(width))
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+                    .collect();
+                let row_of = |fragment: &str| {
+                    row_text
+                        .iter()
+                        .position(|row| row.contains(fragment))
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "{language:?} {width}x{height} missing {fragment:?}: {row_text:?}"
+                            )
+                        })
+                };
+                let max_m = row_of(&max_m_label);
+                let max_s = row_of(&max_s_label);
+                let current_m = row_of("M -10.5");
+                let current_s = row_of("S -12.0");
+                let current_i = row_of("I -14.0");
+                assert!(
+                    max_m < max_s
+                        && max_s < current_m
+                        && current_m < current_s
+                        && current_s < current_i,
+                    "summary rows must not overlap or displace current bars: {row_text:?}"
+                );
+                if height == 10 {
+                    assert!(
+                        !content.contains("-6.0"),
+                        "second TP bar should be suppressed first at {width}x{height}: {content:?}"
+                    );
+                    assert!(
+                        !content.contains("+6"),
+                        "scale should be suppressed at {width}x{height}: {content:?}"
+                    );
+                } else {
+                    assert!(
+                        content.contains("-6.0"),
+                        "second TP bar should remain at {width}x{height}: {content:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn undersized_lufs_box_keeps_its_border_intact() {
+        let width = 24;
+        let height = 8;
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let app = test_app_with_loudness();
+        terminal.draw(|f| draw_lufs_box(f, f.area(), &app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, 0)].symbol(), "┌");
+        assert_eq!(buffer[(width - 1, 0)].symbol(), "┐");
+        assert_eq!(buffer[(0, height - 1)].symbol(), "└");
+        assert_eq!(buffer[(width - 1, height - 1)].symbol(), "┘");
+        for x in 1..width - 1 {
+            assert_eq!(
+                buffer[(x, height - 1)].symbol(),
+                "─",
+                "bottom border interior at column {x}"
+            );
+        }
+        for y in 1..height - 1 {
+            assert_eq!(buffer[(0, y)].symbol(), "│", "left border at row {y}");
+            assert_eq!(
+                buffer[(width - 1, y)].symbol(),
+                "│",
+                "right border at row {y}"
+            );
+        }
+
+        // The localized labels need two rows at this width. The summary
+        // helper must leave the bottom border intact when both rows cannot fit.
+        let width = 12;
+        let height = 7;
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = test_app_with_loudness();
+        app.ui.language = crate::i18n::Language::French;
+        terminal.draw(|f| draw_lufs_box(f, f.area(), &app)).unwrap();
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, height - 1)].symbol(), "└");
+        assert_eq!(buffer[(width - 1, height - 1)].symbol(), "┘");
+        for x in 1..width - 1 {
+            assert_eq!(
+                buffer[(x, height - 1)].symbol(),
+                "─",
+                "narrow stacked summary crossed bottom border at column {x}"
+            );
+        }
     }
 }

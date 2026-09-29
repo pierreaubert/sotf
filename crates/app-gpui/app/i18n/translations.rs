@@ -4287,7 +4287,13 @@ pub struct LevelMeterTranslations {
     pub gain_reduction: &'static str,
     pub peak: &'static str,
     pub true_peak: &'static str,
+    pub max_true_peak: &'static str,
+    pub max_momentary: &'static str,
+    pub max_shortterm: &'static str,
+    pub true_peak_unavailable: &'static str,
     pub lufs: &'static str,
+    pub lra: &'static str,
+    pub lra_not_stable: &'static str,
     pub peak_spread: &'static str,
     pub even: &'static str,
     pub stereo_width: &'static str,
@@ -4303,6 +4309,19 @@ pub struct LevelMeterTranslations {
     pub dim: &'static str,
     pub no_data: &'static str,
     pub no_data_hint: &'static str,
+    pub loudness_start: &'static str,
+    pub loudness_pause: &'static str,
+    pub loudness_continue: &'static str,
+    pub loudness_reset: &'static str,
+    pub loudness_retry: &'static str,
+    pub integrated_running: &'static str,
+    pub integrated_paused: &'static str,
+    pub control_waiting: &'static str,
+    pub control_monitor_changed: &'static str,
+    pub control_superseded: &'static str,
+    pub control_unavailable: &'static str,
+    pub control_id_exhausted: &'static str,
+    pub control_submission_failed: &'static str,
 }
 
 impl LevelMeterTranslations {
@@ -4313,7 +4332,13 @@ impl LevelMeterTranslations {
                 gain_reduction: "Gain Reduction",
                 peak: "Peak",
                 true_peak: "True Peak",
+                max_true_peak: "Max TP",
+                max_momentary: "Max momentary",
+                max_shortterm: "Max short-term",
+                true_peak_unavailable: "Unavailable",
                 lufs: "LUFS",
+                lra: "LRA",
+                lra_not_stable: "Not stable",
                 peak_spread: "Peak Spread",
                 even: "Even",
                 stereo_width: "Stereo Width",
@@ -4329,12 +4354,31 @@ impl LevelMeterTranslations {
                 dim: "Dim",
                 no_data: "No meter data",
                 no_data_hint: "Start playback to see live channel levels.",
+                loudness_start: "Start I/LRA",
+                loudness_pause: "Pause I/LRA",
+                loudness_continue: "Continue I/LRA",
+                loudness_reset: "Reset I/LRA",
+                loudness_retry: "Retry",
+                integrated_running: "I/LRA running",
+                integrated_paused: "I/LRA paused",
+                control_waiting: "Waiting for meter update",
+                control_monitor_changed: "Monitor changed; request not confirmed",
+                control_superseded: "Request superseded",
+                control_unavailable: "Meter analyzer unavailable",
+                control_id_exhausted: "Control request ID exhausted",
+                control_submission_failed: "Control submission failed",
             },
             Language::French => Self {
                 gain_reduction: "Réduction de gain",
                 peak: "Crête",
                 true_peak: "Crête vraie",
+                max_true_peak: "TP max",
+                max_momentary: "Max. momentané",
+                max_shortterm: "Max. court terme",
+                true_peak_unavailable: "Indisponible",
                 lufs: "LUFS",
+                lra: "LRA",
+                lra_not_stable: "Pas encore stable",
                 peak_spread: "Écart de crête",
                 even: "Uniforme",
                 stereo_width: "Largeur stéréo",
@@ -4350,12 +4394,31 @@ impl LevelMeterTranslations {
                 dim: "Atténuer",
                 no_data: "Aucune donnée de niveau",
                 no_data_hint: "Lancez la lecture pour voir les niveaux des canaux en direct.",
+                loudness_start: "Démarrer I/LRA",
+                loudness_pause: "Mettre I/LRA en pause",
+                loudness_continue: "Reprendre I/LRA",
+                loudness_reset: "Réinitialiser I/LRA",
+                loudness_retry: "Réessayer",
+                integrated_running: "I/LRA actif",
+                integrated_paused: "I/LRA en pause",
+                control_waiting: "En attente de la mise à jour du vumètre",
+                control_monitor_changed: "Moniteur modifié ; commande non confirmée",
+                control_superseded: "Commande remplacée",
+                control_unavailable: "Analyseur de niveau indisponible",
+                control_id_exhausted: "Identifiant de commande épuisé",
+                control_submission_failed: "Échec de l’envoi de la commande",
             },
             Language::German => Self {
                 gain_reduction: "Pegelreduktion",
                 peak: "Spitze",
                 true_peak: "True Peak",
+                max_true_peak: "Max TP",
+                max_momentary: "Max. Momentan",
+                max_shortterm: "Max. Kurzzeit",
+                true_peak_unavailable: "Nicht verfügbar",
                 lufs: "LUFS",
+                lra: "LRA",
+                lra_not_stable: "Noch nicht stabil",
                 peak_spread: "Spitzenstreuung",
                 even: "Gleichmäßig",
                 stereo_width: "Stereobreite",
@@ -4371,12 +4434,31 @@ impl LevelMeterTranslations {
                 dim: "Absenken",
                 no_data: "Keine Pegeldaten",
                 no_data_hint: "Starten Sie die Wiedergabe, um Live-Kanalpegel zu sehen.",
+                loudness_start: "I/LRA starten",
+                loudness_pause: "I/LRA pausieren",
+                loudness_continue: "I/LRA fortsetzen",
+                loudness_reset: "I/LRA zurücksetzen",
+                loudness_retry: "Erneut versuchen",
+                integrated_running: "I/LRA läuft",
+                integrated_paused: "I/LRA pausiert",
+                control_waiting: "Warte auf Pegelanzeige",
+                control_monitor_changed: "Monitor geändert; Anfrage nicht bestätigt",
+                control_superseded: "Anfrage überholt",
+                control_unavailable: "Pegelanalysator nicht verfügbar",
+                control_id_exhausted: "Befehls-ID erschöpft",
+                control_submission_failed: "Befehl konnte nicht gesendet werden",
             },
             Language::Spanish => Self {
                 gain_reduction: "Reducción de ganancia",
                 peak: "Pico",
                 true_peak: "Pico verdadero",
+                max_true_peak: "Pico máx.",
+                max_momentary: "Máx. momentáneo",
+                max_shortterm: "Máx. corto plazo",
+                true_peak_unavailable: "No disponible",
                 lufs: "LUFS",
+                lra: "LRA",
+                lra_not_stable: "Aún no estable",
                 peak_spread: "Dispersión de picos",
                 even: "Uniforme",
                 stereo_width: "Anchura estéreo",
@@ -4392,6 +4474,19 @@ impl LevelMeterTranslations {
                 dim: "Atenuar",
                 no_data: "Sin datos de nivel",
                 no_data_hint: "Inicie la reproducción para ver los niveles de canal en directo.",
+                loudness_start: "Iniciar I/LRA",
+                loudness_pause: "Pausar I/LRA",
+                loudness_continue: "Continuar I/LRA",
+                loudness_reset: "Restablecer I/LRA",
+                loudness_retry: "Reintentar",
+                integrated_running: "I/LRA en marcha",
+                integrated_paused: "I/LRA en pausa",
+                control_waiting: "Esperando la actualización del medidor",
+                control_monitor_changed: "Monitor cambiado; solicitud sin confirmar",
+                control_superseded: "Solicitud reemplazada",
+                control_unavailable: "Analizador de nivel no disponible",
+                control_id_exhausted: "Se agotó el ID de control",
+                control_submission_failed: "No se pudo enviar el control",
             },
         }
     }
@@ -6932,6 +7027,13 @@ impl PluginCommonTranslations {
                 PluginType::Saturation => {
                     "Add controlled harmonic colour with saturation or exciter modes."
                 }
+                PluginType::AnalogEq => "Shape tone with a three-band analog-style equalizer.",
+                PluginType::AnalogLimiter => {
+                    "Limit peaks with analog-style drive and output controls."
+                }
+                PluginType::AnalogCompressor => {
+                    "Control dynamics with an analog-style compressor and color controls."
+                }
                 PluginType::DynamicEq => "Apply frequency-selective compression and expansion.",
                 PluginType::LinearPhaseEq => {
                     "Apply parametric EQ as linear or minimum-phase FIR convolution."
@@ -7021,6 +7123,15 @@ impl PluginCommonTranslations {
                 PluginType::TransientShaper => "Réglez l’attaque et le maintien des transitoires.",
                 PluginType::Saturation => {
                     "Ajoutez une coloration harmonique contrôlée ou de l’excitation."
+                }
+                PluginType::AnalogEq => {
+                    "Façonnez le timbre avec un égaliseur trois bandes de style analogique."
+                }
+                PluginType::AnalogLimiter => {
+                    "Limitez les crêtes avec un modèle analogique et des commandes de sortie."
+                }
+                PluginType::AnalogCompressor => {
+                    "Contrôlez la dynamique avec un compresseur analogique et des commandes de couleur."
                 }
                 PluginType::DynamicEq => {
                     "Appliquez compression et expansion de façon sélective en fréquence."
@@ -7124,6 +7235,15 @@ impl PluginCommonTranslations {
                 PluginType::Saturation => {
                     "Fügen Sie kontrollierte harmonische Färbung oder Anregung hinzu."
                 }
+                PluginType::AnalogEq => {
+                    "Formen Sie den Klang mit einem dreibandigen Equalizer im Analogstil."
+                }
+                PluginType::AnalogLimiter => {
+                    "Begrenzen Sie Spitzen mit einem Analogmodell und Ausgangsreglern."
+                }
+                PluginType::AnalogCompressor => {
+                    "Kontrollieren Sie die Dynamik mit einem Analogkompressor und Klangreglern."
+                }
                 PluginType::DynamicEq => {
                     "Wenden Sie frequenzselektive Kompression und Expansion an."
                 }
@@ -7213,6 +7333,15 @@ impl PluginCommonTranslations {
                 }
                 PluginType::Saturation => {
                     "Añada color armónico controlado con saturación o excitación."
+                }
+                PluginType::AnalogEq => {
+                    "Modele el tono con un ecualizador de tres bandas de estilo analógico."
+                }
+                PluginType::AnalogLimiter => {
+                    "Limite los picos con un modelo analógico y controles de salida."
+                }
+                PluginType::AnalogCompressor => {
+                    "Controle la dinámica con un compresor analógico y controles de color."
                 }
                 PluginType::DynamicEq => {
                     "Aplique compresión y expansión selectivas por frecuencia."
@@ -7756,6 +7885,7 @@ pub struct ExternalPluginWorkerTranslations {
     pub sandbox_macos_app_sandbox: &'static str,
     pub sandbox_macos_process: &'static str,
     pub sandbox_windows_process: &'static str,
+    pub sandbox_windows_appcontainer: &'static str,
 }
 
 impl ExternalPluginWorkerTranslations {
@@ -7824,6 +7954,9 @@ impl ExternalPluginWorkerTranslations {
             }
             IsolatedExternalPluginSandboxBackend::WindowsProcessIsolation => {
                 self.sandbox_windows_process
+            }
+            IsolatedExternalPluginSandboxBackend::WindowsAppContainerWorker => {
+                self.sandbox_windows_appcontainer
             }
         };
         format!("{}: {} ({backend})", self.sandbox, sandbox_status)
@@ -7920,6 +8053,7 @@ impl ExternalPluginSettingsTranslations {
                     sandbox_macos_app_sandbox: "macOS App Sandbox helper",
                     sandbox_macos_process: "macOS process isolation",
                     sandbox_windows_process: "Windows process isolation",
+                    sandbox_windows_appcontainer: "Windows AppContainer worker",
                 },
             },
             Language::French => Self {
@@ -7974,6 +8108,7 @@ impl ExternalPluginSettingsTranslations {
                     sandbox_macos_app_sandbox: "Assistant App Sandbox macOS",
                     sandbox_macos_process: "Isolement de processus macOS",
                     sandbox_windows_process: "Isolement de processus Windows",
+                    sandbox_windows_appcontainer: "Worker en conteneur d’applications Windows",
                 },
             },
             Language::German => Self {
@@ -8028,6 +8163,7 @@ impl ExternalPluginSettingsTranslations {
                     sandbox_macos_app_sandbox: "macOS-App-Sandbox-Helfer",
                     sandbox_macos_process: "macOS-Prozessisolierung",
                     sandbox_windows_process: "Windows-Prozessisolierung",
+                    sandbox_windows_appcontainer: "Windows-AppContainer-Worker",
                 },
             },
             Language::Spanish => Self {
@@ -8082,6 +8218,7 @@ impl ExternalPluginSettingsTranslations {
                     sandbox_macos_app_sandbox: "Ayudante de App Sandbox de macOS",
                     sandbox_macos_process: "Aislamiento de procesos de macOS",
                     sandbox_windows_process: "Aislamiento de procesos de Windows",
+                    sandbox_windows_appcontainer: "Worker de Windows AppContainer",
                 },
             },
         }

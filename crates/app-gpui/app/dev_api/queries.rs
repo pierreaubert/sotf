@@ -37,6 +37,24 @@ pub fn resolve(path: &str, window: AnyWindowHandle, cx: &mut App) -> Result<Valu
         .map_err(|e| anyhow!("window.update failed: {e:#}"))?
 }
 
+fn maximum_true_peak_query(loudness: Option<&sotf_audio_player::LoudnessData>) -> Value {
+    json!(loudness.and_then(|data| data.maximum_true_peak_dbtp))
+}
+
+fn maximum_momentary_lufs_query(loudness: Option<&sotf_audio_player::LoudnessData>) -> Value {
+    json!(loudness.and_then(|data| {
+        data.maximum_momentary_lufs
+            .filter(|value| value.is_finite())
+    }))
+}
+
+fn maximum_shortterm_lufs_query(loudness: Option<&sotf_audio_player::LoudnessData>) -> Value {
+    json!(loudness.and_then(|data| {
+        data.maximum_shortterm_lufs
+            .filter(|value| value.is_finite())
+    }))
+}
+
 fn read_path(path: &str, state: &AppState) -> Result<Value> {
     let app = &state.app;
     Ok(match path {
@@ -66,6 +84,31 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .map(|item| item.current_track_index)
         ),
         "meters.has_data" => json!(app.playback.loudness_info.is_some()),
+        "meters.integrated_control_requests" => json!(
+            app.plugin_state
+                .plugin_ui_state
+                .loudness_control_requests
+                .iter()
+                .map(|(plugin_id, request)| json!({
+                    "plugin_id": plugin_id,
+                    "runtime_instance_id": request.runtime_instance_id,
+                    "request_id": request.request_id,
+                    "engine_index": request.engine_index,
+                    "operation": request.operation,
+                    "command": request.command,
+                    "error": request.error,
+                }))
+                .collect::<Vec<_>>()
+        ),
+        "meters.maximum_true_peak_dbtp" => {
+            maximum_true_peak_query(app.playback.loudness_info.as_deref())
+        }
+        "meters.maximum_momentary_lufs" => {
+            maximum_momentary_lufs_query(app.playback.loudness_info.as_deref())
+        }
+        "meters.maximum_shortterm_lufs" => {
+            maximum_shortterm_lufs_query(app.playback.loudness_info.as_deref())
+        }
         "meters.channel_count" => json!(
             app.playback
                 .loudness_info

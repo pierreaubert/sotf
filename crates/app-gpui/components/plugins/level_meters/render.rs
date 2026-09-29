@@ -65,6 +65,134 @@ fn finite_meter_value(value: f64, fallback: f64) -> f64 {
     if value.is_finite() { value } else { fallback }
 }
 
+fn maximum_true_peak_value(
+    loudness: &sotf_audio_player::LoudnessData,
+    text: LevelMeterTranslations,
+) -> String {
+    match loudness.maximum_true_peak_dbtp {
+        Some(value) if value.is_finite() => format!("{value:.1} dBTP"),
+        Some(_) => text.true_peak_unavailable.to_string(),
+        None if loudness.true_peak_is_compliant => "— dBTP".to_string(),
+        None => text.true_peak_unavailable.to_string(),
+    }
+}
+
+fn maximum_lufs_value(maximum: Option<f64>) -> String {
+    match maximum {
+        Some(value) if value.is_finite() => format!("{value:.1}"),
+        _ => "—".to_string(),
+    }
+}
+
+fn lra_display_value(
+    loudness: Option<&sotf_audio_player::LoudnessData>,
+    text: LevelMeterTranslations,
+) -> (String, bool) {
+    let Some(range) = loudness.and_then(|data| data.loudness_range) else {
+        return (text.true_peak_unavailable.to_string(), false);
+    };
+    if range.status == sotf_plugins::analyzer::LoudnessRangeStatus::Valid
+        && let Some(value) = range
+            .range_lu
+            .filter(|value| value.is_finite() && *value >= 0.0)
+    {
+        return (format!("{value:.1} LU"), !range.is_stable);
+    }
+    (text.true_peak_unavailable.to_string(), false)
+}
+
+fn render_lufs_maximum_summary(
+    d: &Ds,
+    label: &'static str,
+    value: String,
+    label_selector: &'static str,
+    value_selector: &'static str,
+    summary_selector: &'static str,
+    theme: &Theme,
+) -> impl IntoElement {
+    #[cfg(not(feature = "dev-api"))]
+    let _ = (label_selector, value_selector, summary_selector);
+    let label_text = label.to_string();
+    let label = div().w_full().min_w_0().child(label_text.clone());
+    #[cfg(feature = "dev-api")]
+    let label =
+        label.dev_track_with_state(label_selector, DevElementState::default().text(label_text));
+
+    let value_text = value;
+    let value = div().w_full().min_w_0().child(value_text.clone());
+    #[cfg(feature = "dev-api")]
+    let value =
+        value.dev_track_with_state(value_selector, DevElementState::default().text(value_text));
+
+    let summary = div()
+        .flex()
+        .flex_col()
+        // The label and its value form one compact summary. Keep this gap
+        // below the section gap so the extra maximum rows fit in a short
+        // Loudness Monitor panel without pushing the bars off-screen.
+        .gap(d.half_grid)
+        .w_full()
+        .min_w_0()
+        .text_size(d.text_xs)
+        .text_color(theme.text_muted)
+        .child(label)
+        .child(value);
+    #[cfg(feature = "dev-api")]
+    let summary = summary.dev_track(summary_selector);
+    summary
+}
+
+fn render_lra_summary(
+    d: &Ds,
+    label: &'static str,
+    value: String,
+    not_stable: bool,
+    not_stable_label: &'static str,
+    theme: &Theme,
+) -> impl IntoElement {
+    let label_text = label.to_string();
+    let label = div().w_full().min_w_0().child(label_text.clone());
+    #[cfg(feature = "dev-api")]
+    let label = label.dev_track_with_state(
+        "meters.lufs.lra-label",
+        DevElementState::default().text(label_text),
+    );
+
+    let value_text = value;
+    let value = div().w_full().min_w_0().child(value_text.clone());
+    #[cfg(feature = "dev-api")]
+    let value = value.dev_track_with_state(
+        "meters.lufs.lra-value",
+        DevElementState::default().text(value_text),
+    );
+
+    let mut summary = div()
+        .flex()
+        .flex_col()
+        .gap(d.half_grid)
+        .w_full()
+        .min_w_0()
+        .text_size(d.text_xs)
+        .text_color(theme.text_muted)
+        .child(label)
+        .child(value);
+
+    if not_stable {
+        let status_text = not_stable_label;
+        let status = div().w_full().min_w_0().child(status_text);
+        #[cfg(feature = "dev-api")]
+        let status = status.dev_track_with_state(
+            "meters.lufs.lra-stability",
+            DevElementState::default().text(status_text),
+        );
+        summary = summary.child(status);
+    }
+
+    #[cfg(feature = "dev-api")]
+    let summary = summary.dev_track("meters.lufs.lra-summary");
+    summary
+}
+
 /// Render a horizontal gain reduction meter
 /// Uses render_gradient_meter for consistent styling
 pub fn render_gr_meter(
@@ -284,6 +412,16 @@ pub fn render_lufs_with_true_peak(
         let empty = empty.dev_track("plugin.loudness.no-data");
         return div().child(empty);
     }
+    let maximum_true_peak_value = loudness
+        .map(|data| maximum_true_peak_value(data, text))
+        .unwrap_or_default();
+    let maximum_momentary_value = loudness
+        .map(|data| maximum_lufs_value(data.maximum_momentary_lufs))
+        .unwrap_or_else(|| "—".to_string());
+    let maximum_shortterm_value = loudness
+        .map(|data| maximum_lufs_value(data.maximum_shortterm_lufs))
+        .unwrap_or_else(|| "—".to_string());
+    let (lra_value, lra_not_stable) = lra_display_value(loudness, text);
     // Older snapshots and analyzers that do not expose oversampled peaks can
     // still provide per-channel sample peaks. Keep that fallback channel
     // aware instead of silently substituting a fake stereo L/R pair. The
@@ -358,7 +496,9 @@ pub fn render_lufs_with_true_peak(
         // collapse to whatever flex_1 of the intrinsic-width parent works
         // out to — leaving a wide empty band on the right of the panel.
         .w_full()
-        .gap(d.section)
+        // These three meter groups share one compact panel; medium spacing
+        // keeps the full stack inside the mounted plugin's available height.
+        .gap(d.gap_md)
         .p(d.pad_x)
         // True Peak section (on top)
         .child({
@@ -377,14 +517,50 @@ pub fn render_lufs_with_true_peak(
                         .mb(d.grid)
                         .child(peak_label),
                 )
+                .child({
+                    let label_text = text.max_true_peak.to_string();
+                    let value_text = maximum_true_peak_value.clone();
+                    let summary = div()
+                        .flex()
+                        .flex_col()
+                        .gap(d.gap)
+                        .w_full()
+                        .min_w_0()
+                        .text_size(d.text_xs)
+                        .text_color(theme.text_muted)
+                        .child({
+                            let label = div().w_full().min_w_0().child(label_text.clone());
+                            #[cfg(feature = "dev-api")]
+                            let label = label.dev_track_with_state(
+                                "meters.lufs.maximum-true-peak-label",
+                                DevElementState::default().text(label_text),
+                            );
+                            label
+                        })
+                        .child({
+                            let value = div().w_full().min_w_0().child(value_text.clone());
+                            #[cfg(feature = "dev-api")]
+                            let value = value.dev_track_with_state(
+                                "meters.lufs.maximum-true-peak-value",
+                                DevElementState::default().text(value_text),
+                            );
+                            value
+                        });
+                    #[cfg(feature = "dev-api")]
+                    let summary = summary.dev_track("meters.lufs.maximum-true-peak-summary");
+                    summary
+                })
                 .children(true_peaks.iter().enumerate().map(|(index, true_peak)| {
-                    PlayerView::render_meter_bar(
+                    let bar = PlayerView::render_meter_bar(
                         d,
                         sotf_audio_player::get_channel_label(index, true_peaks.len()),
                         *true_peak,
                         &tick_config,
                         &meter_theme,
-                    )
+                    );
+                    #[cfg(feature = "dev-api")]
+                    let bar = bar.dev_track(format!("meters.lufs.true-peak-bar.{index}"));
+                    bar
                 }))
                 // Tick marks (aligned with bar using same flex layout)
                 .child(render_tick_row(
@@ -425,6 +601,33 @@ pub fn render_lufs_with_true_peak(
         .child({
             // Use TickConfig preset for LUFS (quadratic scale from -60 to 0)
             let tick_config = TickConfig::lufs();
+            let integrated_bar = PlayerView::render_meter_bar(
+                d,
+                "I".to_string(),
+                integrated_lufs,
+                &tick_config,
+                &meter_theme,
+            );
+            #[cfg(feature = "dev-api")]
+            let integrated_bar = integrated_bar.dev_track("meters.lufs.integrated-bar");
+            let shortterm_bar = PlayerView::render_meter_bar(
+                d,
+                "S".to_string(),
+                shortterm_lufs,
+                &tick_config,
+                &meter_theme,
+            );
+            #[cfg(feature = "dev-api")]
+            let shortterm_bar = shortterm_bar.dev_track("meters.lufs.shortterm-bar");
+            let momentary_bar = PlayerView::render_meter_bar(
+                d,
+                "M".to_string(),
+                momentary_lufs,
+                &tick_config,
+                &meter_theme,
+            );
+            #[cfg(feature = "dev-api")]
+            let momentary_bar = momentary_bar.dev_track("meters.lufs.momentary-bar");
 
             div()
                 .flex()
@@ -438,30 +641,40 @@ pub fn render_lufs_with_true_peak(
                         .mb(d.grid)
                         .child(text.lufs),
                 )
+                // These finite-only programme latches are independent of the
+                // current-window validity flags and reset with the epoch.
+                .child(render_lufs_maximum_summary(
+                    d,
+                    text.max_momentary,
+                    maximum_momentary_value,
+                    "meters.lufs.maximum-momentary-label",
+                    "meters.lufs.maximum-momentary-value",
+                    "meters.lufs.maximum-momentary-summary",
+                    theme,
+                ))
+                .child(render_lra_summary(
+                    d,
+                    text.lra,
+                    lra_value,
+                    lra_not_stable,
+                    text.lra_not_stable,
+                    theme,
+                ))
+                .child(render_lufs_maximum_summary(
+                    d,
+                    text.max_shortterm,
+                    maximum_shortterm_value,
+                    "meters.lufs.maximum-shortterm-label",
+                    "meters.lufs.maximum-shortterm-value",
+                    "meters.lufs.maximum-shortterm-summary",
+                    theme,
+                ))
                 // Integrated LUFS (uses same scale as ticks)
-                .child(PlayerView::render_meter_bar(
-                    d,
-                    "I".to_string(),
-                    integrated_lufs,
-                    &tick_config,
-                    &meter_theme,
-                ))
+                .child(integrated_bar)
                 // Short-term LUFS (uses same scale as ticks)
-                .child(PlayerView::render_meter_bar(
-                    d,
-                    "S".to_string(),
-                    shortterm_lufs,
-                    &tick_config,
-                    &meter_theme,
-                ))
+                .child(shortterm_bar)
                 // Momentary LUFS (uses same scale as ticks)
-                .child(PlayerView::render_meter_bar(
-                    d,
-                    "M".to_string(),
-                    momentary_lufs,
-                    &tick_config,
-                    &meter_theme,
-                ))
+                .child(momentary_bar)
                 // Tick marks (aligned with bar using same flex layout)
                 .child(render_tick_row(
                     &tick_config,
@@ -1196,5 +1409,40 @@ impl PlayerView {
             DevElementState::default().enabled(has_data),
         );
         panel
+    }
+}
+
+#[cfg(test)]
+mod programme_true_peak_tests {
+    use super::*;
+    use crate::app::i18n::Language;
+    use sotf_audio_player::LoudnessData;
+
+    #[test]
+    fn programme_maximum_is_independent_of_status_flags_and_later_intervals() {
+        let text = LevelMeterTranslations::for_language(Language::English);
+        assert_eq!(maximum_lufs_value(Some(-9.36)), "-9.4");
+        assert_eq!(maximum_lufs_value(None), "—");
+        assert_eq!(maximum_lufs_value(Some(f64::INFINITY)), "—");
+        let mut loudness = LoudnessData::new(2);
+        loudness.maximum_true_peak_dbtp = Some(-1.2);
+        loudness.true_peak_is_compliant = false;
+        loudness.true_peak_valid = false;
+        loudness.update_true_peaks(&[-3.0, -4.0]);
+        let label = maximum_true_peak_value(&loudness, text);
+        assert_eq!(label, "-1.2 dBTP");
+
+        loudness.update_true_peaks(&[-9.0, -10.0]);
+        assert_eq!(maximum_true_peak_value(&loudness, text), label);
+
+        loudness.maximum_true_peak_dbtp = None;
+        loudness.true_peak_is_compliant = true;
+        assert_eq!(maximum_true_peak_value(&loudness, text), "— dBTP");
+
+        loudness.true_peak_is_compliant = false;
+        assert_eq!(maximum_true_peak_value(&loudness, text), "Unavailable");
+
+        loudness.maximum_true_peak_dbtp = Some(f64::INFINITY);
+        assert_eq!(maximum_true_peak_value(&loudness, text), "Unavailable");
     }
 }

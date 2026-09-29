@@ -4,16 +4,17 @@ use super::dispatch::dispatch_request;
 use super::types::HttpRequest;
 use super::with::mark_process_started;
 use anyhow::{Result, anyhow};
-use gpui::{AnyWindowHandle, App, AsyncApp};
+use gpui::{AnyWindowHandle, App, AsyncApp, Task};
 use sotf_audio_player::room_eq_types::{
     SimpleCrossoverChoice, SimpleLossChoice, SimpleProcessingChoice, SpeakerTier,
 };
-use sotf_dev_api::server::{ServerConfig, start_server};
+use sotf_dev_api::server::{ServerConfig, ServerHandle, start_server};
 use sotf_dev_api::{
     Capabilities, FixtureCapability, HttpResponse, InputCapabilities, Method, NamedCapability,
     RunId,
 };
-use std::sync::mpsc::{self};
+use std::net::SocketAddr;
+use std::sync::mpsc;
 use std::time::Duration;
 
 /// Spawn the dev-api server. Listens on `127.0.0.1:<port>`.
@@ -22,8 +23,6 @@ use std::time::Duration;
 /// created. The returned task is detached and runs for the lifetime of
 /// the app.
 pub fn start(cx: &mut App, port: u16, window: AnyWindowHandle) {
-    mark_process_started();
-    let (tx, rx) = mpsc::sync_channel::<DevCommand>(64);
     let run_id = match std::env::var("SOTF_DEV_API_RUN_ID")
         .map_err(anyhow::Error::from)
         .and_then(|value| RunId::parse(value).map_err(anyhow::Error::from))
@@ -34,11 +33,90 @@ pub fn start(cx: &mut App, port: u16, window: AnyWindowHandle) {
             return;
         }
     };
+    let (server, task) = match start_server_with_run_id(cx, port, window, run_id) {
+        Ok(started) => started,
+        Err(error) => {
+            log::error!("dev-api listener failed: {error:#}");
+            return;
+        }
+    };
+    let endpoint = server.endpoint();
+    std::thread::Builder::new()
+        .name("sotf-dev-api-owner".into())
+        .spawn(move || {
+            loop {
+                std::hint::black_box(&server);
+                std::thread::park_timeout(Duration::from_secs(3600));
+            }
+        })
+        .expect("failed to retain dev-api server handle");
+    log::info!("dev-api protocol v2 listening on http://{endpoint}");
+    task.detach();
+}
+
+/// Owned server/task pair for integration tests that must exercise the same
+/// authenticated loopback route without process environment mutation.
+#[doc(hidden)]
+pub struct DevApiTestHandle {
+    server: Option<ServerHandle>,
+    task: Option<Task<()>>,
+}
+
+impl DevApiTestHandle {
+    pub fn endpoint(&self) -> SocketAddr {
+        self.server
+            .as_ref()
+            .expect("test API server is shut down")
+            .endpoint()
+    }
+
+    pub fn shutdown(mut self) {
+        if let Some(server) = self.server.take() {
+            server.shutdown();
+        }
+        self.task.take();
+    }
+}
+
+impl Drop for DevApiTestHandle {
+    fn drop(&mut self) {
+        if let Some(server) = self.server.take() {
+            server.shutdown();
+        }
+        self.task.take();
+    }
+}
+
+/// Start the authenticated dev API with an explicit run ID and return an
+/// owned handle so integration tests can stop its listener and GPUI task.
+#[doc(hidden)]
+pub fn start_for_testing(
+    cx: &mut App,
+    port: u16,
+    window: AnyWindowHandle,
+    run_id: &str,
+) -> Result<DevApiTestHandle> {
+    let run_id = RunId::parse(run_id).map_err(anyhow::Error::from)?;
+    let (server, task) = start_server_with_run_id(cx, port, window, run_id)?;
+    Ok(DevApiTestHandle {
+        server: Some(server),
+        task: Some(task),
+    })
+}
+
+fn start_server_with_run_id(
+    cx: &mut App,
+    port: u16,
+    window: AnyWindowHandle,
+    run_id: RunId,
+) -> Result<(ServerHandle, Task<()>)> {
+    mark_process_started();
+    let (tx, rx) = mpsc::sync_channel::<DevCommand>(64);
     let capabilities = capabilities(cx);
     let mut config = ServerConfig::loopback(run_id, capabilities);
     config.bind = ([127, 0, 0, 1], port).into();
     let dispatcher_tx = tx.clone();
-    match start_server(
+    let server = start_server(
         config,
         move |request: sotf_dev_api::HttpRequest, _context| {
             let request = HttpRequest {
@@ -51,30 +129,12 @@ pub fn start(cx: &mut App, port: u16, window: AnyWindowHandle) {
             };
             legacy_response(&dispatch_request(&request, &dispatcher_tx))
         },
-    ) {
-        Ok(handle) => {
-            let endpoint = handle.endpoint();
-            std::thread::Builder::new()
-                .name("sotf-dev-api-owner".into())
-                .spawn(move || {
-                    loop {
-                        std::hint::black_box(&handle);
-                        std::thread::park_timeout(Duration::from_secs(3600));
-                    }
-                })
-                .expect("failed to retain dev-api server handle");
-            log::info!("dev-api protocol v2 listening on http://{endpoint}");
-        }
-        Err(error) => {
-            log::error!("dev-api listener failed: {error}");
-            return;
-        }
-    }
-
-    cx.spawn(async move |cx: &mut AsyncApp| {
+    )
+    .map_err(|error| anyhow!("starting loopback API server: {error}"))?;
+    let task = cx.spawn(async move |cx: &mut AsyncApp| {
         consume_commands(rx, window, cx).await;
-    })
-    .detach();
+    });
+    Ok((server, task))
 }
 
 fn capabilities(cx: &App) -> Capabilities {
@@ -142,6 +202,10 @@ fn capabilities(cx: &App) -> Capabilities {
         "playback.current_track_index".into(),
         "playback.seekable".into(),
         "meters.has_data".into(),
+        "meters.integrated_control_requests".into(),
+        "meters.maximum_true_peak_dbtp".into(),
+        "meters.maximum_momentary_lufs".into(),
+        "meters.maximum_shortterm_lufs".into(),
         "meters.channel_count".into(),
         "meters.group_count".into(),
         "meters.selected_group".into(),

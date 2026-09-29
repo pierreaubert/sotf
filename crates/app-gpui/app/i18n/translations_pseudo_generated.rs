@@ -655,7 +655,13 @@ impl LevelMeterTranslations {
                 gain_reduction: pseudo_static("Gain Reduction"),
                 peak: pseudo_static("Peak"),
                 true_peak: pseudo_static("True Peak"),
+                max_true_peak: pseudo_static("Max TP"),
+                max_momentary: pseudo_static("Max momentary"),
+                max_shortterm: pseudo_static("Max short-term"),
+                true_peak_unavailable: pseudo_static("Unavailable"),
                 lufs: pseudo_static("LUFS"),
+                lra: pseudo_static("LRA"),
+                lra_not_stable: pseudo_static("Not stable"),
                 peak_spread: pseudo_static("Peak Spread"),
                 even: pseudo_static("Even"),
                 stereo_width: pseudo_static("Stereo Width"),
@@ -671,6 +677,19 @@ impl LevelMeterTranslations {
                 dim: pseudo_static("Dim"),
                 no_data: pseudo_static("No meter data"),
                 no_data_hint: pseudo_static("Start playback to see live channel levels."),
+                loudness_start: pseudo_static("Start I/LRA"),
+                loudness_pause: pseudo_static("Pause I/LRA"),
+                loudness_continue: pseudo_static("Continue I/LRA"),
+                loudness_reset: pseudo_static("Reset I/LRA"),
+                loudness_retry: pseudo_static("Retry"),
+                integrated_running: pseudo_static("I/LRA running"),
+                integrated_paused: pseudo_static("I/LRA paused"),
+                control_waiting: pseudo_static("Waiting for meter update"),
+                control_monitor_changed: pseudo_static("Monitor changed; request not confirmed"),
+                control_superseded: pseudo_static("Request superseded"),
+                control_unavailable: pseudo_static("Meter analyzer unavailable"),
+                control_id_exhausted: pseudo_static("Control request ID exhausted"),
+                control_submission_failed: pseudo_static("Control submission failed"),
             }
     }
 }
@@ -1077,6 +1096,7 @@ impl ExternalPluginSettingsTranslations {
                     sandbox_macos_app_sandbox: pseudo_static("macOS App Sandbox helper"),
                     sandbox_macos_process: pseudo_static("macOS process isolation"),
                     sandbox_windows_process: pseudo_static("Windows process isolation"),
+                    sandbox_windows_appcontainer: pseudo_static("Windows AppContainer worker"),
                 },
             }
     }

@@ -1237,6 +1237,7 @@ fn dispatch_metadata_action(
                         fixture.integrated_valid = true;
                         fixture.sample_peak_valid = true;
                         fixture.true_peak_valid = true;
+                        fixture.maximum_true_peak_dbtp = Some(-1.2);
                         fixture.momentary_lufs = -18.4;
                         fixture.shortterm_lufs = -19.1;
                         fixture.integrated_lufs = -20.0;

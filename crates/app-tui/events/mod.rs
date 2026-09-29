@@ -1,4 +1,4 @@
-use crate::app::{App, InputMode, Screen};
+use crate::app::{App, InputMode, LoudnessControlOperation, Screen};
 use crate::media_controls::TuiMediaControls;
 use crate::ui::keybinding_catalog::{SharedCommand, TuiCommand, TuiKeyContext, resolve_command};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
@@ -340,6 +340,26 @@ pub(super) fn dispatch_shared_command(
         }
         SharedCommand::FocusedMeterClear => {
             app.clear_level_meter_mutes_and_solos();
+            None
+        }
+        SharedCommand::FocusedLoudnessStart => {
+            app.request_loudness_control(LoudnessControlOperation::Start);
+            None
+        }
+        SharedCommand::FocusedLoudnessPause => {
+            app.request_loudness_control(LoudnessControlOperation::Pause);
+            None
+        }
+        SharedCommand::FocusedLoudnessContinue => {
+            app.request_loudness_control(LoudnessControlOperation::Continue);
+            None
+        }
+        SharedCommand::FocusedLoudnessReset => {
+            app.request_loudness_control(LoudnessControlOperation::Reset);
+            None
+        }
+        SharedCommand::FocusedLoudnessRetry => {
+            app.retry_loudness_control();
             None
         }
         SharedCommand::ExitLevelMeters => {

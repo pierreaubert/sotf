@@ -17,12 +17,16 @@ use sotf_audio_player::PluginType;
 /// Get the accent color for a plugin type from the theme
 pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
     match plugin_type {
-        PluginType::EQ => theme.plugin_palette.plugin_colors.eq,
+        PluginType::EQ | PluginType::AnalogEq => theme.plugin_palette.plugin_colors.eq,
         PluginType::Gain | PluginType::Dither => theme.plugin_palette.plugin_colors.gain,
         PluginType::AAE => theme.plugin_palette.plugin_colors.upmixer,
         PluginType::Upmixer => theme.plugin_palette.plugin_colors.upmixer,
-        PluginType::Compressor => theme.plugin_palette.plugin_colors.compressor,
-        PluginType::Limiter => theme.plugin_palette.plugin_colors.limiter,
+        PluginType::Compressor | PluginType::AnalogCompressor => {
+            theme.plugin_palette.plugin_colors.compressor
+        }
+        PluginType::Limiter | PluginType::AnalogLimiter => {
+            theme.plugin_palette.plugin_colors.limiter
+        }
         PluginType::Gate => theme.plugin_palette.plugin_colors.gate,
         PluginType::Expander => theme.plugin_palette.plugin_colors.gate,
         PluginType::MultibandCompressor => theme.plugin_palette.plugin_colors.compressor,
@@ -69,9 +73,10 @@ pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
 /// directional arrow; otherwise the generic monitor icon is used.
 pub fn plugin_icon(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: bool) -> IconName {
     match plugin_type {
-        PluginType::EQ | PluginType::DynamicEq | PluginType::LinearPhaseEq => {
-            IconName::SlidersHorizontal
-        }
+        PluginType::EQ
+        | PluginType::AnalogEq
+        | PluginType::DynamicEq
+        | PluginType::LinearPhaseEq => IconName::SlidersHorizontal,
         PluginType::Gain | PluginType::LoudnessCompensation => IconName::Volume2,
         PluginType::Dither => IconName::AudioWaveform,
         PluginType::AAE | PluginType::Convolution | PluginType::Delay => IconName::Repeat,
@@ -91,7 +96,9 @@ pub fn plugin_icon(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: 
         | PluginType::MultibandExpander
         | PluginType::DeEsser
         | PluginType::TransientShaper
-        | PluginType::SpectralCompressor => IconName::AudioWaveform,
+        | PluginType::SpectralCompressor
+        | PluginType::AnalogLimiter
+        | PluginType::AnalogCompressor => IconName::AudioWaveform,
         PluginType::FletcherMunson
         | PluginType::BinauralDecoder
         | PluginType::XTC
@@ -182,6 +189,9 @@ pub fn plugin_short_name(
         PluginType::DeEsser => "De-Ess",
         PluginType::TransientShaper => "Transient",
         PluginType::Saturation => "Saturate",
+        PluginType::AnalogEq => "Analog EQ",
+        PluginType::AnalogLimiter => "Analog Lim",
+        PluginType::AnalogCompressor => "Analog Comp",
         PluginType::DynamicEq => "DynEQ",
         PluginType::LinearPhaseEq => "FIR EQ",
         PluginType::SpectralCompressor => "Spectral Compressor",

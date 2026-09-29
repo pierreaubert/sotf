@@ -344,12 +344,48 @@ fn translate_pattern(message: &str, source: &str, target: &str) -> Option<String
 const FRENCH_UI: &[(&str, &str)] = &[
     ("Loudness", "Sonie"),
     ("True Peak", "Crête vraie"),
+    ("Max TP", "TP max"),
+    ("Max momentary", "M max"),
+    ("Max short-term", "S max"),
+    ("Unavailable", "Indisponible"),
+    ("Not stable", "Pas encore stable"),
     ("Stereo width", "Largeur stéréo"),
     ("No audio playing", "Aucun son en lecture"),
     ("No audio", "Aucun son"),
     ("Levels", "Niveaux"),
     ("No channels", "Aucun canal"),
     ("Levels (help: ?)", "Niveaux (aide : ?)"),
+    ("Integrated/LRA running", "I/LRA en cours"),
+    ("Integrated/LRA paused", "I/LRA en pause"),
+    (
+        "Waiting for meter update",
+        "En attente de la mise à jour du vumètre",
+    ),
+    (
+        "Monitor changed; request not confirmed",
+        "Moniteur modifié ; commande non confirmée",
+    ),
+    ("Request superseded", "Commande remplacée"),
+    (
+        "Output monitor unavailable",
+        "Moniteur de sortie indisponible",
+    ),
+    (
+        "Another parameter update is pending",
+        "Une autre mise à jour de paramètre est en attente",
+    ),
+    (
+        "Control request ID exhausted",
+        "Identifiants de commande épuisés",
+    ),
+    (
+        "Control submission failed",
+        "Échec de l’envoi de la commande",
+    ),
+    ("Start I/LRA", "Démarrer I/LRA"),
+    ("Pause I/LRA", "Mettre I/LRA en pause"),
+    ("Continue I/LRA", "Reprendre I/LRA"),
+    ("Reset I/LRA", "Réinitialiser I/LRA"),
     (
         " 1=Simple  2=Full  3/4/5=layout  Tab=next step",
         " 1=Simple  2=Complet  3/4/5=configuration  Tab=étape suivante",
@@ -501,12 +537,45 @@ const FRENCH_UI: &[(&str, &str)] = &[
 const GERMAN_UI: &[(&str, &str)] = &[
     ("Loudness", "Lautheit"),
     ("True Peak", "True Peak"),
+    ("Max TP", "Max TP"),
+    ("Max momentary", "Max M"),
+    ("Max short-term", "Max S"),
+    ("Unavailable", "Nicht verfügbar"),
+    ("Not stable", "Noch nicht stabil"),
     ("Stereo width", "Stereobreite"),
     ("No audio playing", "Keine Audiowiedergabe"),
     ("No audio", "Kein Audio"),
     ("Levels", "Pegel"),
     ("No channels", "Keine Kanäle"),
     ("Levels (help: ?)", "Pegel (Hilfe: ?)"),
+    ("Integrated/LRA running", "I/LRA aktiv"),
+    ("Integrated/LRA paused", "I/LRA pausiert"),
+    ("Waiting for meter update", "Warte auf Pegelanzeige"),
+    (
+        "Monitor changed; request not confirmed",
+        "Monitor geändert; Anfrage nicht bestätigt",
+    ),
+    ("Request superseded", "Anfrage überholt"),
+    (
+        "Output monitor unavailable",
+        "Ausgangsmonitor nicht verfügbar",
+    ),
+    (
+        "Another parameter update is pending",
+        "Eine andere Parameteraktualisierung ist noch offen",
+    ),
+    (
+        "Control request ID exhausted",
+        "Steuerungs-IDs ausgeschöpft",
+    ),
+    (
+        "Control submission failed",
+        "Steuerungsbefehl fehlgeschlagen",
+    ),
+    ("Start I/LRA", "I/LRA starten"),
+    ("Pause I/LRA", "I/LRA pausieren"),
+    ("Continue I/LRA", "I/LRA fortsetzen"),
+    ("Reset I/LRA", "I/LRA zurücksetzen"),
     (
         " 1=Simple  2=Full  3/4/5=layout  Tab=next step",
         " 1=Einfach  2=Vollständig  3/4/5=Layout  Tab=nächster Schritt",
@@ -655,12 +724,45 @@ const GERMAN_UI: &[(&str, &str)] = &[
 const SPANISH_UI: &[(&str, &str)] = &[
     ("Loudness", "Sonoridad"),
     ("True Peak", "Pico verdadero"),
+    ("Max TP", "Pico máx."),
+    ("Max momentary", "Máx M"),
+    ("Max short-term", "Máx S"),
+    ("Unavailable", "No disponible"),
+    ("Not stable", "Aún no estable"),
     ("Stereo width", "Anchura estéreo"),
     ("No audio playing", "No se está reproduciendo audio"),
     ("No audio", "Sin audio"),
     ("Levels", "Niveles"),
     ("No channels", "Sin canales"),
     ("Levels (help: ?)", "Niveles (ayuda: ?)"),
+    ("Integrated/LRA running", "I/LRA en curso"),
+    ("Integrated/LRA paused", "I/LRA en pausa"),
+    (
+        "Waiting for meter update",
+        "Esperando actualización del medidor",
+    ),
+    (
+        "Monitor changed; request not confirmed",
+        "El monitor cambió; solicitud sin confirmar",
+    ),
+    ("Request superseded", "Solicitud reemplazada"),
+    (
+        "Output monitor unavailable",
+        "Monitor de salida no disponible",
+    ),
+    (
+        "Another parameter update is pending",
+        "Hay otra actualización de parámetros pendiente",
+    ),
+    (
+        "Control request ID exhausted",
+        "Se agotaron los ID de control",
+    ),
+    ("Control submission failed", "No se pudo enviar el control"),
+    ("Start I/LRA", "Iniciar I/LRA"),
+    ("Pause I/LRA", "Pausar I/LRA"),
+    ("Continue I/LRA", "Continuar I/LRA"),
+    ("Reset I/LRA", "Reiniciar I/LRA"),
     (
         " 1=Simple  2=Full  3/4/5=layout  Tab=next step",
         " 1=Simple  2=Completo  3/4/5=diseño  Tab=paso siguiente",
@@ -810,6 +912,36 @@ const SPANISH_UI: &[(&str, &str)] = &[
 ];
 
 const DYNAMIC_TRANSLATIONS: &[DynamicTranslation] = &[
+    dynamic_translation(
+        "Start I/LRA",
+        "Démarrer I/LRA",
+        "I/LRA starten",
+        "Iniciar I/LRA",
+    ),
+    dynamic_translation(
+        "Pause I/LRA",
+        "Mettre I/LRA en pause",
+        "I/LRA pausieren",
+        "Pausar I/LRA",
+    ),
+    dynamic_translation(
+        "Continue I/LRA",
+        "Reprendre I/LRA",
+        "I/LRA fortsetzen",
+        "Continuar I/LRA",
+    ),
+    dynamic_translation(
+        "Reset I/LRA",
+        "Réinitialiser I/LRA",
+        "I/LRA zurücksetzen",
+        "Reiniciar I/LRA",
+    ),
+    dynamic_translation(
+        "Retry last I/LRA control",
+        "Réessayer la dernière commande I/LRA",
+        "Letzte I/LRA-Aktion erneut versuchen",
+        "Reintentar el último control I/LRA",
+    ),
     dynamic_translation(
         "Frequency band",
         "Bande de fréquences",

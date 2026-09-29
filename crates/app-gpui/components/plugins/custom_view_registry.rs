@@ -11,4 +11,6 @@ mod types;
 
 pub use gpui_view_registry::*;
 pub use misc::*;
+#[doc(hidden)]
+pub use render::loudness_control_engine_index;
 pub use types::*;

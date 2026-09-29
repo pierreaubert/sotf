@@ -1201,6 +1201,27 @@ pub(super) fn render_matrix(
     }
 }
 
+#[doc(hidden)]
+/// Resolve controls for the analyzer represented by the visible meter snapshot.
+/// The rack loudness panel is a presentation surface for the selected system
+/// input/output role monitor; it does not control the user-added graph node's
+/// independent DSP instance.
+pub fn loudness_control_engine_index(
+    graph: &sotf_audio_player::PluginGraph,
+    displayed_instance_id: Option<u64>,
+    input_instance_id: Option<u64>,
+    output_instance_id: Option<u64>,
+) -> Option<usize> {
+    let displayed_instance_id = displayed_instance_id.filter(|instance_id| *instance_id != 0)?;
+    if Some(displayed_instance_id) == output_instance_id {
+        graph.output_monitor_engine_index()
+    } else if Some(displayed_instance_id) == input_instance_id {
+        graph.input_monitor_engine_index()
+    } else {
+        None
+    }
+}
+
 pub(super) fn render_loudness(
     ctx: &CustomViewRenderContext,
     cx: &mut Context<PlayerView>,
@@ -1209,14 +1230,44 @@ pub(super) fn render_loudness(
     let text = crate::app::i18n::LevelMeterTranslations::for_language(
         ctx.entity.read(cx).app.ui_state.language,
     );
+    let displayed_instance_id = ctx
+        .loudness
+        .as_ref()
+        .map(|snapshot| snapshot.integrated_control_instance_id)
+        .filter(|instance_id| *instance_id != 0);
+    let app_state = ctx.entity.read(cx);
+    let output_instance_id = app_state
+        .app
+        .playback
+        .loudness_info
+        .as_ref()
+        .map(|snapshot| snapshot.integrated_control_instance_id)
+        .filter(|instance_id| *instance_id != 0);
+    let input_instance_id = app_state
+        .app
+        .playback
+        .input_loudness_info
+        .as_ref()
+        .map(|snapshot| snapshot.integrated_control_instance_id)
+        .filter(|instance_id| *instance_id != 0);
+    let engine_index = loudness_control_engine_index(
+        ctx.plugin_graph,
+        displayed_instance_id,
+        input_instance_id,
+        output_instance_id,
+    );
+    let control_available = engine_index.is_some();
     super::super::render_loudness_monitor_plugin(
         &d,
+        ctx.entity.clone(),
+        ctx.plugin_instance_id,
+        engine_index,
+        control_available,
         ctx.loudness.clone(),
         ctx.layout_scale,
-        ctx.plugin_idx,
-        ctx.is_editing,
         text,
         ctx.theme,
+        cx,
     )
     .into_any_element()
 }
@@ -1241,6 +1292,8 @@ pub(super) fn render_mb_compressor(
         ratio,
         attack_ms,
         release_ms,
+        range_db: _,
+        hold_ms: _,
         knee_db,
         mix,
         link_channels,

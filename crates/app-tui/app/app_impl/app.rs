@@ -1,7 +1,7 @@
 use super::super::types::{
     ArtistNode, CastDeviceInfo, ChannelFilter, ChannelGroup, FilePickerMode, FilePickerOrigin,
-    InputMode, LibrarySortOrder, LibraryViewMode, MatrixEditMode, PendingParameterUpdate,
-    QueueEntry, Screen,
+    InputMode, LibrarySortOrder, LibraryViewMode, MatrixEditMode, PendingLoudnessControl,
+    PendingParameterUpdate, QueueEntry, Screen,
 };
 use super::load::load_server_tui_state;
 use super::types::FederationScanResult;
@@ -86,6 +86,10 @@ pub struct PluginRackState {
     pub graph: PluginGraph,
     pub needs_update: bool,
     pub pending_param_update: Option<PendingParameterUpdate>,
+    pub pending_loudness_control: Option<PendingLoudnessControl>,
+    pub retryable_loudness_control: Option<PendingLoudnessControl>,
+    pub loudness_control_error: Option<String>,
+    pub loudness_control_next_request_id: u64,
     pub editing_index: Option<usize>,
     pub param_selection: usize,
     pub update_last_attempt: Option<std::time::Instant>,
@@ -321,6 +325,10 @@ impl App {
                 graph: PluginGraph::with_default_rack(),
                 needs_update: false,
                 pending_param_update: None,
+                pending_loudness_control: None,
+                retryable_loudness_control: None,
+                loudness_control_error: None,
+                loudness_control_next_request_id: 0,
                 editing_index: None,
                 param_selection: 0,
                 update_last_attempt: None,

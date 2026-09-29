@@ -1,5 +1,8 @@
 use super::app_impl::App;
-use super::types::{ChannelGroup, ChannelInfo, PendingParameterUpdate};
+use super::types::{
+    ChannelGroup, ChannelInfo, LoudnessControlOperation, PendingLoudnessControl,
+    PendingParameterUpdate,
+};
 use sotf_plugins::speaker_config::{
     MeterGroupSpec, get_meter_groups, get_meter_groups_by_channels, make_fallback_channel,
 };
@@ -310,5 +313,545 @@ impl App {
         } else {
             self.level_meters.control_selection - 1
         };
+    }
+
+    /// Queue a transient command for the exact output monitor whose snapshot
+    /// drives the LevelMeters pane.
+    pub fn request_loudness_control(&mut self, operation: LoudnessControlOperation) {
+        let translations = crate::i18n::TuiTranslations::for_language(self.ui.language);
+        let Some(loudness) = self.playback.loudness_info.as_ref() else {
+            self.plugin_rack.loudness_control_error =
+                Some(translations.ui("Output monitor unavailable").to_string());
+            return;
+        };
+        let runtime_instance_id = loudness.integrated_control_instance_id;
+        if runtime_instance_id == 0 {
+            self.plugin_rack.loudness_control_error =
+                Some(translations.ui("Output monitor unavailable").to_string());
+            return;
+        }
+        let Some(engine_index) = self.plugin_rack.graph.output_monitor_engine_index() else {
+            self.plugin_rack.loudness_control_error =
+                Some(translations.ui("Output monitor unavailable").to_string());
+            return;
+        };
+        if self.plugin_rack.pending_param_update.is_some() {
+            self.plugin_rack.loudness_control_error = Some(
+                translations
+                    .ui("Another parameter update is pending")
+                    .to_string(),
+            );
+            return;
+        }
+        let Some(request_id) = self
+            .plugin_rack
+            .loudness_control_next_request_id
+            .checked_add(1)
+        else {
+            self.plugin_rack.loudness_control_error =
+                Some(translations.ui("Control request ID exhausted").to_string());
+            return;
+        };
+        self.plugin_rack.loudness_control_next_request_id = request_id;
+        let pending = PendingLoudnessControl {
+            runtime_instance_id,
+            request_id,
+            operation,
+        };
+        self.plugin_rack.pending_loudness_control = Some(pending);
+        self.plugin_rack.retryable_loudness_control = Some(pending);
+        self.plugin_rack.loudness_control_error = None;
+        self.plugin_rack.pending_param_update = Some(PendingParameterUpdate {
+            plugin_index: engine_index,
+            param_id: "integrated_control_command".to_string(),
+            value: format!(
+                "{}:{}:{}",
+                runtime_instance_id,
+                request_id,
+                operation.parameter_name()
+            ),
+        });
+        self.ui.needs_redraw = true;
+    }
+
+    /// Retry the most recent explicit action with a new request ID.
+    pub fn retry_loudness_control(&mut self) {
+        let Some(retryable) = self.plugin_rack.retryable_loudness_control else {
+            return;
+        };
+        let current_runtime = self
+            .playback
+            .loudness_info
+            .as_ref()
+            .map(|snapshot| snapshot.integrated_control_instance_id);
+        if current_runtime != Some(retryable.runtime_instance_id) {
+            let translations = crate::i18n::TuiTranslations::for_language(self.ui.language);
+            self.plugin_rack.retryable_loudness_control = None;
+            self.plugin_rack.pending_loudness_control = None;
+            self.plugin_rack.loudness_control_error = Some(
+                translations
+                    .ui("Monitor changed; request not confirmed")
+                    .to_string(),
+            );
+            self.ui.needs_redraw = true;
+            return;
+        }
+        self.request_loudness_control(retryable.operation);
+    }
+
+    pub fn reconcile_loudness_control_snapshot(
+        &mut self,
+        snapshot: Option<&sotf_audio::LoudnessData>,
+    ) {
+        let Some(request) = self.plugin_rack.retryable_loudness_control else {
+            return;
+        };
+        let translations = crate::i18n::TuiTranslations::for_language(self.ui.language);
+        let Some(snapshot) = snapshot else {
+            self.plugin_rack.pending_loudness_control = None;
+            self.plugin_rack.retryable_loudness_control = None;
+            self.plugin_rack.loudness_control_error = Some(
+                translations
+                    .ui("Monitor changed; request not confirmed")
+                    .to_string(),
+            );
+            self.ui.needs_redraw = true;
+            return;
+        };
+        if snapshot.integrated_control_instance_id == 0
+            || snapshot.integrated_control_instance_id != request.runtime_instance_id
+        {
+            self.plugin_rack.pending_loudness_control = None;
+            self.plugin_rack.retryable_loudness_control = None;
+            self.plugin_rack.loudness_control_error = Some(
+                translations
+                    .ui("Monitor changed; request not confirmed")
+                    .to_string(),
+            );
+        } else if snapshot.integrated_control_request_id == request.request_id {
+            self.plugin_rack.pending_loudness_control = None;
+            self.plugin_rack.retryable_loudness_control = None;
+            self.plugin_rack.loudness_control_error = None;
+        } else if snapshot.integrated_control_request_id > request.request_id {
+            self.plugin_rack.pending_loudness_control = None;
+            self.plugin_rack.retryable_loudness_control = None;
+            self.plugin_rack.loudness_control_error =
+                Some(translations.ui("Request superseded").to_string());
+        }
+        self.ui.needs_redraw = true;
+    }
+
+    pub fn report_loudness_control_submission_error(&mut self, error: String) {
+        let translations = crate::i18n::TuiTranslations::for_language(self.ui.language);
+        self.plugin_rack.pending_loudness_control = None;
+        self.plugin_rack.loudness_control_error = Some(format!(
+            "{}: {error}",
+            translations.ui("Control submission failed")
+        ));
+        self.ui.needs_redraw = true;
+    }
+}
+
+#[cfg(test)]
+mod integrated_control_tests {
+    use super::*;
+    use crate::theme::Theme;
+    use sotf_audio::LoudnessData;
+    use sotf_plugins::{LoudnessMonitorPlugin, ParameterId, ParameterValue, Plugin};
+    use std::sync::Arc;
+
+    fn snapshot(instance_id: u64, request_id: u64) -> LoudnessData {
+        LoudnessData {
+            integrated_control_instance_id: instance_id,
+            integrated_control_request_id: request_id,
+            integrated_measurement_running: false,
+            ..LoudnessData::default()
+        }
+    }
+
+    #[test]
+    fn output_controls_wait_for_the_exact_receipt_and_reset_while_paused() {
+        let mut app = App::new(Theme::default(), false);
+        let initial = snapshot(41, 0);
+        app.playback.loudness_info = Some(initial.clone());
+        let output_engine_index = app
+            .plugin_rack
+            .graph
+            .output_monitor_engine_index()
+            .expect("default graph includes an output monitor");
+
+        app.request_loudness_control(LoudnessControlOperation::Reset);
+        assert_eq!(
+            app.plugin_rack
+                .pending_param_update
+                .as_ref()
+                .map(|update| update.plugin_index),
+            Some(output_engine_index)
+        );
+        assert_eq!(
+            app.plugin_rack
+                .pending_param_update
+                .as_ref()
+                .map(|update| update.value.as_str()),
+            Some("41:1:reset")
+        );
+        assert_eq!(
+            app.plugin_rack.pending_loudness_control,
+            Some(PendingLoudnessControl {
+                runtime_instance_id: 41,
+                request_id: 1,
+                operation: LoudnessControlOperation::Reset,
+            })
+        );
+
+        // A stale snapshot and a later request's lower predecessor cannot
+        // acknowledge the action. The reset remains available while paused.
+        app.plugin_rack.pending_param_update = None;
+        app.reconcile_loudness_control_snapshot(Some(&initial));
+        assert!(app.plugin_rack.pending_loudness_control.is_some());
+        let mut first_ack = snapshot(41, 1);
+        app.reconcile_loudness_control_snapshot(Some(&first_ack));
+        assert!(app.plugin_rack.pending_loudness_control.is_none());
+
+        app.request_loudness_control(LoudnessControlOperation::Reset);
+        assert_eq!(
+            app.plugin_rack
+                .pending_param_update
+                .as_ref()
+                .map(|update| update.value.as_str()),
+            Some("41:2:reset")
+        );
+        app.plugin_rack.pending_param_update = None;
+        app.reconcile_loudness_control_snapshot(Some(&first_ack));
+        assert_eq!(
+            app.plugin_rack
+                .pending_loudness_control
+                .map(|pending| pending.request_id),
+            Some(2),
+            "a retained earlier receipt cannot acknowledge the newer reset"
+        );
+        first_ack.integrated_control_request_id = 2;
+        app.reconcile_loudness_control_snapshot(Some(&first_ack));
+        assert!(app.plugin_rack.pending_loudness_control.is_none());
+        assert!(app.plugin_rack.retryable_loudness_control.is_none());
+        app.retry_loudness_control();
+        assert!(app.plugin_rack.pending_param_update.is_none());
+        assert_eq!(app.plugin_rack.loudness_control_next_request_id, 2);
+    }
+
+    #[test]
+    fn replacement_monitor_cancels_a_pending_request_with_visible_error() {
+        let mut app = App::new(Theme::default(), false);
+        app.playback.loudness_info = Some(snapshot(52, 0));
+        app.request_loudness_control(LoudnessControlOperation::Start);
+        app.plugin_rack.pending_param_update = None;
+        app.reconcile_loudness_control_snapshot(Some(&snapshot(53, 0)));
+        assert!(app.plugin_rack.pending_loudness_control.is_none());
+        assert_eq!(
+            app.plugin_rack.loudness_control_error.as_deref(),
+            Some("Monitor changed; request not confirmed")
+        );
+        assert!(app.plugin_rack.retryable_loudness_control.is_none());
+        app.retry_loudness_control();
+        assert!(app.plugin_rack.pending_param_update.is_none());
+        assert_eq!(app.plugin_rack.loudness_control_next_request_id, 1);
+    }
+
+    #[test]
+    fn missing_or_unidentified_monitor_cancels_pending_retry() {
+        let mut app = App::new(Theme::default(), false);
+        app.playback.loudness_info = Some(snapshot(54, 0));
+        app.request_loudness_control(LoudnessControlOperation::Reset);
+        app.plugin_rack.pending_param_update = None;
+
+        app.reconcile_loudness_control_snapshot(None);
+        assert!(app.plugin_rack.pending_loudness_control.is_none());
+        assert!(app.plugin_rack.retryable_loudness_control.is_none());
+        assert_eq!(
+            app.plugin_rack.loudness_control_error.as_deref(),
+            Some("Monitor changed; request not confirmed")
+        );
+        app.retry_loudness_control();
+        assert!(app.plugin_rack.pending_param_update.is_none());
+        assert_eq!(app.plugin_rack.loudness_control_next_request_id, 1);
+
+        app.request_loudness_control(LoudnessControlOperation::Reset);
+        app.plugin_rack.pending_param_update = None;
+        app.reconcile_loudness_control_snapshot(Some(&snapshot(0, 0)));
+        assert!(app.plugin_rack.pending_loudness_control.is_none());
+        assert!(app.plugin_rack.retryable_loudness_control.is_none());
+        assert_eq!(
+            app.plugin_rack.loudness_control_error.as_deref(),
+            Some("Monitor changed; request not confirmed")
+        );
+    }
+
+    #[test]
+    fn failed_request_retries_only_on_its_original_monitor_with_a_fresh_id() {
+        let mut app = App::new(Theme::default(), false);
+        app.playback.loudness_info = Some(snapshot(61, 0));
+        app.request_loudness_control(LoudnessControlOperation::Pause);
+        app.plugin_rack.pending_param_update = None;
+        app.report_loudness_control_submission_error("temporary failure".to_string());
+        assert!(app.plugin_rack.pending_loudness_control.is_none());
+        assert!(app.plugin_rack.retryable_loudness_control.is_some());
+
+        app.retry_loudness_control();
+        assert_eq!(
+            app.plugin_rack
+                .pending_param_update
+                .as_ref()
+                .map(|update| update.value.as_str()),
+            Some("61:2:pause")
+        );
+        assert_eq!(
+            app.plugin_rack
+                .pending_loudness_control
+                .map(|pending| pending.runtime_instance_id),
+            Some(61)
+        );
+    }
+
+    #[test]
+    fn level_meter_keys_dispatch_lifecycle_controls_to_the_output_monitor() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut app = App::new(Theme::default(), false);
+        app.current_screen = crate::app::Screen::Queue;
+        app.input_mode = crate::app::InputMode::LevelMeters;
+        app.playback.loudness_info = Some(snapshot(71, 0));
+        let output_engine_index = app
+            .plugin_rack
+            .graph
+            .output_monitor_engine_index()
+            .expect("default graph includes an output monitor");
+
+        for (key, operation, expected_value) in [
+            ('i', LoudnessControlOperation::Start, "71:1:start"),
+            ('p', LoudnessControlOperation::Pause, "71:2:pause"),
+            ('o', LoudnessControlOperation::Continue, "71:3:continue"),
+            ('r', LoudnessControlOperation::Reset, "71:4:reset"),
+        ] {
+            let result = crate::events::handle_key_event(
+                &mut app,
+                KeyEvent::new(KeyCode::Char(key), KeyModifiers::NONE),
+            );
+            assert!(result.is_none());
+            assert_eq!(
+                app.plugin_rack
+                    .pending_param_update
+                    .as_ref()
+                    .map(|update| update.plugin_index),
+                Some(output_engine_index)
+            );
+            assert_eq!(
+                app.plugin_rack
+                    .pending_param_update
+                    .as_ref()
+                    .map(|update| update.value.as_str()),
+                Some(expected_value)
+            );
+            app.plugin_rack.pending_param_update = None;
+            app.reconcile_loudness_control_snapshot(Some(&snapshot(
+                71,
+                request_id(expected_value),
+            )));
+            assert_eq!(
+                app.plugin_rack.retryable_loudness_control, None,
+                "acknowledged {operation:?} is no longer retryable"
+            );
+        }
+
+        app.request_loudness_control(LoudnessControlOperation::Pause);
+        app.plugin_rack.pending_param_update = None;
+        app.report_loudness_control_submission_error("temporary failure".to_string());
+        let retry = crate::events::handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE),
+        );
+        assert!(retry.is_none());
+        assert_eq!(
+            app.plugin_rack
+                .pending_param_update
+                .as_ref()
+                .map(|update| update.plugin_index),
+            Some(output_engine_index)
+        );
+        assert_eq!(
+            app.plugin_rack
+                .pending_param_update
+                .as_ref()
+                .map(|update| update.value.as_str()),
+            Some("71:6:pause")
+        );
+
+        app.plugin_rack.pending_param_update = None;
+        let before = app.plugin_rack.loudness_control_next_request_id;
+
+        // On the Queue screen the same key is inert when the meter pane is not
+        // focused.
+        app.input_mode = crate::app::InputMode::Normal;
+        let unfocused = crate::events::handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE),
+        );
+        assert!(unfocused.is_none());
+        assert_eq!(app.plugin_rack.loudness_control_next_request_id, before);
+        assert!(app.plugin_rack.pending_param_update.is_none());
+
+        // Configure owns the keyboard focus on another screen; its key
+        // context must not emit a LevelMeters command.
+        app.current_screen = crate::app::Screen::Configure;
+        app.input_mode = crate::app::InputMode::Configure;
+        let wrong_screen = crate::events::handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE),
+        );
+        assert!(wrong_screen.is_none());
+        assert_eq!(app.plugin_rack.loudness_control_next_request_id, before);
+        assert!(app.plugin_rack.pending_param_update.is_none());
+    }
+
+    #[test]
+    fn level_meter_key_commands_reach_only_the_output_host_and_acknowledge_real_receipts() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        const RATE: u32 = 48_000;
+        let mut input_host = LoudnessMonitorPlugin::new(2).unwrap();
+        input_host.initialize(RATE).unwrap();
+        let mut output_host = LoudnessMonitorPlugin::new(2).unwrap();
+        output_host.initialize(RATE).unwrap();
+        let input_id = input_host.integrated_control_instance_id();
+        let output_id = output_host.integrated_control_instance_id();
+        assert_ne!(input_id, output_id);
+
+        let mut app = App::new(Theme::default(), false);
+        app.current_screen = crate::app::Screen::Queue;
+        app.input_mode = crate::app::InputMode::LevelMeters;
+        let initial_output: Arc<LoudnessData> = output_host.get_data().unwrap().downcast().unwrap();
+        app.playback.loudness_info = Some((*initial_output).clone());
+        drop(initial_output);
+
+        let output_index = app
+            .plugin_rack
+            .graph
+            .output_monitor_engine_index()
+            .expect("default graph includes an output monitor");
+        let input_index = app
+            .plugin_rack
+            .graph
+            .input_monitor_engine_index()
+            .expect("default graph includes an input monitor");
+        assert_ne!(input_index, output_index);
+        let mut hosts = MeterHostRoute {
+            input: input_host,
+            output: output_host,
+            input_id,
+            output_id,
+            input_index,
+            output_index,
+        };
+
+        for (key, expected_request, expected_running) in [
+            ('i', 1, true),  // Start
+            ('p', 2, false), // Pause
+            ('r', 3, false), // Reset preserves the paused state
+            ('o', 4, true),  // Continue
+        ] {
+            assert!(
+                crate::events::handle_key_event(
+                    &mut app,
+                    KeyEvent::new(KeyCode::Char(key), KeyModifiers::NONE),
+                )
+                .is_none()
+            );
+            hosts.apply_pending(&mut app, expected_request, expected_running);
+            assert!(app.plugin_rack.retryable_loudness_control.is_none());
+        }
+
+        // Exercise the real host rejection path, then retry the same UI action
+        // with a new request ID. The host receipt remains at 4 until retry 6.
+        assert!(
+            crate::events::handle_key_event(
+                &mut app,
+                KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE),
+            )
+            .is_none()
+        );
+        let failed = app.plugin_rack.pending_param_update.take().unwrap();
+        assert_eq!(failed.plugin_index, output_index);
+        let malformed = format!("{output_id}:5:unknown");
+        let error = hosts
+            .output
+            .set_parameter(
+                ParameterId::from(failed.param_id),
+                ParameterValue::String(malformed),
+            )
+            .expect_err("the output host must reject an unknown operation");
+        app.report_loudness_control_submission_error(error.to_string());
+        let before_retry: Arc<LoudnessData> = hosts.output.get_data().unwrap().downcast().unwrap();
+        assert_eq!(before_retry.integrated_control_request_id, 4);
+        assert!(before_retry.integrated_measurement_running);
+        drop(before_retry);
+
+        assert!(
+            crate::events::handle_key_event(
+                &mut app,
+                KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE),
+            )
+            .is_none()
+        );
+        hosts.apply_pending(&mut app, 6, false);
+        assert!(app.plugin_rack.retryable_loudness_control.is_none());
+    }
+
+    struct MeterHostRoute {
+        input: LoudnessMonitorPlugin,
+        output: LoudnessMonitorPlugin,
+        input_id: u64,
+        output_id: u64,
+        input_index: usize,
+        output_index: usize,
+    }
+
+    impl MeterHostRoute {
+        fn apply_pending(&mut self, app: &mut App, expected_request: u64, expected_running: bool) {
+            let update = app
+                .plugin_rack
+                .pending_param_update
+                .take()
+                .expect("the focused key should queue one host command");
+            assert_eq!(update.plugin_index, self.output_index);
+            assert_ne!(update.plugin_index, self.input_index);
+            assert_eq!(update.param_id, "integrated_control_command");
+            self.output
+                .set_parameter(
+                    ParameterId::from(update.param_id),
+                    ParameterValue::String(update.value),
+                )
+                .unwrap();
+
+            let output_data: Arc<LoudnessData> =
+                self.output.get_data().unwrap().downcast().unwrap();
+            assert_eq!(output_data.integrated_control_instance_id, self.output_id);
+            assert_eq!(output_data.integrated_control_request_id, expected_request);
+            assert_eq!(output_data.integrated_measurement_running, expected_running);
+            app.reconcile_loudness_control_snapshot(Some(&output_data));
+            app.playback.loudness_info = Some((*output_data).clone());
+            drop(output_data);
+
+            let input_data: Arc<LoudnessData> = self.input.get_data().unwrap().downcast().unwrap();
+            assert_eq!(input_data.integrated_control_instance_id, self.input_id);
+            assert_eq!(input_data.integrated_control_request_id, 0);
+            assert!(input_data.integrated_measurement_running);
+        }
+    }
+
+    fn request_id(command: &str) -> u64 {
+        command
+            .split(':')
+            .nth(1)
+            .expect("command carries a request ID")
+            .parse()
+            .expect("request ID is numeric")
     }
 }

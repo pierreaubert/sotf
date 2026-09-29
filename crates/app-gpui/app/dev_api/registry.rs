@@ -19,12 +19,14 @@ use gpui::{Bounds, Pixels};
 /// Explicit semantics supplied by a `dev_track` call site. GPUI does not yet
 /// expose its complete platform accessibility tree to the dev API, so these
 /// fields make the application's rendered control contract inspectable without
-/// confusing model-only state for a painted element.
+/// confusing model-only state for a painted element. Text is captured only
+/// when a tracked element is painted, for display-content E2E assertions.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DevElementState {
     pub enabled: Option<bool>,
     pub selected: Option<bool>,
     pub expanded: Option<bool>,
+    pub text: Option<String>,
 }
 
 impl DevElementState {
@@ -40,6 +42,11 @@ impl DevElementState {
 
     pub fn expanded(mut self, value: bool) -> Self {
         self.expanded = Some(value);
+        self
+    }
+
+    pub fn text(mut self, value: impl Into<String>) -> Self {
+        self.text = Some(value.into());
         self
     }
 }

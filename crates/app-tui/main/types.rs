@@ -224,6 +224,7 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                             app.playback.position_secs = loop_start;
                         }
                     }
+                    app.reconcile_loudness_control_snapshot(new_loudness.as_ref());
                     app.playback.loudness_info = new_loudness;
                     app.playback.signal_path = Some(new_signal_path);
                     app.media_control.last_position_secs = new_position;
@@ -463,6 +464,8 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                             param_update.value
                         );
 
+                        let is_loudness_control =
+                            param_update.param_id == "integrated_control_command";
                         match player.set_plugin_parameter(
                             param_update.plugin_index,
                             param_update.param_id,
@@ -473,6 +476,9 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                             }
                             Err(e) => {
                                 log::warn!("[TUI] Failed to update parameter: {}", e);
+                                if is_loudness_control {
+                                    app.report_loudness_control_submission_error(e.to_string());
+                                }
                             }
                         }
                     }

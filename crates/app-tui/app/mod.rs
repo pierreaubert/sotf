@@ -24,11 +24,11 @@ pub use types::{
     ChannelFilter, ChannelGroup, ChannelInfo, ConfigureSubScreen, EarTrainingTab,
     EarTrainingTuiState, FederationEditState, FederationMode, FederationTuiState, FilePickerMode,
     FilePickerOrigin, HEADPHONE_TARGET_PRESETS, HeadphoneEqStep, HeadphoneEqTuiState, InputMode,
-    LibrarySortOrder, LibraryViewMode, MatrixEditMode, MetadataEditorFields, MetadataEditorScope,
-    MetadataEditorState, PendingParameterUpdate, PlaylistMode, QueueEntry, QueueItem,
-    RecordingTuiState, ReplayGainMode, RoomEqTuiState, Screen, ServerSection, ServersTuiState,
-    ServiceLoginEvent, ServiceLoginState, ServiceLoginStatus, SpinUpdateSubStep,
-    SpinoramaEqTuiState, SpinoramaStep, Tool, TreeItem,
+    LibrarySortOrder, LibraryViewMode, LoudnessControlOperation, MatrixEditMode,
+    MetadataEditorFields, MetadataEditorScope, MetadataEditorState, PendingLoudnessControl,
+    PendingParameterUpdate, PlaylistMode, QueueEntry, QueueItem, RecordingTuiState, ReplayGainMode,
+    RoomEqTuiState, Screen, ServerSection, ServersTuiState, ServiceLoginEvent, ServiceLoginState,
+    ServiceLoginStatus, SpinUpdateSubStep, SpinoramaEqTuiState, SpinoramaStep, Tool, TreeItem,
 };
 // Allow access to types submodule for full detail (SOURCE_TYPE_NAMES, etc.)
 pub(crate) use types::{

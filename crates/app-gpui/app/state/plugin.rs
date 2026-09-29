@@ -445,8 +445,22 @@ pub struct EqDragPreview {
     pub gain_db: f64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoudnessControlUiRequest {
+    pub runtime_instance_id: u64,
+    pub request_id: u64,
+    pub engine_index: usize,
+    pub operation: &'static str,
+    pub command: String,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PluginUiState {
+    /// Monotonic transient command IDs for this UI process; never serialized as a preset.
+    pub next_loudness_control_request_id: u64,
+    /// Latest control request/error by stable graph plugin ID.
+    pub loudness_control_requests: HashMap<usize, LoudnessControlUiRequest>,
     /// Last measured rack content-box width, independent of sidebar and panel ratios.
     pub rack_width: Option<f32>,
     pub rack_editor_width: Option<f32>,
