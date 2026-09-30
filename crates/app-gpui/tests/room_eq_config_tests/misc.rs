@@ -39,6 +39,7 @@ pub(super) fn chain(
 /// Build a `DriverDspChain` with no optional `initial_curve`.
 fn driver(name: &str, index: usize, plugins: Vec<DspPluginConfig>) -> DriverDspChain {
     DriverDspChain {
+        measured_acoustics: None,
         name: name.to_string(),
         index,
         plugins,

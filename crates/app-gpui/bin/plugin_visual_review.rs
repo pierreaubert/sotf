@@ -148,6 +148,8 @@ mod macos {
                 worker_start_count: 2,
                 worker_exit_count: 2,
                 worker_launch_failure_count: 1,
+                worker_quarantined: false,
+                worker_quarantine_reason: None,
                 block_timeout_count: 3,
                 block_worker_failure_count: 1,
                 block_wrong_sequence_count: 0,

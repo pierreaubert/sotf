@@ -714,9 +714,13 @@ mod tests {
                 active: true,
                 solo: false,
                 bypass: false,
+                range_db: None,
+                hold_ms: None,
             }],
             sidechain_tilt_db: 0.0,
             link_amount: 0.0,
+            range_db: 120.0,
+            hold_ms: 0.0,
         };
         let mut changed = false;
 

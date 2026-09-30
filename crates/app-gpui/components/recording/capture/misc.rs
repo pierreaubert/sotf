@@ -2677,6 +2677,7 @@ impl PlayerView {
                 optimizer: OptimizerConfig::default(),
                 provenance: Default::default(),
                 recording_config: Some(recording_config),
+                measured_impulse_responses: Default::default(),
                 ctc,
                 reporting: None,
                 cea2034_cache: None,

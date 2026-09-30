@@ -151,6 +151,8 @@ mod tests {
             bands,
             sidechain_tilt_db: 0.0,
             link_amount: 0.0,
+            range_db: 120.0,
+            hold_ms: 0.0,
         }
     }
 
@@ -193,6 +195,8 @@ mod tests {
                 active: true,
                 solo: false,
                 bypass: false,
+                range_db: None,
+                hold_ms: None,
             },
             BandCompressorParams {
                 threshold_db: Some(-22.0),
@@ -206,6 +210,8 @@ mod tests {
                 active: true,
                 solo: false,
                 bypass: true,
+                range_db: None,
+                hold_ms: None,
             },
         ]);
 
@@ -278,6 +284,8 @@ mod tests {
             active: true,
             solo: false,
             bypass: false,
+            range_db: None,
+            hold_ms: None,
         }]);
 
         // Band 1 does not exist → id is still generated but value is a placeholder
@@ -336,6 +344,8 @@ mod tests {
             link_channels: false,
             mix: 1.0,
             bands: vec![DynEqBandParams {
+                shape: Default::default(),
+                shelf_slope: 1.0,
                 frequency: 1000.0,
                 q: 1.0,
                 gain: 0.0,

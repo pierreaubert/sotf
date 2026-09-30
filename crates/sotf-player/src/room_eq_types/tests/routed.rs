@@ -151,6 +151,8 @@ pub(super) fn routed_bass_output() -> DspChainOutput {
         inter_channel_deviation: None,
         epa_per_channel: None,
         epa_multichannel: None,
+        epa_provenance: None,
+        playback_summary: None,
         group_delay: None,
         perceptual_metrics: None,
         home_cinema_layout: None,
@@ -261,6 +263,7 @@ pub(super) fn routed_physical_sub_output() -> DspChainOutput {
     let mut sub_chain = output.channels.remove("Sub").expect("sub chain");
     sub_chain.channel = "LFE".to_string();
     sub_chain.drivers = Some(vec![DriverDspChain {
+        measured_acoustics: None,
         name: "SubA".to_string(),
         index: 0,
         plugins: vec![],

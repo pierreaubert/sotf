@@ -188,7 +188,7 @@ impl RecordingImport {
                 |driver_index: Option<usize>,
                  driver_name: Option<&str>,
                  primary: &crate::recording_types::RecordingResult,
-                 extras: &[super::RecordingResult],
+                 extras: &[crate::recording_types::RecordingResult],
                  provenance: &[crate::room_eq_types::MeasurementProvenance]| {
                     for (measurement_index, result) in
                         std::iter::once(primary).chain(extras).enumerate()

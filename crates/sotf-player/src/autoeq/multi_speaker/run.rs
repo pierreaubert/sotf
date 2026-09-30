@@ -214,6 +214,7 @@ pub fn run_multi_speaker_optimization(
         },
         provenance: Default::default(),
         recording_config: None,
+        measured_impulse_responses: Default::default(),
         ctc: None,
         reporting: None,
         cea2034_cache: None,

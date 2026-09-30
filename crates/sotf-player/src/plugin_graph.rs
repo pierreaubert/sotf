@@ -1829,11 +1829,21 @@ impl PluginGraph {
                     channels,
                     frequency,
                     crossover_type,
+                    frequencies,
+                    recombination_mode,
+                    num_bands,
+                    frequency_2,
+                    frequency_3,
                 } if *channels != current_channels => {
                     updated_settings = Some(PluginSettings::BandSplit {
                         channels: current_channels,
                         frequency: *frequency,
                         crossover_type: crossover_type.clone(),
+                        frequencies: frequencies.clone(),
+                        recombination_mode: *recombination_mode,
+                        num_bands: *num_bands,
+                        frequency_2: *frequency_2,
+                        frequency_3: *frequency_3,
                     });
                 }
                 PluginSettings::BandMerge { channels, bands } if *channels != current_channels => {

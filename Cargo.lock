@@ -124,7 +124,7 @@ dependencies = [
  "const-random",
  "once_cell",
  "version_check",
- "zerocopy 0.8.58",
+ "zerocopy 0.8.59",
 ]
 
 [[package]]
@@ -545,9 +545,9 @@ dependencies = [
 
 [[package]]
 name = "async-compression"
-version = "0.4.48"
+version = "0.4.50"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb61aea1a7def73ee7c350a184f0e70b32c182344e2e75bf70c9b621b83417fd"
+checksum = "ee19bd99b43e3691acbad4e840420a4881cea6c0b66a208125a824f8fd53f5a1"
 dependencies = [
  "compression-codecs",
  "compression-core",
@@ -1443,9 +1443,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.4.7"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54413ede23c2daf518f35156dfde027feb2374004d63bd497f983c8db9c0e313"
+checksum = "f360145194ee8e21db5ee7f3fcd4fe52210864c75c985dae33218202c8bbe040"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1764,9 +1764,9 @@ dependencies = [
 
 [[package]]
 name = "compression-codecs"
-version = "0.4.43"
+version = "0.4.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bef16c47ba2797aa6a909cc37d39911f3a6743811fe7408ac0b0cc0276b656e9"
+checksum = "98fc98460ba0ad5317075d3632b8dfc45d0be8c4a49347c2a38272019717614a"
 dependencies = [
  "bzip2",
  "compression-core",
@@ -2855,7 +2855,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3001,9 +3001,9 @@ dependencies = [
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.13"
+version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef25905e51abafe4dcea6c15fec58c57b601cdbd0ee53d22ea1d3016c587d39b"
+checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
 
 [[package]]
 name = "finl_unicode"
@@ -3517,9 +3517,9 @@ checksum = "f70749695b063ecbf6b62949ccccde2e733ec3ecbbd71d467dca4e5c6c97cca0"
 
 [[package]]
 name = "glam"
-version = "0.33.9"
+version = "0.33.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35accb17301a4874ea893c685ca86bc1e25f92499382adc17eec9a91f7803cfb"
+checksum = "35b4e837a1d133645d1dcf283e146a4b9901e390a1c13545f959cfed3a72f24f"
 
 [[package]]
 name = "glifo"
@@ -3700,7 +3700,7 @@ dependencies = [
  "delaunator",
  "fontdue",
  "fontique",
- "glam 0.33.9",
+ "glam 0.33.11",
  "gpui-design",
  "gpui-profiler 0.9.3 (git+https://github.com/pierreaubert/gpui-toolkit?rev=c597d1df374cedd0db83c14664328cc5d8a4dc29)",
  "gpui-toolkit-gpui",
@@ -3827,7 +3827,7 @@ name = "gpui-px"
 version = "0.9.13"
 source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=c597d1df374cedd0db83c14664328cc5d8a4dc29#c597d1df374cedd0db83c14664328cc5d8a4dc29"
 dependencies = [
- "glam 0.33.9",
+ "glam 0.33.11",
  "gpui-builder",
  "gpui-d3rs 0.9.19 (git+https://github.com/pierreaubert/gpui-toolkit?rev=c597d1df374cedd0db83c14664328cc5d8a4dc29)",
  "gpui-design",
@@ -4382,7 +4382,7 @@ dependencies = [
  "cfg-if",
  "crunchy",
  "num-traits",
- "zerocopy 0.8.58",
+ "zerocopy 0.8.59",
 ]
 
 [[package]]
@@ -4755,7 +4755,7 @@ dependencies = [
  "rustls 0.23.45",
  "rustls-native-certs 0.8.4",
  "tokio",
- "tokio-rustls 0.26.5",
+ "tokio-rustls 0.26.6",
  "tower-service",
 ]
 
@@ -5354,9 +5354,9 @@ dependencies = [
 
 [[package]]
 name = "js-sys"
-version = "0.3.105"
+version = "0.3.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce57d20d1ea864ce2ac172ab472d409214f4fd359f0b2a2775abdf522e2af99e"
+checksum = "7883d941dae510fb2d978fc3fe018c71c9e2892fd38854de3e8b92c2e5ad9cc5"
 dependencies = [
  "cfg-if",
  "futures-util",
@@ -5962,8 +5962,8 @@ checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
 
 [[package]]
 name = "math-analog"
-version = "0.5.3"
-source = "git+https://github.com/pierreaubert/math-audio#cabbc6dc1c3d0c8aad275ac33ec015d174859c89"
+version = "0.5.4"
+source = "git+https://github.com/pierreaubert/math-audio#8f6eb9dd816b066c5d35fa1c441147d2475e56d4"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
@@ -6017,8 +6017,8 @@ dependencies = [
 
 [[package]]
 name = "math-optimisation"
-version = "0.5.14"
-source = "git+https://github.com/pierreaubert/math-audio#cabbc6dc1c3d0c8aad275ac33ec015d174859c89"
+version = "0.5.15"
+source = "git+https://github.com/pierreaubert/math-audio#8f6eb9dd816b066c5d35fa1c441147d2475e56d4"
 dependencies = [
  "clap",
  "directories",
@@ -6034,7 +6034,7 @@ dependencies = [
 [[package]]
 name = "math-rir"
 version = "0.5.11"
-source = "git+https://github.com/pierreaubert/math-audio#cabbc6dc1c3d0c8aad275ac33ec015d174859c89"
+source = "git+https://github.com/pierreaubert/math-audio#8f6eb9dd816b066c5d35fa1c441147d2475e56d4"
 dependencies = [
  "math-iir-fir",
  "rayon",
@@ -6042,8 +6042,8 @@ dependencies = [
 
 [[package]]
 name = "math-test-functions"
-version = "0.5.3"
-source = "git+https://github.com/pierreaubert/math-audio#cabbc6dc1c3d0c8aad275ac33ec015d174859c89"
+version = "0.5.4"
+source = "git+https://github.com/pierreaubert/math-audio#8f6eb9dd816b066c5d35fa1c441147d2475e56d4"
 dependencies = [
  "clap",
  "directories",
@@ -6298,7 +6298,7 @@ dependencies = [
  "glam 0.30.10",
  "glam 0.31.1",
  "glam 0.32.1",
- "glam 0.33.9",
+ "glam 0.33.11",
  "matrixmultiply",
  "num-complex 0.4.6",
  "num-rational",
@@ -7892,7 +7892,7 @@ version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9"
 dependencies = [
- "zerocopy 0.8.58",
+ "zerocopy 0.8.59",
 ]
 
 [[package]]
@@ -8230,9 +8230,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.18"
+version = "0.11.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9746dbde176634f4f2f1faf2404e30a31b2bc1e9cafb5329c95d8177a18c9fc"
+checksum = "0e750cca55fe4f0439a15d0bb529da9651e79993e8e72c61a899a36d462befbe"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -8253,16 +8253,16 @@ dependencies = [
 
 [[package]]
 name = "quinn-udp"
-version = "0.5.15"
+version = "0.5.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35a133f956daabe89a61a685c2649f13d82d5aa4bd5d12d1277e1072a21c0694"
+checksum = "af66907df18639dcf4db56ca65490cabc4b27a97dbadd96f2926cca73298f016"
 dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
  "socket2 0.6.5",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8862,7 +8862,7 @@ dependencies = [
  "serde_urlencoded",
  "sync_wrapper 1.0.2",
  "tokio",
- "tokio-rustls 0.26.5",
+ "tokio-rustls 0.26.6",
  "tower",
  "tower-http",
  "tower-service",
@@ -9288,7 +9288,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -9301,7 +9301,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9400,9 +9400,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-platform-verifier"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26d1e2536ce4f35f4846aa13bff16bd0ff40157cdb14cc056c7b14ba41233ba0"
+checksum = "1167586491e2b18b8bfbb293e8180ec17c201c4f076d7cb3070ca964e7598f98"
 dependencies = [
  "core-foundation 0.10.1",
  "core-foundation-sys",
@@ -9416,14 +9416,14 @@ dependencies = [
  "security-framework 3.7.0",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "rustls-platform-verifier-android"
-version = "0.1.1"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
+checksum = "eec689c0bc40ff2458a5977b6619cb718087084a18e02a131c599b62d05e1a5f"
 
 [[package]]
 name = "rustls-webpki"
@@ -10018,9 +10018,9 @@ dependencies = [
 
 [[package]]
 name = "siphasher"
-version = "1.0.3"
+version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ee5873ec9cce0195efcb7a4e9507a04cd49aec9c83d0389df45b1ef7ba2e649"
+checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
 
 [[package]]
 name = "skrifa"
@@ -10059,9 +10059,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.16.1"
+version = "1.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891"
+checksum = "f9395f0f0eee849a9b707b2f06bb92a6a422090e2123bb2ef8e87a0e61892a8e"
 
 [[package]]
 name = "smol"
@@ -10138,6 +10138,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "sotf-capture"
+version = "0.1.0"
+dependencies = [
+ "audioadapter-buffers 5.2.0",
+ "autoeq",
+ "chrono",
+ "clap",
+ "cpal",
+ "ctrlc",
+ "env_logger",
+ "hound",
+ "log",
+ "math-dsp",
+ "math-rir",
+ "rtrb",
+ "rubato 5.0.0",
+ "rustfft 6.4.1",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "sotf-cast"
 version = "0.8.2"
 dependencies = [
@@ -10203,7 +10228,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-engine"
-version = "1.0.33"
+version = "1.1.0"
 dependencies = [
  "arc-swap",
  "bytemuck",
@@ -10237,6 +10262,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "signal-hook 0.4.4",
+ "sotf-capture",
  "sotf-iamf",
  "sotf-midi",
  "sotf-plugin-ambisonics",
@@ -10294,7 +10320,7 @@ dependencies = [
  "crossterm",
  "driver-hal",
  "env_logger",
- "glam 0.33.9",
+ "glam 0.33.11",
  "gpui-audio-kit",
  "gpui-builder",
  "gpui-d3rs 0.9.19 (git+https://github.com/pierreaubert/gpui-toolkit?rev=c597d1df374cedd0db83c14664328cc5d8a4dc29)",
@@ -10364,7 +10390,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-host"
-version = "0.5.105"
+version = "0.6.0"
 dependencies = [
  "arc-swap",
  "audioadapter-buffers 5.2.0",
@@ -10465,7 +10491,7 @@ dependencies = [
  "proptest",
  "sotf-tls",
  "tokio",
- "tokio-rustls 0.26.5",
+ "tokio-rustls 0.26.6",
 ]
 
 [[package]]
@@ -10504,6 +10530,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "socket2 0.6.5",
+ "sotf-capture",
  "sotf-dlna",
  "sotf-engine",
  "sotf-federation",
@@ -10530,7 +10557,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
- "tokio-rustls 0.26.5",
+ "tokio-rustls 0.26.6",
  "unicode-normalization",
  "url",
  "uuid",
@@ -10550,7 +10577,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-ab-compare"
-version = "0.5.6"
+version = "0.6.0"
 dependencies = [
  "math-iir-fir",
  "serde",
@@ -10577,7 +10604,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-ambisonics"
-version = "0.5.9"
+version = "0.6.0"
 dependencies = [
  "log",
  "nalgebra 0.33.3",
@@ -10638,7 +10665,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-band-split"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -10688,7 +10715,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-convolution"
-version = "0.5.11"
+version = "0.6.0"
 dependencies = [
  "audioadapter-buffers 5.2.0",
  "log",
@@ -10719,7 +10746,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-crossover"
-version = "0.5.30"
+version = "0.6.0"
 dependencies = [
  "serde",
  "sotf-host",
@@ -10748,7 +10775,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-delay"
-version = "0.5.11"
+version = "0.6.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -10792,7 +10819,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-dynamic-eq"
-version = "0.5.11"
+version = "0.6.0"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
@@ -10842,7 +10869,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-hal-output"
-version = "0.5.12"
+version = "0.6.0"
 dependencies = [
  "driver-hal",
  "log",
@@ -10979,7 +11006,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-speech-denoiser"
-version = "0.5.12"
+version = "0.6.0"
 dependencies = [
  "plugins-denoiser",
  "serde",
@@ -11041,7 +11068,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugins"
-version = "0.7.14"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -11218,7 +11245,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
- "tokio-rustls 0.26.5",
+ "tokio-rustls 0.26.6",
  "toml 0.8.23",
 ]
 
@@ -11499,7 +11526,7 @@ checksum = "50be352d2822ffafb59e3e2ddac9d5ee60f2eeadbb7b5a2a951b9f3651e87a6f"
 dependencies = [
  "sval",
  "sval_ref",
- "zerocopy 0.8.58",
+ "zerocopy 0.8.59",
 ]
 
 [[package]]
@@ -11709,7 +11736,7 @@ dependencies = [
 [[package]]
 name = "symphonia-codec-wavpack"
 version = "0.1.1"
-source = "git+https://github.com/pierreaubert/symphonia-add-ons#b52cb7175f12d4febc4fd053d88fa8af16907f74"
+source = "git+https://github.com/pierreaubert/symphonia-add-ons#45b73f8f1679e49b1e09a6335891b46d0698a6a2"
 dependencies = [
  "log",
  "symphonia-core 0.6.1",
@@ -12014,10 +12041,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand 2.5.0",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -12321,9 +12348,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-rustls"
-version = "0.26.5"
+version = "0.26.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0c85f2c3ef0b1cd58b36682f4b17aaa995f0e5db534d85692b4903abce21f67"
+checksum = "c9cc2678c2cdd569ef8215e2afd7954ada2ae20b4fdd2c5fe6139a3b02d105db"
 dependencies = [
  "rustls 0.23.45",
  "tokio",
@@ -12352,7 +12379,7 @@ dependencies = [
  "rustls-native-certs 0.8.4",
  "rustls-pki-types",
  "tokio",
- "tokio-rustls 0.26.5",
+ "tokio-rustls 0.26.6",
  "tungstenite",
 ]
 
@@ -13240,9 +13267,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen"
-version = "0.2.128"
+version = "0.2.129"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aecb87a33d3b0c5e3b7aa46336eaf486cffafbd281b195e4c8b80d50df2351bf"
+checksum = "9bb54f33acc68fd454578d9820b0bde1a1a3d17aa17bb7b6595806d02886d409"
 dependencies = [
  "cfg-if",
  "once_cell",
@@ -13253,19 +13280,20 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-futures"
-version = "0.4.78"
+version = "0.4.79"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ef4c5d3d2cdf5c54f4231181768f5510842e350db025faf1f7163b1030ed928"
+checksum = "3cbab34de2d982e9b48e18d216d04c4a6f641066ff19ffb699980f591ee3610e"
 dependencies = [
  "js-sys",
+ "tokio",
  "wasm-bindgen",
 ]
 
 [[package]]
 name = "wasm-bindgen-macro"
-version = "0.2.128"
+version = "0.2.129"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a690d511e3c1a8b3a55e33511e3c2c00c78415cd23650f32b808627f5696b9ed"
+checksum = "2e29d0c35b16e224a7eeb5cd2d25e3e1968fbd65604117b44d3b789d00ee8535"
 dependencies = [
  "quote",
  "wasm-bindgen-macro-support",
@@ -13273,9 +13301,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro-support"
-version = "0.2.128"
+version = "0.2.129"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "411e4887f0071ef2d2164a9d5fdf2d20efbef78fccd3a78b0c10a1dc5295e48a"
+checksum = "6f501a8bc3719dba86ef8ae4728879c08001bea749eb1333ac5b91e040e2a6b7"
 dependencies = [
  "bumpalo",
  "proc-macro2",
@@ -13286,9 +13314,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-shared"
-version = "0.2.128"
+version = "0.2.129"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81941cd78d0c92026c33e5e01312845a4cb1e9af3407f9134b100dd03144103e"
+checksum = "23f0c9c52aa7cd7d77769a4cfe2a9adb1b331f489a41d912ce14513d5ab995c6"
 dependencies = [
  "unicode-ident",
 ]
@@ -13405,9 +13433,9 @@ dependencies = [
 
 [[package]]
 name = "web-sys"
-version = "0.3.105"
+version = "0.3.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fbddc4a036f00ec4f18c83445bd3115cb306a91da554919a099d9222fe4a7f8"
+checksum = "88261b9deccee56594c11a3460c462c41f58d148598fe70ad77070126a68aba4"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
@@ -13761,7 +13789,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -14703,9 +14731,9 @@ dependencies = [
 
 [[package]]
 name = "yoke-derive"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33811428bee40dbceb6d545e95754741d17a6aef9a4849f0fd62e2ba4f412a78"
+checksum = "ec8ebde2db3681e8c9980cc27822030e68752690ddfa9473e739aeb4dbde6d71"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -14895,11 +14923,11 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.58"
+version = "0.8.59"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c17e8fafad82b542ff3717217ecdc736231b59e387768c9630123b4ce4d2db44"
+checksum = "6df92bf3d9227be3d53173901ddbffac2babc27ae50f397776ffd6dc33f800cb"
 dependencies = [
- "zerocopy-derive 0.8.58",
+ "zerocopy-derive 0.8.59",
 ]
 
 [[package]]
@@ -14915,9 +14943,9 @@ dependencies = [
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.58"
+version = "0.8.59"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "595f56e044df4f46a0c9a626f65c3d99eb8488f7e8a8baa12dd76326d9710bf2"
+checksum = "ac4f328cf2f05d084e496c3e9c3f33ed0a183656a16e1fcec4d464d8373aec82"
 dependencies = [
  "proc-macro2",
  "quote",

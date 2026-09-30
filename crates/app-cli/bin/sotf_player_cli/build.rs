@@ -566,6 +566,9 @@ pub(super) fn build_rack_mode_plugins(
                         program_dependent_release: false,
                         measured_auto_makeup: false,
                         sidechain_external: false,
+                        // 120 dB disables the reduction limit (canonical default).
+                        range_db: 120.0,
+                        hold_ms: 0.0,
                     };
                 }
                 log::info!("Rack: Added Compressor plugin");
@@ -592,6 +595,9 @@ pub(super) fn build_rack_mode_plugins(
                         bands: vec![],
                         sidechain_tilt_db: 0.0,
                         link_amount: 1.0,
+                        // 120 dB disables the reduction limit (canonical default).
+                        range_db: 120.0,
+                        hold_ms: 0.0,
                     };
                 }
                 log::info!("Rack: Added MultibandCompressor plugin");
@@ -615,6 +621,9 @@ pub(super) fn build_rack_mode_plugins(
                         hysteresis_db: 0.0,
                         knee_db: 0.0,
                         lookahead_ms: 0.0,
+                        // Default::default() is the historical downward gate.
+                        mode: Default::default(),
+                        max_boost_db: 12.0,
                     };
                 }
                 log::info!("Rack: Added Gate plugin");
@@ -633,6 +642,8 @@ pub(super) fn build_rack_mode_plugins(
                         mix: plugins.limiter.mix as f64,
                         link_amount: 1.0,
                         feed_forward: false,
+                        // Choice index: 0 = 1x (off).
+                        oversampling: 0,
                     };
                 }
                 log::info!("Rack: Added Limiter plugin");
@@ -827,6 +838,7 @@ pub(super) fn build_rack_mode_plugins(
                         use_nupc: true,
                         zero_latency_head: false,
                         head_taps: 128,
+                        true_stereo: false,
                     };
                 }
                 log::info!("Rack: Added Convolution plugin");
@@ -883,6 +895,13 @@ pub(super) fn build_rack_mode_plugins(
                         channels,
                         frequency: plugins.band_split.frequency,
                         crossover_type: plugins.band_split.crossover_type.clone(),
+                        // The CLI exposes the historical 2-band split only;
+                        // multiband fields stay at their canonical defaults.
+                        frequencies: None,
+                        recombination_mode: Default::default(),
+                        num_bands: 2,
+                        frequency_2: 1_200.0,
+                        frequency_3: 4_800.0,
                     };
                 }
                 log::info!("Rack: Added BandSplit plugin");

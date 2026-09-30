@@ -102,6 +102,7 @@ fn test_room_config_roundtrip() {
             signal_type: Some("Sweep".to_string()),
             ..Default::default()
         }),
+        measured_impulse_responses: Default::default(),
         ctc: None,
         reporting: None,
         cea2034_cache: None,

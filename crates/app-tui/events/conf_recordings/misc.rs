@@ -558,6 +558,7 @@ pub(crate) fn save_recordings(app: &mut App) {
         optimizer: OptimizerConfig::default(),
         provenance: Default::default(),
         recording_config: Some(configuration),
+        measured_impulse_responses: Default::default(),
         ctc,
         reporting: None,
         cea2034_cache: None,

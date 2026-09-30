@@ -32,6 +32,8 @@ pub const CATEGORIES: &[PluginCategory] = &[
             PluginType::Saturation,
             PluginType::DynamicEq,
             PluginType::SpectralCompressor,
+            PluginType::AnalogCompressor,
+            PluginType::AnalogLimiter,
         ],
     },
     PluginCategory {
@@ -39,6 +41,7 @@ pub const CATEGORIES: &[PluginCategory] = &[
         plugins: &[
             PluginType::EQ,
             PluginType::LinearPhaseEq,
+            PluginType::AnalogEq,
             PluginType::Gain,
             PluginType::Delay,
             PluginType::LoudnessCompensation,

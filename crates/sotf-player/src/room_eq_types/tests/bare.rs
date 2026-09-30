@@ -35,6 +35,7 @@ pub(super) fn bare_chain(name: &str, drivers: Option<Vec<DriverDspChain>>) -> Ch
 
 fn bare_driver(name: &str, index: usize) -> DriverDspChain {
     DriverDspChain {
+        measured_acoustics: None,
         name: name.to_string(),
         index,
         plugins: vec![],
@@ -282,6 +283,8 @@ fn test_build_room_eq_graph_ctc_uses_stereo_input_and_speaker_branches() {
         inter_channel_deviation: None,
         epa_per_channel: None,
         epa_multichannel: None,
+        epa_provenance: None,
+        playback_summary: None,
         group_delay: None,
         perceptual_metrics: None,
         home_cinema_layout: None,
@@ -439,6 +442,8 @@ fn test_build_room_eq_graph_tracks_global_variable_channel_widths() {
         inter_channel_deviation: None,
         epa_per_channel: None,
         epa_multichannel: None,
+        epa_provenance: None,
+        playback_summary: None,
         group_delay: None,
         perceptual_metrics: None,
         home_cinema_layout: None,
@@ -575,6 +580,8 @@ fn test_physical_graph_uses_route_gain_without_chain_override() {
         inter_channel_deviation: None,
         epa_per_channel: None,
         epa_multichannel: None,
+        epa_provenance: None,
+        playback_summary: None,
         group_delay: None,
         perceptual_metrics: None,
         home_cinema_layout: None,
@@ -756,6 +763,8 @@ fn test_physical_graph_rejects_unconnected_declared_output() {
         inter_channel_deviation: None,
         epa_per_channel: None,
         epa_multichannel: None,
+        epa_provenance: None,
+        playback_summary: None,
         group_delay: None,
         perceptual_metrics: None,
         home_cinema_layout: None,

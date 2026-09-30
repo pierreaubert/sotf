@@ -70,6 +70,7 @@ fn build_room_config() -> RoomConfig {
         optimizer: ui_config.to_optimizer_config(),
         provenance: Default::default(),
         recording_config: None,
+        measured_impulse_responses: Default::default(),
         ctc: None,
         reporting: None,
         cea2034_cache: None,
