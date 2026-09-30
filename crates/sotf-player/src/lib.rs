@@ -3,7 +3,7 @@ pub mod album_art_generation;
 pub mod audio_device;
 pub mod autoeq;
 pub mod bliss;
-pub mod capture_session;
+pub use sotf_capture::capture_session;
 pub mod config;
 /// Shared business logic for SOTF audio players (TUI, GPUI, etc.)
 ///
@@ -37,8 +37,14 @@ pub mod player;
 pub mod plugin_categories;
 pub mod plugin_graph;
 pub mod queue;
-pub mod recording_helpers;
-pub mod recording_types;
+pub use sotf_capture::recording_helpers;
+mod recording_import;
+pub mod recording_types {
+    //! Recording domain types (owned by sotf-capture) plus the
+    //! recording->RoomEQ import bridge (this crate).
+    pub use crate::recording_import::RecordingImport;
+    pub use sotf_capture::recording_types::*;
+}
 pub mod room_eq_types;
 pub mod spinorama_eq_types;
 // plugins module is now in engine
@@ -147,7 +153,9 @@ pub use sotf_audio::replaygain::ReplayGainInfo;
 pub use waveform_scanner::{WaveformScanManager, WaveformScanMessage, WaveformScanner};
 
 // Re-export measurement functionality
-pub use sotf_audio::signal_recorder;
+pub use sotf_capture::signal_recorder;
+#[cfg(not(target_os = "ios"))]
+pub use sotf_audio::engine_playback::EnginePlayback;
 
 // Re-export math_audio_iir_fir types needed by TUI
 pub use math_audio_iir_fir::BiquadFilterType;

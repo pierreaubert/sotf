@@ -314,7 +314,10 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     std::thread::spawn(move || {
         use sotf_audio_player::recording_helpers::summarize_take_quality;
         use sotf_audio_player::recording_types::RecordingResult;
-        use sotf_audio_player::signal_recorder::{record_and_analyze, record_and_analyze_multi};
+        use sotf_audio_player::EnginePlayback;
+        use sotf_audio_player::signal_recorder::{
+            record_and_analyze_with, record_and_analyze_with_multi,
+        };
 
         let sweep_range = if signal_type == SignalType::Sweep {
             Some((sweep_start_freq, sweep_end_freq))
@@ -344,7 +347,8 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 input_channels.push(loopback_input as u16);
                 calibrations.push(None);
             }
-            record_and_analyze_multi(
+            record_and_analyze_with_multi(
+                &mut EnginePlayback::new(false, "record_and_analyze_multi"),
                 &temp_wav_path,
                 &wav_paths,
                 &reference_signal,
@@ -366,7 +370,8 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 results
             })
         } else {
-            record_and_analyze(
+            record_and_analyze_with(
+                &mut EnginePlayback::new(true, "record_and_analyze"),
                 &temp_wav_path,
                 &recorded_wav_path,
                 &reference_signal,

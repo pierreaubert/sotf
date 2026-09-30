@@ -222,6 +222,7 @@ sotf-testkit = { path = "../sotf-daw/crates/sotf-testkit" }
 sotf-test = { path = "../sotf-daw/crates/sotf-test-macros" }
 sotf-player = { path = "crates/sotf-player" }
 sotf-engine = { path = "../sotf-daw/crates/sotf-engine", default-features = false }
+sotf-capture = { path = "../sotf-capture" }
 sotf-midi = { path = "../sotf-daw/crates/sotf-midi" }
 sotf-plugins = { path = "../sotf-daw/crates/sotf-plugins", default-features = false }
 plugins-gpui = { path = "../sotf-daw/crates/sotf-plugins/crates/plugins-gpui" }

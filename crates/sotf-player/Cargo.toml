@@ -41,6 +41,7 @@ autoeq = { workspace = true }
 autoeq-measurements = { workspace = true }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
+sotf-capture = { workspace = true }
 sotf-mpd = { workspace = true, features = ["tls"] }
 sotf-dlna = { workspace = true }
 sotf-federation = { workspace = true }

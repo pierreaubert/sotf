@@ -1,15 +1,14 @@
-use super::{ChannelRecording, ChannelRecordingState};
-use crate::room_eq_types::{ChannelMeasurement, RoomEqMeasurementsFile};
-use serde::{Deserialize, Serialize};
-use std::path::Path;
+//! Recording -> RoomEQ import bridge (stays in sotf-player).
+//!
+//! [`RecordingImport`] joins capture results (owned by `sotf-capture`)
+//! with RoomEQ channel topology (this crate's `room_eq_types`), so it
+//! cannot move in either direction without a dependency cycle.
 
-/// Address of one source in the imported speaker/driver hierarchy.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct RecordingSourceIdentity {
-    pub speaker: String,
-    pub driver_index: Option<usize>,
-    pub measurement_index: usize,
-}
+use crate::recording_types::{
+    ChannelRecording, ChannelRecordingState, RecordingSourceIdentity,
+};
+use crate::room_eq_types::{ChannelMeasurement, RoomEqMeasurementsFile};
+use std::path::Path;
 
 /// A complete import, retaining source topology alongside resolved responses.
 /// Build this before replacing a wizard session; loading can fail partway through
@@ -188,7 +187,7 @@ impl RecordingImport {
             let mut append =
                 |driver_index: Option<usize>,
                  driver_name: Option<&str>,
-                 primary: &super::RecordingResult,
+                 primary: &crate::recording_types::RecordingResult,
                  extras: &[super::RecordingResult],
                  provenance: &[crate::room_eq_types::MeasurementProvenance]| {
                     for (measurement_index, result) in

@@ -8,7 +8,10 @@ pub mod audio_preferences;
 pub mod capture;
 pub mod correction_delivery;
 pub mod headphone_eq;
-pub mod recording;
+pub mod recording {
+    //! Recording wizard model (owned by sotf-capture).
+    pub use sotf_capture::wizard::*;
+}
 pub mod room_eq;
 pub mod spinorama_eq;
 pub mod take_review;

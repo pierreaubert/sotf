@@ -1752,8 +1752,10 @@ impl PlayerView {
             // Use multi-channel recording when multiple mics, single-channel otherwise
             #[cfg(not(target_os = "ios"))]
             let results: Result<Vec<_>, String> = if num_mics <= 1 {
-                use sotf_audio_player::signal_recorder::record_and_analyze;
-                record_and_analyze(
+                use sotf_audio_player::EnginePlayback;
+                use sotf_audio_player::signal_recorder::record_and_analyze_with;
+                record_and_analyze_with(
+                    &mut EnginePlayback::new(true, "record_and_analyze"),
                     &temp_wav_path,
                     &wav_paths[0],
                     &reference_signal,
@@ -1770,8 +1772,10 @@ impl PlayerView {
                 )
                 .map(|r| vec![r])
             } else {
-                use sotf_audio_player::signal_recorder::record_and_analyze_multi;
-                record_and_analyze_multi(
+                use sotf_audio_player::EnginePlayback;
+                use sotf_audio_player::signal_recorder::record_and_analyze_with_multi;
+                record_and_analyze_with_multi(
+                    &mut EnginePlayback::new(false, "record_and_analyze_multi"),
                     &temp_wav_path,
                     &wav_paths,
                     &reference_signal,
