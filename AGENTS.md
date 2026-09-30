@@ -38,9 +38,10 @@ names or old documentation.
   and application-facing business logic.
 - `crates/sotf-media-controls/` — platform media-control integration.
 - `../sotf-daw/` — DAW core workspace (engine, plugins, MIDI, IAMF, driver
-  transport). This workspace depends on it via `../sotf-daw` path
-  dependencies; never the reverse. `sotf-streaming` stays here and is wired
-  into the engine through its optional `streaming`/`hls` features.
+  transport, streaming, shared test crates). This workspace depends on it
+  via `../sotf-daw` path dependencies; never the reverse. `sotf-streaming`
+  lives there and is wired into the engine through its optional
+  `streaming`/`hls` features.
 
 ### Applications
 
@@ -80,7 +81,7 @@ GPUI, TUI, CLI, iOS, and tvOS.
 
 ### Services and network playback
 
-- `crates/sotf-server/crates/sotf-streaming/` — streaming primitives.
+- `../sotf-daw/crates/sotf-streaming/` — streaming primitives.
 - `sotf-services`, `sotf-service-spotify`, `sotf-service-tidal` — provider
   abstractions and integrations.
 - `sotf-mpd`, `sotf-dlna`, `sotf-cast`, `sotf-federation`, and `sotf-tls` —
@@ -88,7 +89,8 @@ GPUI, TUI, CLI, iOS, and tvOS.
 
 ### Tests, tools, docs, and vendored code
 
-- `crates/sotf-testkit/`, `crates/sotf-test-macros/` — shared test contracts.
+- `../sotf-daw/crates/sotf-testkit/`, `../sotf-daw/crates/sotf-test-macros/`
+  — shared test contracts (consumed via `../sotf-daw` path dependencies).
 - `crates/sotf-dev-api/`, `crates/sotf-dev-driver/` — deterministic UI and
   end-to-end driving infrastructure.
 - `crates/sotf-tools/`, `crates/sotf-docs-gen/`, `scripts/` — maintenance and

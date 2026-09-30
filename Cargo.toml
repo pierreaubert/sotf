@@ -1,8 +1,6 @@
 [workspace]
 members = [
     "crates/sotf-dev-api",
-    "crates/sotf-testkit",
-    "crates/sotf-test-macros",
     "crates/sotf-player",
     "crates/sotf-tools",
     "crates/sotf-dev-driver",
@@ -10,7 +8,6 @@ members = [
     "crates/app-gpui",
     "crates/app-tui",
     "crates/sotf-media-controls",
-    "crates/sotf-server/crates/sotf-streaming",
     "crates/sotf-server/crates/sotf-mpd",
     "crates/sotf-server/crates/sotf-services",
     "crates/sotf-server/crates/sotf-service-tidal",
@@ -213,7 +210,6 @@ sotf-plugin-transient-shaper = { path = "../sotf-daw/crates/sotf-plugins/crates/
 sotf-plugin-upmixer = { path = "../sotf-daw/crates/sotf-plugins/crates/sotf-plugin-upmixer", default-features = false }
 sotf-plugin-xtc = { path = "../sotf-daw/crates/sotf-plugins/crates/sotf-plugin-xtc" }
 sotf-iamf = { path = "../sotf-daw/crates/sotf-iamf" }
-sotf-streaming = { path = "crates/sotf-server/crates/sotf-streaming" }
 sotf-mpd = { path = "crates/sotf-server/crates/sotf-mpd" }
 sotf-services = { path = "crates/sotf-server/crates/sotf-services", default-features = false }
 sotf-service-tidal = { path = "crates/sotf-server/crates/sotf-service-tidal", default-features = false }
@@ -222,8 +218,8 @@ sotf-dlna = { path = "crates/sotf-server/crates/sotf-dlna" }
 sotf-cast = { path = "crates/sotf-server/crates/sotf-cast" }
 sotf-federation = { path = "crates/sotf-server/crates/sotf-federation" }
 sotf-tls = { path = "crates/sotf-server/crates/sotf-tls" }
-sotf-testkit = { path = "crates/sotf-testkit" }
-sotf-test = { path = "crates/sotf-test-macros" }
+sotf-testkit = { path = "../sotf-daw/crates/sotf-testkit" }
+sotf-test = { path = "../sotf-daw/crates/sotf-test-macros" }
 sotf-player = { path = "crates/sotf-player" }
 sotf-engine = { path = "../sotf-daw/crates/sotf-engine", default-features = false }
 sotf-midi = { path = "../sotf-daw/crates/sotf-midi" }

@@ -623,7 +623,7 @@ fn client_server_p1_source_contracts_are_gated_or_nonblocking() {
     assert!(service_manager.contains("#[cfg(not(feature = \"spotify\"))]"));
 
     let streaming_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../sotf-server/crates/sotf-streaming/src");
+        .join("../../../sotf-daw/crates/sotf-streaming/src");
     let http_source =
         std::fs::read_to_string(streaming_root.join("http_source/http_media_source.rs")).unwrap();
     assert!(

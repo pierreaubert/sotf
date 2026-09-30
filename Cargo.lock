@@ -354,7 +354,7 @@ dependencies = [
  "rand 0.10.3",
  "realfft",
  "rtrb",
- "rubato",
+ "rubato 1.0.1",
  "rusqlite",
  "rustfft 6.4.1",
  "serde",
@@ -756,6 +756,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "audio-codec-algorithms"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1254ebf6529f3763c491acfb5ab6e960809e3c75a38584cc664f8c5667fb7107"
+
+[[package]]
 name = "audio-core"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -773,13 +779,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "audioadapter"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1292ef9edf681b7426ed089004b021a42896492f58bd0c909ad44e5faec9ac4"
+
+[[package]]
 name = "audioadapter-buffers"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6af89882334c4e501faa08992888593ada468f9e1ab211635c32f9ada7786e0"
 dependencies = [
- "audioadapter",
- "audioadapter-sample",
+ "audioadapter 2.0.1",
+ "audioadapter-sample 2.0.0",
+ "num-traits",
+]
+
+[[package]]
+name = "audioadapter-buffers"
+version = "5.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46289a81a3bfa26d0f8b2415f8ca9decde9a66308a150568af5c102381b3c8ce"
+dependencies = [
+ "audioadapter 5.0.0",
+ "audioadapter-sample 5.2.0",
  "num-traits",
 ]
 
@@ -790,6 +813,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e9a3d502fec0b21aa420febe0b110875cf8a7057c49e83a0cace1df6a73e03e"
 dependencies = [
  "audio-core",
+ "num-traits",
+]
+
+[[package]]
+name = "audioadapter-sample"
+version = "5.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5258faecf4edbe35ec483bda9b1f7438e6b391891819269c6b5461aeaa0e8d7d"
+dependencies = [
+ "audio-codec-algorithms",
  "num-traits",
 ]
 
@@ -925,11 +958,8 @@ version = "0.5.0"
 dependencies = [
  "base64 0.22.1",
  "gpui-d3rs 0.9.19",
- "js-sys",
  "serde",
  "serde_json",
- "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]
@@ -2825,7 +2855,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5952,7 +5982,7 @@ dependencies = [
 
 [[package]]
 name = "math-dsp"
-version = "0.5.30"
+version = "0.5.31"
 dependencies = [
  "clap",
  "hound",
@@ -8232,7 +8262,7 @@ dependencies = [
  "once_cell",
  "socket2 0.6.5",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9033,6 +9063,7 @@ dependencies = [
  "log",
  "math-dsp",
  "math-iir-fir",
+ "math-rir",
  "ndarray 0.17.2",
  "num-complex 0.4.6",
  "rayon",
@@ -9118,8 +9149,22 @@ version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90173154a8a14e6adb109ea641743bc95ec81c093d94e70c6763565f7108ebeb"
 dependencies = [
- "audioadapter",
- "audioadapter-buffers",
+ "audioadapter 2.0.1",
+ "audioadapter-buffers 2.0.0",
+ "num-complex 0.4.6",
+ "num-integer",
+ "num-traits",
+ "realfft",
+ "visibility",
+ "windowfunctions",
+]
+
+[[package]]
+name = "rubato"
+version = "5.0.0"
+dependencies = [
+ "audioadapter 5.0.0",
+ "audioadapter-buffers 5.2.0",
  "num-complex 0.4.6",
  "num-integer",
  "num-traits",
@@ -9243,7 +9288,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9256,7 +9301,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9371,7 +9416,7 @@ dependencies = [
  "security-framework 3.7.0",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -10185,7 +10230,7 @@ dependencies = [
  "ratatui",
  "realfft",
  "rtrb",
- "rubato",
+ "rubato 5.0.0",
  "rusqlite",
  "rustfft 6.4.1",
  "serde",
@@ -10322,7 +10367,7 @@ name = "sotf-host"
 version = "0.5.105"
 dependencies = [
  "arc-swap",
- "audioadapter-buffers",
+ "audioadapter-buffers 5.2.0",
  "chrono",
  "clap",
  "gpui-builder",
@@ -10337,7 +10382,7 @@ dependencies = [
  "rayon",
  "realfft",
  "rtrb",
- "rubato",
+ "rubato 5.0.0",
  "rustfft 6.4.1",
  "serde",
  "serde_json",
@@ -10348,11 +10393,14 @@ dependencies = [
 
 [[package]]
 name = "sotf-iamf"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "log",
  "sotf-host",
  "sotf-plugin-ambisonics",
+ "symphonia-bundle-flac",
+ "symphonia-codec-aac",
+ "symphonia-core 0.6.1",
  "thiserror 2.0.21",
 ]
 
@@ -10425,7 +10473,7 @@ name = "sotf-player"
 version = "0.5.127"
 dependencies = [
  "anyhow",
- "audioadapter-buffers",
+ "audioadapter-buffers 2.0.0",
  "autoeq",
  "autoeq-measurements",
  "base64 0.22.1",
@@ -10450,7 +10498,7 @@ dependencies = [
  "proptest",
  "rand 0.10.3",
  "reqwest 0.13.5",
- "rubato",
+ "rubato 1.0.1",
  "rusqlite",
  "serde",
  "serde_json",
@@ -10615,15 +10663,14 @@ dependencies = [
 name = "sotf-plugin-binaural"
 version = "0.5.22"
 dependencies = [
- "arc-swap",
- "audioadapter-buffers",
+ "audioadapter-buffers 5.2.0",
  "hound",
  "log",
  "math-dsp",
  "math-rir",
  "plugins-spatial",
  "realfft",
- "rubato",
+ "rubato 5.0.0",
  "rustfft 6.4.1",
  "serde",
  "serde_json",
@@ -10643,12 +10690,11 @@ dependencies = [
 name = "sotf-plugin-convolution"
 version = "0.5.11"
 dependencies = [
- "arc-swap",
- "audioadapter-buffers",
+ "audioadapter-buffers 5.2.0",
  "log",
  "plugins-spatial",
  "rayon",
- "rubato",
+ "rubato 5.0.0",
  "rustfft 6.4.1",
  "serde",
  "serde_json",
@@ -10903,11 +10949,11 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-resampler"
-version = "0.5.27"
+version = "0.6.0"
 dependencies = [
- "audioadapter-buffers",
+ "audioadapter-buffers 5.2.0",
  "log",
- "rubato",
+ "rubato 5.0.0",
  "sotf-host",
 ]
 
@@ -10981,7 +11027,6 @@ dependencies = [
 name = "sotf-plugin-xtc"
 version = "0.5.42"
 dependencies = [
- "arc-swap",
  "math-dsp",
  "realfft",
  "rustfft 6.4.1",
@@ -11000,7 +11045,7 @@ version = "0.7.14"
 dependencies = [
  "anyhow",
  "arc-swap",
- "audioadapter-buffers",
+ "audioadapter-buffers 5.2.0",
  "bincode",
  "chrono",
  "clap",
@@ -11021,7 +11066,7 @@ dependencies = [
  "rayon",
  "realfft",
  "rtrb",
- "rubato",
+ "rubato 5.0.0",
  "rusqlite",
  "rustfft 6.4.1",
  "serde",
@@ -11135,13 +11180,9 @@ version = "0.8.2"
 name = "sotf-streaming"
 version = "0.8.2"
 dependencies = [
- "env_logger",
- "insta",
  "log",
  "m3u8-rs",
- "proptest",
  "reqwest 0.13.5",
- "serde_json",
  "symphonia-core 0.6.1",
  "url",
 ]
@@ -11152,19 +11193,14 @@ version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
 ]
 
 [[package]]
 name = "sotf-testkit"
 version = "0.1.1"
 dependencies = [
- "cpal",
  "hound",
  "rand 0.10.3",
- "rand_chacha 0.10.0",
- "sotf-engine",
- "sotf-host",
  "tempfile",
 ]
 
@@ -11978,10 +12014,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand 2.5.0",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -13725,7 +13761,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

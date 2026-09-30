@@ -2,10 +2,29 @@
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-/// Re-export the workspace-level demo audio helpers from `sotf-testkit`.
-pub use sotf_testkit::audio::{
-    demo_audio_file as get_demo_file, test_data_audio_dir as demo_audio_dir,
-};
+/// Resolve the `sotf` workspace's centralized demo audio directory.
+///
+/// Resolved from this package's own `CARGO_MANIFEST_DIR`, not from
+/// `sotf-testkit`: the testkit crate lives in the `sotf-daw` workspace, so a
+/// testkit-relative lookup would point at the wrong workspace.
+pub fn demo_audio_dir() -> PathBuf {
+    if let Ok(root) = std::env::var("SOTF_TEST_DATA_ROOT") {
+        PathBuf::from(root).join("audio")
+    } else {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("data_tests")
+            .join("audio")
+    }
+}
+
+/// Resolve the path to a centralized demo audio file by name.
+pub fn get_demo_file(name: &str) -> PathBuf {
+    demo_audio_dir().join(name)
+}
 
 /// Returns all WAV files in the demo audio directory
 pub fn all_wav_files() -> Vec<PathBuf> {

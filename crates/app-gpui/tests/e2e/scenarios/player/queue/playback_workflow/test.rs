@@ -6,8 +6,22 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+/// Resolve from this package's own `CARGO_MANIFEST_DIR`: `sotf-testkit`
+/// lives in the `sotf-daw` workspace, so a testkit-relative lookup would
+/// point at the wrong workspace.
 fn demo_audio_path(name: &str) -> PathBuf {
-    sotf_testkit::audio::demo_audio_file(name)
+    if let Ok(root) = std::env::var("SOTF_TEST_DATA_ROOT") {
+        PathBuf::from(root).join("audio").join(name)
+    } else {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("data_tests")
+            .join("audio")
+            .join(name)
+    }
 }
 
 /// Test complete playback flow: load -> play -> seek -> pause -> resume -> stop.
