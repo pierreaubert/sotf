@@ -3,7 +3,12 @@
 # through the graph's documented keyboard interaction model.
 action     PluginClear
 click      sidebar.nav-studiohub
-click studio.subtool.PluginGraph
+resize     700 700
+wait_idle
+assert_in_viewport studio.workspace-picker
+click      studio.workspace-picker
+key        down
+key        enter
 assert     screen.focused == "PluginGraph"
 assert     plugins.user_count == 0
 key        a

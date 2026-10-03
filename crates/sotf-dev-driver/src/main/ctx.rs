@@ -42,6 +42,7 @@ use super::verb::verb_scroll_at;
 use super::verb::verb_scroll_into_view;
 use super::verb::verb_type;
 use super::verb::verb_wait_idle;
+use super::verb::verb_wait_visible;
 use super::verb::verb_wait_until;
 use super::verb::{verb_click_at, verb_double_click_at};
 use anyhow::{Context, Result, bail};
@@ -389,6 +390,7 @@ fn execute(line: &str, ctx: &Ctx) -> Result<()> {
         "assert_snapshot" => verb_assert_snapshot(rest, ctx),
         "assert_perceptual_snapshot" => verb_assert_perceptual_snapshot(rest, ctx),
         "wait_until" => verb_wait_until(rest, ctx),
+        "wait_visible" => verb_wait_visible(rest, ctx),
         "wait_idle" => verb_wait_idle(rest, ctx),
         "sleep" => {
             let dur = parse_duration(rest.trim())?;

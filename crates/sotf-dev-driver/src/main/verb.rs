@@ -731,6 +731,35 @@ pub(super) fn verb_wait_until(rest: &str, ctx: &Ctx) -> Result<()> {
     );
 }
 
+/// Wait for a real rendered element after asynchronous UI work such as a file dialog.
+pub(super) fn verb_wait_visible(rest: &str, ctx: &Ctx) -> Result<()> {
+    let mut parts = rest.split_whitespace();
+    let selector = parts.next().ok_or_else(|| anyhow!("wait_visible needs a selector"))?;
+    let timeout = match parts.next() {
+        Some(option) => {
+            let duration = option
+                .strip_prefix("timeout=")
+                .ok_or_else(|| anyhow!("wait_visible expects timeout=<duration>"))?;
+            super::parse::parse_duration(duration)?
+        }
+        None => Duration::from_secs(2),
+    };
+    if parts.next().is_some() {
+        bail!("wait_visible expects a selector and optional timeout=<duration>");
+    }
+    let deadline = Instant::now() + timeout;
+    loop {
+        let elements = fetch_elements(ctx)?;
+        if find_element(&elements, selector).is_some_and(element_is_visible) {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            bail!("wait_visible timed out after {timeout:?}: rendered selector `{selector}` is not visible");
+        }
+        sleep(Duration::from_millis(50));
+    }
+}
+
 /// Wait until the rendered selector snapshot has remained unchanged for a
 /// short quiet period. This avoids arbitrary sleeps after layout/input work.
 pub(super) fn verb_wait_idle(rest: &str, ctx: &Ctx) -> Result<()> {

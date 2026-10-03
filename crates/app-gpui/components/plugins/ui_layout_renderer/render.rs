@@ -176,52 +176,55 @@ pub fn render_from_layout(
             } else {
                 None
             };
-            rows = rows.child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .min_w_0()
-                    .items_center()
-                    .gap(d.gap)
-                    .children(render_param_as_number_input(
-                        entity.clone(),
-                        plugin_idx,
-                        idx,
-                        param,
-                        value,
-                        true,
-                        idx,
-                        interactive,
-                        &chassis_theme,
-                    ))
-                    .child(
-                        Slider::new(("utility-slider", plugin_idx * 1000 + idx))
-                            .value((value * scale) as f32)
-                            .range((min * scale) as f32, (max * scale) as f32)
-                            .width(
-                                (available_width - 160.0 * layout_scale)
-                                    .clamp(1.0, 480.0 * layout_scale),
-                            )
-                            .size(SliderSize::Sm)
-                            .theme(chassis_theme.to_slider_theme())
-                            .disabled(!interactive)
-                            .aria_label(param.name)
-                            .on_change(move |value, _, cx| {
-                                entity_for_change.update(cx, |state, _| {
-                                    state
-                                        .app
-                                        .set_plugin_param(plugin_idx, idx, f64::from(value));
-                                })
+            let row = div()
+                .flex()
+                .flex_wrap()
+                .min_w_0()
+                .items_center()
+                .gap(d.gap)
+                .children(render_param_as_number_input(
+                    entity.clone(),
+                    plugin_idx,
+                    idx,
+                    param,
+                    value,
+                    true,
+                    idx,
+                    interactive,
+                    &chassis_theme,
+                ))
+                .child(
+                    Slider::new(("utility-slider", plugin_idx * 1000 + idx))
+                        .value((value * scale) as f32)
+                        .range((min * scale) as f32, (max * scale) as f32)
+                        .width(
+                            (available_width - 160.0 * layout_scale)
+                                .clamp(1.0, 480.0 * layout_scale),
+                        )
+                        .size(SliderSize::Sm)
+                        .theme(chassis_theme.to_slider_theme())
+                        .disabled(!interactive)
+                        .aria_label(param.name)
+                        .on_change(move |value, _, cx| {
+                            entity_for_change.update(cx, |state, _| {
+                                state
+                                    .app
+                                    .set_plugin_param(plugin_idx, idx, f64::from(value));
                             })
-                            .on_reset(move |_, cx| {
-                                entity_for_reset.update(cx, |state, _| {
-                                    state.app.reset_plugin_param(plugin_idx, idx);
-                                })
-                            }),
-                    )
-                    .children(unity_control),
-            );
+                        })
+                        .on_reset(move |_, cx| {
+                            entity_for_reset.update(cx, |state, _| {
+                                state.app.reset_plugin_param(plugin_idx, idx);
+                            })
+                        }),
+                )
+                .children(unity_control);
+            #[cfg(feature = "dev-api")]
+            let row = row.dev_track(format!("plugin.layout.utility.row.{plugin_idx}.{idx}"));
+            rows = rows.child(div().flex().justify_center().child(row));
         }
+        #[cfg(feature = "dev-api")]
+        let rows = rows.dev_track(format!("plugin.layout.utility.{plugin_idx}"));
         return rows.into_any_element();
     }
 

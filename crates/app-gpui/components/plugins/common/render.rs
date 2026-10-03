@@ -1305,7 +1305,7 @@ fn render_knob_sized_enabled_with_focus(
         .value(format!("{value:.3}"))
         .size(InputSize::Xs)
         .aria_label(format!("{label} value"))
-        .on_text_change({
+        .on_change({
             let entity = entity.clone();
             move |new_value, _window, cx| {
                 if let Ok(new_value) = new_value.trim().parse::<f64>() {

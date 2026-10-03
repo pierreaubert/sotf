@@ -1,5 +1,5 @@
-# The generated Gain editor has one compact group. Measure its rendered bounds
-# at two viewport widths so an empty right-side column cannot recur.
+# Gain uses the compact utility row. Measure its rendered bounds at two
+# viewport widths so an empty right-side column cannot recur.
 plugin_clear
 focus Studio
 plugin_add Gain
@@ -8,18 +8,18 @@ wait_idle
 
 resize 700 700
 wait_idle
-assert_visible plugin.layout.group.2.primary
-assert_in_viewport plugin.layout.group.2.primary
-assert_h_centered plugin.layout.group.2.primary plugin.layout.main.2 16
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_visible plugin.layout.utility.row.2.0
+assert_in_viewport plugin.layout.utility.row.2.0
+assert_h_centered plugin.layout.utility.row.2.0 rack.params 16
+assert_non_overlapping studio.workspace-picker rack.params
 elements
 screenshot plugin-layout-gain-700
 
 resize 1440 900
 wait_idle
-assert_visible plugin.layout.group.2.primary
-assert_in_viewport plugin.layout.group.2.primary
-assert_h_centered plugin.layout.group.2.primary plugin.layout.main.2 16
+assert_visible plugin.layout.utility.row.2.0
+assert_in_viewport plugin.layout.utility.row.2.0
+assert_h_centered plugin.layout.utility.row.2.0 rack.params 16
 elements
 screenshot plugin-layout-gain-1440
 
