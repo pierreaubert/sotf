@@ -2305,6 +2305,11 @@ impl PlayerView {
                 .plugin_state
                 .graph_state
                 .editing_graph_node_uuid;
+            #[cfg(feature = "dev-api")]
+            log::info!(
+                "AB Compare QA: file action entered plugin_idx={plugin_idx} path_id={path_id} graph_target={}",
+                target_node_id.as_ref().is_some()
+            );
             let weak_state = self.state.downgrade();
             cx.spawn(async move |_, cx| {
                 #[cfg(feature = "dev-api")]
@@ -2315,6 +2320,8 @@ impl PlayerView {
                 #[cfg(not(feature = "dev-api"))]
                 let qa_fixture: Option<std::path::PathBuf> = None;
                 let file_path = if let Some(path) = qa_fixture {
+                    #[cfg(feature = "dev-api")]
+                    log::info!("AB Compare QA: selected fixture {}", path.display());
                     path
                 } else {
                     let Some(file) = rfd::AsyncFileDialog::new()
@@ -2330,6 +2337,8 @@ impl PlayerView {
 
                 {
                     let Some(state_entity) = weak_state.upgrade() else {
+                        #[cfg(feature = "dev-api")]
+                        log::warn!("AB Compare QA: state disappeared before fixture update");
                         return;
                     };
                     let file_path = file_path.to_string_lossy().to_string();
@@ -2343,6 +2352,8 @@ impl PlayerView {
                             >(&content)
                             .is_ok()
                             {
+                                #[cfg(feature = "dev-api")]
+                                log::info!("AB Compare QA: fixture parsed for path_id={path_id}");
                                 let param_key = if path_id == "a" {
                                     "path_a_config"
                                 } else {
@@ -2379,11 +2390,20 @@ impl PlayerView {
                                         effect,
                                         sotf_audio_player::PluginUpdateEffect::Structural
                                     ) {
+                                        #[cfg(feature = "dev-api")]
+                                        log::info!(
+                                            "AB Compare QA: model updated plugin_idx={plugin_idx} path_id={path_id}"
+                                        );
                                         state.app.plugin_state.update_state.pending_plugin_update =
                                             Some(crate::app::types::PluginUpdateType::Structural);
                                         state.app.plugin_state.ab_compare_state.ab_add_menu_target =
                                             None;
                                         cx.notify();
+                                    } else {
+                                        #[cfg(feature = "dev-api")]
+                                        log::warn!(
+                                            "AB Compare QA: no model update plugin_idx={plugin_idx} path_id={path_id}"
+                                        );
                                     }
                                 });
                             } else {

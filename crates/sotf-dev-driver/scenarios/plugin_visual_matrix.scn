@@ -612,7 +612,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-custom-abcompare
 # custom: BinauralDecoder
@@ -625,7 +625,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-custom-binaural-decoder
 # custom: ChannelMuteSolo
@@ -638,7 +638,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-custom-channel-mute-solo
 # custom: Convolution
@@ -651,7 +651,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-custom-convolution
 # custom: Crossfeed
@@ -664,7 +664,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-custom-crossfeed
 # custom: Denoiser
@@ -677,7 +677,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-custom-denoiser
 # custom: DynamicEq
@@ -690,7 +690,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-custom-dynamic-eq
 # custom: EQ
@@ -703,7 +703,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-custom-eq
 # custom: LinearPhaseEq
@@ -716,7 +716,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-custom-linear-phase-eq
 # custom: LoudnessMonitor
@@ -729,7 +729,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-custom-loudness-monitor
 # custom: Matrix
@@ -742,7 +742,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-custom-matrix
 # custom: MultibandCompressor
@@ -755,7 +755,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-custom-multiband-compressor
 # custom: MultibandExpander
@@ -768,7 +768,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-custom-multiband-expander
 # custom: SpectrumAnalyzer
@@ -781,7 +781,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-custom-spectrum-analyzer
 # custom: Upmixer
@@ -794,7 +794,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-custom-upmixer
 # custom: XTC
@@ -807,7 +807,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-custom-xtc
 # fallback: AAE
@@ -820,7 +820,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-aae
 # fallback: Aec
@@ -833,7 +833,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-aec
 # fallback: AmbisonicsDecoder
@@ -847,7 +847,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-ambisonics-decoder
 action PluginSetInputChannels {"channels":2}
@@ -861,7 +861,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-band-merge
 # fallback: BandSplit
@@ -874,7 +874,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-band-split
 # fallback: Beamformer
@@ -887,7 +887,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-beamformer
 # fallback: Compressor
@@ -900,7 +900,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-compressor
 # fallback: Crossover
@@ -913,7 +913,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-crossover
 # fallback: DeEsser
@@ -926,7 +926,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-de-esser
 # fallback: Declick
@@ -939,7 +939,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-declick
 # fallback: Delay
@@ -952,7 +952,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-delay
 # fallback: Downmix
@@ -965,7 +965,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-downmix
 # fallback: Expander
@@ -978,7 +978,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-expander
 # fallback: FletcherMunson
@@ -991,7 +991,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-fletcher-munson
 # fallback: Gain
@@ -1004,7 +1004,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-gain
 # fallback: Gate
@@ -1017,7 +1017,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-gate
 # fallback: HissReducer
@@ -1030,7 +1030,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-hiss-reducer
 # fallback: Limiter
@@ -1043,7 +1043,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-limiter
 # fallback: LoudnessCompensation
@@ -1056,7 +1056,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-loudness-compensation
 # fallback: MonoToStereo
@@ -1070,7 +1070,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-mono-to-stereo
 action PluginSetInputChannels {"channels":2}
@@ -1084,7 +1084,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-pnd
 # fallback: Saturation
@@ -1097,7 +1097,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-saturation
 # fallback: SpectralCompressor
@@ -1110,7 +1110,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-spectral-compressor
 # fallback: SpeechDenoiser
@@ -1123,7 +1123,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-speech-denoiser
 # fallback: StereoImager
@@ -1136,7 +1136,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-stereo-imager
 # fallback: TransientShaper
@@ -1149,7 +1149,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-regular-midnight-fr-150-fallback-transient-shaper
 # ── Wide / high contrast / Spanish / 200% ──────────────────────────────────
@@ -1176,7 +1176,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-de-200-fallback-loudness-compensation
 
@@ -1193,7 +1193,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-custom-abcompare
 # custom: BinauralDecoder
@@ -1206,7 +1206,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-custom-binaural-decoder
 # custom: ChannelMuteSolo
@@ -1219,7 +1219,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-custom-channel-mute-solo
 # custom: Convolution
@@ -1232,7 +1232,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-custom-convolution
 # custom: Crossfeed
@@ -1245,7 +1245,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-custom-crossfeed
 # custom: Denoiser
@@ -1258,7 +1258,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-custom-denoiser
 # custom: DynamicEq
@@ -1271,7 +1271,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-custom-dynamic-eq
 # custom: EQ
@@ -1284,7 +1284,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-custom-eq
 # custom: LinearPhaseEq
@@ -1297,7 +1297,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-custom-linear-phase-eq
 # custom: LoudnessMonitor
@@ -1310,7 +1310,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-custom-loudness-monitor
 # custom: Matrix
@@ -1323,7 +1323,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-custom-matrix
 # custom: MultibandCompressor
@@ -1336,7 +1336,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-custom-multiband-compressor
 # custom: MultibandExpander
@@ -1349,7 +1349,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-custom-multiband-expander
 # custom: SpectrumAnalyzer
@@ -1362,7 +1362,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-custom-spectrum-analyzer
 # custom: Upmixer
@@ -1375,7 +1375,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-custom-upmixer
 # custom: XTC
@@ -1388,7 +1388,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-custom-xtc
 # fallback: AAE
@@ -1401,7 +1401,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-aae
 # fallback: Aec
@@ -1414,7 +1414,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-aec
 # fallback: AmbisonicsDecoder
@@ -1428,7 +1428,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-ambisonics-decoder
 action PluginSetInputChannels {"channels":2}
@@ -1442,7 +1442,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-band-merge
 # fallback: BandSplit
@@ -1455,7 +1455,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-band-split
 # fallback: Beamformer
@@ -1468,7 +1468,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-beamformer
 # fallback: Compressor
@@ -1481,7 +1481,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-compressor
 # fallback: Crossover
@@ -1494,7 +1494,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-crossover
 # fallback: DeEsser
@@ -1507,7 +1507,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-de-esser
 # fallback: Declick
@@ -1520,7 +1520,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-declick
 # fallback: Delay
@@ -1533,7 +1533,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-delay
 # fallback: Downmix
@@ -1546,7 +1546,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-downmix
 # fallback: Expander
@@ -1559,7 +1559,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-expander
 # fallback: FletcherMunson
@@ -1572,7 +1572,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-fletcher-munson
 # fallback: Gain
@@ -1585,7 +1585,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-gain
 # fallback: Gate
@@ -1598,7 +1598,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-gate
 # fallback: HissReducer
@@ -1611,7 +1611,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-hiss-reducer
 # fallback: Limiter
@@ -1624,7 +1624,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-limiter
 # fallback: LoudnessCompensation
@@ -1637,7 +1637,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-loudness-compensation
 # fallback: MonoToStereo
@@ -1651,7 +1651,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-mono-to-stereo
 action PluginSetInputChannels {"channels":2}
@@ -1665,7 +1665,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-pnd
 # fallback: Saturation
@@ -1678,7 +1678,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-saturation
 # fallback: SpectralCompressor
@@ -1691,7 +1691,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-spectral-compressor
 # fallback: SpeechDenoiser
@@ -1704,7 +1704,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-speech-denoiser
 # fallback: StereoImager
@@ -1717,7 +1717,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-stereo-imager
 # fallback: TransientShaper
@@ -1730,7 +1730,7 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-high-contrast-es-200-fallback-transient-shaper
 # ── Representative color-vision palette + reduced motion ───────────────────
@@ -1744,7 +1744,7 @@ wait_idle 500ms
 assert_in_viewport settings.appearance.reduce-motion
 click settings.appearance.reduce-motion
 assert settings.reduce_motion == true timeout=2s
-click sidebar.nav-studio-rack
+click preferences.done
 assert screen.focused == "Studio"
 # custom: SpectrumAnalyzer
 plugin_clear
@@ -1756,6 +1756,6 @@ assert_visible rack.params
 assert_in_viewport rack.params
 assert_visible rack.add.open
 assert_in_viewport rack.add.open
-assert_non_overlapping sidebar.nav-studio-rack rack.params
+assert_non_overlapping studio.workspace-picker rack.params
 accessibility
 screenshot plugin-wide-protanopia-es-200-reduced-motion-custom-spectrum-analyzer

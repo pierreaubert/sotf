@@ -10,8 +10,10 @@ assert plugins.plugin.2.type == "A/B Compare"
 
 scroll_into_view rack.params plugin.file_picker.2.path_a_config
 assert_in_viewport plugin.file_picker.2.path_a_config
+screenshot ab-before-file-click
 click plugin.file_picker.2.path_a_config
 elements
+screenshot ab-after-file-click
 wait_visible ab.path.0.file timeout=10s
 scroll_into_view rack.params ab.path.0.file
 assert_in_viewport ab.path.0.file

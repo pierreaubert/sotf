@@ -66,6 +66,7 @@ assert_visible plugin.layout.group.2.DYNAMICS
 assert_visible plugin.layout.group.2.TIMING
 scroll_into_view rack.params plugin.layout.group.2.DYNAMICS
 assert_in_viewport plugin.layout.group.2.DYNAMICS
+scroll_into_view rack.params plugin.layout.group.2.TIMING
 assert_in_viewport plugin.layout.group.2.TIMING
 assert_non_overlapping plugin.layout.group.2.DYNAMICS plugin.layout.group.2.TIMING
 elements
