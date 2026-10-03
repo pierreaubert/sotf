@@ -590,6 +590,8 @@ key cmd-a
 type "150"
 key enter
 assert settings.font_scale == 1.5 tolerance=0.01
+click preferences.done
+assert screen.focused == "Studio"
 click sidebar.nav-studio-rack
 assert screen.focused == "Studio"
 

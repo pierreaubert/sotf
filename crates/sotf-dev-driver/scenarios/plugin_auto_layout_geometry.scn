@@ -30,8 +30,11 @@ action PluginSelectFirstUser
 resize 700 700
 wait_idle
 assert_visible plugin.layout.group.2.DYNAMICS
-assert_in_viewport plugin.layout.group.2.DYNAMICS
+scroll_into_view rack.params plugin.control.2.1
+assert_in_viewport plugin.control.2.1
 assert_non_overlapping plugin.control.2.0 plugin.control.2.1
+scroll_into_view rack.params plugin.control.2.7
+assert_in_viewport plugin.control.2.7
 elements
 screenshot plugin-layout-limiter-700
 
