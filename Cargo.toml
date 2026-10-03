@@ -98,7 +98,7 @@ libloading = { version = "0.8" }
 rand_chacha = "0.10.0"
 num_cpus = "1.17"
 regex = "1.12"
-rfd = "0.16"
+rfd = "0.17.2"
 # bundled SQLite is enabled per-app (app-gpui, app-tui, app-cli, sotf-tools);
 # library crates take the workspace dep bare so dev `cargo check -p <lib>`
 # doesn't pay for the C compile. Feature unification re-enables `bundled`
