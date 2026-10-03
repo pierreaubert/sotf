@@ -702,7 +702,11 @@ fn hash_path_config(config: &PathConfig) -> Result<String, AbTestError> {
     let encoded = serde_json::to_vec(config)
         .map_err(|error| AbTestError::Serialization(error.to_string()))?;
     let digest = Sha256::digest(encoded);
-    Ok(format!("{digest:x}"))
+    Ok(digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join(""))
 }
 
 fn assignment_for(seed: u64, index: u32, mode: TrialMode) -> TrialAssignment {

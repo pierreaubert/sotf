@@ -275,7 +275,7 @@ arc-swap = "1"
 
 # Utilities
 unicode-segmentation = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 toml = "0.8"
 approx = "0.5"
 unicode-normalization = "0.1"

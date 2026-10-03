@@ -87,5 +87,10 @@ fn response_digest(response: &RecordingResult) -> String {
             digest.update(value.to_bits().to_le_bytes());
         }
     }
-    format!("{:x}", digest.finalize())
+    digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join("")
 }

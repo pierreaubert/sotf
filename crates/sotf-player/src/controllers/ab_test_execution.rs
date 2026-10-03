@@ -100,7 +100,13 @@ pub fn media_file_identity(path: impl AsRef<Path>) -> Result<String, AbTestError
         }
         hasher.update(&buffer[..read]);
     }
-    Ok(format!("sha256:{:x}", hasher.finalize()))
+    let digest = hasher.finalize();
+    let hex = digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join("");
+    Ok(format!("sha256:{hex}"))
 }
 
 /// Resolve and verify the local file backing a saved listening-test segment.

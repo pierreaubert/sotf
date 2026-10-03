@@ -150,7 +150,11 @@ fn write_golden_directory() -> tempfile::TempDir {
         manifest.calibrations.push(CaptureCalibration {
             microphone_id: manifest.plan.microphones[index].id.clone(),
             file,
-            sha256: format!("{:x}", Sha256::digest(bytes)),
+            sha256: Sha256::digest(bytes)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<Vec<_>>()
+                .join(""),
         });
     }
     std::fs::write(
