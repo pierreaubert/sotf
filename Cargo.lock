@@ -354,7 +354,7 @@ dependencies = [
  "rand 0.10.3",
  "realfft",
  "rtrb",
- "rubato 1.0.1",
+ "rubato",
  "rusqlite",
  "rustfft 6.4.1",
  "serde",
@@ -762,23 +762,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1254ebf6529f3763c491acfb5ab6e960809e3c75a38584cc664f8c5667fb7107"
 
 [[package]]
-name = "audio-core"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f93ebbf82d06013f4c41fe71303feb980cddd78496d904d06be627972de51a24"
-
-[[package]]
-name = "audioadapter"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98e72b98fa467adcb7a88c5d1b8b686193185c81b9bf9c3fa3ac3524180cd55c"
-dependencies = [
- "audio-core",
- "libm",
- "num-traits",
-]
-
-[[package]]
 name = "audioadapter"
 version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -786,33 +769,12 @@ checksum = "d1292ef9edf681b7426ed089004b021a42896492f58bd0c909ad44e5faec9ac4"
 
 [[package]]
 name = "audioadapter-buffers"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6af89882334c4e501faa08992888593ada468f9e1ab211635c32f9ada7786e0"
-dependencies = [
- "audioadapter 2.0.1",
- "audioadapter-sample 2.0.0",
- "num-traits",
-]
-
-[[package]]
-name = "audioadapter-buffers"
 version = "5.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46289a81a3bfa26d0f8b2415f8ca9decde9a66308a150568af5c102381b3c8ce"
 dependencies = [
- "audioadapter 5.0.0",
- "audioadapter-sample 5.2.0",
- "num-traits",
-]
-
-[[package]]
-name = "audioadapter-sample"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e9a3d502fec0b21aa420febe0b110875cf8a7057c49e83a0cace1df6a73e03e"
-dependencies = [
- "audio-core",
+ "audioadapter",
+ "audioadapter-sample",
  "num-traits",
 ]
 
@@ -3632,7 +3594,6 @@ dependencies = [
 [[package]]
 name = "gpui-android"
 version = "0.9.6"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "accesskit",
  "android-activity",
@@ -3658,7 +3619,6 @@ dependencies = [
 [[package]]
 name = "gpui-audio-kit"
 version = "0.9.8"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "gpui-d3rs",
  "gpui-design",
@@ -3669,7 +3629,6 @@ dependencies = [
 [[package]]
 name = "gpui-builder"
 version = "0.9.11"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "gpui-pretext",
  "serde",
@@ -3678,7 +3637,6 @@ dependencies = [
 [[package]]
 name = "gpui-d3rs"
 version = "0.9.19"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "bytemuck",
  "delaunator",
@@ -3714,7 +3672,6 @@ dependencies = [
 [[package]]
 name = "gpui-design"
 version = "0.9.7"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "gpui-toolkit-gpui",
  "serde",
@@ -3723,7 +3680,6 @@ dependencies = [
 [[package]]
 name = "gpui-design-tools"
 version = "0.9.6"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "anyhow",
  "clap",
@@ -3736,7 +3692,6 @@ dependencies = [
 [[package]]
 name = "gpui-ios"
 version = "0.9.14"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -3762,7 +3717,6 @@ dependencies = [
 [[package]]
 name = "gpui-keybinding"
 version = "0.9.7"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "gpui-toolkit-gpui",
  "serde",
@@ -3772,7 +3726,6 @@ dependencies = [
 [[package]]
 name = "gpui-miniapp"
 version = "0.9.11"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "console_error_panic_hook",
  "gpui-android",
@@ -3793,7 +3746,6 @@ dependencies = [
 [[package]]
 name = "gpui-pretext"
 version = "0.9.11"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "hashbrown 0.17.1",
  "unicode-bidi",
@@ -3803,12 +3755,10 @@ dependencies = [
 [[package]]
 name = "gpui-profiler"
 version = "0.9.3"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 
 [[package]]
 name = "gpui-px"
 version = "0.9.14"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "glam 0.33.12",
  "gpui-builder",
@@ -3826,7 +3776,6 @@ dependencies = [
 [[package]]
 name = "gpui-themes"
 version = "0.9.8"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "gpui-design",
  "gpui-miniapp",
@@ -3839,7 +3788,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-collections"
 version = "0.1.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "gpui-toolkit-gpui-util",
  "indexmap",
@@ -3849,7 +3797,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-derive-refineable"
 version = "0.1.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3859,7 +3806,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-gpui"
 version = "0.2.3"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -3942,7 +3888,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-gpui-linux"
 version = "0.1.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "accesskit",
  "accesskit_unix",
@@ -3993,7 +3938,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-gpui-macos"
 version = "0.1.2"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -4040,7 +3984,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-gpui-macros"
 version = "0.1.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -4051,7 +3994,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-gpui-shared-string"
 version = "0.1.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "schemars",
  "serde",
@@ -4061,7 +4003,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-gpui-util"
 version = "0.1.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "anyhow",
  "log",
@@ -4071,7 +4012,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-gpui-web"
 version = "0.1.1"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -4095,7 +4035,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-gpui-wgpu"
 version = "0.1.2"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -4123,7 +4062,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-gpui-windows"
 version = "0.1.2"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "anyhow",
  "etagere",
@@ -4148,7 +4086,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-http-client"
 version = "0.1.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "anyhow",
  "async-compression",
@@ -4168,7 +4105,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-media"
 version = "0.1.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "anyhow",
  "bindgen",
@@ -4183,7 +4119,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-perf"
 version = "0.1.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "gpui-toolkit-collections",
  "serde",
@@ -4193,7 +4128,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-refineable"
 version = "0.1.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "gpui-toolkit-derive-refineable",
 ]
@@ -4201,7 +4135,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-scheduler"
 version = "0.1.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "async-task",
  "backtrace",
@@ -4215,7 +4148,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-sum-tree"
 version = "0.1.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "heapless",
  "log",
@@ -4226,7 +4158,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-util"
 version = "0.1.1"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "anyhow",
  "async-fs",
@@ -4266,7 +4197,6 @@ dependencies = [
 [[package]]
 name = "gpui-toolkit-util-macros"
 version = "0.1.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "gpui-toolkit-perf",
  "quote",
@@ -4276,7 +4206,6 @@ dependencies = [
 [[package]]
 name = "gpui-ui-kit"
 version = "0.9.42"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "gpui-builder",
  "gpui-d3rs",
@@ -4296,7 +4225,6 @@ dependencies = [
 [[package]]
 name = "gpui-ui-kit-macros"
 version = "0.9.7"
-source = "git+https://github.com/pierreaubert/gpui-toolkit?rev=d35ff9a7e689c720c04be1807dfd1d10d0282ac1#d35ff9a7e689c720c04be1807dfd1d10d0282ac1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5947,7 +5875,6 @@ checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
 [[package]]
 name = "math-analog"
 version = "0.5.4"
-source = "git+https://github.com/pierreaubert/math-audio#24bbf024c1482f41211044b6ff4c6260a4dcf783"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
@@ -5958,8 +5885,6 @@ dependencies = [
 [[package]]
 name = "math-delaunay"
 version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "421cbec083aba3ac68e8f2713673ce501302e932fa71f6b3738f828243621f7b"
 dependencies = [
  "delaunator",
 ]
@@ -6002,7 +5927,6 @@ dependencies = [
 [[package]]
 name = "math-optimisation"
 version = "0.5.15"
-source = "git+https://github.com/pierreaubert/math-audio#24bbf024c1482f41211044b6ff4c6260a4dcf783"
 dependencies = [
  "clap",
  "directories",
@@ -6018,7 +5942,6 @@ dependencies = [
 [[package]]
 name = "math-rir"
 version = "0.5.11"
-source = "git+https://github.com/pierreaubert/math-audio#24bbf024c1482f41211044b6ff4c6260a4dcf783"
 dependencies = [
  "math-iir-fir",
  "rayon",
@@ -6027,7 +5950,6 @@ dependencies = [
 [[package]]
 name = "math-test-functions"
 version = "0.5.4"
-source = "git+https://github.com/pierreaubert/math-audio#24bbf024c1482f41211044b6ff4c6260a4dcf783"
 dependencies = [
  "clap",
  "directories",
@@ -9073,7 +8995,7 @@ dependencies = [
  "serde",
  "serde_ignored",
  "serde_json",
- "sofa-reader 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sofa-reader",
  "tokio",
 ]
 
@@ -9141,26 +9063,10 @@ checksum = "9278fb35b3e730abe136e9b395b5b81b96d06b9f5478a50f0c8430a2237b22de"
 
 [[package]]
 name = "rubato"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90173154a8a14e6adb109ea641743bc95ec81c093d94e70c6763565f7108ebeb"
-dependencies = [
- "audioadapter 2.0.1",
- "audioadapter-buffers 2.0.0",
- "num-complex 0.4.6",
- "num-integer",
- "num-traits",
- "realfft",
- "visibility",
- "windowfunctions",
-]
-
-[[package]]
-name = "rubato"
 version = "5.0.0"
 dependencies = [
- "audioadapter 5.0.0",
- "audioadapter-buffers 5.2.0",
+ "audioadapter",
+ "audioadapter-buffers",
  "num-complex 0.4.6",
  "num-integer",
  "num-traits",
@@ -10109,21 +10015,6 @@ dependencies = [
 [[package]]
 name = "sofa-reader"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19a8b8cfa8b0017575adc7989abbc7299f2228cbd734a75242390e1505a7619d"
-dependencies = [
- "bincode",
- "flate2",
- "log",
- "rusqlite",
- "serde",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "sofa-reader"
-version = "0.2.0"
-source = "git+https://github.com/pierreaubert/sofa-reader#6e6e9d9ce2b02525ae6f6f04b4639bc264a1fc2f"
 dependencies = [
  "bincode",
  "flate2",
@@ -10137,7 +10028,7 @@ dependencies = [
 name = "sotf-capture"
 version = "0.1.0"
 dependencies = [
- "audioadapter-buffers 5.2.0",
+ "audioadapter-buffers",
  "autoeq",
  "chrono",
  "clap",
@@ -10149,7 +10040,7 @@ dependencies = [
  "math-dsp",
  "math-rir",
  "rtrb",
- "rubato 5.0.0",
+ "rubato",
  "rustfft 6.4.1",
  "serde",
  "serde_json",
@@ -10251,7 +10142,7 @@ dependencies = [
  "ratatui",
  "realfft",
  "rtrb",
- "rubato 5.0.0",
+ "rubato",
  "rusqlite",
  "rustfft 6.4.1",
  "serde",
@@ -10389,7 +10280,7 @@ name = "sotf-host"
 version = "0.6.0"
 dependencies = [
  "arc-swap",
- "audioadapter-buffers 5.2.0",
+ "audioadapter-buffers",
  "chrono",
  "clap",
  "gpui-builder",
@@ -10404,11 +10295,11 @@ dependencies = [
  "rayon",
  "realfft",
  "rtrb",
- "rubato 5.0.0",
+ "rubato",
  "rustfft 6.4.1",
  "serde",
  "serde_json",
- "sofa-reader 0.2.0 (git+https://github.com/pierreaubert/sofa-reader)",
+ "sofa-reader",
  "thiserror 2.0.21",
  "windows-sys 0.61.2",
 ]
@@ -10423,6 +10314,7 @@ dependencies = [
  "symphonia-bundle-flac",
  "symphonia-codec-aac",
  "symphonia-core 0.6.1",
+ "symphonia-iamf-core",
  "thiserror 2.0.21",
 ]
 
@@ -10495,7 +10387,6 @@ name = "sotf-player"
 version = "0.5.127"
 dependencies = [
  "anyhow",
- "audioadapter-buffers 2.0.0",
  "autoeq",
  "autoeq-measurements",
  "base64 0.22.1",
@@ -10520,7 +10411,7 @@ dependencies = [
  "proptest",
  "rand 0.10.3",
  "reqwest 0.13.5",
- "rubato 1.0.1",
+ "rubato",
  "rusqlite",
  "serde",
  "serde_json",
@@ -10533,6 +10424,7 @@ dependencies = [
  "sotf-mpd",
  "sotf-player",
  "sotf-plugins",
+ "sotf-room-eq-graph",
  "sotf-service-spotify",
  "sotf-service-tidal",
  "sotf-services",
@@ -10687,14 +10579,14 @@ dependencies = [
 name = "sotf-plugin-binaural"
 version = "0.5.22"
 dependencies = [
- "audioadapter-buffers 5.2.0",
+ "audioadapter-buffers",
  "hound",
  "log",
  "math-dsp",
  "math-rir",
  "plugins-spatial",
  "realfft",
- "rubato 5.0.0",
+ "rubato",
  "rustfft 6.4.1",
  "serde",
  "serde_json",
@@ -10714,11 +10606,11 @@ dependencies = [
 name = "sotf-plugin-convolution"
 version = "0.6.0"
 dependencies = [
- "audioadapter-buffers 5.2.0",
+ "audioadapter-buffers",
  "log",
  "plugins-spatial",
  "rayon",
- "rubato 5.0.0",
+ "rubato",
  "rustfft 6.4.1",
  "serde",
  "serde_json",
@@ -10975,9 +10867,9 @@ dependencies = [
 name = "sotf-plugin-resampler"
 version = "0.6.0"
 dependencies = [
- "audioadapter-buffers 5.2.0",
+ "audioadapter-buffers",
  "log",
- "rubato 5.0.0",
+ "rubato",
  "sotf-host",
 ]
 
@@ -11069,7 +10961,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "arc-swap",
- "audioadapter-buffers 5.2.0",
+ "audioadapter-buffers",
  "bincode",
  "chrono",
  "clap",
@@ -11090,7 +10982,7 @@ dependencies = [
  "rayon",
  "realfft",
  "rtrb",
- "rubato 5.0.0",
+ "rubato",
  "rusqlite",
  "rustfft 6.4.1",
  "serde",
@@ -11162,6 +11054,16 @@ dependencies = [
  "tract-onnx",
  "walkdir",
  "which 8.0.6",
+]
+
+[[package]]
+name = "sotf-room-eq-graph"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "autoeq",
+ "serde_json",
+ "sotf-engine",
 ]
 
 [[package]]
@@ -11733,7 +11635,6 @@ dependencies = [
 [[package]]
 name = "symphonia-codec-wavpack"
 version = "0.1.1"
-source = "git+https://github.com/pierreaubert/symphonia-add-ons#45b73f8f1679e49b1e09a6335891b46d0698a6a2"
 dependencies = [
  "log",
  "symphonia-core 0.6.1",
@@ -11823,6 +11724,13 @@ dependencies = [
  "log",
  "symphonia-core 0.6.1",
  "symphonia-metadata 0.6.1",
+]
+
+[[package]]
+name = "symphonia-iamf-core"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.21",
 ]
 
 [[package]]
