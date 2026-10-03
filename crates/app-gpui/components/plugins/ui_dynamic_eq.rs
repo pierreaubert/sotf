@@ -52,6 +52,7 @@ pub fn render_dynamic_eq_plugin(
         link_channels,
         mix,
         bands,
+        ..
     } = settings
     else {
         return div().into_any_element();

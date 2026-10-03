@@ -599,6 +599,10 @@ pub(super) fn build_rack_mode_plugins(
                         // 120 dB disables the reduction limit (canonical default).
                         range_db: 120.0,
                         hold_ms: 0.0,
+                        sidechain_hpf_hz: 80.0,
+                        sidechain_hpf_order: "2nd".to_string(),
+                        detection_mode: "Peak".to_string(),
+                        sidechain_hpf_enabled: false,
                     };
                 }
                 log::info!("Rack: Added MultibandCompressor plugin");

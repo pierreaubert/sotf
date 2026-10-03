@@ -1302,6 +1302,7 @@ pub(super) fn render_mb_compressor(
         sidechain_tilt_db,
         link_amount,
         bands,
+        ..
     } = ctx.settings
     {
         let selected_band_idx = ctx.selected_band_idx.min(*num_bands);
