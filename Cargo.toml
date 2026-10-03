@@ -126,7 +126,6 @@ num-traits = "0.2"
 rayon = "1.11"
 rustfft = "6.4"
 realfft = "3.5"
-nalgebra = { version = "0.33", default-features = false, features = ["std"] }
 metaheuristics-nature = "10.1"
 
 # Shared numerical and acoustic crates from sibling workspaces.
@@ -251,7 +250,6 @@ dst-decoder = { path = "../symphonia-add-ons/dst-decoder" }
 rdsd2pcm = { path = "../symphonia-add-ons/rdsd2pcm" }
 encoding_rs = "0.8"
 rtrb = "0.4"
-midir = "0.10"
 
 # TUI framework
 ratatui = "0.30"
