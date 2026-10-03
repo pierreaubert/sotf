@@ -1303,7 +1303,7 @@ impl PlayerView {
                         Icon::new(IconName::Plus)
                             .small()
                             .color(theme_add.text_secondary),
-                    ), "rack.add.open")
+                    ), "rack.add.slot")
             })
                     // Trailing permanent plugins (output matrix/monitor) after "+"
                     .children(tail_modules.iter().map(
@@ -1564,6 +1564,33 @@ impl PlayerView {
                 rack.child(deferred(menu).with_priority(10))
             })
                     )
+                    // Keep the add action reachable when large text or a long
+                    // chain scrolls the modules past the visible rack width.
+                    .child({
+                        div()
+                            .flex_shrink_0()
+                            .px(d.grid)
+                            .child(dev_track!(
+                                IconButton::with_child(
+                                    "rack-add-fixed",
+                                    Icon::new(IconName::Plus)
+                                        .small()
+                                        .color(theme.text_secondary),
+                                )
+                                .variant(IconButtonVariant::Outline)
+                                .size(IconButtonSize::Sm)
+                                .theme(theme.to_icon_button_theme())
+                                .aria_label(text.add_plugin_to_start)
+                                .on_click_event(cx.listener(|view, _, _, cx| {
+                                    view.state.update(cx, |state, _| {
+                                        let open = &mut state.app.plugin_ui.show_add_plugin_menu;
+                                        *open = !*open;
+                                    });
+                                    cx.notify();
+                                })),
+                                "rack.add.open"
+                            ))
+                    })
                     .child({
                         let state_for_load = self.state.clone();
                         let state_for_save = self.state.clone();

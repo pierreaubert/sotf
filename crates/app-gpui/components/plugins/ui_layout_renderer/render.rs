@@ -2141,21 +2141,30 @@ fn render_file_picker(
     .theme(theme.to_icon_button_theme())
     .aria_label(param_name)
     .when(interactive, |button| {
-        button.on_click_event(move |_event, _window, cx| {
+        button.on_click_event(move |_event, window, cx| {
             match file_picker_open_target(engine_key) {
-                Some(FilePickerOpenTarget::Sofa) => cx.dispatch_action(&OpenSofaFile {
-                    plugin_idx,
-                    param_idx: idx,
-                }),
-                Some(FilePickerOpenTarget::Ir) => cx.dispatch_action(&OpenIrFile {
-                    plugin_idx,
-                    param_idx: idx,
-                }),
-                Some(FilePickerOpenTarget::AbConfig(path_id)) => {
-                    cx.dispatch_action(&OpenAbConfigFile {
+                Some(FilePickerOpenTarget::Sofa) => window.dispatch_action(
+                    Box::new(OpenSofaFile {
                         plugin_idx,
-                        path_id: path_id.to_string(),
-                    });
+                        param_idx: idx,
+                    }),
+                    cx,
+                ),
+                Some(FilePickerOpenTarget::Ir) => window.dispatch_action(
+                    Box::new(OpenIrFile {
+                        plugin_idx,
+                        param_idx: idx,
+                    }),
+                    cx,
+                ),
+                Some(FilePickerOpenTarget::AbConfig(path_id)) => {
+                    window.dispatch_action(
+                        Box::new(OpenAbConfigFile {
+                            plugin_idx,
+                            path_id: path_id.to_string(),
+                        }),
+                        cx,
+                    );
                 }
                 None => log::warn!("No file open action for engine_key: {}", engine_key),
             }
