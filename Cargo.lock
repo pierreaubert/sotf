@@ -348,7 +348,7 @@ dependencies = [
  "math-iir-fir",
  "ndarray 0.17.2",
  "notify",
- "num-complex 0.4.6",
+ "num-complex",
  "parking_lot",
  "predicates",
  "rand 0.10.3",
@@ -356,7 +356,7 @@ dependencies = [
  "rtrb",
  "rubato",
  "rusqlite",
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -834,8 +834,8 @@ dependencies = [
  "log",
  "math-iir-fir",
  "ndarray 0.17.2",
- "num-complex 0.4.6",
- "rustfft 6.4.1",
+ "num-complex",
+ "rustfft",
  "schemars",
  "serde",
  "serde_json",
@@ -851,8 +851,8 @@ dependencies = [
  "hound",
  "math-iir-fir",
  "ndarray 0.17.2",
- "num-complex 0.4.6",
- "rustfft 6.4.1",
+ "num-complex",
+ "rustfft",
 ]
 
 [[package]]
@@ -889,7 +889,7 @@ dependencies = [
  "math-optimisation",
  "metaheuristics-nature",
  "ndarray 0.17.2",
- "num-complex 0.4.6",
+ "num-complex",
  "num_cpus",
  "rand 0.10.3",
  "rand_chacha 0.10.0",
@@ -2868,7 +2868,7 @@ dependencies = [
  "half",
  "lebe",
  "miniz_oxide 0.8.9",
- "num-complex 0.4.6",
+ "num-complex",
  "pulp",
  "rayon-core",
  "smallvec",
@@ -5878,7 +5878,7 @@ version = "0.5.4"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
- "rustfft 6.4.1",
+ "rustfft",
  "thiserror 2.0.21",
 ]
 
@@ -5899,12 +5899,12 @@ dependencies = [
  "math-iir-fir",
  "nalgebra",
  "ndarray 0.17.2",
- "num-complex 0.4.6",
+ "num-complex",
  "oxiblas-ndarray",
  "rand 0.10.3",
  "rayon",
  "realfft",
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
 ]
 
@@ -5916,9 +5916,9 @@ dependencies = [
  "byteorder",
  "hound",
  "ndarray 0.17.2",
- "num-complex 0.4.6",
+ "num-complex",
  "num-traits",
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -6191,7 +6191,7 @@ dependencies = [
  "glam 0.32.1",
  "glam 0.33.12",
  "matrixmultiply",
- "num-complex 0.4.6",
+ "num-complex",
  "num-rational",
  "num-traits",
  "simba",
@@ -6205,7 +6205,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "882ed72dce9365842bf196bdeedf5055305f11fc8c03dee7bb0194a6cad34841"
 dependencies = [
  "matrixmultiply",
- "num-complex 0.4.6",
+ "num-complex",
  "num-integer",
  "num-traits",
  "portable-atomic",
@@ -6220,7 +6220,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "520080814a7a6b4a6e9070823bb24b4531daac8c4627e08ba5de8c5ef2f2752d"
 dependencies = [
  "matrixmultiply",
- "num-complex 0.4.6",
+ "num-complex",
  "num-integer",
  "num-traits",
  "portable-atomic",
@@ -6307,9 +6307,9 @@ dependencies = [
 name = "nnnoiseless"
 version = "0.1.1"
 dependencies = [
- "num-complex 0.2.4",
+ "num-complex",
  "once_cell",
- "rustfft 3.0.1",
+ "rustfft",
 ]
 
 [[package]]
@@ -6416,7 +6416,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "35bd024e8b2ff75562e5f34e7f4905839deb4b22955ef5e73d2fea1b9813cb23"
 dependencies = [
  "num-bigint",
- "num-complex 0.4.6",
+ "num-complex",
  "num-integer",
  "num-iter",
  "num-rational",
@@ -6465,16 +6465,6 @@ dependencies = [
  "serde",
  "smallvec",
  "zeroize",
-]
-
-[[package]]
-name = "num-complex"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6b19411a9719e753aff12e5187b74d60d3dc449ec3f4dc21e3989c3f554bc95"
-dependencies = [
- "autocfg",
- "num-traits",
 ]
 
 [[package]]
@@ -7145,7 +7135,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b9e1346a6fb0c859ba99a0c46d54c3b6f620b132ce1be4aa7ef93634002009b"
 dependencies = [
  "bytemuck",
- "num-complex 0.4.6",
+ "num-complex",
  "num-traits",
  "oxiblas-core",
  "oxiblas-matrix",
@@ -7159,7 +7149,7 @@ checksum = "bb71a758e4b67699331dc2f01a20ddc05a5b952b66be9e46857f2aafe19db353"
 dependencies = [
  "bytemuck",
  "libc",
- "num-complex 0.4.6",
+ "num-complex",
  "num-traits",
 ]
 
@@ -7170,7 +7160,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a31dc82201c233fbadc57e7583644062c364f4eb8e77fa8c9fb830722ec8b7e8"
 dependencies = [
  "bytemuck",
- "num-complex 0.4.6",
+ "num-complex",
  "num-traits",
  "oxiblas-blas",
  "oxiblas-core",
@@ -7184,7 +7174,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3b5d0050e3dea737a5d9c7c30d0029a73f270c5edb59281cef991a4d13c9fb9"
 dependencies = [
  "bytemuck",
- "num-complex 0.4.6",
+ "num-complex",
  "num-traits",
  "oxiblas-core",
 ]
@@ -7197,7 +7187,7 @@ checksum = "796fd699643634753a2314234ea1fab6f6fa9caa123f5797830894f0fa91ec86"
 dependencies = [
  "bytemuck",
  "ndarray 0.17.2",
- "num-complex 0.4.6",
+ "num-complex",
  "num-traits",
  "oxiblas-blas",
  "oxiblas-core",
@@ -7671,7 +7661,7 @@ dependencies = [
 name = "plugins-spatial"
 version = "0.5.0"
 dependencies = [
- "rustfft 6.4.1",
+ "rustfft",
  "sotf-host",
 ]
 
@@ -8024,7 +8014,7 @@ dependencies = [
  "bytemuck",
  "cfg-if",
  "libm",
- "num-complex 0.4.6",
+ "num-complex",
  "paste",
  "pulp-wasm-simd-flag",
  "raw-cpuid",
@@ -8602,7 +8592,7 @@ version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f821338fddb99d089116342c46e9f1fbf3828dba077674613e734e01d6ea8677"
 dependencies = [
- "rustfft 6.4.1",
+ "rustfft",
 ]
 
 [[package]]
@@ -8857,11 +8847,11 @@ dependencies = [
  "math-iir-fir",
  "math-rir",
  "ndarray 0.17.2",
- "num-complex 0.4.6",
+ "num-complex",
  "rand 0.10.3",
  "rand_chacha 0.10.0",
  "roomeq-model",
- "rustfft 6.4.1",
+ "rustfft",
  "schemars",
  "serde",
  "thiserror 2.0.21",
@@ -8882,7 +8872,7 @@ dependencies = [
  "math-rir",
  "nalgebra",
  "ndarray 0.17.2",
- "num-complex 0.4.6",
+ "num-complex",
  "num_cpus",
  "oxiblas-ndarray",
  "rand 0.10.3",
@@ -8890,7 +8880,7 @@ dependencies = [
  "roomeq-analysis",
  "roomeq-model",
  "roomeq-quality",
- "rustfft 6.4.1",
+ "rustfft",
  "schemars",
  "serde",
  "serde_json",
@@ -8934,9 +8924,9 @@ dependencies = [
  "hound",
  "math-iir-fir",
  "ndarray 0.17.2",
- "num-complex 0.4.6",
+ "num-complex",
  "roomeq-model",
- "rustfft 6.4.1",
+ "rustfft",
  "schemars",
  "serde",
  "serde_json",
@@ -8968,14 +8958,14 @@ dependencies = [
  "math-iir-fir",
  "math-rir",
  "ndarray 0.17.2",
- "num-complex 0.4.6",
+ "num-complex",
  "rayon",
  "roomeq-analysis",
  "roomeq-engine",
  "roomeq-export",
  "roomeq-model",
  "roomeq-quality",
- "rustfft 6.4.1",
+ "rustfft",
  "schemars",
  "serde",
  "serde_ignored",
@@ -9052,7 +9042,7 @@ version = "5.0.0"
 dependencies = [
  "audioadapter",
  "audioadapter-buffers",
- "num-complex 0.4.6",
+ "num-complex",
  "num-integer",
  "num-traits",
  "realfft",
@@ -9140,29 +9130,16 @@ dependencies = [
 
 [[package]]
 name = "rustfft"
-version = "3.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77008ed59a8923c8b4ac2e5eaa6d28fbe893d3b9515098a4a5fc7767d6430fe5"
-dependencies = [
- "num-complex 0.2.4",
- "num-integer",
- "num-traits",
- "strength_reduce",
- "transpose 0.1.0",
-]
-
-[[package]]
-name = "rustfft"
 version = "6.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21db5f9893e91f41798c88680037dba611ca6674703c1a18601b01a72c8adb89"
 dependencies = [
- "num-complex 0.4.6",
+ "num-complex",
  "num-integer",
  "num-traits",
  "primal-check",
  "strength_reduce",
- "transpose 0.2.3",
+ "transpose",
 ]
 
 [[package]]
@@ -9830,7 +9807,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1a7200d82ff1c7b4235efd12f11e2537a402c91cf83a5cb97ce80eef787fde7"
 dependencies = [
  "approx",
- "num-complex 0.4.6",
+ "num-complex",
  "num-traits",
  "wide",
 ]
@@ -10004,7 +9981,7 @@ dependencies = [
  "math-rir",
  "rtrb",
  "rubato",
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -10101,13 +10078,13 @@ dependencies = [
  "math-iir-fir",
  "ndarray 0.17.2",
  "notify",
- "num-complex 0.4.6",
+ "num-complex",
  "ratatui",
  "realfft",
  "rtrb",
  "rubato",
  "rusqlite",
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -10192,7 +10169,7 @@ dependencies = [
  "math-optimisation",
  "mimalloc",
  "ndarray 0.17.2",
- "num-complex 0.4.6",
+ "num-complex",
  "parking_lot",
  "plugins-gpui",
  "proptest",
@@ -10202,7 +10179,7 @@ dependencies = [
  "rqrr",
  "rusqlite",
  "rust-embed",
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
  "serde_json",
  "signal-hook 0.4.4",
@@ -10259,7 +10236,7 @@ dependencies = [
  "realfft",
  "rtrb",
  "rubato",
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
  "serde_json",
  "sofa-reader",
@@ -10368,7 +10345,7 @@ dependencies = [
  "math-optimisation",
  "math-rir",
  "ndarray 0.17.2",
- "num-complex 0.4.6",
+ "num-complex",
  "num_cpus",
  "parking_lot",
  "proptest",
@@ -10448,7 +10425,7 @@ name = "sotf-plugin-aec"
 version = "0.5.7"
 dependencies = [
  "realfft",
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10532,7 +10509,7 @@ dependencies = [
  "nalgebra",
  "plugins-spatial",
  "realfft",
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10550,7 +10527,7 @@ dependencies = [
  "plugins-spatial",
  "realfft",
  "rubato",
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10574,7 +10551,7 @@ dependencies = [
  "plugins-spatial",
  "rayon",
  "rubato",
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10640,7 +10617,7 @@ version = "0.5.8"
 dependencies = [
  "math-dsp",
  "realfft",
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10663,7 +10640,7 @@ dependencies = [
  "math-dsp",
  "math-iir-fir",
  "realfft",
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10755,7 +10732,7 @@ name = "sotf-plugin-linear-phase-eq"
 version = "0.5.6"
 dependencies = [
  "math-iir-fir",
- "num-complex 0.4.6",
+ "num-complex",
  "plugins-spatial",
  "realfft",
  "serde",
@@ -10810,7 +10787,7 @@ version = "0.5.26"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10820,7 +10797,7 @@ dependencies = [
 name = "sotf-plugin-pnd"
 version = "0.5.12"
 dependencies = [
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10895,7 +10872,7 @@ dependencies = [
  "ndarray 0.17.2",
  "plugins-inference",
  "realfft",
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10908,7 +10885,7 @@ version = "0.5.42"
 dependencies = [
  "math-dsp",
  "realfft",
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10947,7 +10924,7 @@ dependencies = [
  "rtrb",
  "rubato",
  "rusqlite",
- "rustfft 6.4.1",
+ "rustfft",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -11034,12 +11011,10 @@ name = "sotf-service-spotify"
 version = "0.1.1"
 dependencies = [
  "librespot-core",
- "librespot-oauth",
  "librespot-playback",
  "librespot-protocol",
  "log",
  "oauth2",
- "reqwest 0.11.27",
  "reqwest 0.13.5",
  "serde",
  "serde_json",
@@ -11637,7 +11612,7 @@ dependencies = [
  "bytemuck",
  "lazy_static",
  "log",
- "num-complex 0.4.6",
+ "num-complex",
  "smallvec",
 ]
 
@@ -12450,11 +12425,11 @@ dependencies = [
  "log",
  "maplit",
  "ndarray 0.16.1",
- "num-complex 0.4.6",
+ "num-complex",
  "num-integer",
  "num-traits",
  "pastey",
- "rustfft 6.4.1",
+ "rustfft",
  "smallvec",
  "tract-data",
  "tract-linalg",
@@ -12573,7 +12548,7 @@ dependencies = [
  "log",
  "rand 0.8.8",
  "rand_distr",
- "rustfft 6.4.1",
+ "rustfft",
  "tract-nnef",
 ]
 
@@ -12587,12 +12562,6 @@ dependencies = [
  "quote",
  "syn 2.0.119",
 ]
-
-[[package]]
-name = "transpose"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "643e21580bb0627c7bb09e5cedbb42c8705b19d012de593ed6b0309270b3cd1e"
 
 [[package]]
 name = "transpose"
