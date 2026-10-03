@@ -1,0 +1,36 @@
+# Load both A/B path configurations through their rendered file controls.
+# The QA app chooses checked-in JSON fixtures instead of opening native dialogs.
+plugin_clear
+resize 1400 1100
+focus Studio
+plugin_add ABCompare
+action PluginSelectFirstUser
+wait_idle
+assert plugins.plugin.2.type == "A/B Compare"
+
+scroll_into_view rack.params plugin.file_picker.2.path_a_config
+assert_in_viewport plugin.file_picker.2.path_a_config
+click plugin.file_picker.2.path_a_config
+wait_idle
+assert_visible ab.path.0.plugin.0.gain
+assert_text ab.path.0.file == "ab-path-a.json"
+
+scroll_into_view rack.params plugin.file_picker.2.path_b_config
+assert_in_viewport plugin.file_picker.2.path_b_config
+click plugin.file_picker.2.path_b_config
+wait_idle
+assert_visible ab.path.1.plugin.0.delay
+assert_text ab.path.1.file == "ab-path-b.json"
+screenshot ab-files-loaded
+
+plugin_chain_save $SOTF_QA_DIR/ABCompare-files.json
+plugin_remove 2
+assert plugins.user_count == 0
+plugin_chain_load $SOTF_QA_DIR/ABCompare-files.json
+action PluginSelectFirstUser
+wait_idle
+assert_visible ab.path.0.plugin.0.gain
+assert_visible ab.path.1.plugin.0.delay
+assert_text ab.path.0.file == "ab-path-a.json"
+assert_text ab.path.1.file == "ab-path-b.json"
+screenshot ab-files-restored

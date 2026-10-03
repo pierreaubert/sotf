@@ -146,7 +146,7 @@ impl SpotifyService {
             &request.csrf_state,
             consts::OAUTH_CALLBACK_TIMEOUT,
         )?;
-        let token = oauth::exchange_code(&client, code, request.verifier, &consts::SPOTIFY_SCOPES)?;
+        let token = oauth::exchange_code(&client, code, request.verifier)?;
         log::info!(
             "[Spotify] OAuth login returned access token {}",
             redact_secret(&token.access_token)
@@ -155,13 +155,7 @@ impl SpotifyService {
         // Persist the Web API token pair so the next restart can restore (and
         // refresh) search/library access without a new browser login — the
         // credentials librespot caches do not carry a usable Web API token.
-        let web_token = token_store::WebApiToken::new(
-            token.access_token.clone(),
-            token.refresh_token.clone(),
-            token
-                .expires_at
-                .saturating_duration_since(std::time::Instant::now()),
-        );
+        let web_token = token.clone();
         if let Err(e) = web_token.save(cache_dir) {
             log::warn!("[Spotify] Failed to persist Web API token: {e}");
         }

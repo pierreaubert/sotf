@@ -11,6 +11,12 @@ timeout = "30s"
 tags = ["plugins", "rack", "ui", "accessibility", "persistence"]
 
 [[scenario]]
+name = "plugin-auto-layout-rendered-geometry"
+path = "crates/sotf-dev-driver/scenarios/plugin_auto_layout_geometry.scn"
+timeout = "30s"
+tags = ["plugins", "layout", "responsive", "ui"]
+
+[[scenario]]
 name = "plugin-graph-keyboard-invalid-edge"
 path = "crates/sotf-dev-driver/scenarios/plugin_graph.scn"
 timeout = "30s"
@@ -27,6 +33,12 @@ name = "ab-compare-visible-switching"
 path = "crates/sotf-dev-driver/scenarios/plugin_ab_compare.scn"
 timeout = "30s"
 tags = ["plugins", "ab-compare", "ui", "pointer", "keyboard", "accessibility"]
+
+[[scenario]]
+name = "ab-compare-file-backed-paths"
+path = "crates/sotf-dev-driver/scenarios/plugin_ab_config_files.scn"
+timeout = "45s"
+tags = ["plugins", "ab-compare", "file", "ui", "persistence"]
 
 [[scenario]]
 name = "plugin-visual-matrix"

@@ -2307,17 +2307,32 @@ impl PlayerView {
                 .editing_graph_node_uuid;
             let weak_state = self.state.downgrade();
             cx.spawn(async move |_, cx| {
-                let file = rfd::AsyncFileDialog::new()
-                    .add_filter("JSON Config Files", &["json"])
-                    .set_title("Select Config File")
-                    .pick_file()
-                    .await;
+                #[cfg(feature = "dev-api")]
+                let qa_fixture = std::env::var_os("SOTF_QA_DIR").map(|_| {
+                    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join(format!("tests/fixtures/ab-path-{path_id}.json"))
+                });
+                #[cfg(not(feature = "dev-api"))]
+                let qa_fixture: Option<std::path::PathBuf> = None;
+                let file_path = if let Some(path) = qa_fixture {
+                    path
+                } else {
+                    let Some(file) = rfd::AsyncFileDialog::new()
+                        .add_filter("JSON Config Files", &["json"])
+                        .set_title("Select Config File")
+                        .pick_file()
+                        .await
+                    else {
+                        return;
+                    };
+                    file.path().to_path_buf()
+                };
 
-                if let Some(file) = file {
+                {
                     let Some(state_entity) = weak_state.upgrade() else {
                         return;
                     };
-                    let file_path = file.path().to_string_lossy().to_string();
+                    let file_path = file_path.to_string_lossy().to_string();
                     // Read the JSON content from file (blocking I/O is fine here —
                     // config files are tiny and we're already in a spawned task)
                     match std::fs::read_to_string(&file_path) {

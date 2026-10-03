@@ -1,0 +1,46 @@
+# The generated Gain editor has one compact group. Measure its rendered bounds
+# at two viewport widths so an empty right-side column cannot recur.
+plugin_clear
+focus Studio
+plugin_add Gain
+action PluginSelectFirstUser
+wait_idle
+
+resize 700 700
+wait_idle
+assert_visible plugin.layout.group.2.primary
+assert_in_viewport plugin.layout.group.2.primary
+assert_h_centered plugin.layout.group.2.primary plugin.layout.main.2 16
+assert_non_overlapping sidebar.nav-studio-rack rack.params
+elements
+screenshot plugin-layout-gain-700
+
+resize 1440 900
+wait_idle
+assert_visible plugin.layout.group.2.primary
+assert_in_viewport plugin.layout.group.2.primary
+assert_h_centered plugin.layout.group.2.primary plugin.layout.main.2 16
+elements
+screenshot plugin-layout-gain-1440
+
+# Limiter exercises multiple generated groups and narrow wrapping.
+plugin_clear
+plugin_add Limiter
+action PluginSelectFirstUser
+resize 700 700
+wait_idle
+assert_visible plugin.layout.group.2.DYNAMICS
+assert_in_viewport plugin.layout.group.2.DYNAMICS
+assert_non_overlapping plugin.control.2.0 plugin.control.2.1
+elements
+screenshot plugin-layout-limiter-700
+
+resize 2000 1000
+wait_idle
+assert_visible plugin.layout.group.2.DYNAMICS
+assert_visible plugin.layout.group.2.TIMING
+assert_in_viewport plugin.layout.group.2.DYNAMICS
+assert_in_viewport plugin.layout.group.2.TIMING
+assert_non_overlapping plugin.layout.group.2.DYNAMICS plugin.layout.group.2.TIMING
+elements
+screenshot plugin-layout-limiter-2000

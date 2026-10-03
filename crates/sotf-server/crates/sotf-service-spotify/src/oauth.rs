@@ -1,19 +1,12 @@
 //! OAuth2 authorization-code flow with PKCE for Spotify login.
 //!
-//! `librespot-oauth` 0.6 exposes only the monolithic
-//! `get_access_token(client_id, redirect_uri, scopes)`: it prints the
-//! authorize URL to stdout, blocks on its own loopback listener with no
-//! timeout, and hardcodes the Spotify endpoints (so it cannot be pointed at a
-//! mock server in tests). We therefore drive the same underlying `oauth2`
-//! (4.4) primitives directly — this lets the caller open the browser itself
-//! via a callback, bound the callback wait, and inject a mock token endpoint
-//! in tests — while returning `librespot_oauth::OAuthToken`, the same token
-//! type the librespot ecosystem uses.
+//! The caller opens the browser, bounds the callback wait, and can inject a
+//! mock token endpoint in tests. The OAuth exchange returns the same local
+//! Web API token type used for persistence and refresh.
 
-use librespot_oauth::OAuthToken;
 use oauth2::{
     AuthUrl, AuthorizationCode, ClientId, CsrfToken, PkceCodeChallenge, PkceCodeVerifier,
-    RedirectUrl, Scope, TokenResponse, TokenUrl, basic::BasicClient,
+    RedirectUrl, Scope, TokenResponse, TokenUrl, basic::BasicClient, http,
 };
 use sotf_services::ServiceError;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -23,8 +16,7 @@ use std::time::{Duration, Instant};
 use crate::token_store::WebApiToken;
 
 /// Overall timeout for the blocking HTTP calls against the token endpoint.
-/// The client shipped with `oauth2::reqwest::http_client` has no timeout and
-/// can hang indefinitely on a half-open connection.
+/// A half-open token endpoint must not hold the login flow indefinitely.
 const TOKEN_ENDPOINT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Everything the second half of the flow needs after the user has been sent
@@ -167,76 +159,76 @@ pub(crate) fn await_auth_code(
     Ok(AuthorizationCode::new(code.clone()))
 }
 
-/// Blocking HTTP client for the token exchange. Identical to
-/// `oauth2::reqwest::http_client` except for an explicit overall timeout —
-/// the oauth2-provided client has none and can hang indefinitely. Uses the
-/// reqwest 0.11 line (`reqwest_blocking`) so the response types line up with
-/// `oauth2::HttpResponse` (http 0.2).
+/// Blocking HTTP client for the token exchange, with a timeout and no redirects.
+/// OAuth2 4.4 uses http 0.2 types; reqwest 0.13 uses http 1 types, so copy
+/// method, status, and every header through their wire representations.
 fn http_client_with_timeout(
     request: oauth2::HttpRequest,
-) -> Result<oauth2::HttpResponse, oauth2::reqwest::HttpClientError> {
-    use oauth2::reqwest::Error;
-    let client = reqwest_blocking::blocking::Client::builder()
+) -> Result<oauth2::HttpResponse, std::io::Error> {
+    let client = reqwest::blocking::Client::builder()
         // Following redirects opens the client up to SSRF vulnerabilities.
-        .redirect(reqwest_blocking::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::none())
         .timeout(TOKEN_ENDPOINT_TIMEOUT)
         .build()
-        .map_err(Error::Reqwest)?;
+        .map_err(std::io::Error::other)?;
 
+    let method = reqwest::Method::from_bytes(request.method.as_str().as_bytes())
+        .map_err(std::io::Error::other)?;
     let mut request_builder = client
-        .request(request.method, request.url.as_str())
+        .request(method, request.url.as_str())
         .body(request.body);
     for (name, value) in &request.headers {
         request_builder = request_builder.header(name.as_str(), value.as_bytes());
     }
     let mut response = client
-        .execute(request_builder.build().map_err(Error::Reqwest)?)
-        .map_err(Error::Reqwest)?;
+        .execute(request_builder.build().map_err(std::io::Error::other)?)
+        .map_err(std::io::Error::other)?;
 
     let mut body = Vec::new();
-    response.read_to_end(&mut body).map_err(Error::Io)?;
+    response.read_to_end(&mut body)?;
+
+    let status_code = http::StatusCode::from_u16(response.status().as_u16())
+        .map_err(std::io::Error::other)?;
+    let mut headers = http::HeaderMap::new();
+    for (name, value) in response.headers() {
+        let name = http::header::HeaderName::from_bytes(name.as_str().as_bytes())
+            .map_err(std::io::Error::other)?;
+        let value = http::header::HeaderValue::from_bytes(value.as_bytes())
+            .map_err(std::io::Error::other)?;
+        headers.append(name, value);
+    }
 
     Ok(oauth2::HttpResponse {
-        status_code: response.status(),
-        headers: response.headers().to_owned(),
+        status_code,
+        headers,
         body,
     })
 }
 
-/// Exchange an authorization code for an access token. Uses a blocking
-/// reqwest client with an explicit timeout (same style as
-/// `librespot-oauth`) so this stays callable from the sync trait surface.
+/// Exchange an authorization code for an access token from the sync trait surface.
 pub(crate) fn exchange_code(
     client: &BasicClient,
     code: AuthorizationCode,
     verifier: PkceCodeVerifier,
-    requested_scopes: &[&str],
-) -> Result<OAuthToken, ServiceError> {
+) -> Result<WebApiToken, ServiceError> {
     let token = client
         .exchange_code(code)
         .set_pkce_verifier(verifier)
         .request(http_client_with_timeout)
         .map_err(|e| ServiceError::AuthError(format!("OAuth token exchange failed: {e}")))?;
 
-    let scopes: Vec<String> = match token.scopes() {
-        Some(s) => s.iter().map(|s| s.to_string()).collect(),
-        None => requested_scopes.iter().map(|s| (*s).to_string()).collect(),
-    };
     let refresh_token = token
         .refresh_token()
         .map(|t| t.secret().to_string())
         .unwrap_or_default(); // Spotify always provides a refresh token.
 
-    Ok(OAuthToken {
-        access_token: token.access_token().secret().to_string(),
+    Ok(WebApiToken::new(
+        token.access_token().secret().to_string(),
         refresh_token,
-        expires_at: Instant::now()
-            + token
-                .expires_in()
-                .unwrap_or_else(|| Duration::from_secs(3600)),
-        token_type: format!("{:?}", token.token_type()),
-        scopes,
-    })
+        token
+            .expires_in()
+            .unwrap_or_else(|| Duration::from_secs(3600)),
+    ))
 }
 
 /// Response shape of the token endpoint for a refresh grant. Spotify may
@@ -305,7 +297,7 @@ mod tests {
     use crate::consts::{
         SPOTIFY_AUTH_URL, SPOTIFY_CLIENT_ID, SPOTIFY_REDIRECT_URI, SPOTIFY_TOKEN_URL,
     };
-    use crate::test_util::spawn_mock_server;
+    use crate::test_util::{spawn_mock_server, spawn_mock_server_with_headers};
     use std::io::Read;
 
     #[test]
@@ -448,14 +440,11 @@ mod tests {
             &client,
             AuthorizationCode::new("mock-code".to_string()),
             verifier,
-            &["streaming"],
         )
         .unwrap();
         assert_eq!(token.access_token, "mock-access-token");
         assert_eq!(token.refresh_token, "mock-refresh");
-        assert!(token.expires_at > Instant::now());
-        assert!(token.scopes.contains(&"streaming".to_string()));
-        assert!(token.scopes.contains(&"user-library-read".to_string()));
+        assert!(!token.is_expired());
     }
 
     #[test]
@@ -473,7 +462,6 @@ mod tests {
             &client,
             AuthorizationCode::new("bad-code".to_string()),
             verifier,
-            &["streaming"],
         );
         match result {
             Err(ServiceError::AuthError(msg)) => {
@@ -481,6 +469,74 @@ mod tests {
             }
             other => panic!("expected AuthError, got: {other:?}"),
         }
+    }
+
+    #[test]
+    fn token_http_adapter_preserves_error_status_body_and_headers() {
+        let server = spawn_mock_server_with_headers(|req| {
+            assert_eq!(req.method, "POST");
+            assert!(req.headers.to_ascii_lowercase().contains("x-sotf-test: sent"));
+            assert_eq!(req.body, "code=bad");
+            (
+                400,
+                vec![
+                    ("Retry-After".to_string(), "17".to_string()),
+                    ("X-Token-Note".to_string(), "first".to_string()),
+                    ("X-Token-Note".to_string(), "second".to_string()),
+                ],
+                r#"{"error":"invalid_grant"}"#.to_string(),
+            )
+        });
+        let mut headers = http::HeaderMap::new();
+        headers.insert("x-sotf-test", http::HeaderValue::from_static("sent"));
+        let response = http_client_with_timeout(oauth2::HttpRequest {
+            url: oauth2::url::Url::parse(&format!("{}/api/token", server.base_url)).unwrap(),
+            method: http::Method::POST,
+            headers,
+            body: b"code=bad".to_vec(),
+        })
+        .unwrap();
+
+        assert_eq!(response.status_code, http::StatusCode::BAD_REQUEST);
+        assert_eq!(response.headers["retry-after"].to_str().unwrap(), "17");
+        let notes: Vec<_> = response.headers.get_all("x-token-note").iter().collect();
+        assert_eq!(notes.len(), 2);
+        assert_eq!(notes[0].to_str().unwrap(), "first");
+        assert_eq!(notes[1].to_str().unwrap(), "second");
+        assert_eq!(response.body.as_slice(), br#"{"error":"invalid_grant"}"#);
+    }
+
+    #[test]
+    fn token_http_adapter_refuses_redirect() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let followed = Arc::new(AtomicBool::new(false));
+        let target_hit = Arc::clone(&followed);
+        let target = spawn_mock_server(move |_req| {
+            target_hit.store(true, Ordering::SeqCst);
+            (200, "unexpected redirect".to_string())
+        });
+        let destination = format!("{}/not-a-token-endpoint", target.base_url);
+        let location = destination.clone();
+        let server = spawn_mock_server_with_headers(move |_req| {
+            (
+                302,
+                vec![("Location".to_string(), location.clone())],
+                "redirect refused".to_string(),
+            )
+        });
+        let response = http_client_with_timeout(oauth2::HttpRequest {
+            url: oauth2::url::Url::parse(&format!("{}/api/token", server.base_url)).unwrap(),
+            method: http::Method::POST,
+            headers: http::HeaderMap::new(),
+            body: b"code=private".to_vec(),
+        })
+        .unwrap();
+
+        assert_eq!(response.status_code, http::StatusCode::FOUND);
+        assert_eq!(response.headers["location"].to_str().unwrap(), destination);
+        assert!(!followed.load(Ordering::SeqCst));
     }
 
     #[test]

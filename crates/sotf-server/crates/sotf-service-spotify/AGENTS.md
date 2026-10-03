@@ -40,7 +40,7 @@ Spotify streaming service provider for SOTF (via librespot). Implements the
 ## Module Layout
 
 - `lib.rs` -- `SpotifyService`, the librespot `Sink` that captures PCM to a channel (`ChannelSink`), the `Read` adapter (`ChannelReader`), `convert_librespot_samples`; unit tests in `mod tests`
-- `oauth.rs` -- PKCE flow on the `oauth2` 4.4 primitives (authorize URL building, loopback callback listener with timeout + state check, code exchange returning `librespot_oauth::OAuthToken`, refresh-token grant returning `token_store::WebApiToken`). The blocking exchange client has an explicit 30 s timeout (`oauth2::reqwest::http_client` has none)
+- `oauth.rs` -- PKCE flow on the `oauth2` 4.4 primitives (authorize URL building, loopback callback listener with timeout + state check, code exchange and refresh grant returning `token_store::WebApiToken`). The blocking reqwest 0.13 exchange client has an explicit 30 s timeout and does not follow redirects.
 - `token_store.rs` -- `WebApiToken` persistence in `web_api_token.json` under the librespot cache dir (0600 on unix, redacted Debug, 60 s expiry skew)
 - `web_api.rs` -- `SpotifyWebApi`: search, album tracks, saved albums/tracks against `api.spotify.com/v1` (serde mapping, bounded paged reads). Retries a request once after a 401 by refreshing the token; pagination `next` links are only followed on the same origin (scheme/host/port) as the API base
 - `async_runtime.rs` -- `AsyncRuntime`: drives async HTTP calls from the sync trait interface (copied from `sotf-service-tidal`, kept independent). `Drop` moves the fallback runtime onto a plain thread when dropped inside a tokio context (dropping a `Runtime` there panics)
@@ -52,10 +52,9 @@ Spotify streaming service provider for SOTF (via librespot). Implements the
 
 - Spotify disabled username/password auth server-side — OAuth (PKCE) is the
   only working login path.
-- `librespot-oauth` 0.6's `get_access_token()` is monolithic (prints the URL
-  to stdout, blocks without timeout, hardcoded endpoints), so `oauth.rs`
-  drives the same `oauth2` 4.4 primitives directly and returns
-  `librespot_oauth::OAuthToken`.
+- `oauth.rs` drives `oauth2` 4.4 primitives directly so the caller controls
+  the browser and callback timeout. Only the local Web API token type crosses
+  its private module boundary.
 - `librespot_core::Session::new` panics without a tokio runtime
   (`Handle::current()`); all session work (`Session::new`, `connect`) runs
   inside `self.rt.block_on`, whose embedded fallback runtime guarantees an
@@ -67,10 +66,9 @@ Spotify streaming service provider for SOTF (via librespot). Implements the
 ## Dependencies
 
 - `sotf-services` -- core trait and shared types
-- `librespot-core` / `librespot-playback` / `librespot-oauth` / `librespot-protocol` -- Spotify Connect + OAuth token type
-- `oauth2` -- PKCE primitives (same 4.4 line librespot-oauth uses)
-- `reqwest` (0.13) / `serde` / `serde_json` -- Spotify Web API
-- `reqwest-blocking` (reqwest 0.11) -- blocking token-exchange client with an explicit timeout; pinned to the reqwest line oauth2 4.4 uses so `oauth2::HttpResponse` types line up
+- `librespot-core` / `librespot-playback` / `librespot-protocol` -- Spotify Connect and PCM playback
+- `oauth2` (4.4, without its default HTTP client) -- PKCE primitives
+- `reqwest` (0.13, async and blocking) / `serde` / `serde_json` -- Spotify Web API and bounded token exchange
 - `tokio` -- runtime required by librespot's async connect
 - `url` -- OAuth callback query parsing
 

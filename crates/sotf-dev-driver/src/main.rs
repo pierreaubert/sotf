@@ -18,6 +18,8 @@
 //!   assert_visible <selector>              (rendered selector has non-empty bounds)
 //!   assert_absent <selector>               (selector is not in the current rendered frame)
 //!   assert_in_viewport <selector>           (rendered selector is not clipped)
+//!   assert_h_centered <child> <parent> <px> (rendered horizontal centers align)
+//!   assert_text <selector> == <literal>     (rendered selector publishes expected text)
 //! snapshot <path> (save authenticated diagnostic snapshot)
 //!   click_at <x> <y>                     (click a measured viewport point)
 //!   double_click_at <x> <y>              (dispatch a native double-click)

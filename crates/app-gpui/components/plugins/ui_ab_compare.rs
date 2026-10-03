@@ -4,7 +4,7 @@
 //! a scrollable plugin strip, an "add plugin" picker, and remove/move controls.
 
 #[cfg(feature = "dev-api")]
-use crate::app::dev_api::DevTrackExt;
+use crate::app::dev_api::{DevElementState, DevTrackExt};
 use crate::app::i18n::{ABCompareTranslations, PluginCommonTranslations};
 use crate::app::state::plugin::ABPathTarget;
 use crate::components::design::Ds;
@@ -382,14 +382,19 @@ fn render_path_section(
     );
 
     if let Some(file_path) = loaded_config_file.filter(|path| !path.is_empty()) {
-        section = section.child(
-            div()
-                .text_size(d.text_xs)
-                .text_color(theme.text_muted)
-                .overflow_hidden()
-                .text_ellipsis()
-                .child(format!("{}: {}", text.loaded, display_file_name(file_path))),
+        let file_name = display_file_name(file_path);
+        let file_label = div()
+            .text_size(d.text_xs)
+            .text_color(theme.text_muted)
+            .overflow_hidden()
+            .text_ellipsis()
+            .child(format!("{}: {file_name}", text.loaded));
+        #[cfg(feature = "dev-api")]
+        let file_label = file_label.dev_track_with_state(
+            format!("ab.path.{path}.file"),
+            DevElementState::default().text(file_name.to_string()),
         );
+        section = section.child(file_label);
     }
 
     // Add menu dropdown

@@ -31,6 +31,17 @@ pub(crate) fn spawn_mock_server<F>(handler: F) -> MockHttpServer
 where
     F: Fn(&MockRequest) -> (u16, String) + Send + Sync + 'static,
 {
+    spawn_mock_server_with_headers(move |request| {
+        let (status, body) = handler(request);
+        (status, Vec::new(), body)
+    })
+}
+
+/// Spawn a mock server that can include extra response headers.
+pub(crate) fn spawn_mock_server_with_headers<F>(handler: F) -> MockHttpServer
+where
+    F: Fn(&MockRequest) -> (u16, Vec<(String, String)>, String) + Send + Sync + 'static,
+{
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
     let addr = listener.local_addr().unwrap();
     let handler = Arc::new(handler);
@@ -43,9 +54,10 @@ where
                 let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
                 let raw = read_request(&mut stream);
                 let request = parse_request(&raw);
-                let (status, body) = handler(&request);
+                let (status, headers, body) = handler(&request);
                 let reason = match status {
                     200 => "OK",
+                    302 => "Found",
                     400 => "Bad Request",
                     401 => "Unauthorized",
                     403 => "Forbidden",
@@ -53,10 +65,15 @@ where
                     500 => "Internal Server Error",
                     _ => "Status",
                 };
-                let response = format!(
-                    "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                let mut response = format!(
+                    "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n",
                     body.len()
                 );
+                for (name, value) in headers {
+                    response.push_str(&format!("{name}: {value}\r\n"));
+                }
+                response.push_str("\r\n");
+                response.push_str(&body);
                 let _ = stream.write_all(response.as_bytes());
                 let _ = stream.flush();
             });

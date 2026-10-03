@@ -1316,6 +1316,11 @@ fn render_group(
         }
     }
 
+    #[cfg(feature = "dev-api")]
+    let col = {
+        use crate::app::dev_api::DevTrackExt;
+        col.dev_track(format!("plugin.layout.group.{plugin_idx}.{}", group.id))
+    };
     col
 }
 
@@ -2117,6 +2122,40 @@ fn render_file_picker(
     };
     let engine_key = param.engine_key;
     let param_name = param.name;
+    let file_button = IconButton::with_child(
+        SharedString::from(format!("load-file-btn-{plugin_idx}-{idx}")),
+        Icon::new(IconName::Folder)
+            .small()
+            .color(theme.text_secondary),
+    )
+    .variant(IconButtonVariant::Outline)
+    .size(IconButtonSize::Sm)
+    .theme(theme.to_icon_button_theme())
+    .aria_label(param_name)
+    .when(interactive, |button| {
+        button.on_click_event(move |_event, _window, cx| {
+            match file_picker_open_target(engine_key) {
+                Some(FilePickerOpenTarget::Sofa) => cx.dispatch_action(&OpenSofaFile {
+                    plugin_idx,
+                    param_idx: idx,
+                }),
+                Some(FilePickerOpenTarget::Ir) => cx.dispatch_action(&OpenIrFile {
+                    plugin_idx,
+                    param_idx: idx,
+                }),
+                Some(FilePickerOpenTarget::AbConfig(path_id)) => {
+                    cx.dispatch_action(&OpenAbConfigFile {
+                        plugin_idx,
+                        path_id: path_id.to_string(),
+                    });
+                }
+                None => log::warn!("No file open action for engine_key: {}", engine_key),
+            }
+        })
+    })
+    .when(!interactive, |button| button.disabled(true));
+    #[cfg(feature = "dev-api")]
+    let file_button = file_button.dev_track(format!("plugin.file_picker.{plugin_idx}.{engine_key}"));
 
     div()
         .flex()
@@ -2152,49 +2191,7 @@ fn render_file_picker(
                 .id(SharedString::from(format!(
                     "load-file-tooltip-{plugin_idx}-{idx}"
                 )))
-                .child(
-                    IconButton::with_child(
-                        SharedString::from(format!("load-file-btn-{plugin_idx}-{idx}")),
-                        Icon::new(IconName::Folder)
-                            .small()
-                            .color(theme.text_secondary),
-                    )
-                    .variant(IconButtonVariant::Outline)
-                    .size(IconButtonSize::Sm)
-                    .theme(theme.to_icon_button_theme())
-                    .aria_label(param_name)
-                    .when(interactive, |button| {
-                        button.on_click_event(move |_event, _window, cx| {
-                            match file_picker_open_target(engine_key) {
-                                Some(FilePickerOpenTarget::Sofa) => {
-                                    cx.dispatch_action(&OpenSofaFile {
-                                        plugin_idx,
-                                        param_idx: idx,
-                                    });
-                                }
-                                Some(FilePickerOpenTarget::Ir) => {
-                                    cx.dispatch_action(&OpenIrFile {
-                                        plugin_idx,
-                                        param_idx: idx,
-                                    });
-                                }
-                                Some(FilePickerOpenTarget::AbConfig(path_id)) => {
-                                    cx.dispatch_action(&OpenAbConfigFile {
-                                        plugin_idx,
-                                        path_id: path_id.to_string(),
-                                    });
-                                }
-                                None => {
-                                    log::warn!(
-                                        "No file open action for engine_key: {}",
-                                        engine_key
-                                    );
-                                }
-                            }
-                        })
-                    })
-                    .when(!interactive, |button| button.disabled(true)),
-                )
+                .child(file_button)
                 .tooltip({
                     let theme = theme.clone();
                     move |_window, cx| themed_tooltip(param_name, &theme, cx)

@@ -14,6 +14,7 @@ use super::verb::verb_assert_focused;
 use super::verb::verb_assert_in_viewport;
 use super::verb::verb_assert_inaccessible;
 use super::verb::verb_assert_non_overlapping;
+use super::verb::verb_assert_h_centered;
 use super::verb::verb_assert_perceptual_snapshot;
 use super::verb::verb_assert_snapshot;
 use super::verb::verb_assert_visible;
@@ -411,9 +412,11 @@ fn execute(line: &str, ctx: &Ctx) -> Result<()> {
         "assert_absent" => verb_assert_absent(rest, ctx),
         "assert_in_viewport" => verb_assert_in_viewport(rest, ctx),
         "assert_non_overlapping" => verb_assert_non_overlapping(rest, ctx),
+        "assert_h_centered" => verb_assert_h_centered(rest, ctx),
         "assert_enabled" => verb_assert_element_state(rest, "enabled", ctx),
         "assert_selected" => verb_assert_element_state(rest, "selected", ctx),
         "assert_expanded" => verb_assert_element_state(rest, "expanded", ctx),
+        "assert_text" => verb_assert_element_state(rest, "text", ctx),
         "export_room_eq_json" | "export_roomeq_json" => verb_export_room_eq_json(rest, ctx),
         "elements" => verb_elements(ctx),
         "accessibility" => verb_accessibility(ctx),

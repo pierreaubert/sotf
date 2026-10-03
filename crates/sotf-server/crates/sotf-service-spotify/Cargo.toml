@@ -15,17 +15,12 @@ log = { workspace = true }
 tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
 librespot-core = { workspace = true }
 librespot-playback = { workspace = true }
-librespot-oauth = { workspace = true }
 librespot-protocol = { workspace = true }
 # Version pin only (see workspace vergen comment): forces the transitive
 # vergen required by librespot-core's build script back to 9.0.6.
 vergen = { workspace = true }
 oauth2 = { workspace = true }
-reqwest = { workspace = true, features = ["json", "query"] }
-# Same reqwest line oauth2 4.4 builds its blocking client against; needed so
-# the custom token-exchange client (explicit 30 s timeout) can produce
-# `oauth2::HttpResponse` values (http 0.2 types).
-reqwest-blocking = { package = "reqwest", version = "0.11", default-features = false, features = ["blocking", "rustls-tls"] }
+reqwest = { workspace = true, features = ["json", "query", "blocking"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 url = { workspace = true }

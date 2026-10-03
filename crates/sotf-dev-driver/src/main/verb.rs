@@ -1176,6 +1176,38 @@ pub(super) fn verb_assert_non_overlapping(rest: &str, ctx: &Ctx) -> Result<()> {
     Ok(())
 }
 
+/// Assert that a rendered child is horizontally centered within its parent.
+pub(super) fn verb_assert_h_centered(rest: &str, ctx: &Ctx) -> Result<()> {
+    let mut parts = rest.split_whitespace();
+    let child_name = parts.next().ok_or_else(|| anyhow!("assert_h_centered needs child, parent, tolerance"))?;
+    let parent_name = parts.next().ok_or_else(|| anyhow!("assert_h_centered needs child, parent, tolerance"))?;
+    let tolerance: f64 = parts
+        .next()
+        .ok_or_else(|| anyhow!("assert_h_centered needs a pixel tolerance"))?
+        .parse()
+        .context("assert_h_centered tolerance must be a number")?;
+    if parts.next().is_some() || !tolerance.is_finite() || tolerance < 0.0 {
+        bail!("assert_h_centered needs exactly two selectors and a nonnegative tolerance");
+    }
+    let elements = fetch_elements(ctx)?;
+    let child = find_element(&elements, child_name)
+        .ok_or_else(|| anyhow!("rendered selector `{child_name}` is not present"))?;
+    let parent = find_element(&elements, parent_name)
+        .ok_or_else(|| anyhow!("rendered selector `{parent_name}` is not present"))?;
+    let center = |element: &Value| -> Option<f64> {
+        let x = element.get("x")?.as_f64()?;
+        let width = element.get("w")?.as_f64()?;
+        (x.is_finite() && width.is_finite() && width > 0.0).then_some(x + width / 2.0)
+    };
+    let (Some(child_center), Some(parent_center)) = (center(child), center(parent)) else {
+        bail!("assert_h_centered requires positive, finite rendered bounds");
+    };
+    if (child_center - parent_center).abs() > tolerance {
+        bail!("`{child_name}` is not centered in `{parent_name}`: child={child}, parent={parent}, tolerance={tolerance}px");
+    }
+    Ok(())
+}
+
 /// Assert an explicit semantic state published by the rendered selector.
 /// `assert_enabled transport.play == true`, `assert_selected ...`, and
 /// `assert_expanded ...` deliberately fail when the control has not supplied
