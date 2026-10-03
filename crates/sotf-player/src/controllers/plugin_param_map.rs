@@ -153,6 +153,10 @@ mod tests {
             link_amount: 0.0,
             range_db: 120.0,
             hold_ms: 0.0,
+            sidechain_hpf_hz: 80.0,
+            sidechain_hpf_order: "2nd".to_string(),
+            detection_mode: "Peak".to_string(),
+            sidechain_hpf_enabled: false,
         }
     }
 
@@ -345,6 +349,7 @@ mod tests {
             mix: 1.0,
             bands: vec![DynEqBandParams {
                 shape: Default::default(),
+                placement: Default::default(),
                 shelf_slope: 1.0,
                 frequency: 1000.0,
                 q: 1.0,
@@ -354,6 +359,7 @@ mod tests {
                 active: true,
                 solo: false,
             }],
+            stereo_pairs: None,
         };
 
         assert!(param_index_to_engine_param(&settings, 0).is_none());

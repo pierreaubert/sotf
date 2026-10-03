@@ -729,6 +729,10 @@ mod tests {
             link_amount: 0.0,
             range_db: 120.0,
             hold_ms: 0.0,
+            sidechain_hpf_hz: 80.0,
+            sidechain_hpf_order: "2nd".to_string(),
+            detection_mode: "Peak".to_string(),
+            sidechain_hpf_enabled: false,
         };
         let mut changed = false;
 
