@@ -4117,7 +4117,7 @@ dependencies = [
  "libc",
  "log",
  "mach2",
- "nix 0.29.0",
+ "nix 0.31.3",
  "percent-encoding",
  "regex",
  "rust-embed",
@@ -9948,7 +9948,7 @@ dependencies = [
  "rustfft",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.21",
 ]
