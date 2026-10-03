@@ -5897,7 +5897,7 @@ dependencies = [
  "hound",
  "log",
  "math-iir-fir",
- "nalgebra 0.35.0",
+ "nalgebra",
  "ndarray 0.17.2",
  "num-complex 0.4.6",
  "oxiblas-ndarray",
@@ -5931,7 +5931,7 @@ dependencies = [
  "clap",
  "directories",
  "math-test-functions",
- "nalgebra 0.35.0",
+ "nalgebra",
  "ndarray 0.17.2",
  "oxiblas-ndarray",
  "rand 0.10.3",
@@ -6181,21 +6181,6 @@ dependencies = [
 
 [[package]]
 name = "nalgebra"
-version = "0.33.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d43ddcacf343185dfd6de2ee786d9e8b1c2301622afab66b6c73baf9882abfd"
-dependencies = [
- "approx",
- "matrixmultiply",
- "num-complex 0.4.6",
- "num-rational",
- "num-traits",
- "simba 0.9.1",
- "typenum",
-]
-
-[[package]]
-name = "nalgebra"
 version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adc43a60c217b0c6ff46e47f26911015ad8d2e5a8be1af668c67e370d99a4346"
@@ -6209,7 +6194,7 @@ dependencies = [
  "num-complex 0.4.6",
  "num-rational",
  "num-traits",
- "simba 0.10.2",
+ "simba",
  "typenum",
 ]
 
@@ -8092,7 +8077,7 @@ dependencies = [
  "rand 0.10.3",
  "rand_xoshiro",
  "ref-cast",
- "wide 1.7.1",
+ "wide",
 ]
 
 [[package]]
@@ -8895,7 +8880,7 @@ dependencies = [
  "math-iir-fir",
  "math-optimisation",
  "math-rir",
- "nalgebra 0.35.0",
+ "nalgebra",
  "ndarray 0.17.2",
  "num-complex 0.4.6",
  "num_cpus",
@@ -9386,15 +9371,6 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "safe_arch"
-version = "0.7.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96b02de82ddbe1b636e6170c21be622223aea188ef2e139be0a5b219ec215323"
-dependencies = [
- "bytemuck",
-]
-
-[[package]]
-name = "safe_arch"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42c6efa15875e6ecb39ca61fb0b0c1a40b84fac5a5ffe71eef7d1000c8eb3f5f"
@@ -9849,19 +9825,6 @@ dependencies = [
 
 [[package]]
 name = "simba"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c99284beb21666094ba2b75bbceda012e610f5479dfcc2d6e2426f53197ffd95"
-dependencies = [
- "approx",
- "num-complex 0.4.6",
- "num-traits",
- "paste",
- "wide 0.7.33",
-]
-
-[[package]]
-name = "simba"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1a7200d82ff1c7b4235efd12f11e2537a402c91cf83a5cb97ce80eef787fde7"
@@ -9869,7 +9832,7 @@ dependencies = [
  "approx",
  "num-complex 0.4.6",
  "num-traits",
- "wide 1.7.1",
+ "wide",
 ]
 
 [[package]]
@@ -10496,7 +10459,7 @@ name = "sotf-plugin-ambisonics"
 version = "0.6.0"
 dependencies = [
  "log",
- "nalgebra 0.33.3",
+ "nalgebra",
  "plugins-spatial",
  "serde",
  "serde_json",
@@ -10566,7 +10529,7 @@ name = "sotf-plugin-beamformer"
 version = "0.5.4"
 dependencies = [
  "math-dsp",
- "nalgebra 0.33.3",
+ "nalgebra",
  "plugins-spatial",
  "realfft",
  "rustfft 6.4.1",
@@ -13654,22 +13617,12 @@ dependencies = [
 
 [[package]]
 name = "wide"
-version = "0.7.33"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ce5da8ecb62bcd8ec8b7ea19f69a51275e91299be594ea5cc6ef7819e16cd03"
-dependencies = [
- "bytemuck",
- "safe_arch 0.7.4",
-]
-
-[[package]]
-name = "wide"
 version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d920ac99c3c8edce110cb8d07dbb324d6d026011dce85b1e9355b70f0adacc4f"
 dependencies = [
  "bytemuck",
- "safe_arch 1.2.0",
+ "safe_arch",
 ]
 
 [[package]]
