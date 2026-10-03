@@ -9,6 +9,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
 use serde_json::json;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "linux")]
+use std::process::Command;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
@@ -734,7 +736,9 @@ pub(super) fn verb_wait_until(rest: &str, ctx: &Ctx) -> Result<()> {
 /// Wait for a real rendered element after asynchronous UI work such as a file dialog.
 pub(super) fn verb_wait_visible(rest: &str, ctx: &Ctx) -> Result<()> {
     let mut parts = rest.split_whitespace();
-    let selector = parts.next().ok_or_else(|| anyhow!("wait_visible needs a selector"))?;
+    let selector = parts
+        .next()
+        .ok_or_else(|| anyhow!("wait_visible needs a selector"))?;
     let timeout = match parts.next() {
         Some(option) => {
             let duration = option
@@ -754,7 +758,9 @@ pub(super) fn verb_wait_visible(rest: &str, ctx: &Ctx) -> Result<()> {
             return Ok(());
         }
         if Instant::now() >= deadline {
-            bail!("wait_visible timed out after {timeout:?}: rendered selector `{selector}` is not visible");
+            bail!(
+                "wait_visible timed out after {timeout:?}: rendered selector `{selector}` is not visible"
+            );
         }
         sleep(Duration::from_millis(50));
     }
@@ -1029,8 +1035,130 @@ pub(super) fn verb_screenshot(rest: &str, ctx: &Ctx) -> Result<()> {
         bail!("screenshot name must contain only ASCII letters, digits, '-' or '_'");
     }
     let body = json!({ "name": name });
-    post_dev_json(ctx, "/screenshot", &body, &format!("screenshot `{name}`"))?;
+    match post_dev_json(ctx, "/screenshot", &body, &format!("screenshot `{name}`")) {
+        Ok(_) => Ok(()),
+        #[cfg(target_os = "linux")]
+        Err(error) if linux_render_to_image_is_unavailable(&error) => {
+            capture_linux_app_window(ctx, name)
+                .with_context(|| format!("Linux X11 fallback after {error:#}"))
+        }
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_render_to_image_is_unavailable(error: &anyhow::Error) -> bool {
+    let message = error.to_string();
+    message.contains("failed (500 Internal Server Error): reading initial scene for ")
+        && message.ends_with(": render_to_image not implemented for this platform")
+}
+
+#[cfg(target_os = "linux")]
+fn capture_linux_app_window(ctx: &Ctx, name: &str) -> Result<()> {
+    let health = fetch_health(ctx)?;
+    let value = health
+        .get("value")
+        .ok_or_else(|| anyhow!("health response has no value"))?;
+    let pid = value
+        .get("pid")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| anyhow!("health response has no app PID"))?;
+    let qa_dir = value
+        .get("qa_directory")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("health response has no QA directory"))?;
+    let viewport = value
+        .get("viewport")
+        .ok_or_else(|| anyhow!("health response has no viewport"))?;
+    let dimension = |key: &str| -> Result<u32> {
+        let number = viewport
+            .get(key)
+            .and_then(Value::as_f64)
+            .ok_or_else(|| anyhow!("health viewport has no {key}"))?;
+        if !number.is_finite() || !(1.0..=10000.0).contains(&number) {
+            bail!("health viewport {key} is invalid: {number}");
+        }
+        Ok(number.round() as u32)
+    };
+    let expected = (dimension("width")?, dimension("height")?);
+    let pid_arg = pid.to_string();
+    let search = Command::new("xdotool")
+        .args([
+            "search",
+            "--all",
+            "--onlyvisible",
+            "--pid",
+            &pid_arg,
+            "--name",
+            "^SotF$",
+        ])
+        .output()
+        .context("finding SotF's visible X11 window by app PID")?;
+    if !search.status.success() {
+        bail!(
+            "xdotool found no visible SotF window for PID {pid}: {}",
+            String::from_utf8_lossy(&search.stderr)
+        );
+    }
+    let window_ids: Vec<&str> = std::str::from_utf8(&search.stdout)?
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    if window_ids.len() != 1 {
+        bail!("expected one visible SotF window for PID {pid}, found {window_ids:?}");
+    }
+    let output_dir = Path::new(qa_dir).join("screenshots");
+    std::fs::create_dir_all(&output_dir)?;
+    let output = output_dir.join(format!("{name}.png"));
+    let capture = Command::new("import")
+        .args(["-window", window_ids[0], "-silent"])
+        .arg(format!("PNG:{}", output.display()))
+        .output()
+        .context("capturing SotF's visible X11 window")?;
+    if !capture.status.success() {
+        bail!(
+            "ImageMagick X11 capture failed: {}",
+            String::from_utf8_lossy(&capture.stderr)
+        );
+    }
+    let dimensions = image::image_dimensions(&output)
+        .with_context(|| format!("reading X11 screenshot {}", output.display()))?;
+    if dimensions != expected {
+        bail!(
+            "X11 screenshot {} is {dimensions:?}, expected live viewport {expected:?}",
+            output.display()
+        );
+    }
+    println!(
+        "screenshot `{name}` captured via X11 window={} pid={pid} pixels={}x{} output={}",
+        window_ids[0],
+        dimensions.0,
+        dimensions.1,
+        output.display()
+    );
     Ok(())
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_screenshot_fallback_tests {
+    use super::linux_render_to_image_is_unavailable;
+
+    #[test]
+    fn falls_back_only_for_the_known_render_to_image_failure() {
+        let unsupported = anyhow::anyhow!(
+            "screenshot `rack` failed (500 Internal Server Error): reading initial scene for /qa/screenshots/rack.png: render_to_image not implemented for this platform"
+        );
+        assert!(linux_render_to_image_is_unavailable(&unsupported));
+        for message in [
+            "screenshot `rack` failed (500 Internal Server Error): GPU device lost",
+            "screenshot `rack` failed (500 Internal Server Error): render_to_image not implemented for this platform",
+            "screenshot `rack` failed (401 Unauthorized): reading initial scene for /qa/screenshots/rack.png: render_to_image not implemented for this platform",
+        ] {
+            assert!(!linux_render_to_image_is_unavailable(&anyhow::anyhow!(
+                message
+            )));
+        }
+    }
 }
 
 pub(super) fn parse_resize_dimensions(rest: &str) -> Result<(f32, f32)> {
@@ -1208,8 +1336,12 @@ pub(super) fn verb_assert_non_overlapping(rest: &str, ctx: &Ctx) -> Result<()> {
 /// Assert that a rendered child is horizontally centered within its parent.
 pub(super) fn verb_assert_h_centered(rest: &str, ctx: &Ctx) -> Result<()> {
     let mut parts = rest.split_whitespace();
-    let child_name = parts.next().ok_or_else(|| anyhow!("assert_h_centered needs child, parent, tolerance"))?;
-    let parent_name = parts.next().ok_or_else(|| anyhow!("assert_h_centered needs child, parent, tolerance"))?;
+    let child_name = parts
+        .next()
+        .ok_or_else(|| anyhow!("assert_h_centered needs child, parent, tolerance"))?;
+    let parent_name = parts
+        .next()
+        .ok_or_else(|| anyhow!("assert_h_centered needs child, parent, tolerance"))?;
     let tolerance: f64 = parts
         .next()
         .ok_or_else(|| anyhow!("assert_h_centered needs a pixel tolerance"))?
@@ -1232,7 +1364,9 @@ pub(super) fn verb_assert_h_centered(rest: &str, ctx: &Ctx) -> Result<()> {
         bail!("assert_h_centered requires positive, finite rendered bounds");
     };
     if (child_center - parent_center).abs() > tolerance {
-        bail!("`{child_name}` is not centered in `{parent_name}`: child={child}, parent={parent}, tolerance={tolerance}px");
+        bail!(
+            "`{child_name}` is not centered in `{parent_name}`: child={child}, parent={parent}, tolerance={tolerance}px"
+        );
     }
     Ok(())
 }
