@@ -71,6 +71,7 @@ fn explicit_rate_preview_matches_peak_impulse_cascade() {
                     topology: Default::default(),
                     lambda: None,
                     kautz_sections: Vec::new(),
+                    placement: None,
                 };
                 for frequency in [5_000.0, 12_000.0, 18_000.0] {
                     let expected = peak_impulse_response_db(&filter, sample_rate, frequency);
@@ -419,6 +420,7 @@ fn test_calculate_response_at_freq() {
         topology: Default::default(),
         lambda: None,
         kautz_sections: Vec::new(),
+        placement: None,
     }];
     let response = calculate_response_at_freq(&flat_filter, 1000.0);
     assert!(
@@ -438,6 +440,7 @@ fn test_calculate_response_at_freq() {
         topology: Default::default(),
         lambda: None,
         kautz_sections: Vec::new(),
+        placement: None,
     }];
     let muted_response = calculate_response_at_freq(&muted_filter, 1000.0);
     assert!(
@@ -461,6 +464,7 @@ fn test_calculate_response_solo() {
             topology: Default::default(),
             lambda: None,
             kautz_sections: Vec::new(),
+            placement: None,
         },
         EQFilter {
             frequency: 1000.0,
@@ -473,6 +477,7 @@ fn test_calculate_response_solo() {
             topology: Default::default(),
             lambda: None,
             kautz_sections: Vec::new(),
+            placement: None,
         },
     ];
 
@@ -501,6 +506,7 @@ fn test_calculate_band_response() {
         topology: Default::default(),
         lambda: None,
         kautz_sections: Vec::new(),
+        placement: None,
     };
 
     let response = calculate_band_response(&filter, 1000.0);
