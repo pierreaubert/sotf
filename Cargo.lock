@@ -877,7 +877,7 @@ dependencies = [
 name = "autoeq-report-wasm"
 version = "0.5.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "gpui-d3rs",
  "serde",
  "serde_json",
@@ -5876,7 +5876,7 @@ dependencies = [
 name = "math-iir-fir"
 version = "0.5.24"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "byteorder",
  "hound",
  "ndarray 0.17.2",
@@ -10295,7 +10295,7 @@ dependencies = [
  "anyhow",
  "autoeq",
  "autoeq-measurements",
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "clap",
  "crossbeam",
@@ -11038,7 +11038,6 @@ dependencies = [
 name = "sotf-tls"
 version = "0.8.4"
 dependencies = [
- "base64 0.22.1",
  "chrono",
  "log",
  "rcgen",
