@@ -1739,7 +1739,7 @@ action CycleTheme
 assert settings.theme == "Protanopia"
 focus settings
 click settings.tab.Theme
-scroll settings.content -1400
+scroll preferences.content -1400
 wait_idle 500ms
 assert_in_viewport settings.appearance.reduce-motion
 click settings.appearance.reduce-motion

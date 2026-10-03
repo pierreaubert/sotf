@@ -284,6 +284,9 @@ pub(super) fn list_elements_json() -> String {
         if let Some(expanded) = element.state.expanded {
             state.insert("expanded".into(), serde_json::json!(expanded));
         }
+        if let Some(text) = element.state.text {
+            state.insert("text".into(), serde_json::json!(text));
+        }
         items.push(item);
     }
     serde_json::json!({ "ok": true, "elements": items }).to_string()
