@@ -2618,7 +2618,7 @@ dependencies = [
  "log",
  "memmap2",
  "rand 0.10.3",
- "sha2 0.10.9",
+ "sha2 0.11.0",
 ]
 
 [[package]]
@@ -3779,13 +3779,13 @@ dependencies = [
  "getrandom 0.3.4",
  "gpui-toolkit-collections",
  "gpui-toolkit-gpui-macros",
- "gpui-toolkit-gpui-shared-string",
  "gpui-toolkit-gpui-util",
  "gpui-toolkit-http-client",
  "gpui-toolkit-media",
  "gpui-toolkit-scheduler",
  "gpui-toolkit-sum-tree",
  "gpui-toolkit-util-macros",
+ "gpui_shared_string",
  "heapless",
  "image",
  "inventory",
@@ -3933,15 +3933,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.6",
-]
-
-[[package]]
-name = "gpui-toolkit-gpui-shared-string"
-version = "0.1.0"
-dependencies = [
- "schemars",
- "serde",
- "smol_str",
 ]
 
 [[package]]
@@ -4166,6 +4157,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.6",
+]
+
+[[package]]
+name = "gpui_shared_string"
+version = "0.1.0"
+source = "git+https://github.com/zed-industries/zed.git?rev=ced90fc636c4ede05402befc38a63bae7fd741bd#ced90fc636c4ede05402befc38a63bae7fd741bd"
+dependencies = [
+ "schemars",
+ "serde",
+ "smol_str",
 ]
 
 [[package]]
@@ -9976,7 +9977,7 @@ dependencies = [
  "hex",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "thiserror 2.0.21",
 ]
 
@@ -9991,7 +9992,7 @@ dependencies = [
  "reqwest 0.13.5",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "sotf-dev-api",
  "sysinfo",
  "tempfile",
@@ -10321,7 +10322,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "socket2 0.6.5",
  "sotf-capture",
  "sotf-dlna",
@@ -10365,7 +10366,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "sotf-host",
 ]
 
@@ -11043,7 +11044,7 @@ dependencies = [
  "rcgen",
  "rustls 0.23.45",
  "serde",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
