@@ -494,6 +494,28 @@ fn run_one(
         Ok(())
     })();
 
+    if scenario_result.is_err() {
+        for (endpoint, name) in [
+            ("elements", "failure-elements.json"),
+            ("snapshot", "failure-snapshot.json"),
+        ] {
+            match client
+                .get(format!("{base_url}/{endpoint}"))
+                .send()
+                .and_then(reqwest::blocking::Response::error_for_status)
+                .and_then(reqwest::blocking::Response::text)
+            {
+                Ok(body) => {
+                    let path = scenario_dir.join(name);
+                    if let Err(error) = fs::write(&path, body) {
+                        eprintln!("could not save {endpoint} at {}: {error}", path.display());
+                    }
+                }
+                Err(error) => eprintln!("could not capture {endpoint} after failure: {error}"),
+            }
+        }
+    }
+
     let shutdown_started = Instant::now();
     let _ = post_json(&client, &base_url, "/quit", json!({}));
     wait_or_kill(&mut child, Duration::from_secs(5))?;
