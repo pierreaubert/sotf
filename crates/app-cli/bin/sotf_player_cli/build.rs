@@ -570,6 +570,7 @@ pub(super) fn build_rack_mode_plugins(
                         // 120 dB disables the reduction limit (canonical default).
                         range_db: 120.0,
                         hold_ms: 0.0,
+                        sidechain_hpf_enabled: false,
                     };
                 }
                 log::info!("Rack: Added Compressor plugin");
@@ -776,6 +777,10 @@ pub(super) fn build_rack_mode_plugins(
                         harmonic_percussive: false,
                         spatial_denoise: false,
                         spatial_strength: 0.5,
+                        curve_low: 1.0,
+                        curve_mid: 1.0,
+                        curve_high: 1.0,
+                        audition_residual: false,
                     };
                 }
                 log::info!("Rack: Added Denoiser plugin");
@@ -978,6 +983,7 @@ pub(super) fn build_rack_mode_plugins(
                         autogain_target_lufs: plugins.crossfeed.autogain_target_lufs as f64,
                         autogain_max_gain_db: plugins.crossfeed.autogain_max_gain_db as f64,
                         autogain_smoothing_ms: plugins.crossfeed.autogain_smoothing_ms as f64,
+                        head_yaw_deg: 0.0,
                     };
                 }
                 log::info!(
