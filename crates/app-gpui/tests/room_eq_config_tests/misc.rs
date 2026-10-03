@@ -161,6 +161,7 @@ pub(super) fn simulate_save_to_rack(
             channels: num_channels,
             filters: global_filters,
             channel_filters: Some(per_channel_filters.clone()),
+            stereo_pairs: None,
             per_channel_mode: true,
             max_filters: 10,
             tdf2: false,

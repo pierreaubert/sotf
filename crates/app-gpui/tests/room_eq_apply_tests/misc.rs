@@ -357,6 +357,7 @@ fn old_merge_style_apply_loses_the_two_eq_distinction() {
         channels: 2,
         filters: merged.clone(),
         channel_filters: Some(merged_per_ch),
+        stereo_pairs: None,
         per_channel_mode: true,
         max_filters: 10,
         tdf2: false,

@@ -520,6 +520,7 @@ pub(super) fn build_rack_mode_plugins(
                         channels,
                         filters: eq_filters,
                         channel_filters: None,
+                        stereo_pairs: None,
                         per_channel_mode: false,
                         max_filters: 20,
                         tdf2: false,

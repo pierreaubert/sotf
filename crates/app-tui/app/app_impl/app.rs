@@ -591,13 +591,19 @@ impl App {
             .graph
             .get_plugin_mut(self.plugin_rack.selected_index)
         {
-            if let PluginSettings::EQ { channels, .. } = &plugin.settings {
+            if let PluginSettings::EQ {
+                channels,
+                stereo_pairs,
+                ..
+            } = &plugin.settings {
                 let channels = *channels;
+                let stereo_pairs = stereo_pairs.clone();
                 let filter_count = filters.len();
                 plugin.settings = PluginSettings::EQ {
                     channels,
                     filters,
                     channel_filters: None,
+                    stereo_pairs,
                     per_channel_mode: false,
                     max_filters: filter_count.clamp(1, 20),
                     tdf2: false,

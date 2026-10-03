@@ -501,6 +501,7 @@ impl PlayerView {
                     channels: 2,
                     filters,
                     channel_filters: None,
+                    stereo_pairs: None,
                     per_channel_mode: false,
                     max_filters: 10,
                     tdf2: false,

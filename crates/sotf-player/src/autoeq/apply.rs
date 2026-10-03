@@ -88,14 +88,19 @@ pub fn apply_eq_filter_tuples_to_chain(
     };
 
     if let Some(plugin) = graph.get_plugin_mut(target_idx) {
-        let channels = match &plugin.settings {
-            PluginSettings::EQ { channels, .. } => *channels,
-            _ => 2,
+        let (channels, stereo_pairs) = match &plugin.settings {
+            PluginSettings::EQ {
+                channels,
+                stereo_pairs,
+                ..
+            } => (*channels, stereo_pairs.clone()),
+            _ => (2, None),
         };
         plugin.settings = PluginSettings::EQ {
             channels,
             filters: eq_filters,
             channel_filters: None,
+            stereo_pairs,
             per_channel_mode: false,
             max_filters: n.clamp(1, 20),
             tdf2: false,
@@ -242,6 +247,11 @@ mod eq_tuple_apply_tests {
         let mut graph = PluginGraph::with_default_rack();
         let idx = graph.user_plugin_insert_index();
         graph.insert_plugin(idx, &PluginType::EQ).unwrap();
+        if let PluginSettings::EQ { stereo_pairs, .. } =
+            &mut graph.get_plugin_mut(idx).unwrap().settings
+        {
+            *stereo_pairs = Some(vec![[1, 0]]);
+        }
 
         let message = apply_eq_filter_tuples_to_chain(
             &mut graph,
@@ -259,6 +269,7 @@ mod eq_tuple_apply_tests {
         let PluginSettings::EQ {
             filters,
             max_filters,
+            stereo_pairs,
             ..
         } = &plugin.settings
         else {
@@ -267,6 +278,7 @@ mod eq_tuple_apply_tests {
         assert_eq!(filters.len(), 2);
         assert_eq!(filters[0].frequency, 125.0);
         assert_eq!(*max_filters, 2);
+        assert_eq!(stereo_pairs.as_deref(), Some([[1, 0]].as_slice()));
     }
 
     #[test]
@@ -796,6 +808,7 @@ mod tests {
             channels: 2,
             filters: Vec::new(),
             channel_filters: None,
+            stereo_pairs: None,
             per_channel_mode: false,
             max_filters: 10,
             tdf2: false,

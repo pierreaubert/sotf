@@ -172,6 +172,7 @@ impl TuiEditablePlugin for PluginSettings {
                 auto_gain,
                 mix,
                 filters,
+                ..
             } => {
                 let global_specs = sotf_plugins::param_specs::linear_phase_eq::PARAMS;
                 let band_template = sotf_plugins::param_specs::linear_phase_eq::BAND_TEMPLATE;
@@ -489,6 +490,7 @@ impl TuiEditablePlugin for PluginSettings {
                 auto_gain,
                 mix,
                 filters,
+                ..
             } => {
                 let global_specs = sotf_plugins::param_specs::linear_phase_eq::PARAMS;
                 let global_count = global_specs.len();

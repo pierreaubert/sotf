@@ -602,6 +602,7 @@ fn test_insert_eq_and_configure_per_channel() {
         channels: 2,
         filters: ch0_filters.clone(),
         channel_filters: Some(vec![ch0_filters.clone(), ch1_filters.clone()]),
+        stereo_pairs: None,
         per_channel_mode: true,
         max_filters: 10,
         tdf2: false,
@@ -656,6 +657,7 @@ fn test_update_existing_eq_preserves_position() {
         channels: 2,
         filters: new_filters.clone(),
         channel_filters: Some(vec![new_filters.clone(), new_filters.clone()]),
+        stereo_pairs: None,
         per_channel_mode: true,
         max_filters: 10,
         tdf2: false,
@@ -701,6 +703,7 @@ fn test_to_plugin_configs_per_channel_eq() {
         channels: 2,
         filters: ch0.clone(),
         channel_filters: Some(vec![ch0, ch1]),
+        stereo_pairs: None,
         per_channel_mode: true,
         max_filters: 10,
         tdf2: false,
@@ -743,6 +746,7 @@ fn test_to_plugin_configs_global_eq() {
         channels: 2,
         filters,
         channel_filters: None,
+        stereo_pairs: None,
         per_channel_mode: false,
         max_filters: 10,
         tdf2: false,
@@ -1075,6 +1079,53 @@ fn test_update_channel_dependent_plugins_eq_channels_propagate() {
     }
     assert_eq!(eq_node.input_channels, 1);
     assert_eq!(eq_node.output_channels, 1);
+}
+
+#[test]
+fn test_eq_channel_remap_preserves_valid_explicit_stereo_pairs() {
+    let mut graph = PluginGraph::with_default_rack();
+    let eq_id = graph.add_user_plugin(&PluginType::EQ).unwrap();
+    if let Some(input) = graph.input_node_mut() {
+        input.channels = 4;
+    }
+    graph.update_channel_dependent_plugins();
+    if let PluginSettings::EQ { stereo_pairs, .. } =
+        &mut graph.nodes.get_mut(&eq_id).unwrap().plugin.settings
+    {
+        *stereo_pairs = Some(vec![[1, 0], [3, 2]]);
+    } else {
+        panic!("Expected EQ settings");
+    }
+
+    if let Some(input) = graph.input_node_mut() {
+        input.channels = 2;
+    }
+    graph.update_channel_dependent_plugins();
+    match &graph.nodes[&eq_id].plugin.settings {
+        PluginSettings::EQ {
+            channels,
+            stereo_pairs,
+            ..
+        } => {
+            assert_eq!(*channels, 2);
+            assert_eq!(stereo_pairs.as_deref(), Some([[1, 0]].as_slice()));
+        }
+        _ => panic!("Expected EQ settings"),
+    }
+
+    if let PluginSettings::EQ { stereo_pairs, .. } =
+        &mut graph.nodes.get_mut(&eq_id).unwrap().plugin.settings
+    {
+        *stereo_pairs = Some(Vec::new());
+    }
+    if let Some(input) = graph.input_node_mut() {
+        input.channels = 4;
+    }
+    graph.update_channel_dependent_plugins();
+    match &graph.nodes[&eq_id].plugin.settings {
+        PluginSettings::EQ { stereo_pairs, .. } => assert_eq!(stereo_pairs, &Some(Vec::new())),
+        _ => panic!("Expected EQ settings"),
+    }
 }
 
 #[test]

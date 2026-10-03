@@ -1699,6 +1699,7 @@ impl PluginGraph {
                     channels,
                     filters,
                     channel_filters,
+                    stereo_pairs,
                     per_channel_mode,
                     max_filters,
                     tdf2,
@@ -1719,6 +1720,15 @@ impl PluginGraph {
                         channels: current_channels,
                         filters: filters.clone(),
                         channel_filters: new_channel_filters,
+                        stereo_pairs: stereo_pairs.as_ref().map(|pairs| {
+                            pairs
+                                .iter()
+                                .copied()
+                                .filter(|pair| {
+                                    pair[0] < current_channels && pair[1] < current_channels
+                                })
+                                .collect()
+                        }),
                         per_channel_mode: new_per_channel_mode,
                         max_filters: *max_filters,
                         tdf2: *tdf2,
@@ -2397,10 +2407,7 @@ impl PluginGraph {
                 continue; // edge touches a special node or a skipped plugin
             };
             if seen_edges.insert((from, to)) {
-                edges.push(PluginGraphEdgeConfig {
-                    from_node: from,
-                    to_node: to,
-                });
+                edges.push(PluginGraphEdgeConfig::new(from, to));
             }
         }
 

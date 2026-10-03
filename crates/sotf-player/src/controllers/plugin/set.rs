@@ -458,6 +458,7 @@ mod tests {
             channels: 2,
             filters: vec![EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0)],
             channel_filters: None,
+            stereo_pairs: None,
             per_channel_mode: false,
             max_filters: 10,
             tdf2: false,
@@ -487,6 +488,7 @@ mod tests {
             channels: 2,
             filters: vec![EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0)],
             channel_filters: None,
+            stereo_pairs: None,
             per_channel_mode: false,
             max_filters: 10,
             tdf2: false,
@@ -510,6 +512,7 @@ mod tests {
             channels: 2,
             filters: vec![EQFilter::new(BiquadFilterType::Notch, 1000.0, 1.0, 0.0)],
             channel_filters: None,
+            stereo_pairs: None,
             per_channel_mode: false,
             max_filters: 10,
             tdf2: false,
@@ -540,6 +543,7 @@ mod tests {
             channels: 2,
             filters: vec![EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0)],
             channel_filters: None,
+            stereo_pairs: None,
             per_channel_mode: false,
             max_filters: 10,
             tdf2: false,
@@ -562,6 +566,7 @@ mod tests {
             channels: 2,
             filters: vec![EQFilter::new(BiquadFilterType::Notch, 1000.0, 25.0, 0.0)],
             channel_filters: None,
+            stereo_pairs: None,
             per_channel_mode: false,
             max_filters: 10,
             tdf2: false,
@@ -588,6 +593,7 @@ mod tests {
             channels: 2,
             filters: vec![EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0)],
             channel_filters: None,
+            stereo_pairs: None,
             per_channel_mode: false,
             max_filters: 10,
             tdf2: false,
@@ -619,6 +625,7 @@ mod tests {
             phase_mode: 0.0,
             auto_gain: true,
             mix: 1.0,
+            stereo_pairs: None,
         };
         let mut changed = false;
 
@@ -647,6 +654,7 @@ mod tests {
             phase_mode: 0.0,
             auto_gain: true,
             mix: 1.0,
+            stereo_pairs: None,
         };
         let mut changed = false;
 

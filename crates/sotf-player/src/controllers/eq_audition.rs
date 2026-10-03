@@ -110,6 +110,7 @@ impl EqAudition {
                 max_filters: eq_filters.len().max(1),
                 filters: eq_filters,
                 channel_filters: None,
+                stereo_pairs: None,
                 per_channel_mode: false,
                 tdf2: false,
                 topology: 0.0,
