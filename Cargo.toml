@@ -21,8 +21,6 @@ members = [
     "crates/sotf-docs-gen",
 ]
 exclude = [
-    "crates/3rdparties/coreaudio-rs",
-    "crates/3rdparties/nnnoiseless",
     "crates/3rdparties/psm",
 ]
 resolver = "3"
@@ -84,7 +82,7 @@ byteorder = "1.5"
 coreaudio-rs = "0.13"
 core-foundation-sys = "0.8"
 dispatch2 = "0.3"
-flate2 = { version = "1.1" }
+flate2 = { version = "1.1.10" }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
 csv = "1.4"
@@ -94,11 +92,11 @@ directories = "6"
 env_logger = "0.11"
 libc = "0.2"
 log = "0.4.28"
-memmap2 = "0.9"
+memmap2 = "0.9.11"
 mimalloc = { version = "0.1" }
 notify = { version = "8.2" }
 libloading = { version = "0.8" }
-rand_chacha = "0.10"
+rand_chacha = "0.10.0"
 num_cpus = "1.17"
 regex = "1.12"
 rfd = "0.16"
@@ -112,7 +110,7 @@ smol = "2"
 strsim = "0.11"
 tempfile = "3.23"
 thiserror = "2.0.17"
-criterion = "0.8.1"
+criterion = "0.8.2"
 insta = { version = "1.42", features = ["json"] }
 serial_test = "3"
 which = "8"
@@ -122,7 +120,7 @@ windows-sys = "0.61"
 
 # Optimization and math
 ndarray = { version = "0.17", default-features = false, features = ["rayon", "serde"] }
-oxiblas-ndarray = { version = "0.2.1" }
+oxiblas-ndarray = { version = "0.2.2" }
 rand = "0.10.2"
 num-complex = "0.4"
 num-traits = "0.2"
@@ -132,39 +130,39 @@ realfft = "3.5"
 nalgebra = { version = "0.33", default-features = false, features = ["std"] }
 metaheuristics-nature = "10.1"
 
-# using git version
-math-test-functions = { git = "https://github.com/pierreaubert/math-audio", version = "0.5", default-features = false }
-math-delaunay = { git = "https://github.com/pierreaubert/math-audio", version = "0.5" }
-math-iir-fir = { git = "https://github.com/pierreaubert/math-audio", version = "0.5" }
-math-optimisation = { git = "https://github.com/pierreaubert/math-audio", version = "0.5" }
-math-dsp = { git = "https://github.com/pierreaubert/math-audio", version = "0.5" }
-math-rir = { git = "https://github.com/pierreaubert/math-audio", version = "0.5" }
-sofa-reader = { git = "https://github.com/pierreaubert/sofa-reader", version = "0.2" }
-autoeq = { git = "https://github.com/pierreaubert/autoeq", version=">=0.5.54" }
-autoeq-measurements = { git = "https://github.com/pierreaubert/autoeq", version = "0.5.4" }
+# Shared numerical and acoustic crates from sibling workspaces.
+math-test-functions = { version = "0.5", default-features = false, path = "../math-audio/crates/math-test-functions" }
+math-delaunay = { version = "0.5", path = "../math-audio/crates/math-delaunay" }
+math-iir-fir = { version = "0.5", path = "../math-audio/crates/math-iir-fir" }
+math-optimisation = { version = "0.5", path = "../math-audio/crates/math-optimisation" }
+math-dsp = { version = "0.5", path = "../math-audio/crates/math-dsp" }
+math-rir = { version = "0.5", path = "../math-audio/crates/math-rir" }
+sofa-reader = { version = "0.2", path = "../sofa-reader" }
+autoeq = { version = ">=0.5.54", path = "../autoeq" }
+autoeq-measurements = { version = "0.5.4", path = "../autoeq/crates/autoeq-measurements" }
 
-# using git version
-symphonia-codec-dsd = { git = "https://github.com/pierreaubert/symphonia-add-ons", version = "0.1.0" }
-symphonia-codec-dst = { git = "https://github.com/pierreaubert/symphonia-add-ons", version = "0.1.0" }
-symphonia-codec-wavpack = { git = "https://github.com/pierreaubert/symphonia-add-ons", version = "0.1.0" }
-symphonia-format-sacd = { git = "https://github.com/pierreaubert/symphonia-add-ons", version = "0.1.0" }
+# Symphonia add-ons from the sibling workspace.
+symphonia-codec-dsd = { version = "0.2.0", path = "../symphonia-add-ons/symphonia-codec-dsd" }
+symphonia-codec-dst = { version = "0.2.0", path = "../symphonia-add-ons/symphonia-codec-dst" }
+symphonia-codec-wavpack = { version = "0.1.0", path = "../symphonia-add-ons/symphonia-codec-wavpack" }
+symphonia-format-sacd = { version = "0.1.0", path = "../symphonia-add-ons/symphonia-format-sacd" }
 
 # GPUI toolkit
-gpui-d3rs = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
-gpui-px = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
-gpui-audio-kit = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
-gpui-component-lab = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
-gpui-design-tools = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
-gpui-ui-kit = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
-gpui-ui-kit-macros = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
-gpui-themes = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
-gpui-miniapp = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
-gpui-builder = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
-gpui-design = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
-gpui-keybinding = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
-gpui-pretext = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
-gpui-ios = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
-gpui-au = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
+gpui-d3rs = { version = "0.9", path = "../gpui-toolkit/crates/gpui-d3rs" }
+gpui-px = { version = "0.9", path = "../gpui-toolkit/crates/gpui-px" }
+gpui-audio-kit = { version = "0.9", path = "../gpui-toolkit/crates/gpui-audio-kit" }
+gpui-component-lab = { version = "0.9", path = "../gpui-toolkit/crates/gpui-component-lab" }
+gpui-design-tools = { version = "0.9", path = "../gpui-toolkit/crates/gpui-design-tools" }
+gpui-ui-kit = { version = "0.9", path = "../gpui-toolkit/crates/gpui-ui-kit" }
+gpui-ui-kit-macros = { version = "0.9", path = "../gpui-toolkit/crates/gpui-ui-kit-macros" }
+gpui-themes = { version = "0.9", path = "../gpui-toolkit/crates/gpui-themes" }
+gpui-miniapp = { version = "0.9", path = "../gpui-toolkit/crates/gpui-miniapp" }
+gpui-builder = { version = "0.9", path = "../gpui-toolkit/crates/gpui-builder" }
+gpui-design = { version = "0.9", path = "../gpui-toolkit/crates/gpui-design" }
+gpui-keybinding = { version = "0.9", path = "../gpui-toolkit/crates/gpui-keybinding" }
+gpui-pretext = { version = "0.9", path = "../gpui-toolkit/crates/gpui-pretext" }
+gpui-ios = { version = "0.9", path = "../gpui-toolkit/crates/gpui-ios" }
+gpui-au = { version = "0.9", path = "../gpui-toolkit/crates/gpui-au" }
 
 # SotF
 sotf-host = { path = "../sotf-daw/crates/sotf-plugins/crates/sotf-host", default-features = false }
@@ -222,6 +220,7 @@ sotf-testkit = { path = "../sotf-daw/crates/sotf-testkit" }
 sotf-test = { path = "../sotf-daw/crates/sotf-test-macros" }
 sotf-player = { path = "crates/sotf-player" }
 sotf-engine = { path = "../sotf-daw/crates/sotf-engine", default-features = false }
+sotf-room-eq-graph = { path = "../sotf-daw/crates/sotf-room-eq-graph" }
 sotf-capture = { path = "../sotf-capture" }
 sotf-midi = { path = "../sotf-daw/crates/sotf-midi" }
 sotf-plugins = { path = "../sotf-daw/crates/sotf-plugins", default-features = false }
@@ -236,8 +235,7 @@ cpal = "0.17"
 hound = "3.5"
 id3 = "1.16.3"
 lofty = "0.22"
-rubato = "1.0"
-audioadapter-buffers = "2.0"
+rubato = { path = "../math-audio/crates/3rdparties/rubato" }
 symphonia = { version = "0.6", default-features = false }
 symphonia-core = "0.6"
 symphonia-metadata = "0.6"
@@ -250,8 +248,8 @@ symphonia-codec-vorbis = "0.6"
 symphonia-format-riff = "0.6"
 symphonia-format-ogg = "0.6"
 symphonia-format-isomp4 = "0.6"
-dst-decoder = { git = "https://github.com/pierreaubert/symphonia-add-ons" }
-rdsd2pcm = { git = "https://github.com/pierreaubert/symphonia-add-ons" }
+dst-decoder = { path = "../symphonia-add-ons/dst-decoder" }
+rdsd2pcm = { path = "../symphonia-add-ons/rdsd2pcm" }
 encoding_rs = "0.8"
 rtrb = "0.4"
 midir = "0.10"
@@ -264,12 +262,12 @@ crossterm = "0.29"
 
 # GPUI framework. The toolkit vendors the framework under namespaced Cargo
 # packages; the dependency keys preserve the Rust crate names used by SOTF.
-# Keep every backend on the same gpui-toolkit revision.
-gpui = { package = "gpui-toolkit-gpui", version = "0.2.3", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
-gpui_macos = { package = "gpui-toolkit-gpui-macos", version = "0.1.1", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29", features = ["font-kit"] }
-gpui_linux = { package = "gpui-toolkit-gpui-linux", version = "0.1.0", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
-gpui_windows = { package = "gpui-toolkit-gpui-windows", version = "0.1.2", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
-gpui_wgpu = { package = "gpui-toolkit-gpui-wgpu", version = "0.1.2", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "c597d1df374cedd0db83c14664328cc5d8a4dc29" }
+# Resolve every backend from the same gpui-toolkit checkout.
+gpui = { package = "gpui-toolkit-gpui", version = "0.2.3", path = "../gpui-toolkit/crates/3rdparties/gpui" }
+gpui_macos = { package = "gpui-toolkit-gpui-macos", version = "0.1.1", features = ["font-kit"], path = "../gpui-toolkit/crates/3rdparties/gpui_macos" }
+gpui_linux = { package = "gpui-toolkit-gpui-linux", version = "0.1.0", path = "../gpui-toolkit/crates/3rdparties/gpui_linux" }
+gpui_windows = { package = "gpui-toolkit-gpui-windows", version = "0.1.2", path = "../gpui-toolkit/crates/3rdparties/gpui_windows" }
+gpui_wgpu = { package = "gpui-toolkit-gpui-wgpu", version = "0.1.2", path = "../gpui-toolkit/crates/3rdparties/gpui_wgpu" }
 
 # System and low-level
 objc = "0.2"
@@ -450,33 +448,10 @@ codegen-units = 1
 incremental = false
 strip = "symbols"
 
-# Capture provenance and its coherent-consumer gates live in the AutoEQ workspace.
-# Patch the package family together to keep shared configuration types unified.
-[patch."https://github.com/pierreaubert/autoeq"]
-autoeq = { path = "../autoeq" }
-autoeq-artifacts = { path = "../autoeq/crates/autoeq-artifacts" }
-autoeq-core = { path = "../autoeq/crates/autoeq-core" }
-autoeq-fir = { path = "../autoeq/crates/autoeq-fir" }
-autoeq-measurements = { path = "../autoeq/crates/autoeq-measurements" }
-autoeq-optim = { path = "../autoeq/crates/autoeq-optim" }
-autoeq-workflow = { path = "../autoeq/crates/autoeq-workflow" }
-roomeq-analysis = { path = "../autoeq/crates/roomeq-analysis" }
-roomeq-engine = { path = "../autoeq/crates/roomeq-engine" }
-roomeq-export = { path = "../autoeq/crates/roomeq-export" }
-roomeq-model = { path = "../autoeq/crates/roomeq-model" }
-roomeq-quality = { path = "../autoeq/crates/roomeq-quality" }
-roomeq-synthetic = { path = "../autoeq/crates/roomeq-synthetic" }
-roomeq-workflow = { path = "../autoeq/crates/roomeq-workflow" }
-
-[patch."https://github.com/pierreaubert/math-audio"]
-# Keep the capture DSP primitives and their public IIR types on the same revision.
-math-dsp = { path = "../math-audio/crates/math-dsp" }
-math-iir-fir = { path = "../math-audio/crates/math-iir-fir" }
-
 [patch.crates-io]
 # Tier 3 Apple platform support: upstream CoreAudio cfgs omit tvOS/watchOS/visionOS.
-nnnoiseless = { path = "crates/3rdparties/nnnoiseless" }
-coreaudio-rs = { path = "crates/3rdparties/coreaudio-rs" }
+nnnoiseless = { path = "../sotf-daw/crates/3rdparties/nnnoiseless" }
+coreaudio-rs = { path = "../sotf-daw/crates/3rdparties/coreaudio-rs" }
 psm = { path = "crates/3rdparties/psm" }
 
 # Keep Vello's crates.io wgpu dependency on the same Zed fork used by GPUI.

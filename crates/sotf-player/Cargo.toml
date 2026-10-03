@@ -41,6 +41,7 @@ autoeq = { workspace = true }
 autoeq-measurements = { workspace = true }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
+sotf-room-eq-graph = { workspace = true }
 sotf-capture = { workspace = true }
 sotf-mpd = { workspace = true, features = ["tls"] }
 sotf-dlna = { workspace = true }
@@ -102,7 +103,6 @@ math-dsp = { workspace = true }
 math-rir = { workspace = true }
 hound = { workspace = true }
 rubato = { workspace = true }
-audioadapter-buffers = { workspace = true }
 num_cpus = { workspace = true }
 tempfile = { workspace = true }
 

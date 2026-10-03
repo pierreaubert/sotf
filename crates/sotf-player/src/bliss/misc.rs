@@ -1,6 +1,6 @@
-use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use math_audio_dsp::audio_features;
-use rubato::{Fft, FixedSync, Resampler};
+use rubato::audioadapter_buffers::direct::SequentialSliceOfVecs;
+use rubato::{Fft, FixedSync, Resampler, WindowFunction};
 use sotf_audio::decoder::create_decoder;
 use std::path::Path;
 
@@ -69,12 +69,14 @@ pub(super) fn resample(
     let resample_ratio = target_rate as f64 / source_rate as f64;
     let chunk_size = 1024;
 
-    let mut resampler = Fft::<f32>::new(
+    // Match Rubato 1's two sub-chunks and Blackman-Harris filter explicitly.
+    let mut resampler = Fft::<f32>::new_custom(
         source_rate as usize,
         target_rate as usize,
         chunk_size,
         2,
         1,
+        WindowFunction::BlackmanHarris2,
         FixedSync::Both,
     )
     .map_err(|e| format!("Failed to create resampler: {e}"))?;
@@ -119,4 +121,41 @@ pub(super) fn resample(
     }
 
     Ok(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resample;
+    use rubato::{Fft, FixedSync, Resampler, WindowFunction};
+
+    #[test]
+    fn resampling_preserves_duration_for_partial_final_chunk() {
+        let samples = vec![0.25_f32; 44_100 + 37];
+        let output = resample(&samples, 44_100, 22_050).unwrap();
+        let reference = Fft::<f32>::new_custom(
+            44_100, 22_050, 1024, 2, 1, WindowFunction::BlackmanHarris2, FixedSync::Both,
+        )
+        .unwrap();
+        let chunks = samples.len().div_ceil(reference.input_frames_next());
+        assert_eq!(output.len(), chunks * reference.output_frames_next());
+        assert!(output.len() > 22_069); // The final input chunk remains zero-padded.
+        assert!(output.iter().all(|sample| sample.is_finite()));
+    }
+
+    #[test]
+    fn resampling_keeps_a_tone_at_its_physical_frequency() {
+        let source_rate = 44_100;
+        let target_rate = 22_050;
+        let tone_hz = 1_000.0_f32;
+        let samples: Vec<f32> = (0..source_rate)
+            .map(|index| (std::f32::consts::TAU * tone_hz * index as f32 / source_rate as f32).sin())
+            .collect();
+        let output = resample(&samples, source_rate, target_rate).unwrap();
+        let middle = &output[1_000..output.len() - 1_000];
+        let rms = (middle.iter().map(|value| value * value).sum::<f32>() / middle.len() as f32).sqrt();
+        assert!((rms - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.04);
+        let crossings = middle.windows(2).filter(|pair| pair[0] <= 0.0 && pair[1] > 0.0).count();
+        let measured_hz = crossings as f32 * target_rate as f32 / middle.len() as f32;
+        assert!((measured_hz - tone_hz).abs() < 5.0);
+    }
 }

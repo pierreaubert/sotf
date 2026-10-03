@@ -102,19 +102,15 @@ atest: test-negative test-proptest ntest itest
 
 [group('test')]
 test-unit-core:
-	{{cargo}} test -p sotf-testkit
-	{{cargo}} test -p sotf-engine --no-default-features --lib
 	{{cargo}} test -p sotf-player --lib
-	{{cargo}} test -p sotf-plugins --lib --features qa
+	cd ../sotf-daw && just test-unit-core
 
 # Decoder and manager integration tests. Tests that require a virtual device
 # skip through the shared testkit helper when the device is unavailable.
 
 [group('test')]
 test-integration-engine:
-	{{cargo}} test -p sotf-engine --no-default-features --test decoder_integration_tests
-	{{cargo}} test -p sotf-engine --no-default-features --test engine_manager_tests
-	{{cargo}} test -p sotf-engine --no-default-features --test engine_types_tests
+	cd ../sotf-daw && just test-integration-engine
 
 [group('test')]
 test-integration-player:
@@ -127,14 +123,11 @@ test-integration-player:
 
 [group('test')]
 test-device-fakes:
-	{{cargo}} test -p sotf-engine --lib devices::tests
+	cd ../sotf-daw && just test-device-fakes
 
 [group('test')]
 test-realtime-safety:
-	{{cargo}} test -p sotf-plugins --test realtime_allocation_tests
-	{{cargo}} test -p sotf-plugins --test rt_safety_tests
-	{{cargo}} test -p sotf-engine --test engine_allocation_tests
-	{{cargo}} test -p sotf-engine --features playback-runtime-harness --test playback_runtime_allocation_tests
+	cd ../sotf-daw && just test-realtime-safety
 
 [group('test')]
 test-pr: test-unit-core test-integration-engine test-integration-player test-device-fakes test-realtime-safety
@@ -168,9 +161,8 @@ coverage-summary:
 [group('coverage')]
 coverage-core:
 	mkdir -p target/coverage
-	{{cargo}} llvm-cov --package sotf-engine --no-default-features --lib --tests --json --summary-only --fail-under-lines 55 --output-path target/coverage/sotf-engine.json
 	{{cargo}} llvm-cov --package sotf-player --lib --tests --json --summary-only --output-path target/coverage/sotf-player.json
-	{{cargo}} llvm-cov --package sotf-plugins --lib --tests --features qa --json --summary-only --output-path target/coverage/sotf-plugins.json
+	cd ../sotf-daw && just coverage-core
 
 # Removes stale coverage artifacts.
 [group('coverage')]
@@ -191,7 +183,7 @@ lint:
 [group('bench')]
 perf-smoke:
 	mkdir -p target/perf
-	{{cargo}} run --release -p sotf-plugins --bin daw-scale-stress -- --chain mixed --mode serial --tracks 16 --plugins 4 --blocks 256 --warmup-blocks 64 > target/perf/daw-smoke.csv
+	{{cargo}} run --manifest-path ../sotf-daw/Cargo.toml --release -p sotf-plugins --bin daw-scale-stress -- --chain mixed --mode serial --tracks 16 --plugins 4 --blocks 256 --warmup-blocks 64 > target/perf/daw-smoke.csv
 	./scripts/daw-perf-gate.sh target/perf/daw-smoke.csv
 
 [group('bench')]

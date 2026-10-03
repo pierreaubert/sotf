@@ -10,10 +10,10 @@ bench:
 download-once: download-sofa generate-audio-tests
 
 # Engine/plugin gates live in ../sotf-daw; delegate across the workspace
-# boundary. (qa-bridge/qa-ffi name no recipe in any imported Justfile, so
-# they are intentionally not listed: they never resolved.)
+# boundary, including the format, FFI, and bridge gates in imported Justfiles.
 [group('qa')]
 qa:
 	cd ../sotf-daw && just qa-plugins
+	cd ../sotf-daw && just qa-ffi
+	cd ../sotf-daw && just qa-bridge
 	cd ../sotf-daw && just qa-engine
-
