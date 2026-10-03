@@ -592,7 +592,14 @@ key enter
 assert settings.font_scale == 1.5 tolerance=0.01
 click preferences.done
 assert screen.focused == "Studio"
-click sidebar.nav-studio-rack
+assert_in_viewport studio.workspace-picker
+click studio.workspace-picker
+key down
+key enter
+assert screen.focused == "PluginGraph"
+click studio.workspace-picker
+key up
+key enter
 assert screen.focused == "Studio"
 
 # custom: ABCompare

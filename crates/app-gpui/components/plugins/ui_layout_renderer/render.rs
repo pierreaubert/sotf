@@ -908,35 +908,40 @@ fn render_main_column(
                 .collect();
             let (instance_id, expanded) = sections.unwrap_or((plugin_idx, Vec::new()));
             let section_entity = entity.clone();
+            let accordion = Accordion::new()
+                .items(items)
+                .mode(AccordionMode::Multiple)
+                .expanded(expanded.into_iter().map(SharedString::from).collect())
+                .bordered(false)
+                .rounded(false)
+                .theme(theme.to_accordion_theme())
+                .aria_label(text.map_or("Advanced", |translations| translations.configuration));
+            #[cfg(feature = "dev-api")]
+            let accordion = accordion.header_wrapper(move |id, header| {
+                header
+                    .dev_track(format!("plugin.layout.header.{plugin_idx}.{id}"))
+                    .into_any_element()
+            });
             center = center.child(
-                div().w(px(main_width)).flex_none().child(
-                    Accordion::new()
-                        .items(items)
-                        .mode(AccordionMode::Multiple)
-                        .expanded(expanded.into_iter().map(SharedString::from).collect())
-                        .bordered(false)
-                        .rounded(false)
-                        .theme(theme.to_accordion_theme())
-                        .aria_label(
-                            text.map_or("Advanced", |translations| translations.configuration),
-                        )
-                        .on_change(move |id, open, _window, cx| {
-                            section_entity.update(cx, |state, cx| {
-                                let expanded = state
-                                    .app
-                                    .plugin_state
-                                    .plugin_ui_state
-                                    .plugin_sections
-                                    .entry(instance_id)
-                                    .or_default();
-                                expanded.retain(|value| value != id.as_ref());
-                                if open {
-                                    expanded.push(id.to_string());
-                                }
-                                cx.notify();
-                            });
-                        }),
-                ),
+                div()
+                    .w(px(main_width))
+                    .flex_none()
+                    .child(accordion.on_change(move |id, open, _window, cx| {
+                        section_entity.update(cx, |state, cx| {
+                            let expanded = state
+                                .app
+                                .plugin_state
+                                .plugin_ui_state
+                                .plugin_sections
+                                .entry(instance_id)
+                                .or_default();
+                            expanded.retain(|value| value != id.as_ref());
+                            if open {
+                                expanded.push(id.to_string());
+                            }
+                            cx.notify();
+                        });
+                    })),
             );
         }
 

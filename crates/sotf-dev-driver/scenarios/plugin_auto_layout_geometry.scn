@@ -35,6 +35,28 @@ assert_in_viewport plugin.control.2.1
 assert_non_overlapping plugin.control.2.0 plugin.control.2.1
 scroll_into_view rack.params plugin.control.2.7
 assert_in_viewport plugin.control.2.7
+scroll_into_view rack.params plugin.layout.header.2.TIMING
+assert_in_viewport plugin.layout.header.2.TIMING
+click plugin.layout.header.2.TIMING
+wait_visible plugin.control.2.2 timeout=10s
+scroll_into_view rack.params plugin.control.2.2
+assert_in_viewport plugin.control.2.2
+scroll_into_view rack.params plugin.control.2.6
+assert_in_viewport plugin.control.2.6
+scroll_into_view rack.params plugin.layout.header.2.DETECTOR
+assert_in_viewport plugin.layout.header.2.DETECTOR
+click plugin.layout.header.2.DETECTOR
+wait_visible plugin.control.2.3 timeout=10s
+scroll_into_view rack.params plugin.control.2.3
+assert_in_viewport plugin.control.2.3
+scroll_into_view rack.params plugin.control.2.5
+assert_in_viewport plugin.control.2.5
+scroll_into_view rack.params plugin.control.2.9
+assert_in_viewport plugin.control.2.9
+scroll_into_view rack.params plugin.control.2.8
+assert_in_viewport plugin.control.2.8
+scroll_into_view rack.params plugin.control.2.10
+assert_in_viewport plugin.control.2.10
 elements
 screenshot plugin-layout-limiter-700
 
@@ -42,6 +64,7 @@ resize 2000 1000
 wait_idle
 assert_visible plugin.layout.group.2.DYNAMICS
 assert_visible plugin.layout.group.2.TIMING
+scroll_into_view rack.params plugin.layout.group.2.DYNAMICS
 assert_in_viewport plugin.layout.group.2.DYNAMICS
 assert_in_viewport plugin.layout.group.2.TIMING
 assert_non_overlapping plugin.layout.group.2.DYNAMICS plugin.layout.group.2.TIMING

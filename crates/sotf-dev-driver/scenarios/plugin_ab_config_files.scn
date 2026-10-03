@@ -12,8 +12,9 @@ scroll_into_view rack.params plugin.file_picker.2.path_a_config
 assert_in_viewport plugin.file_picker.2.path_a_config
 click plugin.file_picker.2.path_a_config
 elements
+wait_visible ab.path.0.file timeout=10s
 scroll_into_view rack.params ab.path.0.file
-wait_visible ab.path.0.file timeout=3s
+assert_in_viewport ab.path.0.file
 wait_idle
 assert_visible ab.path.0.plugin.0.gain
 assert_text ab.path.0.file == "ab-path-a.json"
@@ -21,8 +22,9 @@ assert_text ab.path.0.file == "ab-path-a.json"
 scroll_into_view rack.params plugin.file_picker.2.path_b_config
 assert_in_viewport plugin.file_picker.2.path_b_config
 click plugin.file_picker.2.path_b_config
+wait_visible ab.path.1.file timeout=10s
 scroll_into_view rack.params ab.path.1.file
-wait_visible ab.path.1.file timeout=3s
+assert_in_viewport ab.path.1.file
 wait_idle
 assert_visible ab.path.1.plugin.0.delay
 assert_text ab.path.1.file == "ab-path-b.json"
