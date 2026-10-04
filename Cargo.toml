@@ -446,6 +446,13 @@ incremental = false
 strip = "symbols"
 
 [patch.crates-io]
+tract-core = { git = "https://github.com/pierreaubert/tract.git", rev = "aee8cf204bef9be6bba0025ef7c20a298613cef7" }
+tract-data = { git = "https://github.com/pierreaubert/tract.git", rev = "aee8cf204bef9be6bba0025ef7c20a298613cef7" }
+tract-hir = { git = "https://github.com/pierreaubert/tract.git", rev = "aee8cf204bef9be6bba0025ef7c20a298613cef7" }
+tract-linalg = { git = "https://github.com/pierreaubert/tract.git", rev = "aee8cf204bef9be6bba0025ef7c20a298613cef7" }
+tract-nnef = { git = "https://github.com/pierreaubert/tract.git", rev = "aee8cf204bef9be6bba0025ef7c20a298613cef7" }
+tract-onnx = { git = "https://github.com/pierreaubert/tract.git", rev = "aee8cf204bef9be6bba0025ef7c20a298613cef7" }
+tract-onnx-opl = { git = "https://github.com/pierreaubert/tract.git", rev = "aee8cf204bef9be6bba0025ef7c20a298613cef7" }
 block = { path = "../gpui-toolkit/crates/3rdparties/block" }
 objc = { path = "../gpui-toolkit/crates/3rdparties/objc" }
 async-task = { git = "https://github.com/smol-rs/async-task.git", rev = "b4486cd71e4e94fbda54ce6302444de14f4d190e" }
