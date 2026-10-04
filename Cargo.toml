@@ -50,10 +50,10 @@ build_html = "2.7"
 anyhow = { version = "1.0" }
 assert_fs = "1.0"
 m3u8-rs = { version = "6" }
-librespot-core = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "59af8295dd8a4998ff6b9091af96cd420c11e05c" }
-librespot-playback = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "59af8295dd8a4998ff6b9091af96cd420c11e05c" }
-librespot-metadata = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "59af8295dd8a4998ff6b9091af96cd420c11e05c" }
-librespot-protocol = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "59af8295dd8a4998ff6b9091af96cd420c11e05c" }
+librespot-core = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "59af8295dd8a4998ff6b9091af96cd420c11e05c", default-features = false, features = ["native-tls"] }
+librespot-playback = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "59af8295dd8a4998ff6b9091af96cd420c11e05c", default-features = false, features = ["native-tls"] }
+librespot-metadata = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "59af8295dd8a4998ff6b9091af96cd420c11e05c", default-features = false, features = ["native-tls"] }
+librespot-protocol = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "59af8295dd8a4998ff6b9091af96cd420c11e05c", default-features = false }
 # Exact pin (NOT caret): vergen 9.1.0 broke vergen-gitcl 1.0.8, used by
 # librespot-core's build script — vergen 9.1's `Build` no longer implements
 # vergen-lib 0.1's `Add` trait (E0277). A caret req would still allow 9.1+,
