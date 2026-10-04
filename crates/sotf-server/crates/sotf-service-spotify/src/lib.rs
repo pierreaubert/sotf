@@ -430,7 +430,7 @@ impl StreamingService for SpotifyService {
             format!("spotify:track:{}", track_id)
         };
 
-        let spotify_id = librespot_core::SpotifyId::from_uri(&track_uri)
+        let spotify_id = librespot_core::SpotifyUri::from_uri(&track_uri)
             .map_err(|e| ServiceError::NotFound(format!("Invalid track URI: {:?}", e)))?;
 
         let player_config = librespot_playback::config::PlayerConfig {
@@ -438,7 +438,7 @@ impl StreamingService for SpotifyService {
             ..Default::default()
         };
 
-        // librespot 0.6's `Player::new` expects a `FnOnce() -> Box<dyn Sink>`
+        // librespot's `Player::new` expects a `FnOnce() -> Box<dyn Sink>`
         // (no arguments). Capture `tx` by move so the sink owns the only
         // remaining sender; once librespot drops the sink at EOF, the channel
         // closes and the reader returns `Ok(0)`.
@@ -534,7 +534,7 @@ impl librespot_playback::audio_backend::Sink for ChannelSink {
     ) -> librespot_playback::audio_backend::SinkResult<()> {
         match packet {
             librespot_playback::decoder::AudioPacket::Samples(samples) => {
-                // librespot 0.6 delivers normalised f64 interleaved samples in
+                // librespot delivers normalised f64 interleaved samples in
                 // [-1.0, 1.0]. Convert to f32 with a defensive clamp — see
                 // `convert_librespot_samples` for the rationale and tests.
                 let f32_samples = convert_librespot_samples(&samples);
