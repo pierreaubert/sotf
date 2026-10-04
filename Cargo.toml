@@ -50,17 +50,17 @@ build_html = "2.7"
 anyhow = { version = "1.0" }
 assert_fs = "1.0"
 m3u8-rs = { version = "6" }
-librespot-core = { version = "0.6" }
-librespot-playback = { version = "0.6" }
-librespot-metadata = { version = "0.6" }
-librespot-protocol = { version = "0.6" }
+librespot-core = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "0df7e17c037d565551454a638186836fd2580087", default-features = false, features = ["native-tls"] }
+librespot-playback = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "0df7e17c037d565551454a638186836fd2580087", default-features = false, features = ["native-tls"] }
+librespot-metadata = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "0df7e17c037d565551454a638186836fd2580087", default-features = false, features = ["native-tls"] }
+librespot-protocol = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "0df7e17c037d565551454a638186836fd2580087", default-features = false }
 # Exact pin (NOT caret): vergen 9.1.0 broke vergen-gitcl 1.0.8, used by
 # librespot-core's build script — vergen 9.1's `Build` no longer implements
 # vergen-lib 0.1's `Add` trait (E0277). A caret req would still allow 9.1+,
 # so keep this exact until upstream vergen-gitcl supports vergen-lib 9.x.
 # This dependency only pins the transitive version; nothing imports it.
 vergen = { version = "=9.0.6" }
-oauth2 = { version = "4.4", default-features = false }
+oauth2 = { version = "5", default-features = false }
 rcgen = "0.13"
 rustls = "0.23"
 socket2 = "0.6"
@@ -126,7 +126,7 @@ num-traits = "0.2"
 rayon = "1.11"
 rustfft = "6.4"
 realfft = "3.5"
-metaheuristics-nature = "10.1"
+metaheuristics-nature = { version = "10.1", git = "https://github.com/pierreaubert/metaheuristics-nature-rs.git", rev = "4f0b603c521e0b4e20239c827f1a0975442bb740" }
 
 # Shared numerical and acoustic crates from sibling workspaces.
 math-test-functions = { version = "0.5", default-features = false, path = "../math-audio/crates/math-test-functions" }
@@ -446,6 +446,14 @@ incremental = false
 strip = "symbols"
 
 [patch.crates-io]
+nalgebra = { git = "https://github.com/pierreaubert/nalgebra.git", rev = "a42573dbc9649af62fb07b469c98c852e62720fd" }
+tract-core = { git = "https://github.com/pierreaubert/tract.git", rev = "3ab6874b52c4b0ff83a7114f9c30c5fe62f257cd" }
+tract-data = { git = "https://github.com/pierreaubert/tract.git", rev = "3ab6874b52c4b0ff83a7114f9c30c5fe62f257cd" }
+tract-hir = { git = "https://github.com/pierreaubert/tract.git", rev = "3ab6874b52c4b0ff83a7114f9c30c5fe62f257cd" }
+tract-linalg = { git = "https://github.com/pierreaubert/tract.git", rev = "3ab6874b52c4b0ff83a7114f9c30c5fe62f257cd" }
+tract-nnef = { git = "https://github.com/pierreaubert/tract.git", rev = "3ab6874b52c4b0ff83a7114f9c30c5fe62f257cd" }
+tract-onnx = { git = "https://github.com/pierreaubert/tract.git", rev = "3ab6874b52c4b0ff83a7114f9c30c5fe62f257cd" }
+tract-onnx-opl = { git = "https://github.com/pierreaubert/tract.git", rev = "3ab6874b52c4b0ff83a7114f9c30c5fe62f257cd" }
 block = { path = "../gpui-toolkit/crates/3rdparties/block" }
 objc = { path = "../gpui-toolkit/crates/3rdparties/objc" }
 async-task = { git = "https://github.com/smol-rs/async-task.git", rev = "b4486cd71e4e94fbda54ce6302444de14f4d190e" }

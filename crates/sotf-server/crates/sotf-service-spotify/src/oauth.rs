@@ -5,8 +5,9 @@
 //! Web API token type used for persistence and refresh.
 
 use oauth2::{
-    AuthUrl, AuthorizationCode, ClientId, CsrfToken, PkceCodeChallenge, PkceCodeVerifier,
-    RedirectUrl, Scope, TokenResponse, TokenUrl, basic::BasicClient, http,
+    AuthUrl, AuthorizationCode, ClientId, CsrfToken, EndpointNotSet, EndpointSet,
+    PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse, TokenUrl,
+    basic::BasicClient, http,
 };
 use sotf_services::ServiceError;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -30,6 +31,9 @@ pub(crate) struct PkceRequest {
     pub(crate) verifier: PkceCodeVerifier,
 }
 
+type SpotifyOAuthClient =
+    BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>;
+
 /// Build an OAuth client. `auth_url`/`token_url` are parameters (rather than
 /// the constants directly) so tests can point the token exchange at a local
 /// mock server.
@@ -38,25 +42,22 @@ pub(crate) fn build_client(
     redirect_uri: &str,
     auth_url: &str,
     token_url: &str,
-) -> Result<BasicClient, ServiceError> {
+) -> Result<SpotifyOAuthClient, ServiceError> {
     let auth_url = AuthUrl::new(auth_url.to_string())
         .map_err(|e| ServiceError::Other(format!("Invalid OAuth authorize URL: {e}")))?;
     let token_url = TokenUrl::new(token_url.to_string())
         .map_err(|e| ServiceError::Other(format!("Invalid OAuth token URL: {e}")))?;
     let redirect_url = RedirectUrl::new(redirect_uri.to_string())
         .map_err(|e| ServiceError::Other(format!("Invalid OAuth redirect URI: {e}")))?;
-    Ok(BasicClient::new(
-        ClientId::new(client_id.to_string()),
-        None,
-        auth_url,
-        Some(token_url),
-    )
-    .set_redirect_uri(redirect_url))
+    Ok(BasicClient::new(ClientId::new(client_id.to_string()))
+        .set_auth_uri(auth_url)
+        .set_token_uri(token_url)
+        .set_redirect_uri(redirect_url))
 }
 
 /// Build the authorize URL for the given scopes, along with the CSRF state
 /// and PKCE verifier needed to complete the flow.
-pub(crate) fn build_authorize_request(client: &BasicClient, scopes: &[&str]) -> PkceRequest {
+pub(crate) fn build_authorize_request(client: &SpotifyOAuthClient, scopes: &[&str]) -> PkceRequest {
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
     let (url, csrf_state) = client
         .authorize_url(CsrfToken::new_random)
@@ -160,8 +161,7 @@ pub(crate) fn await_auth_code(
 }
 
 /// Blocking HTTP client for the token exchange, with a timeout and no redirects.
-/// OAuth2 4.4 uses http 0.2 types; reqwest 0.13 uses http 1 types, so copy
-/// method, status, and every header through their wire representations.
+/// OAuth2 5 uses HTTP 1 request and response types, matching the reqwest client.
 fn http_client_with_timeout(
     request: oauth2::HttpRequest,
 ) -> Result<oauth2::HttpResponse, std::io::Error> {
@@ -172,12 +172,11 @@ fn http_client_with_timeout(
         .build()
         .map_err(std::io::Error::other)?;
 
-    let method = reqwest::Method::from_bytes(request.method.as_str().as_bytes())
+    let (parts, body) = request.into_parts();
+    let method = reqwest::Method::from_bytes(parts.method.as_str().as_bytes())
         .map_err(std::io::Error::other)?;
-    let mut request_builder = client
-        .request(method, request.url.as_str())
-        .body(request.body);
-    for (name, value) in &request.headers {
+    let mut request_builder = client.request(method, parts.uri.to_string()).body(body);
+    for (name, value) in &parts.headers {
         request_builder = request_builder.header(name.as_str(), value.as_bytes());
     }
     let mut response = client
@@ -187,8 +186,8 @@ fn http_client_with_timeout(
     let mut body = Vec::new();
     response.read_to_end(&mut body)?;
 
-    let status_code = http::StatusCode::from_u16(response.status().as_u16())
-        .map_err(std::io::Error::other)?;
+    let status_code =
+        http::StatusCode::from_u16(response.status().as_u16()).map_err(std::io::Error::other)?;
     let mut headers = http::HeaderMap::new();
     for (name, value) in response.headers() {
         let name = http::header::HeaderName::from_bytes(name.as_str().as_bytes())
@@ -198,23 +197,24 @@ fn http_client_with_timeout(
         headers.append(name, value);
     }
 
-    Ok(oauth2::HttpResponse {
-        status_code,
-        headers,
-        body,
-    })
+    let mut oauth_response = http::Response::builder()
+        .status(status_code)
+        .body(body)
+        .map_err(std::io::Error::other)?;
+    *oauth_response.headers_mut() = headers;
+    Ok(oauth_response)
 }
 
 /// Exchange an authorization code for an access token from the sync trait surface.
 pub(crate) fn exchange_code(
-    client: &BasicClient,
+    client: &SpotifyOAuthClient,
     code: AuthorizationCode,
     verifier: PkceCodeVerifier,
 ) -> Result<WebApiToken, ServiceError> {
     let token = client
         .exchange_code(code)
         .set_pkce_verifier(verifier)
-        .request(http_client_with_timeout)
+        .request(&http_client_with_timeout)
         .map_err(|e| ServiceError::AuthError(format!("OAuth token exchange failed: {e}")))?;
 
     let refresh_token = token
@@ -475,7 +475,11 @@ mod tests {
     fn token_http_adapter_preserves_error_status_body_and_headers() {
         let server = spawn_mock_server_with_headers(|req| {
             assert_eq!(req.method, "POST");
-            assert!(req.headers.to_ascii_lowercase().contains("x-sotf-test: sent"));
+            assert!(
+                req.headers
+                    .to_ascii_lowercase()
+                    .contains("x-sotf-test: sent")
+            );
             assert_eq!(req.body, "code=bad");
             (
                 400,
@@ -489,27 +493,27 @@ mod tests {
         });
         let mut headers = http::HeaderMap::new();
         headers.insert("x-sotf-test", http::HeaderValue::from_static("sent"));
-        let response = http_client_with_timeout(oauth2::HttpRequest {
-            url: oauth2::url::Url::parse(&format!("{}/api/token", server.base_url)).unwrap(),
-            method: http::Method::POST,
-            headers,
-            body: b"code=bad".to_vec(),
-        })
-        .unwrap();
+        let mut request = http::Request::builder()
+            .uri(format!("{}/api/token", server.base_url))
+            .method(http::Method::POST)
+            .body(b"code=bad".to_vec())
+            .unwrap();
+        *request.headers_mut() = headers;
+        let response = http_client_with_timeout(request).unwrap();
 
-        assert_eq!(response.status_code, http::StatusCode::BAD_REQUEST);
-        assert_eq!(response.headers["retry-after"].to_str().unwrap(), "17");
-        let notes: Vec<_> = response.headers.get_all("x-token-note").iter().collect();
+        assert_eq!(response.status(), http::StatusCode::BAD_REQUEST);
+        assert_eq!(response.headers()["retry-after"].to_str().unwrap(), "17");
+        let notes: Vec<_> = response.headers().get_all("x-token-note").iter().collect();
         assert_eq!(notes.len(), 2);
         assert_eq!(notes[0].to_str().unwrap(), "first");
         assert_eq!(notes[1].to_str().unwrap(), "second");
-        assert_eq!(response.body.as_slice(), br#"{"error":"invalid_grant"}"#);
+        assert_eq!(response.body().as_slice(), br#"{"error":"invalid_grant"}"#);
     }
 
     #[test]
     fn token_http_adapter_refuses_redirect() {
-        use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
 
         let followed = Arc::new(AtomicBool::new(false));
         let target_hit = Arc::clone(&followed);
@@ -526,16 +530,20 @@ mod tests {
                 "redirect refused".to_string(),
             )
         });
-        let response = http_client_with_timeout(oauth2::HttpRequest {
-            url: oauth2::url::Url::parse(&format!("{}/api/token", server.base_url)).unwrap(),
-            method: http::Method::POST,
-            headers: http::HeaderMap::new(),
-            body: b"code=private".to_vec(),
-        })
+        let response = http_client_with_timeout(
+            http::Request::builder()
+                .uri(format!("{}/api/token", server.base_url))
+                .method(http::Method::POST)
+                .body(b"code=private".to_vec())
+                .unwrap(),
+        )
         .unwrap();
 
-        assert_eq!(response.status_code, http::StatusCode::FOUND);
-        assert_eq!(response.headers["location"].to_str().unwrap(), destination);
+        assert_eq!(response.status(), http::StatusCode::FOUND);
+        assert_eq!(
+            response.headers()["location"].to_str().unwrap(),
+            destination
+        );
         assert!(!followed.load(Ordering::SeqCst));
     }
 
