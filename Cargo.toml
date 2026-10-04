@@ -459,7 +459,7 @@ objc = { path = "../gpui-toolkit/crates/3rdparties/objc" }
 async-task = { git = "https://github.com/smol-rs/async-task.git", rev = "b4486cd71e4e94fbda54ce6302444de14f4d190e" }
 # The pinned CoreAudio fork preserves callback buffer capacity accounting.
 nnnoiseless = { path = "../sotf-daw/crates/3rdparties/nnnoiseless" }
-coreaudio-rs = { git = "https://github.com/pierreaubert/coreaudio-rs.git", rev = "2d57f0f827d67162ccdce8f34b453fbd70d7750b" }
+coreaudio-rs = { git = "https://github.com/pierreaubert/coreaudio-rs.git", rev = "29b0407363c479be0b7de681ba6ba050725a5174" }
 psm = { git = "https://github.com/pierreaubert/stacker.git", rev = "48bf8e3abfb350de9387a675275a629e4daf9717" }
 
 # Keep Vello's crates.io wgpu dependency on the same Zed fork used by GPUI.
