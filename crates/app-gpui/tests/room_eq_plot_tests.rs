@@ -75,6 +75,7 @@ fn room_eq_report_uses_dsp_output_curves_without_recomputing() {
     );
     let output = autoeq::roomeq::DspChainOutput {
         version: "test".to_string(),
+        artifact_bundle_schema_version: None,
         global_plugins: Vec::new(),
         channels,
         metadata: None,
@@ -135,6 +136,7 @@ fn room_eq_report_channel_without_embedded_data_uses_legacy_fallback_guard() {
     );
     let output = autoeq::roomeq::DspChainOutput {
         version: "test".to_string(),
+        artifact_bundle_schema_version: None,
         global_plugins: Vec::new(),
         channels,
         metadata: None,

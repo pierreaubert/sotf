@@ -55,6 +55,7 @@ pub(super) fn output(
 ) -> DspChainOutput {
     DspChainOutput {
         version: "1.0.0".to_string(),
+        artifact_bundle_schema_version: None,
         global_plugins: Vec::new(),
         channels,
         metadata: None,
