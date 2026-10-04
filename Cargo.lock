@@ -783,6 +783,8 @@ name = "autoeq-artifacts"
 version = "0.5.1"
 dependencies = [
  "autoeq-core",
+ "sha2 0.11.0",
+ "tempfile",
 ]
 
 [[package]]
@@ -898,6 +900,9 @@ dependencies = [
  "num_cpus",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "urlencoding",
 ]
 
 [[package]]
@@ -5893,6 +5898,7 @@ dependencies = [
 name = "math-optimisation"
 version = "0.5.15"
 dependencies = [
+ "chacha20 0.10.2",
  "clap",
  "directories",
  "math-test-functions",
@@ -5901,6 +5907,8 @@ dependencies = [
  "oxiblas-ndarray",
  "rand 0.10.3",
  "rayon",
+ "serde",
+ "sha2 0.11.0",
  "thiserror 2.0.21",
 ]
 
@@ -8937,7 +8945,9 @@ dependencies = [
  "serde",
  "serde_ignored",
  "serde_json",
+ "sha2 0.11.0",
  "sofa-reader",
+ "tempfile",
  "tokio",
 ]
 
