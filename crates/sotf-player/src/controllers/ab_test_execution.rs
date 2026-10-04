@@ -312,10 +312,13 @@ fn render_path(
     )
     .map_err(AbTestError::PathPreparation)?;
     host.build().map_err(AbTestError::PathPreparation)?;
+    let output_sample_rate = host
+        .output_sample_rate(sample_rate)
+        .map_err(AbTestError::PathPreparation)?;
 
     if host.input_channels() != channels
         || host.output_channels() != channels
-        || host.output_sample_rate(sample_rate) != sample_rate
+        || output_sample_rate != sample_rate
         || host.output_frames_for_input(block_frames) != block_frames
     {
         return Err(AbTestError::IncompatiblePathLayout);

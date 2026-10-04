@@ -176,7 +176,7 @@ fn generate_config(
     );
 
     plugin
-        .initialize(sample_rate)
+        .initialize(f64::from(sample_rate))
         .map_err(|e| anyhow::anyhow!("initialize failed: {}", e))?;
 
     let num_output_channels = plugin.output_channels();
