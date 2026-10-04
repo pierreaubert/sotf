@@ -446,6 +446,9 @@ incremental = false
 strip = "symbols"
 
 [patch.crates-io]
+block = { path = "../gpui-toolkit/crates/3rdparties/block" }
+objc = { path = "../gpui-toolkit/crates/3rdparties/objc" }
+async-task = { git = "https://github.com/smol-rs/async-task.git", rev = "b4486cd71e4e94fbda54ce6302444de14f4d190e" }
 # Tier 3 Apple platform support: upstream CoreAudio cfgs omit tvOS/watchOS/visionOS.
 nnnoiseless = { path = "../sotf-daw/crates/3rdparties/nnnoiseless" }
 coreaudio-rs = { path = "../sotf-daw/crates/3rdparties/coreaudio-rs" }
@@ -459,3 +462,6 @@ wgpu-core = { git = "https://github.com/zed-industries/wgpu.git", rev = "357a0c5
 wgpu-hal = { git = "https://github.com/zed-industries/wgpu.git", rev = "357a0c56e0070480ad9daea5d2eaa83150b79e88" }
 wgpu-types = { git = "https://github.com/zed-industries/wgpu.git", rev = "357a0c56e0070480ad9daea5d2eaa83150b79e88" }
 naga = { git = "https://github.com/zed-industries/wgpu.git", rev = "357a0c56e0070480ad9daea5d2eaa83150b79e88" }
+
+[patch."https://github.com/zed-industries/font-kit"]
+zed-font-kit = { path = "../gpui-toolkit/crates/3rdparties/zed-font-kit" }
