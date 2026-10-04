@@ -2172,7 +2172,8 @@ fn render_file_picker(
     })
     .when(!interactive, |button| button.disabled(true));
     #[cfg(feature = "dev-api")]
-    let file_button = file_button.dev_track(format!("plugin.file_picker.{plugin_idx}.{engine_key}"));
+    let file_button =
+        file_button.dev_track(format!("plugin.file_picker.{plugin_idx}.{engine_key}"));
 
     div()
         .flex()
