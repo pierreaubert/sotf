@@ -1924,21 +1924,8 @@ dependencies = [
 
 [[package]]
 name = "coreaudio-rs"
-version = "0.13.1"
-dependencies = [
- "bitflags 1.3.2",
- "libc",
- "objc2-audio-toolbox",
- "objc2-core-audio",
- "objc2-core-audio-types",
- "objc2-core-foundation",
-]
-
-[[package]]
-name = "coreaudio-rs"
 version = "0.14.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d5d7dca3ebcf65a035582c9ad4385371a9d9ee6537474d2a278f4e1e475bb58"
+source = "git+https://github.com/pierreaubert/coreaudio-rs.git?rev=2d57f0f827d67162ccdce8f34b453fbd70d7750b#2d57f0f827d67162ccdce8f34b453fbd70d7750b"
 dependencies = [
  "bitflags 2.13.2",
  "libc",
@@ -2000,7 +1987,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8942da362c0f0d895d7cac616263f2f9424edc5687364dfd1d25ef7eba506d7"
 dependencies = [
  "alsa",
- "coreaudio-rs 0.14.2",
+ "coreaudio-rs",
  "dasp_sample",
  "jni 0.21.1",
  "js-sys",
@@ -9848,7 +9835,7 @@ dependencies = [
  "bytemuck",
  "chrono",
  "clap",
- "coreaudio-rs 0.13.1",
+ "coreaudio-rs",
  "cpal",
  "crossbeam",
  "crossterm",
