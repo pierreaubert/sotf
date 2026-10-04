@@ -1925,7 +1925,7 @@ dependencies = [
 [[package]]
 name = "coreaudio-rs"
 version = "0.14.2"
-source = "git+https://github.com/pierreaubert/coreaudio-rs.git?rev=2d57f0f827d67162ccdce8f34b453fbd70d7750b#2d57f0f827d67162ccdce8f34b453fbd70d7750b"
+source = "git+https://github.com/pierreaubert/coreaudio-rs.git?rev=29b0407363c479be0b7de681ba6ba050725a5174#29b0407363c479be0b7de681ba6ba050725a5174"
 dependencies = [
  "bitflags 2.13.2",
  "libc",
