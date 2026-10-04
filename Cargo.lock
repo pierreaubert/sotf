@@ -1630,6 +1630,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "collections"
+version = "0.1.0"
+source = "git+https://github.com/pierreaubert/zed.git?rev=3a0ea890ddf8e6247e38c795a960eb18f5182113#3a0ea890ddf8e6247e38c795a960eb18f5182113"
+dependencies = [
+ "gpui_util",
+ "indexmap",
+ "rustc-hash 2.1.3",
+]
+
+[[package]]
 name = "color"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2471,7 +2481,7 @@ dependencies = [
 [[package]]
 name = "derive_refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed.git?rev=ced90fc636c4ede05402befc38a63bae7fd741bd#ced90fc636c4ede05402befc38a63bae7fd741bd"
+source = "git+https://github.com/pierreaubert/zed.git?rev=3a0ea890ddf8e6247e38c795a960eb18f5182113#3a0ea890ddf8e6247e38c795a960eb18f5182113"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3743,15 +3753,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gpui-toolkit-collections"
-version = "0.1.0"
-dependencies = [
- "gpui-toolkit-gpui-util",
- "indexmap",
- "rustc-hash 2.1.3",
-]
-
-[[package]]
 name = "gpui-toolkit-gpui"
 version = "0.2.3"
 dependencies = [
@@ -3766,6 +3767,7 @@ dependencies = [
  "chrono",
  "cocoa 0.26.0",
  "cocoa-foundation 0.2.0",
+ "collections",
  "core-foundation 0.10.1",
  "core-foundation-sys",
  "core-graphics 0.24.0",
@@ -3779,15 +3781,13 @@ dependencies = [
  "futures",
  "futures-concurrency",
  "getrandom 0.3.4",
- "gpui-toolkit-collections",
  "gpui-toolkit-gpui-macros",
- "gpui-toolkit-gpui-util",
  "gpui-toolkit-http-client",
- "gpui-toolkit-media",
  "gpui-toolkit-scheduler",
  "gpui-toolkit-sum-tree",
  "gpui-toolkit-util-macros",
  "gpui_shared_string",
+ "gpui_util",
  "heapless",
  "image",
  "inventory",
@@ -3795,6 +3795,7 @@ dependencies = [
  "log",
  "lyon",
  "mach2",
+ "media",
  "metal",
  "num_cpus",
  "objc",
@@ -3844,13 +3845,13 @@ dependencies = [
  "bytemuck",
  "calloop",
  "calloop-wayland-source",
+ "collections",
  "filedescriptor",
  "futures",
- "gpui-toolkit-collections",
  "gpui-toolkit-gpui",
- "gpui-toolkit-gpui-util",
  "gpui-toolkit-gpui-wgpu",
  "gpui-toolkit-http-client",
+ "gpui_util",
  "image",
  "itertools 0.15.0",
  "libc",
@@ -3892,6 +3893,7 @@ dependencies = [
  "block",
  "cbindgen",
  "cocoa 0.26.0",
+ "collections",
  "core-foundation 0.10.1",
  "core-foundation-sys",
  "core-graphics 0.24.0",
@@ -3903,15 +3905,14 @@ dependencies = [
  "etagere",
  "foreign-types",
  "futures",
- "gpui-toolkit-collections",
  "gpui-toolkit-gpui",
- "gpui-toolkit-gpui-util",
- "gpui-toolkit-media",
+ "gpui_util",
  "image",
  "itertools 0.15.0",
  "libc",
  "log",
  "mach2",
+ "media",
  "metal",
  "objc",
  "objc2 0.6.4",
@@ -3935,15 +3936,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.6",
-]
-
-[[package]]
-name = "gpui-toolkit-gpui-util"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "log",
- "which 8.0.6",
 ]
 
 [[package]]
@@ -3975,11 +3967,11 @@ version = "0.1.2"
 dependencies = [
  "anyhow",
  "bytemuck",
+ "collections",
  "cosmic-text",
  "etagere",
- "gpui-toolkit-collections",
  "gpui-toolkit-gpui",
- "gpui-toolkit-gpui-util",
+ "gpui_util",
  "itertools 0.15.0",
  "js-sys",
  "log",
@@ -4001,9 +3993,9 @@ name = "gpui-toolkit-gpui-windows"
 version = "0.1.2"
 dependencies = [
  "anyhow",
+ "collections",
  "etagere",
  "futures",
- "gpui-toolkit-collections",
  "gpui-toolkit-gpui",
  "gpui-toolkit-util",
  "image",
@@ -4040,24 +4032,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "gpui-toolkit-media"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bindgen",
- "core-foundation 0.10.1",
- "core-video",
- "ctor",
- "foreign-types",
- "metal",
- "objc",
-]
-
-[[package]]
 name = "gpui-toolkit-perf"
 version = "0.1.0"
 dependencies = [
- "gpui-toolkit-collections",
+ "collections",
  "serde",
  "serde_json",
 ]
@@ -4092,14 +4070,14 @@ dependencies = [
  "anyhow",
  "async-fs",
  "async_zip",
+ "collections",
  "command-fds",
  "dirs",
  "dunce",
  "futures",
  "futures-lite",
  "globset",
- "gpui-toolkit-collections",
- "gpui-toolkit-gpui-util",
+ "gpui_util",
  "itertools 0.15.0",
  "libc",
  "log",
@@ -4164,11 +4142,21 @@ dependencies = [
 [[package]]
 name = "gpui_shared_string"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed.git?rev=ced90fc636c4ede05402befc38a63bae7fd741bd#ced90fc636c4ede05402befc38a63bae7fd741bd"
+source = "git+https://github.com/pierreaubert/zed.git?rev=3a0ea890ddf8e6247e38c795a960eb18f5182113#3a0ea890ddf8e6247e38c795a960eb18f5182113"
 dependencies = [
  "schemars",
  "serde",
  "smol_str",
+]
+
+[[package]]
+name = "gpui_util"
+version = "0.1.0"
+source = "git+https://github.com/pierreaubert/zed.git?rev=3a0ea890ddf8e6247e38c795a960eb18f5182113#3a0ea890ddf8e6247e38c795a960eb18f5182113"
+dependencies = [
+ "anyhow",
+ "log",
+ "which 8.0.6",
 ]
 
 [[package]]
@@ -5954,6 +5942,21 @@ checksum = "d89e7ee0cfbedfc4da3340218492196241d89eefb6dab27de5df917a6d2e78cf"
 dependencies = [
  "cfg-if",
  "digest 0.10.7",
+]
+
+[[package]]
+name = "media"
+version = "0.1.0"
+source = "git+https://github.com/pierreaubert/zed.git?rev=3a0ea890ddf8e6247e38c795a960eb18f5182113#3a0ea890ddf8e6247e38c795a960eb18f5182113"
+dependencies = [
+ "anyhow",
+ "bindgen",
+ "core-foundation 0.10.1",
+ "core-video",
+ "ctor",
+ "foreign-types",
+ "metal",
+ "objc",
 ]
 
 [[package]]
@@ -8602,7 +8605,7 @@ dependencies = [
 [[package]]
 name = "refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed.git?rev=ced90fc636c4ede05402befc38a63bae7fd741bd#ced90fc636c4ede05402befc38a63bae7fd741bd"
+source = "git+https://github.com/pierreaubert/zed.git?rev=3a0ea890ddf8e6247e38c795a960eb18f5182113#3a0ea890ddf8e6247e38c795a960eb18f5182113"
 dependencies = [
  "derive_refineable",
 ]
