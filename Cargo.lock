@@ -7920,7 +7920,8 @@ dependencies = [
 
 [[package]]
 name = "psm"
-version = "0.1.30"
+version = "0.1.32"
+source = "git+https://github.com/pierreaubert/stacker.git?rev=48bf8e3abfb350de9387a675275a629e4daf9717#48bf8e3abfb350de9387a675275a629e4daf9717"
 dependencies = [
  "ar_archive_writer",
  "cc",
