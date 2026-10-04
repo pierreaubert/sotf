@@ -1521,9 +1521,9 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
     use sotf_plugins::{LoudnessMonitorPlugin, ParameterId, ParameterValue, Plugin};
     const RATE: u32 = 48_000;
     let mut input_host = LoudnessMonitorPlugin::new(2).unwrap();
-    input_host.initialize(RATE).unwrap();
+    input_host.initialize(f64::from(RATE)).unwrap();
     let mut output_host = LoudnessMonitorPlugin::new(2).unwrap();
-    output_host.initialize(RATE).unwrap();
+    output_host.initialize(f64::from(RATE)).unwrap();
     let initial_input: Arc<sotf_audio_player::LoudnessData> =
         input_host.get_data().unwrap().downcast().unwrap();
     let actual_input_id = initial_input.integrated_control_instance_id;
