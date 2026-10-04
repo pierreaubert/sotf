@@ -318,7 +318,7 @@ fn render_path(
 
     if host.input_channels() != channels
         || host.output_channels() != channels
-        || output_sample_rate != sample_rate
+        || output_sample_rate != f64::from(sample_rate)
         || host.output_frames_for_input(block_frames) != block_frames
     {
         return Err(AbTestError::IncompatiblePathLayout);
