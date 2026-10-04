@@ -963,7 +963,7 @@ pub(super) fn verb_scroll_at(rest: &str, ctx: &Ctx) -> Result<()> {
     Ok(())
 }
 
-/// Bring an already-rendered target's click point inside a vertical scrollport.
+/// Bring an already-rendered target's full bounds inside a vertical scrollport.
 pub(super) fn verb_scroll_into_view(rest: &str, ctx: &Ctx) -> Result<()> {
     let (container, target) = split2(rest);
     let target = target.trim();
@@ -982,29 +982,46 @@ pub(super) fn verb_scroll_into_view(rest: &str, ctx: &Ctx) -> Result<()> {
             .get("value")
             .and_then(|value| value.get("viewport"))
             .ok_or_else(|| anyhow!("health response does not contain viewport"))?;
-        if !element_is_within_viewport(port, viewport) {
-            bail!("scroll container `{container}` is clipped by the window");
-        }
-        let center = |element: &Value| -> Result<f64> {
+        let bounds = |element: &Value| -> Result<(f64, f64)> {
             let y = element.get("y").and_then(Value::as_f64);
             let height = element.get("h").and_then(Value::as_f64);
             match (y, height) {
                 (Some(y), Some(height)) if y.is_finite() && height.is_finite() && height > 0.0 => {
-                    Ok(y + height / 2.0)
+                    Ok((y, y + height))
                 }
                 _ => bail!("invalid scroll geometry: {element}"),
             }
         };
-        let delta = center(port)? - center(item)?;
-        let height = port.get("h").and_then(Value::as_f64).unwrap_or(0.0);
-        if delta.abs() < (height / 2.0 - 1.0).max(0.0) {
+        let (port_top, port_bottom) = bounds(port)?;
+        let viewport_bottom = viewport
+            .get("height")
+            .and_then(Value::as_f64)
+            .ok_or_else(|| anyhow!("viewport has no height"))?;
+        let visible_top = port_top.max(0.0);
+        let visible_bottom = port_bottom.min(viewport_bottom);
+        if visible_bottom <= visible_top {
+            bail!("scroll container `{container}` is outside the viewport");
+        }
+        let (item_top, item_bottom) = bounds(item)?;
+        if item_bottom - item_top > visible_bottom - visible_top {
+            bail!("target `{target}` is taller than visible scroll container `{container}`");
+        }
+        if item_top >= visible_top && item_bottom <= visible_bottom {
+            if !element_is_within_viewport(item, viewport) {
+                bail!("target `{target}` is horizontally outside the viewport");
+            }
             return Ok(());
         }
+        let delta = if item_top < visible_top {
+            visible_top - item_top
+        } else {
+            visible_bottom - item_bottom
+        };
         post_dev_json(
             ctx,
             "/scroll",
             &json!({"selector": container, "delta_y": delta}),
-            "center scroll target",
+            "scroll full target into view",
         )?;
         sleep(Duration::from_millis(100));
     }
