@@ -197,6 +197,7 @@ pub(super) fn routed_bass_output() -> DspChainOutput {
             routing_graph: Some(BassManagementRoutingGraph {
                 physical_sub_output: "Sub".to_string(),
                 physical_sub_outputs: vec!["Sub".to_string()],
+                post_dsp_main_alignment_band_hz: None,
                 stereo_routing: None,
                 input_channels: vec!["L".to_string(), "Sub".to_string()],
                 output_channels: vec!["L".to_string(), "Sub".to_string()],

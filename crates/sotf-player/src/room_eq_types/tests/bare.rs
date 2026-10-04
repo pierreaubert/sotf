@@ -47,6 +47,7 @@ fn bare_driver(name: &str, index: usize) -> DriverDspChain {
 pub(super) fn bare_output(channels: Vec<(String, ChannelDspChain)>) -> DspChainOutput {
     DspChainOutput {
         version: "1.0.0".to_string(),
+        artifact_bundle_schema_version: None,
         global_plugins: Vec::new(),
         channels: channels.into_iter().collect(),
         metadata: None,
@@ -618,6 +619,7 @@ fn test_physical_graph_uses_route_gain_without_chain_override() {
             routing_graph: Some(BassManagementRoutingGraph {
                 physical_sub_output: "LFE".to_string(),
                 physical_sub_outputs: vec!["LFE".to_string()],
+                post_dsp_main_alignment_band_hz: None,
                 stereo_routing: None,
                 input_channels: vec!["L".to_string(), "LFE".to_string()],
                 output_channels: vec!["L".to_string(), "LFE".to_string()],
@@ -801,6 +803,7 @@ fn test_physical_graph_rejects_unconnected_declared_output() {
             routing_graph: Some(BassManagementRoutingGraph {
                 physical_sub_output: "B".to_string(),
                 physical_sub_outputs: vec!["B".to_string()],
+                post_dsp_main_alignment_band_hz: None,
                 stereo_routing: None,
                 input_channels: vec!["A".to_string(), "B".to_string()],
                 output_channels: vec!["A".to_string(), "B".to_string()],

@@ -1483,6 +1483,7 @@ mod tests {
             }],
             dsp_output: Box::new(DspChainOutput {
                 version: "1.0.0".to_string(),
+                artifact_bundle_schema_version: None,
                 global_plugins: Vec::new(),
                 channels: HashMap::new(),
                 metadata: None,
