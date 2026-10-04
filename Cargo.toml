@@ -20,9 +20,6 @@ members = [
     "crates/app-tvos",
     "crates/sotf-docs-gen",
 ]
-exclude = [
-    "crates/3rdparties/psm",
-]
 resolver = "3"
 
 [workspace.package]
