@@ -86,6 +86,8 @@ fn sample_clock(stimulus: &[f32], offset: f64, ppm: f64, propagation: f64) -> Ve
 
 fn take(manifest: &RawCaptureManifest, index: usize, samples: usize) -> RawCaptureTake {
     RawCaptureTake {
+        take_id: String::new(), // The golden fixture uses the legacy single-take identity.
+        repeat_index: 0,
         device_id: format!("usb-{index}"),
         output_device_id: "dac".into(),
         source_id: "left".into(),

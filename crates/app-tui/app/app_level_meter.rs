@@ -717,9 +717,9 @@ mod integrated_control_tests {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
         const RATE: u32 = 48_000;
         let mut input_host = LoudnessMonitorPlugin::new(2).unwrap();
-        input_host.initialize(RATE).unwrap();
+        input_host.initialize(f64::from(RATE)).unwrap();
         let mut output_host = LoudnessMonitorPlugin::new(2).unwrap();
-        output_host.initialize(RATE).unwrap();
+        output_host.initialize(f64::from(RATE)).unwrap();
         let input_id = input_host.integrated_control_instance_id();
         let output_id = output_host.integrated_control_instance_id();
         assert_ne!(input_id, output_id);
