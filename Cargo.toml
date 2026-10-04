@@ -460,7 +460,7 @@ async-task = { git = "https://github.com/smol-rs/async-task.git", rev = "b4486cd
 # Tier 3 Apple platform support: upstream CoreAudio cfgs omit tvOS/watchOS/visionOS.
 nnnoiseless = { path = "../sotf-daw/crates/3rdparties/nnnoiseless" }
 coreaudio-rs = { path = "../sotf-daw/crates/3rdparties/coreaudio-rs" }
-psm = { path = "crates/3rdparties/psm" }
+psm = { git = "https://github.com/pierreaubert/stacker.git", rev = "48bf8e3abfb350de9387a675275a629e4daf9717" }
 
 # Keep Vello's crates.io wgpu dependency on the same Zed fork used by GPUI.
 # Dependency patches are root-workspace configuration and are not inherited
