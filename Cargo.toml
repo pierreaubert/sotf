@@ -78,7 +78,7 @@ futures = "0.3"
 base64 = "0.23"
 chacha20poly1305 = "0.10"
 byteorder = "1.5"
-coreaudio-rs = "0.13"
+coreaudio-rs = "0.14.2"
 core-foundation-sys = "0.8"
 dispatch2 = "0.3"
 flate2 = { version = "1.1.10" }
@@ -457,9 +457,9 @@ tract-onnx-opl = { git = "https://github.com/pierreaubert/tract.git", rev = "706
 block = { path = "../gpui-toolkit/crates/3rdparties/block" }
 objc = { path = "../gpui-toolkit/crates/3rdparties/objc" }
 async-task = { git = "https://github.com/smol-rs/async-task.git", rev = "b4486cd71e4e94fbda54ce6302444de14f4d190e" }
-# Tier 3 Apple platform support: upstream CoreAudio cfgs omit tvOS/watchOS/visionOS.
+# The pinned CoreAudio fork preserves callback buffer capacity accounting.
 nnnoiseless = { path = "../sotf-daw/crates/3rdparties/nnnoiseless" }
-coreaudio-rs = { path = "../sotf-daw/crates/3rdparties/coreaudio-rs" }
+coreaudio-rs = { git = "https://github.com/pierreaubert/coreaudio-rs.git", rev = "2d57f0f827d67162ccdce8f34b453fbd70d7750b" }
 psm = { git = "https://github.com/pierreaubert/stacker.git", rev = "48bf8e3abfb350de9387a675275a629e4daf9717" }
 
 # Keep Vello's crates.io wgpu dependency on the same Zed fork used by GPUI.
