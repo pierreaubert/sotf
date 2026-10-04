@@ -50,10 +50,10 @@ build_html = "2.7"
 anyhow = { version = "1.0" }
 assert_fs = "1.0"
 m3u8-rs = { version = "6" }
-librespot-core = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "0df7e17c037d565551454a638186836fd2580087", default-features = false, features = ["native-tls"] }
-librespot-playback = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "0df7e17c037d565551454a638186836fd2580087", default-features = false, features = ["native-tls"] }
-librespot-metadata = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "0df7e17c037d565551454a638186836fd2580087", default-features = false, features = ["native-tls"] }
-librespot-protocol = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "0df7e17c037d565551454a638186836fd2580087", default-features = false }
+librespot-core = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "d19176a4c8cd9763fa99edf7ab862743cec10b54", default-features = false, features = ["native-tls"] }
+librespot-playback = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "d19176a4c8cd9763fa99edf7ab862743cec10b54", default-features = false, features = ["native-tls"] }
+librespot-metadata = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "d19176a4c8cd9763fa99edf7ab862743cec10b54", default-features = false, features = ["native-tls"] }
+librespot-protocol = { version = "0.8", git = "https://github.com/pierreaubert/librespot.git", rev = "d19176a4c8cd9763fa99edf7ab862743cec10b54", default-features = false }
 # Exact pin (NOT caret): vergen 9.1.0 broke vergen-gitcl 1.0.8, used by
 # librespot-core's build script — vergen 9.1's `Build` no longer implements
 # vergen-lib 0.1's `Add` trait (E0277). A caret req would still allow 9.1+,
@@ -447,13 +447,13 @@ strip = "symbols"
 
 [patch.crates-io]
 nalgebra = { git = "https://github.com/pierreaubert/nalgebra.git", rev = "a42573dbc9649af62fb07b469c98c852e62720fd" }
-tract-core = { git = "https://github.com/pierreaubert/tract.git", rev = "3ab6874b52c4b0ff83a7114f9c30c5fe62f257cd" }
-tract-data = { git = "https://github.com/pierreaubert/tract.git", rev = "3ab6874b52c4b0ff83a7114f9c30c5fe62f257cd" }
-tract-hir = { git = "https://github.com/pierreaubert/tract.git", rev = "3ab6874b52c4b0ff83a7114f9c30c5fe62f257cd" }
-tract-linalg = { git = "https://github.com/pierreaubert/tract.git", rev = "3ab6874b52c4b0ff83a7114f9c30c5fe62f257cd" }
-tract-nnef = { git = "https://github.com/pierreaubert/tract.git", rev = "3ab6874b52c4b0ff83a7114f9c30c5fe62f257cd" }
-tract-onnx = { git = "https://github.com/pierreaubert/tract.git", rev = "3ab6874b52c4b0ff83a7114f9c30c5fe62f257cd" }
-tract-onnx-opl = { git = "https://github.com/pierreaubert/tract.git", rev = "3ab6874b52c4b0ff83a7114f9c30c5fe62f257cd" }
+tract-core = { git = "https://github.com/pierreaubert/tract.git", rev = "706cccb56b2de6bfcbd0016b9c260aef183e41d7" }
+tract-data = { git = "https://github.com/pierreaubert/tract.git", rev = "706cccb56b2de6bfcbd0016b9c260aef183e41d7" }
+tract-hir = { git = "https://github.com/pierreaubert/tract.git", rev = "706cccb56b2de6bfcbd0016b9c260aef183e41d7" }
+tract-linalg = { git = "https://github.com/pierreaubert/tract.git", rev = "706cccb56b2de6bfcbd0016b9c260aef183e41d7" }
+tract-nnef = { git = "https://github.com/pierreaubert/tract.git", rev = "706cccb56b2de6bfcbd0016b9c260aef183e41d7" }
+tract-onnx = { git = "https://github.com/pierreaubert/tract.git", rev = "706cccb56b2de6bfcbd0016b9c260aef183e41d7" }
+tract-onnx-opl = { git = "https://github.com/pierreaubert/tract.git", rev = "706cccb56b2de6bfcbd0016b9c260aef183e41d7" }
 block = { path = "../gpui-toolkit/crates/3rdparties/block" }
 objc = { path = "../gpui-toolkit/crates/3rdparties/objc" }
 async-task = { git = "https://github.com/smol-rs/async-task.git", rev = "b4486cd71e4e94fbda54ce6302444de14f4d190e" }
