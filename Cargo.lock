@@ -3609,7 +3609,7 @@ dependencies = [
  "metal",
  "parley",
  "peniko",
- "pollster 1.0.1",
+ "pollster",
  "regex",
  "serde",
  "serde_json",
@@ -3790,7 +3790,7 @@ dependencies = [
  "parking_lot",
  "pathfinder_geometry",
  "pin-project",
- "pollster 1.0.1",
+ "pollster",
  "profiling",
  "proptest",
  "rand 0.9.5",
@@ -3847,7 +3847,7 @@ dependencies = [
  "open",
  "parking_lot",
  "pathfinder_geometry",
- "pollster 1.0.1",
+ "pollster",
  "profiling",
  "raw-window-handle",
  "smallvec",
@@ -3963,7 +3963,7 @@ dependencies = [
  "js-sys",
  "log",
  "parking_lot",
- "pollster 1.0.1",
+ "pollster",
  "profiling",
  "raw-window-handle",
  "smallvec",
@@ -7604,12 +7604,6 @@ dependencies = [
 
 [[package]]
 name = "pollster"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f3a9f18d041e6d0e102a0a46750538147e5e8992d3b4873aaafee2520b00ce3"
-
-[[package]]
-name = "pollster"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc6355899e1c9462875b6757c79f3caa011a1fdae12bbb1a2e72dd1f234f8336"
@@ -8665,8 +8659,7 @@ dependencies = [
 [[package]]
 name = "rfd"
 version = "0.17.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20dafead71c16a34e1ff357ddefc8afc11e7d51d6d2b9fbd07eaa48e3e540220"
+source = "git+https://github.com/pierreaubert/rfd.git?rev=b049aa9c12c6cf5ac72a4ea0dffdeed6f7427f0d#b049aa9c12c6cf5ac72a4ea0dffdeed6f7427f0d"
 dependencies = [
  "block2 0.6.2",
  "dispatch2",
@@ -8678,7 +8671,7 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-foundation 0.3.2",
  "percent-encoding",
- "pollster 0.4.0",
+ "pollster",
  "raw-window-handle",
  "wasm-bindgen",
  "wasm-bindgen-futures",
