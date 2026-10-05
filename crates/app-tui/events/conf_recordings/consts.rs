@@ -312,9 +312,9 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     let cancel_flag = app.recording.model.sweep_cancel_requested.clone();
 
     std::thread::spawn(move || {
+        use sotf_audio_player::EnginePlayback;
         use sotf_audio_player::recording_helpers::summarize_take_quality;
         use sotf_audio_player::recording_types::RecordingResult;
-        use sotf_audio_player::EnginePlayback;
         use sotf_audio_player::signal_recorder::{
             record_and_analyze_with, record_and_analyze_with_multi,
         };

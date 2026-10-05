@@ -595,7 +595,8 @@ impl App {
                 channels,
                 stereo_pairs,
                 ..
-            } = &plugin.settings {
+            } = &plugin.settings
+            {
                 let channels = *channels;
                 let stereo_pairs = stereo_pairs.clone();
                 let filter_count = filters.len();
