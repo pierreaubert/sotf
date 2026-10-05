@@ -4,9 +4,7 @@
 //! with RoomEQ channel topology (this crate's `room_eq_types`), so it
 //! cannot move in either direction without a dependency cycle.
 
-use crate::recording_types::{
-    ChannelRecording, ChannelRecordingState, RecordingSourceIdentity,
-};
+use crate::recording_types::{ChannelRecording, ChannelRecordingState, RecordingSourceIdentity};
 use crate::room_eq_types::{ChannelMeasurement, RoomEqMeasurementsFile};
 use std::path::Path;
 

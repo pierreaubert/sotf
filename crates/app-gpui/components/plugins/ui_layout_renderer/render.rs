@@ -2141,8 +2141,8 @@ fn render_file_picker(
     .theme(theme.to_icon_button_theme())
     .aria_label(param_name)
     .when(interactive, |button| {
-        button.on_click_event(move |_event, window, cx| {
-            match file_picker_open_target(engine_key) {
+        button.on_click_event(
+            move |_event, window, cx| match file_picker_open_target(engine_key) {
                 Some(FilePickerOpenTarget::Sofa) => window.dispatch_action(
                     Box::new(OpenSofaFile {
                         plugin_idx,
@@ -2167,8 +2167,8 @@ fn render_file_picker(
                     );
                 }
                 None => log::warn!("No file open action for engine_key: {}", engine_key),
-            }
-        })
+            },
+        )
     })
     .when(!interactive, |button| button.disabled(true));
     #[cfg(feature = "dev-api")]

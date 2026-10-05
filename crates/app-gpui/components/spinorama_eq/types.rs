@@ -1497,17 +1497,16 @@ impl PlayerView {
             {
                 // Update existing EQ plugin
                 if let Some(eq_plugin) = plugin_graph.get_plugin_mut(eq_idx) {
-                    let (channels, stereo_pairs) =
-                        if let sotf_audio_player::PluginSettings::EQ {
-                            channels,
-                            stereo_pairs,
-                            ..
-                        } = &eq_plugin.settings
-                        {
-                            (*channels, stereo_pairs.clone())
-                        } else {
-                            (2, None)
-                        };
+                    let (channels, stereo_pairs) = if let sotf_audio_player::PluginSettings::EQ {
+                        channels,
+                        stereo_pairs,
+                        ..
+                    } = &eq_plugin.settings
+                    {
+                        (*channels, stereo_pairs.clone())
+                    } else {
+                        (2, None)
+                    };
                     eq_plugin.settings = sotf_audio_player::PluginSettings::EQ {
                         channels,
                         filters: eq_filters.clone(),

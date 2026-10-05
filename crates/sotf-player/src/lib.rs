@@ -153,9 +153,9 @@ pub use sotf_audio::replaygain::ReplayGainInfo;
 pub use waveform_scanner::{WaveformScanManager, WaveformScanMessage, WaveformScanner};
 
 // Re-export measurement functionality
-pub use sotf_capture::signal_recorder;
 #[cfg(not(target_os = "ios"))]
 pub use sotf_audio::engine_playback::EnginePlayback;
+pub use sotf_capture::signal_recorder;
 
 // Re-export math_audio_iir_fir types needed by TUI
 pub use math_audio_iir_fir::BiquadFilterType;

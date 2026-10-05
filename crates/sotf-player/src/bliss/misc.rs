@@ -133,7 +133,13 @@ mod tests {
         let samples = vec![0.25_f32; 44_100 + 37];
         let output = resample(&samples, 44_100, 22_050).unwrap();
         let reference = Fft::<f32>::new_custom(
-            44_100, 22_050, 1024, 2, 1, WindowFunction::BlackmanHarris2, FixedSync::Both,
+            44_100,
+            22_050,
+            1024,
+            2,
+            1,
+            WindowFunction::BlackmanHarris2,
+            FixedSync::Both,
         )
         .unwrap();
         let chunks = samples.len().div_ceil(reference.input_frames_next());
@@ -148,13 +154,19 @@ mod tests {
         let target_rate = 22_050;
         let tone_hz = 1_000.0_f32;
         let samples: Vec<f32> = (0..source_rate)
-            .map(|index| (std::f32::consts::TAU * tone_hz * index as f32 / source_rate as f32).sin())
+            .map(|index| {
+                (std::f32::consts::TAU * tone_hz * index as f32 / source_rate as f32).sin()
+            })
             .collect();
         let output = resample(&samples, source_rate, target_rate).unwrap();
         let middle = &output[1_000..output.len() - 1_000];
-        let rms = (middle.iter().map(|value| value * value).sum::<f32>() / middle.len() as f32).sqrt();
+        let rms =
+            (middle.iter().map(|value| value * value).sum::<f32>() / middle.len() as f32).sqrt();
         assert!((rms - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.04);
-        let crossings = middle.windows(2).filter(|pair| pair[0] <= 0.0 && pair[1] > 0.0).count();
+        let crossings = middle
+            .windows(2)
+            .filter(|pair| pair[0] <= 0.0 && pair[1] > 0.0)
+            .count();
         let measured_hz = crossings as f32 * target_rate as f32 / middle.len() as f32;
         assert!((measured_hz - tone_hz).abs() < 5.0);
     }

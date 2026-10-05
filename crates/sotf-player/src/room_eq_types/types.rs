@@ -438,4 +438,3 @@ pub type DspPluginConfig = autoeq::roomeq::PluginConfigWrapper;
 
 /// DSP chain metadata (alias for `autoeq::roomeq::OptimizationMetadata`).
 pub type DspChainMetadata = autoeq::roomeq::OptimizationMetadata;
-

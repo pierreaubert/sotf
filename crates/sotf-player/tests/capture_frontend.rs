@@ -13,9 +13,7 @@ use sotf_capture::capture_session::protocol::prepare_capture_stimulus;
 use sotf_capture::capture_session::record::RawCaptureManifest;
 use sotf_capture::capture_session::record::RawCaptureStatus;
 use sotf_capture::capture_session::record::RawCaptureTake;
-use sotf_capture::capture_session::{
-    CaptureGeometry, CaptureSessionPlan, CaptureTimingReference,
-};
+use sotf_capture::capture_session::{CaptureGeometry, CaptureSessionPlan, CaptureTimingReference};
 
 #[derive(Deserialize)]
 struct Golden {
@@ -28,10 +26,8 @@ struct Golden {
 }
 
 fn fixture() -> (Golden, RawCaptureManifest, Vec<f32>, Vec<f32>) {
-    let golden: Golden = serde_json::from_str(include_str!(
-        "fixtures/capture-clock-golden.json"
-    ))
-    .unwrap();
+    let golden: Golden =
+        serde_json::from_str(include_str!("fixtures/capture-clock-golden.json")).unwrap();
     let mut plan: CaptureSessionPlan =
         serde_json::from_str(include_str!("fixtures/capture-session.json")).unwrap();
     plan.sample_rate_hz = golden.sample_rate_hz;
