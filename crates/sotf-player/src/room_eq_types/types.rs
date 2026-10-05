@@ -1,6 +1,5 @@
 use super::room_eq_crossover_type::RoomEqCrossoverType;
 use crate::recording_types::{DelayProbeResults, RecordingResult};
-pub use autoeq::roomeq::ChannelDspChain;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 

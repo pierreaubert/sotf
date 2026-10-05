@@ -18,19 +18,10 @@
 # or use one of the profiles below together with --run-ignored all.
 default-filter = 'not (test(testkit_load_plugin_artifact_accepts_rack_chain_without_ui_flattening) | test(testkit_patch_channel_command_preserves_daemon_owned_plugins_and_input_channels))'
 
-# Test groups allow limiting parallelism for specific tests.
-# Audio engine tests require exclusive access to the virtual audio device
-# (BlackHole / SotF HAL) — running them in parallel causes device contention.
-[test-groups.audio-device]
-max-threads = 1
-
-[[profile.default.overrides]]
-# All engine integration tests that use the audio device must run serially.
-# Binary names: engine_latency_tests, engine_manager_tests, engine_stress_tests,
-# engine_playback_tests, engine_allocation_tests, e2e_audio, test_*_loopback,
-# and any future engine_* test binaries.
-filter = 'binary(/^engine_/) | binary(/loopback/) | binary(e2e_audio)'
-test-group = 'audio-device'
+# The audio-engine integration binaries moved to the sotf-daw workspace.
+# This workspace has no engine_*, loopback, or e2e_audio test binaries; a
+# binary() override for them makes nextest reject the configuration before
+# running any tests. Keep device-test scheduling with the owning workspace.
 
 # Additional run profiles for use with `cargo nextest run --profile <name>`.
 # These profiles select the same test set as the default profile. To actually

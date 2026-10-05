@@ -1,5 +1,4 @@
 use crate::recording_types::{ChannelRecording, ChannelRecordingState};
-pub use autoeq::roomeq::DspChainOutput;
 use std::collections::{BTreeMap, HashMap};
 
 /// Build the per-channel speaker map for an `autoeq::RoomConfig` from a
