@@ -71,7 +71,7 @@ jobs:
         run: just dist-au
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: macos-artifacts
           path: |
@@ -135,7 +135,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: linux-artifacts
           path: |
@@ -193,7 +193,7 @@ jobs:
         run: .\scripts\build-msix.ps1 -Arch x86_64 -Sign
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: windows-artifacts
           path: |
