@@ -5207,7 +5207,7 @@ impl PlayerView {
             (
                 state.app.ui_state.theme.clone(),
                 state.app.ui_state.translations.clone(),
-                crate::app::SettingsTab::visible_tabs(),
+                crate::app::SettingsTab::phone_visible_tabs(),
             )
         };
 
@@ -5240,14 +5240,14 @@ impl PlayerView {
             (
                 state.app.ui_state.theme.clone(),
                 state.app.ui_state.active_settings_tab,
-                crate::app::SettingsTab::visible_tabs(),
+                crate::app::SettingsTab::phone_visible_tabs(),
                 state.app.ui_state.translations.clone(),
             )
         };
         let active_tab = if visible_tabs.contains(&active_tab) {
             active_tab
         } else {
-            crate::app::SettingsTab::fallback_for_platform()
+            crate::app::SettingsTab::fallback_for_form_factor(true)
         };
         let content = match active_tab {
             crate::app::SettingsTab::Library => {

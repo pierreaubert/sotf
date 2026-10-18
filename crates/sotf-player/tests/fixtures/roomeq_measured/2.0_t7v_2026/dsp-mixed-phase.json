@@ -1,0 +1,82 @@
+{
+ "version": "3.0.0",
+ "global_plugins": [],
+ "channels": {
+  "L": {
+   "channel": "L",
+   "plugins": []
+  },
+  "R": {
+   "channel": "R",
+   "plugins": [
+    {
+     "plugin_type": "delay",
+     "parameters": {
+      "delay_ms": 0.236020802477783
+     }
+    }
+   ]
+  }
+ },
+ "metadata": {
+  "pre_score": 6.491068979529286,
+  "playback_summary": {
+   "outcome": "safe_fallback",
+   "improvement_db": 0.0,
+   "training_seats_improved": 0,
+   "training_seats_total": 2,
+   "worst_seat": "L:0",
+   "total_latency_ms": 0.0,
+   "available_headroom_db": -0.0,
+   "realized_processing": "alignment_only",
+   "limits": [
+    "max_boost_db=12.0",
+    "max_latency_ms=100.0",
+    "max_pre_ringing_audible_db=-20.0"
+   ],
+   "headlines": [
+    "Safe fallback: correction removed and baseline attenuated for playback safety; headroom -0.0 dB. No correction benefit claimed."
+   ]
+  },
+  "post_score": 6.491068979529286,
+  "iterations": 500000,
+  "algorithm": "autoeq:cmaes",
+  "home_cinema_layout": {
+   "layout": "2.0",
+   "bed_channels": 2,
+   "lfe_channels": 0,
+   "height_channels": 0,
+   "subwoofer_channels": 0,
+   "channels": [
+    {
+     "name": "L",
+     "role": "front_left",
+     "role_group": "front_lr",
+     "is_bass_managed": true,
+     "matching_group": "front_lr",
+     "target_band_hz": [
+      40.0,
+      18000.0
+     ],
+     "target_profile": "front_lr_default",
+     "target_advisory": null
+    },
+    {
+     "name": "R",
+     "role": "front_right",
+     "role_group": "front_lr",
+     "is_bass_managed": true,
+     "matching_group": "front_lr",
+     "target_band_hz": [
+      40.0,
+      18000.0
+     ],
+     "target_profile": "front_lr_default",
+     "target_advisory": null
+    }
+   ]
+  },
+  "loss_type": "flat",
+  "timestamp": "2026-10-16T08:20:33.508090+00:00"
+ }
+}

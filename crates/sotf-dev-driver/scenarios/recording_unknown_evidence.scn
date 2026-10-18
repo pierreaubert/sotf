@@ -10,6 +10,8 @@ assert      recording.quality_count == 1
 assert      recording.take.0.state == "ReviewNeeded"
 assert      recording.take.0.quality_present == true
 assert      recording.take.0.evidence_complete == true
+assert      recording.take.0.snr_status == "Unknown"
+assert      recording.take.0.quality_trustworthy == false
 assert      recording.status_severity == "Warning"
 screenshot  recording-unknown-evidence-review
 click       recording.accept_take_0

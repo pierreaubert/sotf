@@ -8,6 +8,9 @@ assert      recording.review_count == 1
 assert      recording.quality_count == 1
 assert      recording.take.0.state == "ReviewNeeded"
 assert      recording.take.0.evidence_complete == true
+assert      recording.take.0.snr_status == "Warning"
+assert      recording.take.0.snr_measured < 10.0
+assert      recording.take.0.quality_trustworthy == false
 assert      recording.status_severity == "Warning"
 screenshot  recording-low-snr-review
 click       recording.accept_take_0

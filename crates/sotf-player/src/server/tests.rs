@@ -45,6 +45,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 
 mod auth;
+mod loopback;
 mod misc;
 mod read;
 

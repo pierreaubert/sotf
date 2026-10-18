@@ -265,7 +265,7 @@ pub(super) async fn stop_test_api_server(
         .unwrap();
 }
 
-fn album(title: &str, artist: &str, year: u32) -> crate::library::Album {
+pub(super) fn album(title: &str, artist: &str, year: u32) -> crate::library::Album {
     crate::library::Album {
         title: title.to_string(),
         year: Some(year),

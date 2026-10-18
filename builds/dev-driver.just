@@ -32,6 +32,11 @@ dev-driver-full: dev-driver-build-gpui
 dev-driver-roomeq: dev-driver-build-gpui
 	cargo run -p sotf-dev-driver -- run-suite crates/sotf-dev-driver/suites/roomeq_matrix.toml -v
 
+# Run the two-process remote-server suite (headless fixture server + GPUI client).
+[group('dev-driver')]
+dev-driver-remote-server: dev-driver-build-gpui
+	cargo run -p sotf-dev-driver -- run-suite crates/sotf-dev-driver/suites/remote_server.toml -v
+
 # Run all TUI scenarios.
 [group('dev-driver')]
 dev-driver-tui: dev-driver-build-tui

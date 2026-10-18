@@ -1,6 +1,7 @@
 mod clean_log;
 mod copy;
 mod default;
+mod fixture_server;
 mod misc;
 mod run;
 mod runner_config;

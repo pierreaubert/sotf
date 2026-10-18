@@ -38,10 +38,10 @@ Prerequisites:
   rustup component add rust-src --toolchain nightly
   ```
 
-Generate the Xcode project and build for the tvOS simulator:
+Build the Rust library, generate the Xcode project, and build for the tvOS simulator:
 
 ```bash
-just tvos-sim
+just tvos # Alias for just tvos-sim
 ```
 
 Or build the Rust library directly:

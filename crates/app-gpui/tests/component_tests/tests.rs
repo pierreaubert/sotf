@@ -1435,6 +1435,33 @@ fn test_ios_settings_tabs_hide_local_library_and_keybindings() {
 }
 
 #[test]
+fn test_phone_settings_tabs_hide_local_server_option() {
+    // iPhone-class windows drop the Servers tab (the device itself
+    // acting as a media server); streaming sources stay reachable
+    // through the Federation tab.
+    let phone_tabs = SettingsTab::visible_tabs_for_form_factor(true, true);
+    assert!(!phone_tabs.contains(&SettingsTab::Servers));
+    assert!(!phone_tabs.contains(&SettingsTab::Library));
+    assert!(!phone_tabs.contains(&SettingsTab::Keybindings));
+    assert!(phone_tabs.contains(&SettingsTab::Federation));
+
+    // iPad-class iOS windows keep the Servers tab.
+    let ipad_tabs = SettingsTab::visible_tabs_for_form_factor(true, false);
+    assert!(ipad_tabs.contains(&SettingsTab::Servers));
+
+    // A persisted Servers tab falls back to Federation on phones so
+    // the detail screen never renders a hidden tab.
+    assert_eq!(
+        SettingsTab::fallback_for_form_factor(true),
+        SettingsTab::Federation
+    );
+    assert_eq!(
+        SettingsTab::fallback_for_form_factor(false),
+        SettingsTab::Servers
+    );
+}
+
+#[test]
 fn test_album_card_height_grid() {
     assert_eq!(album_card_height(AlbumCardMode::Grid), 180.0);
 }

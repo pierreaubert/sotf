@@ -56,12 +56,28 @@ pub(super) struct ScenarioConfig {
     pub(super) allowed_log_patterns: Vec<String>,
     #[serde(default)]
     pub(super) fake_recording: Option<FakeRecordingConfig>,
+    /// Launch a second headless SOTF server process for this scenario and
+    /// register it in the app under test as a remote server.
+    #[serde(default)]
+    pub(super) fixture_server: Option<FixtureServerConfig>,
     #[serde(default)]
     pub(super) room_eq: Option<RoomEqConfig>,
     #[serde(default)]
     pub(super) headphone_discovery: Option<HeadphoneDiscoveryConfig>,
     #[serde(default)]
     pub(super) spinorama_discovery: Option<SpinoramaDiscoveryConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct FixtureServerConfig {
+    /// Pre-seed the fixture server library with the runner demo audio by
+    /// booting the GUI app once against the fixture config directory.
+    #[serde(default)]
+    pub(super) seed_demo_audio: bool,
+    /// Kill and relaunch the fixture server once (same config directory)
+    /// before the app under test starts, proving restart durability.
+    #[serde(default)]
+    pub(super) restart_once: bool,
 }
 
 #[derive(Debug, Deserialize)]

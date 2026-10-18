@@ -1,0 +1,16 @@
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+demo_audio_dir = "data_tests/audio"
+readiness_timeout = "60s"
+size = "1440x900"
+
+[[scenario]]
+name = "remote-server-fixture"
+path = "crates/sotf-dev-driver/scenarios/remote_server_fixture.scn"
+timeout = "180s"
+tags = ["clientserver", "remote"]
+
+[scenario.fixture_server]
+seed_demo_audio = true
+restart_once = true

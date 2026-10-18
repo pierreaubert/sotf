@@ -107,15 +107,17 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
             .get(index)
             .ok_or_else(|| anyhow!("recording take index {index} is out of range"))?;
         let result = recording.result.as_ref();
-        let clipping_finding =
-            result
-                .and_then(|result| result.quality.as_ref())
-                .and_then(|quality| {
-                    quality
-                        .findings
-                        .iter()
-                        .find(|finding| format!("{:?}", finding.metric) == "Clipping")
-                });
+        let quality = result.and_then(|result| result.quality.as_ref());
+        let finding_for = |metric: &str| {
+            quality.and_then(|quality| {
+                quality
+                    .findings
+                    .iter()
+                    .find(|finding| format!("{:?}", finding.metric) == metric)
+            })
+        };
+        let clipping_finding = finding_for("Clipping");
+        let snr_finding = finding_for("BroadbandSnr");
         return match field {
             "state" => Ok(json!(format!("{:?}", recording.state))),
             "clipping_status" => Ok(json!(
@@ -143,6 +145,36 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 result
                     .and_then(|result| result.thd_percent.as_ref())
                     .and_then(|values| values.iter().copied().reduce(f32::max))
+            )),
+            "snr_status" => Ok(json!(
+                snr_finding.map(|finding| format!("{:?}", finding.status))
+            )),
+            "snr_measured" => Ok(json!(snr_finding.and_then(|finding| finding.measured))),
+            "quality_trustworthy" => Ok(json!(quality.map(|quality| quality.trustworthy))),
+            "quality_score" => Ok(json!(quality.map(|quality| quality.score))),
+            "mean_coherence" => Ok(json!(quality.and_then(|quality| quality.mean_coherence))),
+            "median_snr_db" => Ok(json!(quality.and_then(|quality| quality.median_snr_db))),
+            "sample_rate_hz" => Ok(json!(result.and_then(|result| result.sample_rate_hz))),
+            "freq_min_hz" => Ok(json!(result.and_then(|result| result.frequencies.first()))),
+            "freq_max_hz" => Ok(json!(result.and_then(|result| result.frequencies.last()))),
+            "ir_peak" => Ok(json!(
+                result
+                    .and_then(|result| result.impulse_response.as_ref())
+                    .and_then(|samples| {
+                        samples
+                            .iter()
+                            .enumerate()
+                            .max_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
+                            .map(|(index, value)| {
+                                json!({
+                                    "index": index,
+                                    "abs": value.abs(),
+                                    "time_ms": result.and_then(|result| result.sample_rate_hz).map(
+                                        |rate| index as f64 * 1_000.0 / f64::from(rate)
+                                    ),
+                                })
+                            })
+                    })
             )),
             "capture_mtime_ms" => Ok(json!(
                 result
@@ -1855,6 +1887,68 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "settings.remote_manual_token_configured" => {
             json!(!app.remote.manual_auth_token.trim().is_empty())
         }
+        "remote.selected_server_id" => json!(app.remote.server_store.selected_server_id),
+        "remote.probe_status" => {
+            let status = app
+                .remote
+                .server_store
+                .selected_server_id
+                .as_ref()
+                .and_then(|id| app.remote.server_probe_statuses.get(id));
+            let label = match status {
+                Some(
+                    crate::app::state::app::RemoteServerProbeStatus::Testing,
+                ) => "testing",
+                Some(
+                    crate::app::state::app::RemoteServerProbeStatus::Reachable {
+                        ..
+                    },
+                ) => "reachable",
+                Some(
+                    crate::app::state::app::RemoteServerProbeStatus::Failed(
+                        _,
+                    ),
+                ) => "failed",
+                None => "none",
+            };
+            json!(label)
+        }
+        "remote.probe_error" => {
+            let status = app
+                .remote
+                .server_store
+                .selected_server_id
+                .as_ref()
+                .and_then(|id| app.remote.server_probe_statuses.get(id));
+            match status {
+                Some(
+                    crate::app::state::app::RemoteServerProbeStatus::Failed(
+                        err,
+                    ),
+                ) => json!(err),
+                _ => json!(null),
+            }
+        }
+        "remote.state_present" => json!(app.remote.current_state.is_some()),
+        "remote.album_total" => json!(
+            app.remote
+                .current_album_page
+                .as_ref()
+                .map_or(0, |page| page.total)
+        ),
+        "remote.album_page_count" => json!(
+            app.remote
+                .current_album_page
+                .as_ref()
+                .map_or(0, |page| page.albums.len())
+        ),
+        "remote.queue_len" => json!(
+            app.remote
+                .current_queue
+                .as_ref()
+                .map_or(0, |queue| queue.items.len())
+        ),
+        "remote.cache_last_error" => json!(app.remote.cache_last_error),
 
         // Playback preferences
         "playback.replay_gain_enabled" => json!(app.playback.replay_gain_enabled),

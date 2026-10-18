@@ -1,6 +1,7 @@
 use super::clean_log::assert_clean_logs;
 use super::copy::copy_audio_fixtures;
 use super::copy::copy_room_eq_fixture;
+use super::fixture_server::start_fixture_server;
 use super::misc::free_port;
 use super::misc::post_json;
 use super::misc::safe_name;
@@ -286,6 +287,15 @@ fn run_one(
         .map(|fixture| copy_room_eq_fixture(fixture, &scenario_dir))
         .transpose()?;
 
+    // Two-process fixture: the headless server must be healthy before the
+    // app under test starts so registration cannot race server startup.
+    // The guard kills the server when this function returns.
+    let fixture_server = scenario
+        .fixture_server
+        .as_ref()
+        .map(|config| start_fixture_server(runner, scenario, &scenario_dir, config, verbose))
+        .transpose()?;
+
     let port = free_port()?;
     let base_url = format!("http://127.0.0.1:{port}");
     // The child echoes this nonce from `/health`; that prevents a suite from
@@ -368,6 +378,16 @@ fn run_one(
                 json!({ "library_dirs": [seeded_library] }),
             )
             .context("seeding QA library directories")?;
+        }
+
+        if let Some(server) = &fixture_server {
+            post_json(
+                &client,
+                &base_url,
+                "/qa/remote-server",
+                server.registration_json(),
+            )
+            .context("registering fixture remote server")?;
         }
 
         if let Some(fake) = &scenario.fake_recording {

@@ -462,7 +462,7 @@ impl SpotifyWebApi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::{MockRequest, spawn_mock_server};
+    use crate::test_util::{MockRequest, spawn_mock_server, spawn_mock_server_with_headers};
 
     fn test_api(server_base: &str) -> SpotifyWebApi {
         let rt = Arc::new(AsyncRuntime::new().unwrap());
@@ -651,6 +651,55 @@ mod tests {
                 assert!(msg.len() < 1000, "error body not truncated: {}", msg.len());
             }
             other => panic!("expected AuthError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn api_error_429_surfaces_status_once_without_retry() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let count = Arc::new(AtomicUsize::new(0));
+        let count2 = Arc::clone(&count);
+        let server = spawn_mock_server_with_headers(move |_req| {
+            count2.fetch_add(1, Ordering::SeqCst);
+            (
+                429,
+                vec![("Retry-After".to_string(), "1".to_string())],
+                r#"{"error":{"status":429,"message":"rate limited"}}"#.to_string(),
+            )
+        });
+
+        let api = test_api(&server.base_url);
+        match api.search_albums("anything", 5) {
+            Err(ServiceError::NetworkError(msg)) => {
+                assert!(msg.contains("429"), "got: {msg}")
+            }
+            other => panic!("expected NetworkError, got: {other:?}"),
+        }
+        // Contract: rate limiting is surfaced to the caller immediately.
+        // The client must not silently retry in a loop against a 429.
+        assert_eq!(count.load(Ordering::SeqCst), 1, "no retry on 429");
+    }
+
+    #[test]
+    fn malformed_json_body_is_error_not_panic() {
+        let server = spawn_mock_server(|_req| (200, "this is not json".to_string()));
+        let api = test_api(&server.base_url);
+        assert!(api.search_tracks("anything", 5).is_err());
+    }
+
+    #[test]
+    fn oversized_json_body_is_rejected_by_bound() {
+        let oversized = "x".repeat(crate::consts::MAX_JSON_BODY_BYTES + 1);
+        let server = spawn_mock_server(move |_req| (200, oversized.clone()));
+        let api = test_api(&server.base_url);
+        match api.search_tracks("anything", 5) {
+            Err(ServiceError::NetworkError(msg)) => {
+                assert!(
+                    msg.contains("too large") || msg.contains("exceeded"),
+                    "got: {msg}"
+                )
+            }
+            other => panic!("expected NetworkError, got: {other:?}"),
         }
     }
 

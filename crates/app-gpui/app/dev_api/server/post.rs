@@ -271,6 +271,23 @@ pub(super) fn post_qa_seed(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Re
     Ok(reply)
 }
 
+pub(super) fn post_qa_remote_server(
+    body: &[u8],
+    tx: &mpsc::SyncSender<DevCommand>,
+) -> Result<DevReply> {
+    let payload = parse_json_payload(body)?;
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    tx.send(DevCommand::QaRemoteServer {
+        payload,
+        reply: reply_tx,
+    })
+    .map_err(|_| anyhow!("dev-api queue closed"))?;
+    let reply = reply_rx
+        .recv_timeout(REPLY_TIMEOUT)
+        .map_err(|_| anyhow!("dev-api reply timeout"))?;
+    Ok(reply)
+}
+
 pub(super) fn post_qa_recording_fake_capture(
     body: &[u8],
     tx: &mpsc::SyncSender<DevCommand>,

@@ -7,6 +7,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
     private var displayLink: CADisplayLink?
+    private var gpuiStarted = false
     private let audioManager = AudioManager()
 
     func application(
@@ -17,16 +18,42 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         audioManager.configureAudioSession()
         configurePlatformObservers(application)
 
-        // Launch the GPUI app — creates the UIWindow, Metal view,
-        // and opens the PlayerView. Returns immediately because on iOS
-        // the run loop is managed by UIApplicationMain.
+        // GPUI itself is started by SceneDelegate when the first scene
+        // connects: apps built with the iOS 27 SDK must adopt the
+        // UIScene life cycle, and the GPUI window can only become
+        // visible once a UIWindowScene exists to attach it to.
+        return true
+    }
+
+    // MARK: - Scene life cycle
+
+    func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        let configuration = UISceneConfiguration(
+            name: "Default Configuration",
+            sessionRole: connectingSceneSession.role
+        )
+        configuration.delegateClass = SceneDelegate.self
+        return configuration
+    }
+
+    /// Launch the GPUI app — creates the GPUI window, Metal view, and
+    /// opens the PlayerView. Returns immediately because on iOS the
+    /// run loop is managed by UIApplicationMain. Called once, from
+    /// `SceneDelegate.scene(_:willConnectTo:options:)`, which then
+    /// hosts the GPUI view inside its scene window.
+    func startGPUI() {
+        guard !gpuiStarted else { return }
+        gpuiStarted = true
+
         sotf_ios_start()
 
         // Set up a CADisplayLink so GPUI gets a render tick every frame.
         displayLink = CADisplayLink(target: self, selector: #selector(renderFrame))
         displayLink?.add(to: .main, forMode: .common)
-
-        return true
     }
 
     @objc private func renderFrame() {

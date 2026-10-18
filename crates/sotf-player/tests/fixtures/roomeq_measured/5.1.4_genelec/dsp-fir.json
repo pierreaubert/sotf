@@ -1,0 +1,2092 @@
+{
+ "version": "3.0.0",
+ "global_plugins": [
+  {
+   "plugin_type": "matrix",
+   "parameters": {
+    "label": "home_cinema_bass_management",
+    "input_channel_map": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9
+    ],
+    "output_channel_map": [
+     9,
+     9,
+     9,
+     9,
+     9,
+     9,
+     9,
+     9,
+     9,
+     9
+    ],
+    "matrix": [
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     1.0,
+     1.0
+    ],
+    "metadata": {
+     "purpose": "home_cinema_bass_management",
+     "physical_sub_outputs": [
+      "Sub1"
+     ],
+     "routes": [
+      {
+       "group_id": "lcr",
+       "source_channel": "L",
+       "source_index": 0,
+       "destination": "L",
+       "destination_index": 0,
+       "pre_chain_channel": "L",
+       "post_chain_channel": "L",
+       "route_kind": "main_highpass_to_self",
+       "crossover_type": "LR24",
+       "high_pass_hz": 84.8528137423857,
+       "low_pass_hz": null,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "lcr",
+       "source_channel": "L",
+       "source_index": 0,
+       "destination": "Sub1",
+       "destination_index": 9,
+       "pre_chain_channel": "L",
+       "post_chain_channel": "Sub1",
+       "route_kind": "redirected_bass_lowpass_to_sub",
+       "crossover_type": "LR24",
+       "high_pass_hz": null,
+       "low_pass_hz": 84.8528137423857,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "lcr",
+       "source_channel": "R",
+       "source_index": 1,
+       "destination": "R",
+       "destination_index": 1,
+       "pre_chain_channel": "R",
+       "post_chain_channel": "R",
+       "route_kind": "main_highpass_to_self",
+       "crossover_type": "LR24",
+       "high_pass_hz": 84.8528137423857,
+       "low_pass_hz": null,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "lcr",
+       "source_channel": "R",
+       "source_index": 1,
+       "destination": "Sub1",
+       "destination_index": 9,
+       "pre_chain_channel": "R",
+       "post_chain_channel": "Sub1",
+       "route_kind": "redirected_bass_lowpass_to_sub",
+       "crossover_type": "LR24",
+       "high_pass_hz": null,
+       "low_pass_hz": 84.8528137423857,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "lcr",
+       "source_channel": "C",
+       "source_index": 2,
+       "destination": "C",
+       "destination_index": 2,
+       "pre_chain_channel": "C",
+       "post_chain_channel": "C",
+       "route_kind": "main_highpass_to_self",
+       "crossover_type": "LR24",
+       "high_pass_hz": 84.8528137423857,
+       "low_pass_hz": null,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "lcr",
+       "source_channel": "C",
+       "source_index": 2,
+       "destination": "Sub1",
+       "destination_index": 9,
+       "pre_chain_channel": "C",
+       "post_chain_channel": "Sub1",
+       "route_kind": "redirected_bass_lowpass_to_sub",
+       "crossover_type": "LR24",
+       "high_pass_hz": null,
+       "low_pass_hz": 84.8528137423857,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "lfe",
+       "source_channel": "LFE",
+       "source_index": 3,
+       "destination": "Sub1",
+       "destination_index": 9,
+       "pre_chain_channel": "LFE",
+       "post_chain_channel": "Sub1",
+       "route_kind": "lfe_lowpass_to_sub",
+       "crossover_type": "LR24",
+       "high_pass_hz": null,
+       "low_pass_hz": 120.0,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "surround",
+       "source_channel": "SL",
+       "source_index": 4,
+       "destination": "SL",
+       "destination_index": 3,
+       "pre_chain_channel": "SL",
+       "post_chain_channel": "SL",
+       "route_kind": "main_highpass_to_self",
+       "crossover_type": "LR24",
+       "high_pass_hz": 84.8528137423857,
+       "low_pass_hz": null,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "surround",
+       "source_channel": "SL",
+       "source_index": 4,
+       "destination": "Sub1",
+       "destination_index": 9,
+       "pre_chain_channel": "SL",
+       "post_chain_channel": "Sub1",
+       "route_kind": "redirected_bass_lowpass_to_sub",
+       "crossover_type": "LR24",
+       "high_pass_hz": null,
+       "low_pass_hz": 84.8528137423857,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "surround",
+       "source_channel": "SR",
+       "source_index": 5,
+       "destination": "SR",
+       "destination_index": 4,
+       "pre_chain_channel": "SR",
+       "post_chain_channel": "SR",
+       "route_kind": "main_highpass_to_self",
+       "crossover_type": "LR24",
+       "high_pass_hz": 84.8528137423857,
+       "low_pass_hz": null,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "surround",
+       "source_channel": "SR",
+       "source_index": 5,
+       "destination": "Sub1",
+       "destination_index": 9,
+       "pre_chain_channel": "SR",
+       "post_chain_channel": "Sub1",
+       "route_kind": "redirected_bass_lowpass_to_sub",
+       "crossover_type": "LR24",
+       "high_pass_hz": null,
+       "low_pass_hz": 84.8528137423857,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "height",
+       "source_channel": "TFL",
+       "source_index": 6,
+       "destination": "TFL",
+       "destination_index": 5,
+       "pre_chain_channel": "TFL",
+       "post_chain_channel": "TFL",
+       "route_kind": "main_highpass_to_self",
+       "crossover_type": "LR24",
+       "high_pass_hz": 84.8528137423857,
+       "low_pass_hz": null,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "height",
+       "source_channel": "TFL",
+       "source_index": 6,
+       "destination": "Sub1",
+       "destination_index": 9,
+       "pre_chain_channel": "TFL",
+       "post_chain_channel": "Sub1",
+       "route_kind": "redirected_bass_lowpass_to_sub",
+       "crossover_type": "LR24",
+       "high_pass_hz": null,
+       "low_pass_hz": 84.8528137423857,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "height",
+       "source_channel": "TFR",
+       "source_index": 7,
+       "destination": "TFR",
+       "destination_index": 6,
+       "pre_chain_channel": "TFR",
+       "post_chain_channel": "TFR",
+       "route_kind": "main_highpass_to_self",
+       "crossover_type": "LR24",
+       "high_pass_hz": 84.8528137423857,
+       "low_pass_hz": null,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "height",
+       "source_channel": "TFR",
+       "source_index": 7,
+       "destination": "Sub1",
+       "destination_index": 9,
+       "pre_chain_channel": "TFR",
+       "post_chain_channel": "Sub1",
+       "route_kind": "redirected_bass_lowpass_to_sub",
+       "crossover_type": "LR24",
+       "high_pass_hz": null,
+       "low_pass_hz": 84.8528137423857,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "height",
+       "source_channel": "TBL",
+       "source_index": 8,
+       "destination": "TBL",
+       "destination_index": 7,
+       "pre_chain_channel": "TBL",
+       "post_chain_channel": "TBL",
+       "route_kind": "main_highpass_to_self",
+       "crossover_type": "LR24",
+       "high_pass_hz": 84.8528137423857,
+       "low_pass_hz": null,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "height",
+       "source_channel": "TBL",
+       "source_index": 8,
+       "destination": "Sub1",
+       "destination_index": 9,
+       "pre_chain_channel": "TBL",
+       "post_chain_channel": "Sub1",
+       "route_kind": "redirected_bass_lowpass_to_sub",
+       "crossover_type": "LR24",
+       "high_pass_hz": null,
+       "low_pass_hz": 84.8528137423857,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "height",
+       "source_channel": "TBR",
+       "source_index": 9,
+       "destination": "TBR",
+       "destination_index": 8,
+       "pre_chain_channel": "TBR",
+       "post_chain_channel": "TBR",
+       "route_kind": "main_highpass_to_self",
+       "crossover_type": "LR24",
+       "high_pass_hz": 84.8528137423857,
+       "low_pass_hz": null,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      },
+      {
+       "group_id": "height",
+       "source_channel": "TBR",
+       "source_index": 9,
+       "destination": "Sub1",
+       "destination_index": 9,
+       "pre_chain_channel": "TBR",
+       "post_chain_channel": "Sub1",
+       "route_kind": "redirected_bass_lowpass_to_sub",
+       "crossover_type": "LR24",
+       "high_pass_hz": null,
+       "low_pass_hz": 84.8528137423857,
+       "gain_db": 0.0,
+       "gain_linear": 1.0,
+       "matrix_gain": 1.0,
+       "delay_ms": 0.0,
+       "polarity_inverted": false
+      }
+     ],
+     "stereo_routing": null,
+     "advisories": [
+      "ok",
+      "programme_headroom_max_input_peak:1.000000000; normalized_model_scaled_by_db:0.000000",
+      "common_input_headroom_safety_trim_db:3.075",
+      "post_dsp_input_levels_aligned_down"
+     ]
+    }
+   }
+  }
+ ],
+ "channels": {
+  "SR": {
+   "channel": "SR",
+   "plugins": [
+    {
+     "plugin_type": "delay",
+     "parameters": {
+      "delay_ms": 14.009264395190556,
+      "room_eq_stage": "pre_route"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -0.7144050598144531,
+      "room_eq_stage": "pre_route"
+     }
+    },
+    {
+     "plugin_type": "eq",
+     "parameters": {
+      "label": "excursion_protection",
+      "filters": [
+       {
+        "filter_type": "highpass",
+        "freq": 29.06574285174338,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       },
+       {
+        "filter_type": "highpass",
+        "freq": 29.06574285174338,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       }
+      ],
+      "room_eq_stage": "post_route"
+     }
+    },
+    {
+     "plugin_type": "delay",
+     "parameters": {
+      "delay_ms": 42.666666666666664,
+      "room_eq_stage": "post_route",
+      "label": "fir_design_delay"
+     }
+    },
+    {
+     "plugin_type": "crossover",
+     "parameters": {
+      "type": "LR24",
+      "frequency": 84.8528137423857,
+      "output": "high",
+      "room_eq_stage": "route_owned",
+      "label": "room_eq_route_owned"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -3.0749956784236923,
+      "room_eq_stage": "post_route",
+      "label": "post_dsp_output_headroom_safety"
+     }
+    }
+   ]
+  },
+  "TFR": {
+   "channel": "TFR",
+   "plugins": [
+    {
+     "plugin_type": "delay",
+     "parameters": {
+      "delay_ms": 6.143104768800221,
+      "room_eq_stage": "pre_route"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -0.6566276550292969,
+      "room_eq_stage": "pre_route"
+     }
+    },
+    {
+     "plugin_type": "eq",
+     "parameters": {
+      "label": "excursion_protection",
+      "filters": [
+       {
+        "filter_type": "highpass",
+        "freq": 33.63585661014857,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       },
+       {
+        "filter_type": "highpass",
+        "freq": 33.63585661014857,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       }
+      ],
+      "room_eq_stage": "post_route"
+     }
+    },
+    {
+     "plugin_type": "crossover",
+     "parameters": {
+      "type": "LR24",
+      "frequency": 84.8528137423857,
+      "output": "high",
+      "room_eq_stage": "route_owned",
+      "label": "room_eq_route_owned"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -3.0749956784236923,
+      "room_eq_stage": "post_route",
+      "label": "post_dsp_output_headroom_safety"
+     }
+    }
+   ]
+  },
+  "TBR": {
+   "channel": "TBR",
+   "plugins": [
+    {
+     "plugin_type": "delay",
+     "parameters": {
+      "delay_ms": 9.14674880728382,
+      "room_eq_stage": "pre_route"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -0.81439208984375,
+      "room_eq_stage": "pre_route"
+     }
+    },
+    {
+     "plugin_type": "eq",
+     "parameters": {
+      "label": "excursion_protection",
+      "filters": [
+       {
+        "filter_type": "highpass",
+        "freq": 33.63585661014857,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       },
+       {
+        "filter_type": "highpass",
+        "freq": 33.63585661014857,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       }
+      ],
+      "room_eq_stage": "post_route"
+     }
+    },
+    {
+     "plugin_type": "crossover",
+     "parameters": {
+      "type": "LR24",
+      "frequency": 84.8528137423857,
+      "output": "high",
+      "room_eq_stage": "route_owned",
+      "label": "room_eq_route_owned"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -3.0749956784236923,
+      "room_eq_stage": "post_route",
+      "label": "post_dsp_output_headroom_safety"
+     }
+    }
+   ]
+  },
+  "TFL": {
+   "channel": "TFL",
+   "plugins": [
+    {
+     "plugin_type": "delay",
+     "parameters": {
+      "delay_ms": 3.472414068334878,
+      "room_eq_stage": "pre_route"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -0.4320220947265625,
+      "room_eq_stage": "pre_route"
+     }
+    },
+    {
+     "plugin_type": "eq",
+     "parameters": {
+      "label": "excursion_protection",
+      "filters": [
+       {
+        "filter_type": "highpass",
+        "freq": 33.63585661014857,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       },
+       {
+        "filter_type": "highpass",
+        "freq": 33.63585661014857,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       }
+      ],
+      "room_eq_stage": "post_route"
+     }
+    },
+    {
+     "plugin_type": "delay",
+     "parameters": {
+      "delay_ms": 42.666666666666664,
+      "room_eq_stage": "post_route",
+      "label": "fir_design_delay"
+     }
+    },
+    {
+     "plugin_type": "crossover",
+     "parameters": {
+      "type": "LR24",
+      "frequency": 84.8528137423857,
+      "output": "high",
+      "room_eq_stage": "route_owned",
+      "label": "room_eq_route_owned"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -3.0749956784236923,
+      "room_eq_stage": "post_route",
+      "label": "post_dsp_output_headroom_safety"
+     }
+    }
+   ]
+  },
+  "SL": {
+   "channel": "SL",
+   "plugins": [
+    {
+     "plugin_type": "delay",
+     "parameters": {
+      "delay_ms": 6.818950299997276,
+      "room_eq_stage": "pre_route"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -0.22275543212890625,
+      "room_eq_stage": "pre_route"
+     }
+    },
+    {
+     "plugin_type": "eq",
+     "parameters": {
+      "label": "excursion_protection",
+      "filters": [
+       {
+        "filter_type": "highpass",
+        "freq": 33.63585661014857,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       },
+       {
+        "filter_type": "highpass",
+        "freq": 33.63585661014857,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       }
+      ],
+      "room_eq_stage": "post_route"
+     }
+    },
+    {
+     "plugin_type": "delay",
+     "parameters": {
+      "delay_ms": 42.666666666666664,
+      "room_eq_stage": "post_route",
+      "label": "fir_design_delay"
+     }
+    },
+    {
+     "plugin_type": "crossover",
+     "parameters": {
+      "type": "LR24",
+      "frequency": 84.8528137423857,
+      "output": "high",
+      "room_eq_stage": "route_owned",
+      "label": "room_eq_route_owned"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -3.0749956784236923,
+      "room_eq_stage": "post_route",
+      "label": "post_dsp_output_headroom_safety"
+     }
+    }
+   ]
+  },
+  "Sub1": {
+   "channel": "Sub1",
+   "plugins": [
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -3.3593902587890625,
+      "room_eq_stage": "pre_route"
+     }
+    },
+    {
+     "plugin_type": "crossover",
+     "parameters": {
+      "type": "LR24",
+      "frequency": 120.0,
+      "output": "low",
+      "room_eq_stage": "route_owned",
+      "label": "room_eq_route_owned"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -3.0749956784236923,
+      "room_eq_stage": "post_route",
+      "label": "post_dsp_output_headroom_safety"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -16.510282929166095,
+      "room_eq_correction_gain": true,
+      "room_eq_safety_gain": true,
+      "label": "final_electrical_headroom",
+      "room_eq_stage": "post_route"
+     }
+    }
+   ]
+  },
+  "C": {
+   "channel": "C",
+   "plugins": [
+    {
+     "plugin_type": "delay",
+     "parameters": {
+      "delay_ms": 7.186230329815686,
+      "room_eq_stage": "pre_route"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -0.7041816711425781,
+      "room_eq_stage": "pre_route"
+     }
+    },
+    {
+     "plugin_type": "eq",
+     "parameters": {
+      "label": "excursion_protection",
+      "filters": [
+       {
+        "filter_type": "highpass",
+        "freq": 32.07196348495074,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       },
+       {
+        "filter_type": "highpass",
+        "freq": 32.07196348495074,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       }
+      ],
+      "room_eq_stage": "post_route"
+     }
+    },
+    {
+     "plugin_type": "delay",
+     "parameters": {
+      "delay_ms": 42.666666666666664,
+      "room_eq_stage": "post_route",
+      "label": "fir_design_delay"
+     }
+    },
+    {
+     "plugin_type": "crossover",
+     "parameters": {
+      "type": "LR24",
+      "frequency": 84.8528137423857,
+      "output": "high",
+      "room_eq_stage": "route_owned",
+      "label": "room_eq_route_owned"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -3.0749956784236923,
+      "room_eq_stage": "post_route",
+      "label": "post_dsp_output_headroom_safety"
+     }
+    }
+   ]
+  },
+  "R": {
+   "channel": "R",
+   "plugins": [
+    {
+     "plugin_type": "delay",
+     "parameters": {
+      "delay_ms": 2.613836903091311,
+      "room_eq_stage": "pre_route"
+     }
+    },
+    {
+     "plugin_type": "eq",
+     "parameters": {
+      "label": "excursion_protection",
+      "filters": [
+       {
+        "filter_type": "highpass",
+        "freq": 23.881813057049765,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       },
+       {
+        "filter_type": "highpass",
+        "freq": 23.881813057049765,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       }
+      ],
+      "room_eq_stage": "post_route"
+     }
+    },
+    {
+     "plugin_type": "delay",
+     "parameters": {
+      "delay_ms": 42.666666666666664,
+      "room_eq_stage": "post_route",
+      "label": "fir_design_delay"
+     }
+    },
+    {
+     "plugin_type": "crossover",
+     "parameters": {
+      "type": "LR24",
+      "frequency": 84.8528137423857,
+      "output": "high",
+      "room_eq_stage": "route_owned",
+      "label": "room_eq_route_owned"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -3.0749956784236923,
+      "room_eq_stage": "post_route",
+      "label": "post_dsp_output_headroom_safety"
+     }
+    }
+   ]
+  },
+  "TBL": {
+   "channel": "TBL",
+   "plugins": [
+    {
+     "plugin_type": "delay",
+     "parameters": {
+      "delay_ms": 5.019229066690357,
+      "room_eq_stage": "pre_route"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -0.5436058044433594,
+      "room_eq_stage": "pre_route"
+     }
+    },
+    {
+     "plugin_type": "eq",
+     "parameters": {
+      "label": "excursion_protection",
+      "filters": [
+       {
+        "filter_type": "highpass",
+        "freq": 33.63585661014857,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       },
+       {
+        "filter_type": "highpass",
+        "freq": 33.63585661014857,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       }
+      ],
+      "room_eq_stage": "post_route"
+     }
+    },
+    {
+     "plugin_type": "crossover",
+     "parameters": {
+      "type": "LR24",
+      "frequency": 84.8528137423857,
+      "output": "high",
+      "room_eq_stage": "route_owned",
+      "label": "room_eq_route_owned"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -3.0749956784236923,
+      "room_eq_stage": "post_route",
+      "label": "post_dsp_output_headroom_safety"
+     }
+    }
+   ]
+  },
+  "L": {
+   "channel": "L",
+   "plugins": [
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -0.110137939453125,
+      "room_eq_stage": "pre_route"
+     }
+    },
+    {
+     "plugin_type": "eq",
+     "parameters": {
+      "label": "excursion_protection",
+      "filters": [
+       {
+        "filter_type": "highpass",
+        "freq": 33.568584896928286,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       },
+       {
+        "filter_type": "highpass",
+        "freq": 33.568584896928286,
+        "q": 0.7071067811865476,
+        "db_gain": 0.0
+       }
+      ],
+      "room_eq_stage": "post_route"
+     }
+    },
+    {
+     "plugin_type": "delay",
+     "parameters": {
+      "delay_ms": 42.666666666666664,
+      "room_eq_stage": "post_route",
+      "label": "fir_design_delay"
+     }
+    },
+    {
+     "plugin_type": "crossover",
+     "parameters": {
+      "type": "LR24",
+      "frequency": 84.8528137423857,
+      "output": "high",
+      "room_eq_stage": "route_owned",
+      "label": "room_eq_route_owned"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -3.0749956784236923,
+      "room_eq_stage": "post_route",
+      "label": "post_dsp_output_headroom_safety"
+     }
+    }
+   ]
+  }
+ },
+ "metadata": {
+  "pre_score": 2.1282262237737037,
+  "playback_summary": {
+   "outcome": "safe_fallback",
+   "improvement_db": 0.0,
+   "training_seats_improved": 0,
+   "training_seats_total": 10,
+   "worst_seat": "C:0",
+   "total_latency_ms": 0.0,
+   "available_headroom_db": -0.0,
+   "realized_processing": "iir_only",
+   "limits": [
+    "max_boost_db=12.0",
+    "max_latency_ms=250.0",
+    "max_pre_ringing_audible_db=-20.0"
+   ],
+   "headlines": [
+    "Safe fallback: correction removed and baseline attenuated for playback safety; headroom -0.0 dB. No correction benefit claimed."
+   ]
+  },
+  "post_score": 2.1282262237737037,
+  "iterations": 500000,
+  "bass_management": {
+   "routing_title": "Home-Cinema Bass Management Routing",
+   "enabled": true,
+   "crossover_type": "LR24",
+   "crossover_frequency_hz": 84.8528137423857,
+   "redirected_bass_enabled": true,
+   "lfe": {
+    "input_channel": "LFE",
+    "playback_gain_db": 10.0,
+    "low_pass_hz": 120.0,
+    "gain_applied_to_chain": false
+   },
+   "sub_trim_db": 0.0,
+   "max_sub_boost_db": 6.0,
+   "headroom_margin_db": 17.0,
+   "applied_sub_gain_db": 0.0,
+   "gain_limited": false,
+   "physical_sub_outputs": [
+    "Sub1"
+   ],
+   "redirected_bass_channel_count": 9,
+   "main_high_pass_hz": 84.8528137423857,
+   "sub_low_pass_hz": 84.8528137423857,
+   "lfe_headroom_required_db": 27.0,
+   "signal_flow": [
+    {
+     "source_channel": "C",
+     "role": "center",
+     "destination": "Sub1",
+     "high_pass_hz": 84.8528137423857,
+     "low_pass_hz": 84.8528137423857,
+     "lfe_gain_db": 0.0,
+     "redirects_bass": true
+    },
+    {
+     "source_channel": "L",
+     "role": "front_left",
+     "destination": "Sub1",
+     "high_pass_hz": 84.8528137423857,
+     "low_pass_hz": 84.8528137423857,
+     "lfe_gain_db": 0.0,
+     "redirects_bass": true
+    },
+    {
+     "source_channel": "R",
+     "role": "front_right",
+     "destination": "Sub1",
+     "high_pass_hz": 84.8528137423857,
+     "low_pass_hz": 84.8528137423857,
+     "lfe_gain_db": 0.0,
+     "redirects_bass": true
+    },
+    {
+     "source_channel": "SL",
+     "role": "side_surround_left",
+     "destination": "Sub1",
+     "high_pass_hz": 84.8528137423857,
+     "low_pass_hz": 84.8528137423857,
+     "lfe_gain_db": 0.0,
+     "redirects_bass": true
+    },
+    {
+     "source_channel": "SR",
+     "role": "side_surround_right",
+     "destination": "Sub1",
+     "high_pass_hz": 84.8528137423857,
+     "low_pass_hz": 84.8528137423857,
+     "lfe_gain_db": 0.0,
+     "redirects_bass": true
+    },
+    {
+     "source_channel": "TBL",
+     "role": "top_rear_left",
+     "destination": "Sub1",
+     "high_pass_hz": 84.8528137423857,
+     "low_pass_hz": 84.8528137423857,
+     "lfe_gain_db": 0.0,
+     "redirects_bass": true
+    },
+    {
+     "source_channel": "TBR",
+     "role": "top_rear_right",
+     "destination": "Sub1",
+     "high_pass_hz": 84.8528137423857,
+     "low_pass_hz": 84.8528137423857,
+     "lfe_gain_db": 0.0,
+     "redirects_bass": true
+    },
+    {
+     "source_channel": "TFL",
+     "role": "top_front_left",
+     "destination": "Sub1",
+     "high_pass_hz": 84.8528137423857,
+     "low_pass_hz": 84.8528137423857,
+     "lfe_gain_db": 0.0,
+     "redirects_bass": true
+    },
+    {
+     "source_channel": "TFR",
+     "role": "top_front_right",
+     "destination": "Sub1",
+     "high_pass_hz": 84.8528137423857,
+     "low_pass_hz": 84.8528137423857,
+     "lfe_gain_db": 0.0,
+     "redirects_bass": true
+    },
+    {
+     "source_channel": "LFE",
+     "role": "lfe",
+     "destination": "Sub1",
+     "high_pass_hz": null,
+     "low_pass_hz": 120.0,
+     "lfe_gain_db": 10.0,
+     "redirects_bass": false
+    }
+   ],
+   "signal_flow_advisories": [
+    "ok"
+   ],
+   "routing_graph": {
+    "physical_sub_outputs": [
+     "Sub1"
+    ],
+    "input_channels": [
+     "L",
+     "R",
+     "C",
+     "LFE",
+     "SL",
+     "SR",
+     "TFL",
+     "TFR",
+     "TBL",
+     "TBR"
+    ],
+    "output_channels": [
+     "L",
+     "R",
+     "C",
+     "SL",
+     "SR",
+     "TFL",
+     "TFR",
+     "TBL",
+     "TBR",
+     "Sub1"
+    ],
+    "routes": [
+     {
+      "group_id": "lcr",
+      "source_channel": "L",
+      "source_index": 0,
+      "destination": "L",
+      "destination_index": 0,
+      "pre_chain_channel": "L",
+      "post_chain_channel": "L",
+      "route_kind": "main_highpass_to_self",
+      "crossover_type": "LR24",
+      "high_pass_hz": 84.8528137423857,
+      "low_pass_hz": null,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "lcr",
+      "source_channel": "L",
+      "source_index": 0,
+      "destination": "Sub1",
+      "destination_index": 9,
+      "pre_chain_channel": "L",
+      "post_chain_channel": "Sub1",
+      "route_kind": "redirected_bass_lowpass_to_sub",
+      "crossover_type": "LR24",
+      "high_pass_hz": null,
+      "low_pass_hz": 84.8528137423857,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "lcr",
+      "source_channel": "R",
+      "source_index": 1,
+      "destination": "R",
+      "destination_index": 1,
+      "pre_chain_channel": "R",
+      "post_chain_channel": "R",
+      "route_kind": "main_highpass_to_self",
+      "crossover_type": "LR24",
+      "high_pass_hz": 84.8528137423857,
+      "low_pass_hz": null,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "lcr",
+      "source_channel": "R",
+      "source_index": 1,
+      "destination": "Sub1",
+      "destination_index": 9,
+      "pre_chain_channel": "R",
+      "post_chain_channel": "Sub1",
+      "route_kind": "redirected_bass_lowpass_to_sub",
+      "crossover_type": "LR24",
+      "high_pass_hz": null,
+      "low_pass_hz": 84.8528137423857,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "lcr",
+      "source_channel": "C",
+      "source_index": 2,
+      "destination": "C",
+      "destination_index": 2,
+      "pre_chain_channel": "C",
+      "post_chain_channel": "C",
+      "route_kind": "main_highpass_to_self",
+      "crossover_type": "LR24",
+      "high_pass_hz": 84.8528137423857,
+      "low_pass_hz": null,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "lcr",
+      "source_channel": "C",
+      "source_index": 2,
+      "destination": "Sub1",
+      "destination_index": 9,
+      "pre_chain_channel": "C",
+      "post_chain_channel": "Sub1",
+      "route_kind": "redirected_bass_lowpass_to_sub",
+      "crossover_type": "LR24",
+      "high_pass_hz": null,
+      "low_pass_hz": 84.8528137423857,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "lfe",
+      "source_channel": "LFE",
+      "source_index": 3,
+      "destination": "Sub1",
+      "destination_index": 9,
+      "pre_chain_channel": "LFE",
+      "post_chain_channel": "Sub1",
+      "route_kind": "lfe_lowpass_to_sub",
+      "crossover_type": "LR24",
+      "high_pass_hz": null,
+      "low_pass_hz": 120.0,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "surround",
+      "source_channel": "SL",
+      "source_index": 4,
+      "destination": "SL",
+      "destination_index": 3,
+      "pre_chain_channel": "SL",
+      "post_chain_channel": "SL",
+      "route_kind": "main_highpass_to_self",
+      "crossover_type": "LR24",
+      "high_pass_hz": 84.8528137423857,
+      "low_pass_hz": null,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "surround",
+      "source_channel": "SL",
+      "source_index": 4,
+      "destination": "Sub1",
+      "destination_index": 9,
+      "pre_chain_channel": "SL",
+      "post_chain_channel": "Sub1",
+      "route_kind": "redirected_bass_lowpass_to_sub",
+      "crossover_type": "LR24",
+      "high_pass_hz": null,
+      "low_pass_hz": 84.8528137423857,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "surround",
+      "source_channel": "SR",
+      "source_index": 5,
+      "destination": "SR",
+      "destination_index": 4,
+      "pre_chain_channel": "SR",
+      "post_chain_channel": "SR",
+      "route_kind": "main_highpass_to_self",
+      "crossover_type": "LR24",
+      "high_pass_hz": 84.8528137423857,
+      "low_pass_hz": null,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "surround",
+      "source_channel": "SR",
+      "source_index": 5,
+      "destination": "Sub1",
+      "destination_index": 9,
+      "pre_chain_channel": "SR",
+      "post_chain_channel": "Sub1",
+      "route_kind": "redirected_bass_lowpass_to_sub",
+      "crossover_type": "LR24",
+      "high_pass_hz": null,
+      "low_pass_hz": 84.8528137423857,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "height",
+      "source_channel": "TFL",
+      "source_index": 6,
+      "destination": "TFL",
+      "destination_index": 5,
+      "pre_chain_channel": "TFL",
+      "post_chain_channel": "TFL",
+      "route_kind": "main_highpass_to_self",
+      "crossover_type": "LR24",
+      "high_pass_hz": 84.8528137423857,
+      "low_pass_hz": null,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "height",
+      "source_channel": "TFL",
+      "source_index": 6,
+      "destination": "Sub1",
+      "destination_index": 9,
+      "pre_chain_channel": "TFL",
+      "post_chain_channel": "Sub1",
+      "route_kind": "redirected_bass_lowpass_to_sub",
+      "crossover_type": "LR24",
+      "high_pass_hz": null,
+      "low_pass_hz": 84.8528137423857,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "height",
+      "source_channel": "TFR",
+      "source_index": 7,
+      "destination": "TFR",
+      "destination_index": 6,
+      "pre_chain_channel": "TFR",
+      "post_chain_channel": "TFR",
+      "route_kind": "main_highpass_to_self",
+      "crossover_type": "LR24",
+      "high_pass_hz": 84.8528137423857,
+      "low_pass_hz": null,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "height",
+      "source_channel": "TFR",
+      "source_index": 7,
+      "destination": "Sub1",
+      "destination_index": 9,
+      "pre_chain_channel": "TFR",
+      "post_chain_channel": "Sub1",
+      "route_kind": "redirected_bass_lowpass_to_sub",
+      "crossover_type": "LR24",
+      "high_pass_hz": null,
+      "low_pass_hz": 84.8528137423857,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "height",
+      "source_channel": "TBL",
+      "source_index": 8,
+      "destination": "TBL",
+      "destination_index": 7,
+      "pre_chain_channel": "TBL",
+      "post_chain_channel": "TBL",
+      "route_kind": "main_highpass_to_self",
+      "crossover_type": "LR24",
+      "high_pass_hz": 84.8528137423857,
+      "low_pass_hz": null,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "height",
+      "source_channel": "TBL",
+      "source_index": 8,
+      "destination": "Sub1",
+      "destination_index": 9,
+      "pre_chain_channel": "TBL",
+      "post_chain_channel": "Sub1",
+      "route_kind": "redirected_bass_lowpass_to_sub",
+      "crossover_type": "LR24",
+      "high_pass_hz": null,
+      "low_pass_hz": 84.8528137423857,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "height",
+      "source_channel": "TBR",
+      "source_index": 9,
+      "destination": "TBR",
+      "destination_index": 8,
+      "pre_chain_channel": "TBR",
+      "post_chain_channel": "TBR",
+      "route_kind": "main_highpass_to_self",
+      "crossover_type": "LR24",
+      "high_pass_hz": 84.8528137423857,
+      "low_pass_hz": null,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     },
+     {
+      "group_id": "height",
+      "source_channel": "TBR",
+      "source_index": 9,
+      "destination": "Sub1",
+      "destination_index": 9,
+      "pre_chain_channel": "TBR",
+      "post_chain_channel": "Sub1",
+      "route_kind": "redirected_bass_lowpass_to_sub",
+      "crossover_type": "LR24",
+      "high_pass_hz": null,
+      "low_pass_hz": 84.8528137423857,
+      "gain_db": 0.0,
+      "gain_linear": 1.0,
+      "matrix_gain": 1.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false
+     }
+    ],
+    "matrix": {
+     "input_channel_map": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+     ],
+     "output_channel_map": [
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9
+     ],
+     "matrix": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+     ],
+     "route_count": 10
+    },
+    "input_trim_db": {
+     "TFL": -0.00026702880859375,
+     "L": -0.000270843505859375,
+     "TBL": -0.00052642822265625,
+     "SR": -0.000232696533203125,
+     "TBR": -0.0004425048828125,
+     "R": -0.00022125244140625,
+     "SL": -0.0002593994140625,
+     "Sub1": 0.0,
+     "C": -0.00025177001953125,
+     "TFR": 0.0
+    },
+    "post_dsp_main_alignment_band_hz": [
+     500.0,
+     2000.0
+    ],
+    "advisories": [
+     "ok",
+     "programme_headroom_max_input_peak:1.000000000; normalized_model_scaled_by_db:0.000000",
+     "common_input_headroom_safety_trim_db:3.075",
+     "post_dsp_input_levels_aligned_down"
+    ]
+   },
+   "optimization": {
+    "crossover_cancellation": {
+     "limit_db": 3.0,
+     "sources": {
+      "C": {
+       "crossover_hz": 84.8528137423857,
+       "frequencies_hz": [],
+       "cancellation_db": []
+      },
+      "L": {
+       "crossover_hz": 84.8528137423857,
+       "frequencies_hz": [],
+       "cancellation_db": []
+      },
+      "R": {
+       "crossover_hz": 84.8528137423857,
+       "frequencies_hz": [],
+       "cancellation_db": []
+      },
+      "SL": {
+       "crossover_hz": 84.8528137423857,
+       "frequencies_hz": [],
+       "cancellation_db": []
+      },
+      "SR": {
+       "crossover_hz": 84.8528137423857,
+       "frequencies_hz": [],
+       "cancellation_db": []
+      },
+      "TBL": {
+       "crossover_hz": 84.8528137423857,
+       "frequencies_hz": [],
+       "cancellation_db": []
+      },
+      "TBR": {
+       "crossover_hz": 84.8528137423857,
+       "frequencies_hz": [],
+       "cancellation_db": []
+      },
+      "TFL": {
+       "crossover_hz": 84.8528137423857,
+       "frequencies_hz": [],
+       "cancellation_db": []
+      },
+      "TFR": {
+       "crossover_hz": 84.8528137423857,
+       "frequencies_hz": [],
+       "cancellation_db": []
+      }
+     }
+    },
+    "applied": false,
+    "phase_required": true,
+    "phase_available": false,
+    "configured_crossover_hz": 84.8528137423857,
+    "optimized_crossover_hz": 84.8528137423857,
+    "crossover_range_hz": [
+     60.0,
+     120.0
+    ],
+    "crossover_type": "LR24",
+    "main_delay_ms": 0.0,
+    "sub_delay_ms": 0.0,
+    "relative_sub_delay_ms": 0.0,
+    "sub_polarity_inverted": false,
+    "requested_sub_gain_db": 0.0,
+    "applied_sub_gain_db": 0.0,
+    "gain_limited": false,
+    "estimated_bass_bus_peak_gain_db": 19.975242812260852,
+    "group_results": [
+     {
+      "group_id": "height",
+      "roles": [
+       "TBL",
+       "TBR",
+       "TFL",
+       "TFR"
+      ],
+      "crossover_type": "LR24",
+      "selected_crossover_hz": 84.8528137423857,
+      "configured_crossover_hz": 84.8528137423857,
+      "main_delay_ms": 0.0,
+      "bass_route_delay_ms": 0.0,
+      "polarity_inverted": false,
+      "trim_db": 0.0,
+      "advisories": [
+       "frequency_grid_mismatch_group_crossover_alignment_skipped"
+      ]
+     },
+     {
+      "group_id": "lcr",
+      "roles": [
+       "C",
+       "L",
+       "R"
+      ],
+      "crossover_type": "LR24",
+      "selected_crossover_hz": 84.8528137423857,
+      "configured_crossover_hz": 84.8528137423857,
+      "main_delay_ms": 0.0,
+      "bass_route_delay_ms": 0.0,
+      "polarity_inverted": false,
+      "trim_db": 0.0,
+      "advisories": [
+       "frequency_grid_mismatch_group_crossover_alignment_skipped"
+      ]
+     },
+     {
+      "group_id": "surround",
+      "roles": [
+       "SL",
+       "SR"
+      ],
+      "crossover_type": "LR24",
+      "selected_crossover_hz": 84.8528137423857,
+      "configured_crossover_hz": 84.8528137423857,
+      "main_delay_ms": 0.0,
+      "bass_route_delay_ms": 0.0,
+      "polarity_inverted": false,
+      "trim_db": 0.0,
+      "advisories": [
+       "frequency_grid_mismatch_group_crossover_alignment_skipped"
+      ]
+     }
+    ],
+    "source_results": [
+     {
+      "source_channel": "C",
+      "group_id": "lcr",
+      "main_delay_ms": 0.0,
+      "bass_route_delay_ms": 0.0,
+      "polarity_inverted": false,
+      "trim_db": 0.0,
+      "objective_before": 2.7893475349464367,
+      "objective_after": 2.7893475349464367,
+      "accepted": false,
+      "safety_restored": false,
+      "advisories": [
+       "source_route_optimizer_skipped_unverified_timing"
+      ]
+     },
+     {
+      "source_channel": "L",
+      "group_id": "lcr",
+      "main_delay_ms": 0.0,
+      "bass_route_delay_ms": 0.0,
+      "polarity_inverted": false,
+      "trim_db": 0.0,
+      "objective_before": 3.8615567342255215,
+      "objective_after": 3.8615567342255215,
+      "accepted": false,
+      "safety_restored": false,
+      "advisories": [
+       "source_route_optimizer_skipped_unverified_timing"
+      ]
+     },
+     {
+      "source_channel": "R",
+      "group_id": "lcr",
+      "main_delay_ms": 0.0,
+      "bass_route_delay_ms": 0.0,
+      "polarity_inverted": false,
+      "trim_db": 0.0,
+      "objective_before": 3.997137089070174,
+      "objective_after": 3.997137089070174,
+      "accepted": false,
+      "safety_restored": false,
+      "advisories": [
+       "source_route_optimizer_skipped_unverified_timing"
+      ]
+     },
+     {
+      "source_channel": "SL",
+      "group_id": "surround",
+      "main_delay_ms": 0.0,
+      "bass_route_delay_ms": 0.0,
+      "polarity_inverted": false,
+      "trim_db": 0.0,
+      "objective_before": 4.040468230583283,
+      "objective_after": 4.040468230583283,
+      "accepted": false,
+      "safety_restored": false,
+      "advisories": [
+       "source_route_optimizer_skipped_unverified_timing"
+      ]
+     },
+     {
+      "source_channel": "SR",
+      "group_id": "surround",
+      "main_delay_ms": 0.0,
+      "bass_route_delay_ms": 0.0,
+      "polarity_inverted": false,
+      "trim_db": 0.0,
+      "objective_before": 3.0040318640247072,
+      "objective_after": 3.0040318640247072,
+      "accepted": false,
+      "safety_restored": false,
+      "advisories": [
+       "source_route_optimizer_skipped_unverified_timing"
+      ]
+     },
+     {
+      "source_channel": "TBL",
+      "group_id": "height",
+      "main_delay_ms": 0.0,
+      "bass_route_delay_ms": 0.0,
+      "polarity_inverted": false,
+      "trim_db": 0.0,
+      "objective_before": 2.7729514679709992,
+      "objective_after": 2.7729514679709992,
+      "accepted": false,
+      "safety_restored": false,
+      "advisories": [
+       "source_route_optimizer_skipped_unverified_timing"
+      ]
+     },
+     {
+      "source_channel": "TBR",
+      "group_id": "height",
+      "main_delay_ms": 0.0,
+      "bass_route_delay_ms": 0.0,
+      "polarity_inverted": false,
+      "trim_db": 0.0,
+      "objective_before": 3.830274314320599,
+      "objective_after": 3.830274314320599,
+      "accepted": false,
+      "safety_restored": false,
+      "advisories": [
+       "source_route_optimizer_skipped_unverified_timing"
+      ]
+     },
+     {
+      "source_channel": "TFL",
+      "group_id": "height",
+      "main_delay_ms": 0.0,
+      "bass_route_delay_ms": 0.0,
+      "polarity_inverted": false,
+      "trim_db": 0.0,
+      "objective_before": 4.8350388354972225,
+      "objective_after": 4.8350388354972225,
+      "accepted": false,
+      "safety_restored": false,
+      "advisories": [
+       "source_route_optimizer_skipped_unverified_timing"
+      ]
+     },
+     {
+      "source_channel": "TFR",
+      "group_id": "height",
+      "main_delay_ms": 0.0,
+      "bass_route_delay_ms": 0.0,
+      "polarity_inverted": false,
+      "trim_db": 0.0,
+      "objective_before": 4.595806724708108,
+      "objective_after": 4.595806724708108,
+      "accepted": false,
+      "safety_restored": false,
+      "advisories": [
+       "source_route_optimizer_skipped_unverified_timing"
+      ]
+     }
+    ],
+    "sub_output_results": [
+     {
+      "output_role": "Sub1",
+      "gain_db": 0.0,
+      "delay_ms": 0.0,
+      "polarity_inverted": false,
+      "strategy_source": "single",
+      "headroom_contribution_db": 0.0
+     }
+    ],
+    "advisories": [
+     "crossover_phase_coherence_unverified",
+     "crossover_phase_snr_unverified",
+     "crossover_timing_reference_refused:source 'center_genelec' lacks stationary timing evidence",
+     "source_route_optimizer_skipped_unverified_timing"
+    ]
+   },
+   "groups": [
+    {
+     "group_id": "height",
+     "roles": [
+      "TBL",
+      "TBR",
+      "TFL",
+      "TFR"
+     ],
+     "crossover_type": "LR24",
+     "selected_crossover_hz": 84.8528137423857,
+     "configured_crossover_hz": 84.8528137423857,
+     "main_delay_ms": 0.0,
+     "bass_route_delay_ms": 0.0,
+     "polarity_inverted": false,
+     "trim_db": 0.0,
+     "advisories": [
+      "frequency_grid_mismatch_group_crossover_alignment_skipped"
+     ]
+    },
+    {
+     "group_id": "lcr",
+     "roles": [
+      "C",
+      "L",
+      "R"
+     ],
+     "crossover_type": "LR24",
+     "selected_crossover_hz": 84.8528137423857,
+     "configured_crossover_hz": 84.8528137423857,
+     "main_delay_ms": 0.0,
+     "bass_route_delay_ms": 0.0,
+     "polarity_inverted": false,
+     "trim_db": 0.0,
+     "advisories": [
+      "frequency_grid_mismatch_group_crossover_alignment_skipped"
+     ]
+    },
+    {
+     "group_id": "surround",
+     "roles": [
+      "SL",
+      "SR"
+     ],
+     "crossover_type": "LR24",
+     "selected_crossover_hz": 84.8528137423857,
+     "configured_crossover_hz": 84.8528137423857,
+     "main_delay_ms": 0.0,
+     "bass_route_delay_ms": 0.0,
+     "polarity_inverted": false,
+     "trim_db": 0.0,
+     "advisories": [
+      "frequency_grid_mismatch_group_crossover_alignment_skipped"
+     ]
+    }
+   ],
+   "sub_outputs": [
+    {
+     "output_role": "Sub1",
+     "gain_db": 0.0,
+     "delay_ms": 0.0,
+     "polarity_inverted": false,
+     "strategy_source": "single",
+     "headroom_contribution_db": 0.0
+    }
+   ],
+   "headroom_simulation": {
+    "model": "cinema_correlated",
+    "frequency_range_hz": [
+     20.0,
+     250.0
+    ],
+    "rms_bus_gain_db": 15.158717014250403,
+    "coherent_peak_gain_db": 19.974995678423692,
+    "lfe_contribution_db": -0.006698955498172454,
+    "headroom_margin_db": 17.0,
+    "pass": false,
+    "margin_db": -2.974995678423692,
+    "worst_frequency_hz": 20.0,
+    "per_output": [
+     {
+      "output_role": "Sub1",
+      "rms_bus_gain_db": 15.158717014250403,
+      "coherent_peak_gain_db": 19.974995678423692,
+      "lfe_contribution_db": -0.006698955498172454,
+      "pass": false,
+      "margin_db": -2.974995678423692,
+      "worst_frequency_hz": 20.0
+     }
+    ]
+   },
+   "advisory": "lfe_gain_reported_not_applied_to_physical_sub_chain;post_dsp_input_levels_aligned_down"
+  },
+  "algorithm": "autoeq:cmaes",
+  "home_cinema_layout": {
+   "layout": "5.1.4",
+   "bed_channels": 5,
+   "lfe_channels": 1,
+   "height_channels": 4,
+   "subwoofer_channels": 0,
+   "channels": [
+    {
+     "name": "C",
+     "role": "center",
+     "role_group": "center",
+     "is_bass_managed": true,
+     "matching_group": null,
+     "target_band_hz": [
+      80.0,
+      16000.0
+     ],
+     "target_profile": "center_dialog_default",
+     "target_advisory": null
+    },
+    {
+     "name": "L",
+     "role": "front_left",
+     "role_group": "front_lr",
+     "is_bass_managed": true,
+     "matching_group": "front_lr",
+     "target_band_hz": [
+      40.0,
+      18000.0
+     ],
+     "target_profile": "front_lr_default",
+     "target_advisory": null
+    },
+    {
+     "name": "R",
+     "role": "front_right",
+     "role_group": "front_lr",
+     "is_bass_managed": true,
+     "matching_group": "front_lr",
+     "target_band_hz": [
+      40.0,
+      18000.0
+     ],
+     "target_profile": "front_lr_default",
+     "target_advisory": null
+    },
+    {
+     "name": "SL",
+     "role": "side_surround_left",
+     "role_group": "side_surrounds",
+     "is_bass_managed": true,
+     "matching_group": "side_surrounds",
+     "target_band_hz": [
+      80.0,
+      12000.0
+     ],
+     "target_profile": "surround_default",
+     "target_advisory": null
+    },
+    {
+     "name": "SR",
+     "role": "side_surround_right",
+     "role_group": "side_surrounds",
+     "is_bass_managed": true,
+     "matching_group": "side_surrounds",
+     "target_band_hz": [
+      80.0,
+      12000.0
+     ],
+     "target_profile": "surround_default",
+     "target_advisory": null
+    },
+    {
+     "name": "TBL",
+     "role": "top_rear_left",
+     "role_group": "top_rear",
+     "is_bass_managed": true,
+     "matching_group": "top_rear",
+     "target_band_hz": [
+      120.0,
+      10000.0
+     ],
+     "target_profile": "height_default",
+     "target_advisory": null
+    },
+    {
+     "name": "TBR",
+     "role": "top_rear_right",
+     "role_group": "top_rear",
+     "is_bass_managed": true,
+     "matching_group": "top_rear",
+     "target_band_hz": [
+      120.0,
+      10000.0
+     ],
+     "target_profile": "height_default",
+     "target_advisory": null
+    },
+    {
+     "name": "TFL",
+     "role": "top_front_left",
+     "role_group": "top_front",
+     "is_bass_managed": true,
+     "matching_group": "top_front",
+     "target_band_hz": [
+      120.0,
+      10000.0
+     ],
+     "target_profile": "height_default",
+     "target_advisory": null
+    },
+    {
+     "name": "TFR",
+     "role": "top_front_right",
+     "role_group": "top_front",
+     "is_bass_managed": true,
+     "matching_group": "top_front",
+     "target_band_hz": [
+      120.0,
+      10000.0
+     ],
+     "target_profile": "height_default",
+     "target_advisory": null
+    },
+    {
+     "name": "LFE",
+     "role": "lfe",
+     "role_group": "lfe",
+     "is_bass_managed": false,
+     "matching_group": null,
+     "target_band_hz": [
+      20.0,
+      160.0
+     ],
+     "target_profile": "lfe_default",
+     "target_advisory": null
+    }
+   ]
+  },
+  "loss_type": "flat",
+  "timestamp": "2026-10-16T08:56:18.504914+00:00"
+ }
+}

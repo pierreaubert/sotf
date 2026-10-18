@@ -448,7 +448,17 @@ fn apply_dsp_params_to_settings(
             }
         }
         "delay" => {
-            if let PluginSettings::Delay { delay_ms, .. } = settings {
+            if let PluginSettings::Delay {
+                delay_ms,
+                feedback,
+                mix,
+                lfo_rate_hz,
+                lfo_depth_ms,
+                pitch_preserving,
+                allpass_feedback,
+                ..
+            } = settings
+            {
                 if let Some(per_ch) = parameters
                     .get("channel_delays_ms")
                     .and_then(|v| v.as_array())
@@ -460,6 +470,35 @@ fn apply_dsp_params_to_settings(
                 } else if let Some(v) = parameters.get("delay_ms").and_then(|v| v.as_f64()) {
                     *delay_ms = v;
                 }
+                // RoomEQ delays are alignment delays. The optimizer emits
+                // only `delay_ms`, so absent effect parameters must become
+                // pure-delay values instead of the delay plugin's effect
+                // defaults (mix 0.5, feedback 0.3) when this UI graph is
+                // later serialized back to the engine.
+                *mix = parameters
+                    .get("mix")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(1.0);
+                *feedback = parameters
+                    .get("feedback")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                *lfo_rate_hz = parameters
+                    .get("lfo_rate_hz")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                *lfo_depth_ms = parameters
+                    .get("lfo_depth_ms")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                *pitch_preserving = parameters
+                    .get("pitch_preserving")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                *allpass_feedback = parameters
+                    .get("allpass_feedback")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
             }
         }
         _ => {} // Other types keep defaults (crossover lacks a PluginSettings

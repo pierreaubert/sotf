@@ -20,6 +20,11 @@ assert      recording.all_done == true
 assert      recording.done_count == 2
 assert      recording.quality_count == 2
 assert      recording.evidence_complete == true
+assert      recording.take.0.quality_trustworthy == true
+assert      recording.take.0.snr_status == "Pass"
+assert      recording.take.0.snr_measured > 30.0
+assert      recording.take.0.freq_max_hz >= 10000.0
+assert      recording.take.1.quality_trustworthy == true
 
 # Rewind to exercise the user-entered SPL calibration stage before Capture.
 assert_visible recording.back

@@ -1,0 +1,17 @@
+# Two-process remote server flow.
+#
+# The suite runner launches a real headless `sotf-desktop --server` fixture
+# process (pre-seeded demo library, restarted once before this app starts)
+# and registers it through POST /qa/remote-server, which drives the same
+# manual-add path as the settings UI. This scenario proves the client
+# probes the server, syncs its state, and browses its library.
+
+wait_until settings.remote_server_count == 1 timeout=10s
+wait_until remote.probe_status == "reachable" timeout=30s
+assert     remote.probe_error == null
+
+wait_until remote.state_present == true timeout=30s
+wait_until remote.album_total > 0 timeout=30s
+assert     remote.cache_last_error == null
+
+screenshot remote-server-fixture

@@ -161,6 +161,46 @@ pub(super) fn qa_seed(
     })
 }
 
+/// Register a remote SOTF server via the same manual-add path the settings
+/// UI uses (persist store + token, select server, start event stream), then
+/// probe it so scenarios can wait for reachability.
+pub(super) fn qa_remote_server(
+    payload: serde_json::Value,
+    window: AnyWindowHandle,
+    cx: &mut App,
+) -> Result<()> {
+    let name = payload
+        .get("name")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| anyhow!("remote-server payload needs `name` string"))?
+        .to_string();
+    let api_base_url = payload
+        .get("api_base_url")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| anyhow!("remote-server payload needs `api_base_url` string"))?
+        .to_string();
+    let token = payload
+        .get("token")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| anyhow!("remote-server payload needs `token` string"))?
+        .to_string();
+
+    with_app_state(window, cx, |state| {
+        state.app.update_manual_remote_server_name(name);
+        state.app.update_manual_remote_server_url(api_base_url);
+        state.app.update_manual_remote_server_token(token);
+        let id = state
+            .app
+            .add_manual_remote_server_from_inputs()
+            .map_err(|err| anyhow!("adding QA remote server: {err}"))?;
+        state.app.start_remote_server_probe(&id);
+        Ok(())
+    })
+}
+
 pub(super) fn qa_playback_output(
     payload: serde_json::Value,
     window: AnyWindowHandle,

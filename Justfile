@@ -136,6 +136,7 @@ test-integration-player:
 	{{cargo}} test -p sotf-player --test error_handling_tests
 	{{cargo}} test -p sotf-player --test plugin_chain_tests
 	{{cargo}} test -p sotf-player --test library_tests
+	{{cargo}} test -p sotf-player --test roomeq_measured_configs
 
 # Device-selection helpers are deterministic and do not enumerate hardware.
 # Platform smoke tests live in ../sotf-systemwide (systemwide-lab recipe).
@@ -148,8 +149,24 @@ test-device-fakes:
 test-realtime-safety:
 	cd ../sotf-daw && just test-realtime-safety
 
+# Client/server contracts: SOTF API loopback (typed client against the real
+# server), provider mocks, and MPD/DLNA/federation protocol tests. Loopback
+# only; live provider tests stay env-gated per TEST-CLIENTSERVER.md.
 [group('test')]
-test-pr: test-unit-core test-integration-engine test-integration-player test-device-fakes test-realtime-safety test-workflow-contracts
+test-clientserver:
+	{{cargo}} test -p sotf-player --lib server::tests
+	{{cargo}} test -p sotf-player --lib sotf_api_client
+	{{cargo}} test -p sotf-service-tidal
+	{{cargo}} test -p sotf-service-spotify --lib
+	{{cargo}} test -p sotf-services --lib
+	{{cargo}} test -p sotf-federation
+	{{cargo}} test -p sotf-mpd
+	{{cargo}} test -p sotf-dlna --lib
+	{{cargo}} test -p sotf-cast --lib
+	{{cargo}} test -p sotf-tls --lib
+
+[group('test')]
+test-pr: test-unit-core test-integration-engine test-integration-player test-device-fakes test-realtime-safety test-workflow-contracts test-clientserver
 
 # Systemwide audio lab, contract gates, and installer packaging moved to
 # ../sotf-systemwide (Justfile, builds/systemwide.just, scripts/).

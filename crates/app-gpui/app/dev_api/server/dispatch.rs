@@ -18,6 +18,7 @@ use super::post::post_key;
 use super::post::post_qa_headphone_discovery_fixture;
 use super::post::post_qa_playback_output;
 use super::post::post_qa_recording_fake_capture;
+use super::post::post_qa_remote_server;
 use super::post::post_qa_room_eq;
 use super::post::post_qa_room_eq_export_json;
 use super::post::post_qa_room_eq_ui_fixture;
@@ -32,6 +33,7 @@ use super::post::post_text;
 use super::qa::qa_headphone_discovery_fixture;
 use super::qa::qa_playback_output;
 use super::qa::qa_recording_fake_capture;
+use super::qa::qa_remote_server;
 use super::qa::qa_room_eq;
 use super::qa::qa_room_eq_export_json;
 use super::qa::qa_room_eq_ui_fixture;
@@ -222,6 +224,14 @@ pub(super) fn process_command(cmd: DevCommand, window: AnyWindowHandle, cx: &mut
         }
         DevCommand::QaSeed { payload, reply } => {
             let result = cx.update(|cx| qa_seed(payload, window, cx));
+            let dev_reply = match result {
+                Ok(()) => DevReply::ok(),
+                Err(e) => DevReply::err(format!("{e:#}")),
+            };
+            let _ = reply.send(dev_reply);
+        }
+        DevCommand::QaRemoteServer { payload, reply } => {
+            let result = cx.update(|cx| qa_remote_server(payload, window, cx));
             let dev_reply = match result {
                 Ok(()) => DevReply::ok(),
                 Err(e) => DevReply::err(format!("{e:#}")),
@@ -2396,6 +2406,10 @@ pub(super) fn dispatch_request(req: &HttpRequest, tx: &mpsc::SyncSender<DevComma
             (status, r.to_json())
         }),
         ("POST", "/qa/seed") => post_qa_seed(&req.body, tx).map(|r| {
+            let status = if r.ok { 200 } else { 500 };
+            (status, r.to_json())
+        }),
+        ("POST", "/qa/remote-server") => post_qa_remote_server(&req.body, tx).map(|r| {
             let status = if r.ok { 200 } else { 500 };
             (status, r.to_json())
         }),

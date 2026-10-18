@@ -37,7 +37,7 @@ tvos-xcodegen:
 # static library into Xcode's DERIVED_FILE_DIR/rust/; no manual copy to tvos/lib
 # is required.
 [group('tvos')]
-tvos-build-sim: tvos-xcodegen
+tvos-build-sim: tvos-rust-sim tvos-xcodegen
 	#!/usr/bin/env bash
 	set -euo pipefail
 	cd crates/app-tvos/tvos
@@ -50,7 +50,7 @@ tvos-build-sim: tvos-xcodegen
 
 # Build SotF tvOS app for device.
 [group('tvos')]
-tvos-build-device: tvos-xcodegen
+tvos-build-device: tvos-rust-device tvos-xcodegen
 	#!/usr/bin/env bash
 	set -euo pipefail
 	cd crates/app-tvos/tvos
@@ -62,6 +62,8 @@ tvos-build-device: tvos-xcodegen
 		build
 
 # Build tvOS for simulator (shorthand)
+alias tvos := tvos-sim
+
 [group('tvos')]
 tvos-sim: tvos-build-sim
 	@echo "tvOS simulator build complete"

@@ -1,0 +1,164 @@
+{
+ "version": "3.0.0",
+ "global_plugins": [],
+ "channels": {
+  "R": {
+   "channel": "R",
+   "plugins": [
+    {
+     "plugin_type": "delay",
+     "parameters": {
+      "delay_ms": 0.236020802477783
+     }
+    },
+    {
+     "plugin_type": "eq",
+     "parameters": {
+      "label": "room_eq_correction",
+      "filters": [
+       {
+        "filter_type": "peak",
+        "freq": 55.33075055729919,
+        "q": 2.8709745937546067,
+        "db_gain": -7.045837085642843
+       },
+       {
+        "filter_type": "peak",
+        "freq": 84.1478597763594,
+        "q": 2.4641336323885046,
+        "db_gain": 1.102482859117357
+       }
+      ]
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": 0.03144109189966571,
+      "label": "final_channel_level_alignment"
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -0.22034917637542006,
+      "room_eq_correction_gain": true,
+      "room_eq_safety_gain": true,
+      "label": "final_electrical_headroom"
+     }
+    }
+   ]
+  },
+  "L": {
+   "channel": "L",
+   "plugins": [
+    {
+     "plugin_type": "eq",
+     "parameters": {
+      "label": "room_eq_correction",
+      "filters": [
+       {
+        "filter_type": "peak",
+        "freq": 27.419899802205254,
+        "q": 0.5,
+        "db_gain": 1.5000020645942447
+       },
+       {
+        "filter_type": "peak",
+        "freq": 46.791814034776344,
+        "q": 2.870981814792299,
+        "db_gain": 1.50000166162142
+       },
+       {
+        "filter_type": "peak",
+        "freq": 53.74967980907478,
+        "q": 2.8709760218986227,
+        "db_gain": -10.397142307922177
+       },
+       {
+        "filter_type": "peak",
+        "freq": 75.73852099205246,
+        "q": 2.870952443982512,
+        "db_gain": 1.499996273784335
+       },
+       {
+        "filter_type": "peak",
+        "freq": 124.62864587771085,
+        "q": 2.8708713262214096,
+        "db_gain": -2.0933956989959412
+       }
+      ]
+     }
+    },
+    {
+     "plugin_type": "gain",
+     "parameters": {
+      "gain_db": -1.9559427189576013,
+      "label": "final_channel_level_alignment"
+     }
+    }
+   ]
+  }
+ },
+ "metadata": {
+  "pre_score": 6.491068979529286,
+  "playback_summary": {
+   "outcome": "accepted",
+   "improvement_db": 0.36747482991997327,
+   "training_seats_improved": 2,
+   "training_seats_total": 2,
+   "worst_seat": "R:0",
+   "total_latency_ms": 0.0,
+   "available_headroom_db": 1.0000000000138665e-06,
+   "realized_processing": "iir_only",
+   "limits": [
+    "max_boost_db=12.0",
+    "max_latency_ms=100.0",
+    "max_pre_ringing_audible_db=-20.0"
+   ],
+   "headlines": [
+    "Accepted: aggregate improvement +0.37 dB across 2/2 training seats; total latency 0.0 ms; headroom 0.0 dB."
+   ]
+  },
+  "post_score": 5.237159701348188,
+  "iterations": 500000,
+  "algorithm": "autoeq:cmaes",
+  "home_cinema_layout": {
+   "layout": "2.0",
+   "bed_channels": 2,
+   "lfe_channels": 0,
+   "height_channels": 0,
+   "subwoofer_channels": 0,
+   "channels": [
+    {
+     "name": "L",
+     "role": "front_left",
+     "role_group": "front_lr",
+     "is_bass_managed": true,
+     "matching_group": "front_lr",
+     "target_band_hz": [
+      40.0,
+      18000.0
+     ],
+     "target_profile": "front_lr_default",
+     "target_advisory": null
+    },
+    {
+     "name": "R",
+     "role": "front_right",
+     "role_group": "front_lr",
+     "is_bass_managed": true,
+     "matching_group": "front_lr",
+     "target_band_hz": [
+      40.0,
+      18000.0
+     ],
+     "target_profile": "front_lr_default",
+     "target_advisory": null
+    }
+   ]
+  },
+  "loss_type": "flat",
+  "timestamp": "2026-10-16T08:20:21.248201+00:00"
+ }
+}

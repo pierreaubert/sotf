@@ -151,6 +151,11 @@ pub enum DevCommand {
         payload: serde_json::Value,
         reply: mpsc::SyncSender<DevReply>,
     },
+    /// Register and select a remote SOTF server through the manual-add flow.
+    QaRemoteServer {
+        payload: serde_json::Value,
+        reply: mpsc::SyncSender<DevReply>,
+    },
     /// Apply deterministic UI environment settings before a rendered scenario.
     QaUiEnvironment {
         payload: serde_json::Value,
