@@ -21,7 +21,7 @@ DIST_DIR="$PROJECT_ROOT/dist"
 VERSION=9.8.7
 AGGREGATE_ROOT="$TEST_ROOT/aggregate"
 mkdir -p "$DIST_DIR" "$AGGREGATE_ROOT/sotf" "$AGGREGATE_ROOT/sotf-daw"
-for sibling in sotf-systemwide sotf-capture autoeq math-audio gpui-toolkit sofa-reader symphonia-add-ons; do
+for sibling in sotf-systemwide sotf-capture autoeq math-audio gpui-toolkit sofa-reader; do
     mkdir -p "$AGGREGATE_ROOT/$sibling"
 done
 for repo in "$AGGREGATE_ROOT" "$AGGREGATE_ROOT"/*; do

@@ -60,12 +60,20 @@ DIST_DIR="$PROJECT_ROOT/dist"
 TOOLS_DIR="$PROJECT_ROOT/tools"
 ASSETS_DIR="$PROJECT_ROOT/builds/linux"
 
-# Resolve notices from the aggregate checkout, so running this script from
-# another cwd still finds the canonical font notice and sibling assets.
+# Resolve notices without assuming a sibling layout, so running this
+# script from another cwd still finds the canonical font notice.
+# gpui-d3rs is a git dependency (see Cargo.toml/Cargo.lock); its license
+# comes from the pinned cargo checkout via sotf_gpui_d3rs_license in
+# scripts/lib/common.sh, never from a sibling checkout on disk.
 validate_linux_third_party_notice_sources() {
     local fonts_notice="$PROJECT_ROOT/crates/app-gpui/assets/fonts/THIRD_PARTY_NOTICES.txt"
-    local toolkit_license="$PROJECT_ROOT/../gpui-toolkit/crates/gpui-d3rs/assets/DejaVu-LICENSE"
+    local toolkit_license
+    toolkit_license="$(sotf_gpui_d3rs_license "$PROJECT_ROOT")" || toolkit_license=""
     validate_nnnoiseless_model_notice_sources "$PROJECT_ROOT/../sotf-daw" || return 1
+    if [ -z "$toolkit_license" ]; then
+        log_error "Could not resolve the gpui-d3rs package via cargo metadata (see Cargo.lock)"
+        return 1
+    fi
     local source
     for source in "$fonts_notice" "$toolkit_license"; do
         if [ ! -s "$source" ]; then
@@ -78,7 +86,8 @@ validate_linux_third_party_notice_sources() {
 stage_linux_third_party_notices() {
     local destination="$1"
     local fonts_notice="$PROJECT_ROOT/crates/app-gpui/assets/fonts/THIRD_PARTY_NOTICES.txt"
-    local toolkit_license="$PROJECT_ROOT/../gpui-toolkit/crates/gpui-d3rs/assets/DejaVu-LICENSE"
+    local toolkit_license
+    toolkit_license="$(sotf_gpui_d3rs_license "$PROJECT_ROOT")" || toolkit_license=""
     validate_linux_third_party_notice_sources || return 1
     mkdir -p "$destination"
     cp "$fonts_notice" "$destination/THIRD_PARTY_NOTICES.txt"

@@ -59,12 +59,19 @@ WITH_EXPERIMENTAL_TVOS=false
 DIST_DIR="$PROJECT_ROOT/dist"
 
 # Third-party notices for bundled fonts (the GPUI RustEmbed includes only TTF
-# bytes), the sibling gpui-d3rs DejaVu font asset, and default RNNoise weights.
-# Keep sibling resolution rooted in the aggregate checkout, not caller's cwd.
+# bytes), the gpui-d3rs DejaVu font asset, and default RNNoise weights.
+# gpui-d3rs is a git dependency (see Cargo.toml/Cargo.lock); its license
+# is resolved from the pinned cargo checkout by sotf_gpui_d3rs_license
+# in scripts/lib/common.sh, never from a sibling checkout on disk.
 validate_macos_third_party_notice_sources() {
     local fonts_notice="$PROJECT_ROOT/crates/app-gpui/assets/fonts/THIRD_PARTY_NOTICES.txt"
-    local toolkit_license="$PROJECT_ROOT/../gpui-toolkit/crates/gpui-d3rs/assets/DejaVu-LICENSE"
+    local toolkit_license
+    toolkit_license="$(sotf_gpui_d3rs_license "$PROJECT_ROOT")" || toolkit_license=""
     validate_nnnoiseless_model_notice_sources "$PROJECT_ROOT/../sotf-daw" || return 1
+    if [ -z "$toolkit_license" ]; then
+        log_error "Could not resolve the gpui-d3rs package via cargo metadata (see Cargo.lock)"
+        return 1
+    fi
     local source
     for source in "$fonts_notice" "$toolkit_license"; do
         if [ ! -s "$source" ]; then
@@ -77,7 +84,8 @@ validate_macos_third_party_notice_sources() {
 stage_macos_third_party_notices() {
     local destination="$1"
     local fonts_notice="$PROJECT_ROOT/crates/app-gpui/assets/fonts/THIRD_PARTY_NOTICES.txt"
-    local toolkit_license="$PROJECT_ROOT/../gpui-toolkit/crates/gpui-d3rs/assets/DejaVu-LICENSE"
+    local toolkit_license
+    toolkit_license="$(sotf_gpui_d3rs_license "$PROJECT_ROOT")" || toolkit_license=""
     validate_macos_third_party_notice_sources || return 1
     mkdir -p "$destination"
     cp "$fonts_notice" "$destination/THIRD_PARTY_NOTICES.txt"

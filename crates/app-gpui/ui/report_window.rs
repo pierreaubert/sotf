@@ -84,7 +84,6 @@ impl PlayerView {
             sotf_report_host::generate_report_with_quality(
                 &result,
                 artifacts.as_deref(),
-                None,
                 Some(&quality),
             )
         });

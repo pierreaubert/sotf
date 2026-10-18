@@ -623,7 +623,7 @@ write_linux_source_manifest() {
     : > "$manifest" || return 1
     : > "$source_file_list" || return 1
 
-    for repo in . sotf sotf-daw sotf-systemwide sotf-capture autoeq math-audio gpui-toolkit sofa-reader symphonia-add-ons; do
+    for repo in . sotf sotf-daw sotf-systemwide sotf-capture autoeq math-audio gpui-toolkit sofa-reader; do
         if [ ! -d "$aggregate_root/$repo" ] || ! git -C "$aggregate_root/$repo" rev-parse --show-toplevel >/dev/null 2>&1; then
             log_error "Aggregate Linux source tree is missing a Git workspace: $repo"
             rm -f -- "$entries_file"
@@ -648,8 +648,7 @@ write_linux_source_manifest() {
                 case "$path" in
                     sotf|sotf/|sotf-daw|sotf-daw/|sotf-systemwide|sotf-systemwide/|\
                     sotf-capture|sotf-capture/|autoeq|autoeq/|math-audio|math-audio/|\
-                    gpui-toolkit|gpui-toolkit/|sofa-reader|sofa-reader/|\
-                    symphonia-add-ons|symphonia-add-ons/) continue ;;
+                    gpui-toolkit|gpui-toolkit/|sofa-reader|sofa-reader/) continue ;;
                 esac
                 candidate="$path"
             else
@@ -669,8 +668,7 @@ write_linux_source_manifest() {
                 case "$path" in
                     sotf|sotf/|sotf-daw|sotf-daw/|sotf-systemwide|sotf-systemwide/|\
                     sotf-capture|sotf-capture/|autoeq|autoeq/|math-audio|math-audio/|\
-                    gpui-toolkit|gpui-toolkit/|sofa-reader|sofa-reader/|\
-                    symphonia-add-ons|symphonia-add-ons/) continue ;;
+                    gpui-toolkit|gpui-toolkit/|sofa-reader|sofa-reader/) continue ;;
                 esac
                 candidate="$path"
             else

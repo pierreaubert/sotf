@@ -7,6 +7,7 @@
 
 // Rust guideline compliant 2026-02-21
 
+mod prepare;
 mod producer;
 mod server;
 

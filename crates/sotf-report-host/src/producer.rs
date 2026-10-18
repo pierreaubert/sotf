@@ -1,19 +1,17 @@
-//! Delegates dashboard data and document assembly to shared AutoEQ APIs.
+//! Generates shared AutoEQ reports entirely in-process.
+//!
+//! Payload composition is delegated to AutoEQ's native dataset composer
+//! (`autoeq_report_wasm::report_dataset_payload`); file-backed report
+//! inputs are prepared by [`crate::prepare`]. No Python runtime, staged
+//! scripts, or subprocesses are involved, so generation works identically
+//! in desktop, mobile, and sandboxed hosts.
 
 // Rust guideline compliant 2026-02-21
 
 use anyhow::Context;
-use rust_embed::RustEmbed;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
 
-// Compile the same producer/assets used by standalone AutoEQ reports. This
-// embeds upstream sources; it does not maintain a second copy or renderer.
-#[derive(RustEmbed)]
-#[folder = "../../../autoeq/scripts/src/"]
-#[include = "*.py"]
-struct AutoEqProducer;
+use crate::prepare::prepare_report;
 
 /// Generated document and its private working directory.
 #[derive(Debug)]
@@ -51,24 +49,19 @@ impl GeneratedReport {
     }
 }
 
-/// Generate every dashboard using AutoEQ's bundled report producer.
+/// Generate every dashboard using AutoEQ's native report composer.
 ///
-/// Run this function on a background worker. `artifact_root` resolves relative
-/// response/IR sidecars without rewriting their identities. Python with NumPy
-/// is required by the existing AutoEQ producer; `python` selects that runtime.
-/// The native dataset producer resolves to `AUTOEQ_REPORT_PRODUCER` when set,
-/// else to Cargo's cached build in the sibling AutoEQ checkout when present.
-/// No packages are installed and no network access is performed.
+/// Run this function on a background worker. `artifact_root` resolves
+/// relative response/IR sidecars without rewriting their identities.
 ///
 /// # Errors
-/// Returns an error for missing Python/NumPy, invalid results, missing artifacts,
-/// producer failures, or generation exceeding its one-minute timeout.
+/// Returns an error for invalid results, missing artifacts, or composer
+/// failures.
 pub fn generate_report(
     result: &serde_json::Value,
     artifact_root: Option<&Path>,
-    python: Option<&Path>,
 ) -> anyhow::Result<GeneratedReport> {
-    generate_report_with_quality(result, artifact_root, python, None)
+    generate_report_with_quality(result, artifact_root, None)
 }
 
 /// Generate the shared dashboards with source-bound capture evidence.
@@ -81,93 +74,13 @@ pub fn generate_report(
 pub fn generate_report_with_quality(
     result: &serde_json::Value,
     artifact_root: Option<&Path>,
-    python: Option<&Path>,
     quality: Option<&autoeq_report_wasm::capture_quality::CaptureQualityReport>,
 ) -> anyhow::Result<GeneratedReport> {
-    let directory = tempfile::Builder::new().prefix("sotf-report-").tempdir()?;
-    for name in AutoEqProducer::iter() {
-        let bytes = AutoEqProducer::get(&name).context("Missing embedded AutoEQ producer")?;
-        let target = directory
-            .path()
-            .join("autoeq/scripts/src")
-            .join(name.as_ref());
-        std::fs::create_dir_all(target.parent().context("Report asset has no directory")?)?;
-        std::fs::write(target, bytes.data.as_ref())?;
-    }
-    // The canonical payload producer reads the workspace version for its
-    // provenance header; retain that context without staging renderer assets.
-    std::fs::write(
-        directory.path().join("autoeq/Cargo.toml"),
-        include_bytes!("../../../../autoeq/Cargo.toml"),
-    )?;
-    let json_path = directory.path().join("result.json");
-    let payload_path = directory.path().join("report.json");
-    let html_path = directory.path().join("report.html");
-    std::fs::write(&json_path, serde_json::to_vec(result)?)?;
-    if let Some(root) = artifact_root {
-        let root = root
-            .canonicalize()
-            .context("Resolving AutoEQ report artifacts")?;
-        anyhow::ensure!(
-            root.is_dir(),
-            "AutoEQ report artifact root is not a directory"
-        );
-        let assets = directory.path().join("result_files");
-        // The canonical loader requires a regular support directory and
-        // rejects symlinked bundle roots. Stage assets in that same layout;
-        // the upstream loader retains responsibility for their validation.
-        copy_artifacts(&root, &assets)?;
-    }
-    let producer = directory.path().join("autoeq/scripts");
-    let stderr_path = directory.path().join("producer.stderr");
-    let stderr = std::fs::File::create(&stderr_path)?;
-    let stdout = std::fs::File::create(directory.path().join("producer.stdout"))?;
-    // Arguments are passed directly; paths and result content are never shell code.
-    let configured_python = std::env::var_os("SOTF_REPORT_PYTHON").map(PathBuf::from);
-    let interpreter = python
-        .or(configured_python.as_deref())
-        .unwrap_or(Path::new("python3"));
-    let mut command = Command::new(interpreter);
-    // Staged scripts are not a runnable cargo workspace, so the native
-    // producer fallback needs the real sibling checkout. Installed hosts
-    // without a checkout keep the previous behavior and must provide
-    // AUTOEQ_REPORT_PRODUCER (a prebuilt report-producer executable).
-    let sibling = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../autoeq");
-    if sibling
-        .join("crates/autoeq-report-wasm/Cargo.toml")
-        .is_file()
-    {
-        command.env("AUTOEQ_WORKSPACE_ROOT", &sibling);
-    }
-    let mut child = command
-        .arg("-I").arg("-c")
-        .arg("import sys; from pathlib import Path; sys.path.insert(0,sys.argv[1]); from src.loaders import load_roomeq_json; from src.report import build_report_payload; import json; Path(sys.argv[3]).write_text(json.dumps(build_report_payload(load_roomeq_json(Path(sys.argv[2]))),ensure_ascii=False,allow_nan=False),encoding=\"utf-8\")")
-        .arg(producer).arg(&json_path).arg(&payload_path)
-        .stdin(Stdio::null()).stdout(stdout).stderr(stderr)
-        .spawn().context("Starting AutoEQ report producer; install/configure Python with NumPy")?;
-    let started = Instant::now();
-    loop {
-        if let Some(status) = child.try_wait()? {
-            if !status.success() {
-                let mut error = std::fs::read_to_string(&stderr_path).unwrap_or_default();
-                // Keep errors actionable without flooding the application's status UI.
-                error.truncate(error.floor_char_boundary(4096));
-                anyhow::bail!("AutoEQ report generation failed: {error}");
-            }
-            break;
-        }
-        if started.elapsed() >= Duration::from_secs(60) {
-            let _ = child.kill();
-            let _ = child.wait();
-            anyhow::bail!("AutoEQ report generation timed out after one minute");
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    anyhow::ensure!(
-        payload_path.is_file(),
-        "AutoEQ producer did not emit a payload"
-    );
-    let mut payload: serde_json::Value = serde_json::from_slice(&std::fs::read(payload_path)?)?;
+    let (prepared, options) = prepare_report(result, artifact_root)?;
+    let dataset =
+        autoeq_report_wasm::report_dataset_payload::build_dataset_report(&prepared, &options)
+            .map_err(anyhow::Error::msg)?;
+    let mut payload = dataset.payload;
     // Validation and dashboard grouping belong to the same upstream library
     // used by standalone Rust producers and WASM consumers.
     let empty_quality = autoeq_report_wasm::capture_quality::CaptureQualityReport::default();
@@ -184,29 +97,13 @@ pub fn generate_report_with_quality(
         &serde_json::to_string(&payload)?,
         &assets,
     );
+    let directory = tempfile::Builder::new().prefix("sotf-report-").tempdir()?;
+    let html_path = directory.path().join("report.html");
     std::fs::write(&html_path, html)?;
     Ok(GeneratedReport {
         directory,
         html_path,
     })
-}
-
-fn copy_artifacts(source: &Path, target: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(target)?;
-    for entry in std::fs::read_dir(source)? {
-        let entry = entry?;
-        let kind = entry.file_type()?;
-        if kind.is_dir() {
-            copy_artifacts(&entry.path(), &target.join(entry.file_name()))?;
-        } else if kind.is_file() {
-            std::fs::copy(entry.path(), target.join(entry.file_name()))?;
-        } else {
-            return Err(std::io::Error::other(
-                "Report artifacts must be regular files or directories",
-            ));
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -216,9 +113,7 @@ mod tests {
     #[test]
     fn generation_delegates_all_dashboard_groups_to_autoeq() {
         let result = serde_json::json!({"version":"1.0", "channels":{}, "metadata":{}});
-        let python = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../autoeq/.venv/bin/python");
-        let report =
-            generate_report(&result, None, python.is_file().then_some(python.as_path())).unwrap();
+        let report = generate_report(&result, None).unwrap();
         let html = report.read_html().unwrap();
         for group in [
             "DSP analysis",
@@ -239,11 +134,23 @@ mod tests {
     }
 
     #[test]
-    fn missing_runtime_is_reported_without_an_empty_success_document() {
+    fn generation_needs_no_python_runtime() {
+        // Generation is fully in-process: even a minimal result produces a
+        // document without any interpreter on the host.
+        let result = serde_json::json!({"version":"1.0", "channels":{}, "metadata":{}});
+        let html = generate_report(&result, None).unwrap().read_html().unwrap();
+        assert!(html.contains("autoeq-report-data-v1"));
+    }
+
+    #[test]
+    fn invalid_artifact_root_is_reported() {
         let result = serde_json::json!({"channels":{}});
         let error =
-            generate_report(&result, None, Some(Path::new("/missing/sotf-python"))).unwrap_err();
-        assert!(error.to_string().contains("Python with NumPy"));
+            generate_report(&result, Some(Path::new("/missing/sotf-artifacts"))).unwrap_err();
+        assert!(
+            error.to_string().contains("AutoEQ report artifacts")
+                || error.to_string().contains("artifact")
+        );
     }
 
     #[test]
@@ -261,9 +168,7 @@ mod tests {
             ]
         }]})).unwrap();
         let result = serde_json::json!({"version":"1.0","channels":{},"metadata":{}});
-        let python = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../autoeq/.venv/bin/python");
-        let report =
-            generate_report(&result, None, python.is_file().then_some(python.as_path())).unwrap();
+        let report = generate_report(&result, None).unwrap();
         let read_payload = |html: &str| -> serde_json::Value {
             serde_json::from_str(
                 html.split_once("<script id=\"report-payload\" type=\"application/json\">")
@@ -276,13 +181,7 @@ mod tests {
             .unwrap()
         };
         let original = read_payload(&report.read_html().unwrap());
-        let report = generate_report_with_quality(
-            &result,
-            None,
-            python.is_file().then_some(python.as_path()),
-            Some(&quality),
-        )
-        .unwrap();
+        let report = generate_report_with_quality(&result, None, Some(&quality)).unwrap();
         let enriched = read_payload(&report.read_html().unwrap());
         let old_sections = original["sections"].as_array().unwrap();
         let new_sections = enriched["sections"].as_array().unwrap();
@@ -326,9 +225,7 @@ mod tests {
                 "R":{"plugins":[]}
             }
         });
-        let python = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../autoeq/.venv/bin/python");
-        let report =
-            generate_report(&result, None, python.is_file().then_some(python.as_path())).unwrap();
+        let report = generate_report(&result, None).unwrap();
         let html = report.read_html().unwrap();
         assert!(html.contains("Full STI (IR-only): 0.625"));
         assert!(html.contains("STI unavailable"));
@@ -354,13 +251,7 @@ mod tests {
         )
         .unwrap();
         let result = serde_json::json!({"version":"1.0","channels":{"L":{"plugins":[],"initial_curve":null,"eq_response":null}},"metadata":{}});
-        let python = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../autoeq/.venv/bin/python");
-        let report = generate_report(
-            &result,
-            Some(artifacts.path()),
-            python.is_file().then_some(python.as_path()),
-        )
-        .unwrap();
+        let report = generate_report(&result, Some(artifacts.path())).unwrap();
         let html = report.read_html().unwrap();
         let payload = html
             .split("<script id=\"report-payload\" type=\"application/json\">")

@@ -17,7 +17,6 @@ sha2.workspace = true
 tempfile.workspace = true
 uuid.workspace = true
 url.workspace = true
-rust-embed = { workspace = true, features = ["include-exclude", "debug-embed"] }
 autoeq-report-wasm = { path = "../../../autoeq/crates/autoeq-report-wasm" }
 
 [dev-dependencies]

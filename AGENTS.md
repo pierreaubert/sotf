@@ -113,7 +113,7 @@ and git dependencies rather than local `autoeq/` or `math-*` workspace crates:
 - `math-audio` — DSP, IIR/FIR, RIR, optimisation, geometry, and test functions.
 - `gpui-toolkit` — GPUI components and design system.
 - `sofa-reader` — SOFA/HRTF data support.
-- `symphonia-add-ons` — additional codec and container support.
+- `symphonia-add-ons` (GitHub git dependency) — additional codec and container support.
 
 Before changing an external dependency, confirm whether the task belongs in
 that sibling repository. Do not patch around an upstream ownership problem in
