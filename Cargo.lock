@@ -2810,7 +2810,7 @@ checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
 name = "driver-common"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "log",
  "serde",
@@ -2818,7 +2818,7 @@ dependencies = [
 
 [[package]]
 name = "driver-hal"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "bytemuck",
  "chacha20poly1305",
@@ -9722,7 +9722,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-capture"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "audioadapter-buffers",
  "autoeq",
@@ -9732,6 +9732,7 @@ dependencies = [
  "ctrlc",
  "env_logger",
  "hound",
+ "libc",
  "log",
  "math-dsp",
  "math-rir",
@@ -9838,7 +9839,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-dev-api"
-version = "0.7.16"
+version = "0.7.17"
 dependencies = [
  "hex",
  "serde",
@@ -9880,7 +9881,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-docs-gen"
-version = "0.7.16"
+version = "0.7.17"
 dependencies = [
  "sotf-host",
  "sotf-plugins",
@@ -9967,7 +9968,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-gpui"
-version = "0.7.16"
+version = "0.7.17"
 dependencies = [
  "anyhow",
  "autoeq",
@@ -10478,7 +10479,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-iamf"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "log",
  "sotf-host",
@@ -11509,7 +11510,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-report-host"
-version = "0.7.16"
+version = "0.7.17"
 dependencies = [
  "anyhow",
  "autoeq-report-wasm",

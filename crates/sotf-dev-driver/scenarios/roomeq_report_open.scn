@@ -1,0 +1,39 @@
+# Room EQ shared report display E2E against the in-repository fixture.
+#
+# Regression coverage for report generation: opening the report must
+# produce a shared report window with no error. Generation used to shell
+# out to a Python producer and failed on hosts without a suitable
+# interpreter; it is fully native now, and this scenario keeps it that
+# way. The suite only seeds Recording state; every transition is a
+# visible UI action, exactly like roomeq_wizard_ui_happy.
+
+focus       room-e-q
+assert      screen.focused == "RoomEq"
+assert      roomeq.step == "LoadData"
+assert_visible roomeq.load_from_recording
+click       roomeq.load_from_recording
+wait_idle   2s
+assert      roomeq.measurement_count == 2
+assert      roomeq.speaker_config_count == 2
+click       roomeq.next
+assert      roomeq.step == "Delay"
+click       roomeq.next
+assert      roomeq.step == "Process"
+click       roomeq.select_simple
+assert      roomeq.step == "Configure"
+click       roomeq.next
+assert      roomeq.step == "Optimize"
+click       roomeq.optimize_start
+wait_until  roomeq.optimization_status == "Completed" timeout=150s
+assert      roomeq.step == "Review"
+assert      roomeq.result_count == 2
+assert      roomeq.has_dsp_output == true
+
+# No report window exists yet; opening one must generate the shared
+# report natively and present it without surfacing an error.
+assert      roomeq.report_window_count == 0
+assert_visible roomeq.report.open
+click       roomeq.report.open
+wait_until  roomeq.report_window_count == 1 timeout=60s
+assert      roomeq.error == null
+screenshot  roomeq-report-window

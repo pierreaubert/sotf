@@ -1,15 +1,11 @@
-//! Recording wizard — Step 2: SPL Calibration (GD-Opt v2 Phase GD-1e.5).
+//! Recording wizard — Step 2: SPL Calibration.
 //!
 //! Plays a 1 kHz reference tone on a single output channel; while it
 //! plays the user reads the dBSPL their external meter shows at the
 //! listening position and types it in. The captured
-//! `(rms_sample_level, reported_db_spl)` pair gives GD-Opt v2 a
-//! deterministic map from digital level to dBSPL at the mic, which
+//! `(rms_sample_level, reported_db_spl)` pair gives a deterministic
+//! map from digital level to dBSPL at the mic, which
 //! `sweep_level_db_spl` targets during the Capture step.
-//!
-//! See the GD-Opt v2 plan (`docs/gd_opt_v2_plan.md` in the autoeq repo)
-//! §2.6 and §2.11 Q4 for the calibration
-//! rationale and the "require SPL cap" decision.
 //!
 //! The live capture follows the same `smol::unblock + state.update`
 //! pattern the probe and bass-anchor steps use.
@@ -171,8 +167,13 @@ impl PlayerView {
             column = column
                 .child(
                     Text::new(format!(
-                        "Ref freq {:.0} Hz  •  sample rate {} Hz  •  peak {:.4}  •  RMS {:.4}",
-                        r.reference_freq_hz, r.sample_rate, r.peak_sample_level, r.rms_sample_level
+                        "Ref freq {:.0} Hz  •  sample rate {} Hz  •  peak {:.4} ({:.1} dBFS)  •  RMS {:.4} ({:.1} dBFS)",
+                        r.reference_freq_hz,
+                        r.sample_rate,
+                        r.peak_sample_level,
+                        20.0 * r.peak_sample_level.max(1e-12).log10(),
+                        r.rms_sample_level,
+                        20.0 * r.rms_sample_level.max(1e-12).log10()
                     ))
                     .size(TextSize::Sm),
                 )
@@ -208,13 +209,28 @@ impl PlayerView {
                         )),
                 );
             if let Some(cal_out) = cal.to_spl_calibration() {
+                // `spl_offset_db` is the absolute digital-to-SPL map:
+                // a full-scale (0 dBFS) RMS signal at this microphone
+                // gain would read `spl_offset_db` dB SPL. It is NOT a
+                // correction to add to the entered reading — with a
+                // quiet tone (e.g. −37 dBFS RMS) and a 68 dB SPL meter
+                // reading, an offset near 105 dB is expected.
                 column = column.child(
                     Text::new(format!(
-                        "→ spl_offset_db = {:.2}  (stored on save)",
+                        "Calibration: full scale (0 dBFS) = {:.1} dB SPL at the microphone (stored on save)",
                         cal_out.spl_offset_db
                     ))
                     .size(TextSize::Sm),
                 );
+                if !(50.0..=170.0).contains(&cal_out.spl_offset_db) {
+                    column = column.child(
+                        Text::new(format!(
+                            "Warning: offset {:.1} dB is outside the usual 50–170 dB range — check the entered meter reading and the microphone gain.",
+                            cal_out.spl_offset_db
+                        ))
+                        .size(TextSize::Sm),
+                    );
+                }
             }
         }
 

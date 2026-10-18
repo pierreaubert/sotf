@@ -13,6 +13,7 @@ use gpui_ui_kit::{
 };
 use sotf_audio::signal_analysis as dsp;
 
+mod chart_canvas;
 mod consts;
 mod fmt;
 mod interpolate;
@@ -29,6 +30,7 @@ pub use room_eq_report_curve::*;
 pub use sum::*;
 pub use types::*;
 
+use chart_canvas::chart_canvas;
 use consts::ROOM_EQ_CHANNEL_COLORS;
 use consts::ROOM_EQ_DRIVER_OPACITIES;
 use consts::ROOM_EQ_REVIEW_WIDE_BREAKPOINT_PX;
@@ -814,18 +816,19 @@ pub(crate) fn render_room_eq_report_overview(
     }
     add_room_eq_corrected_lfe_sums(report, &mut corrected_series);
 
-    // Always render the three overview plots in a 3-column grid so each
-    // plot occupies 1/3 of the card width. A Right legend would steal
-    // horizontal room inside a 1/3 column, so use the Bottom legend
-    // position unconditionally.
-    //
-    // gpui-px charts draw onto a fixed-size canvas (no flex-fill) so we
-    // size them from the actual window width at render time. Chrome
-    // budget = page side padding (≈48) + card horizontal padding (≈32)
-    // + 2 × grid gap (≈24). Floor at 280 px so charts stay legible on
-    // narrow windows.
+    // Stack overview plots on narrow windows. Canvas widths are measured
+    // from their grid cells; the viewport estimate only sets plot height.
+    let overview_columns = if window_width >= ROOM_EQ_REVIEW_WIDE_BREAKPOINT_PX {
+        3
+    } else {
+        1
+    };
     // intentional-file: chart canvas dimensions are layout-driven px.
-    let overview_chart_width = room_eq_chart_width((window_width - 104.0) / 3.0, 280.0, 900.0);
+    let overview_chart_width = room_eq_chart_width(
+        (window_width - 104.0) / overview_columns as f32,
+        280.0,
+        900.0,
+    );
     let overview_chart_height = (overview_chart_width * 0.62).clamp(220.0, 520.0);
     let chart_size = (overview_chart_width, overview_chart_height);
     let original_chart = render_room_eq_curve_chart(
@@ -872,7 +875,7 @@ pub(crate) fn render_room_eq_report_overview(
     );
     let charts = div()
         .grid()
-        .grid_cols(3)
+        .grid_cols(overview_columns)
         .gap(d.gap_md)
         .child(original_chart)
         .child(eq_chart)
@@ -951,8 +954,8 @@ pub(crate) fn render_room_eq_report_channel(
     // Decide per-channel layout from the actual viewport width: when
     // the inner column is wide enough to host two charts side by side
     // we use a 2-column grid, otherwise we stack to keep each chart
-    // legible. gpui-px charts are fixed-canvas so we size them from
-    // window_width with sensible floors/ceilings.
+    // legible. Canvas widths are measured from the resulting cells; this
+    // viewport estimate only determines chart height.
     // intentional-file: chart canvas dimensions are layout-driven px.
     let two_col = window_width >= ROOM_EQ_REVIEW_WIDE_BREAKPOINT_PX;
     let curve_chart_width = if two_col {
@@ -975,7 +978,7 @@ pub(crate) fn render_room_eq_report_channel(
         interactive_state,
         full_controls,
         curve_chart_size,
-        LegendPosition::Right,
+        LegendPosition::Bottom,
     );
     let zoom_chart = render_room_eq_curve_chart(
         "Zoomed 20-1200 Hz",
@@ -989,7 +992,7 @@ pub(crate) fn render_room_eq_report_channel(
         None,
         zoom_controls,
         curve_chart_size,
-        LegendPosition::Right,
+        LegendPosition::Bottom,
     );
     let eq_chart = render_room_eq_curve_chart(
         "EQ Response",
@@ -1003,7 +1006,7 @@ pub(crate) fn render_room_eq_report_channel(
         None,
         eq_controls,
         curve_chart_size,
-        LegendPosition::Right,
+        LegendPosition::Bottom,
     );
     let has_ir = channel.pre_ir.is_some() || channel.post_ir.is_some();
     let channel_charts = if two_col {
@@ -1037,6 +1040,10 @@ pub(crate) fn render_room_eq_report_channel(
     // channel tab. Charts remain per-tab because they are heavy and
     // user-driven.
     div()
+        .id(SharedString::from(format!(
+            "room-eq-report-channel-{}",
+            channel.name
+        )))
         .w_full()
         .child(
             VStack::new()
@@ -1503,23 +1510,33 @@ fn render_room_eq_curve_chart(
         );
     }
 
-    let chart_element = match chart.build() {
-        Ok(chart) => {
-            if let Some(state) = interactive_state {
-                gpui_px::interaction::interactive(interactive_id, chart, state.clone())
-                    .build()
-                    .into_any_element()
-            } else {
-                chart.into_any_element()
+    let interactive_state = interactive_state.cloned();
+    let chart_title = title.to_owned();
+    let chart_theme = theme.clone();
+    let chart_element = chart_canvas(interactive_id, chart_size.1, move |width| {
+        match chart.size(width, chart_size.1).build() {
+            Ok(chart) => {
+                if let Some(state) = interactive_state {
+                    gpui_px::interaction::interactive(interactive_id, chart, state)
+                        .build()
+                        .into_any_element()
+                } else {
+                    chart.into_any_element()
+                }
+            }
+            Err(e) => {
+                log::warn!("RoomEQ report chart build failed for {chart_title}: {e:?}");
+                render_empty_state(
+                    IconName::AudioWaveform,
+                    "Unable to render chart",
+                    &chart_theme,
+                )
             }
         }
-        Err(e) => {
-            log::warn!("RoomEQ report chart build failed for {title}: {e:?}");
-            render_empty_state(IconName::AudioWaveform, "Unable to render chart", theme)
-        }
-    };
+    });
 
     VStack::new()
+        .min_w(px(0.0)) // intentional: allow the grid cell to constrain the chart.
         .spacing(StackSpacing::Xs)
         .child(
             Text::new(title.to_string())
@@ -1573,7 +1590,7 @@ fn render_room_eq_ir_chart(
         .y_range(y_min, y_max)
         .y_label("Amplitude")
         .label(primary_label)
-        .legend_position(LegendPosition::Right)
+        .legend_position(LegendPosition::Bottom)
         .color(primary_color)
         .stroke_width(1.5)
         .opacity(0.9)
@@ -1593,19 +1610,24 @@ fn render_room_eq_ir_chart(
         );
     }
 
-    let chart_element = chart
-        .build()
-        .map(|chart| chart.into_any_element())
-        .unwrap_or_else(|e| {
-            log::warn!("RoomEQ IR chart build failed: {e:?}");
-            render_empty_state(
-                IconName::AudioWaveform,
-                "Unable to render impulse response",
-                theme,
-            )
-        });
+    let chart_theme = theme.clone();
+    let chart_element = chart_canvas("room-eq-channel-ir", chart_size.1, move |width| {
+        chart
+            .size(width, chart_size.1)
+            .build()
+            .map(|chart| chart.into_any_element())
+            .unwrap_or_else(|e| {
+                log::warn!("RoomEQ IR chart build failed: {e:?}");
+                render_empty_state(
+                    IconName::AudioWaveform,
+                    "Unable to render impulse response",
+                    &chart_theme,
+                )
+            })
+    });
 
     VStack::new()
+        .min_w(px(0.0)) // intentional: allow the grid cell to constrain the chart.
         .spacing(StackSpacing::Xs)
         .child(
             Text::new(text.impulse_response)

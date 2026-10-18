@@ -69,6 +69,15 @@ pub struct RecordingState {
     /// Semantic severity for the user-visible recording status.  Display
     /// text is translated independently, so it must never determine this.
     pub status_severity: RecordingStatusSeverity,
+    /// Live level meter shared with the capture callback while a take
+    /// records; `None` between takes.
+    pub live_level_meter:
+        Option<std::sync::Arc<sotf_audio_player::signal_recorder::CaptureLevelMeter>>,
+    /// Latest polled level snapshot for the live meter bar.
+    pub live_level: Option<sotf_audio_player::signal_recorder::CaptureLevelSnapshot>,
+    /// Final level snapshot of the last finished take; drives the
+    /// microphone-gain guidance until the next take starts.
+    pub last_take_level: Option<sotf_audio_player::signal_recorder::CaptureLevelSnapshot>,
     /// Debug-only deterministic capture source. It configures the environment
     /// for a UI test; results are produced only after the visible Capture
     /// action is invoked.
@@ -191,6 +200,9 @@ impl Default for RecordingState {
             plot_smoothing_dropdown_open: false,
             channel_speaker_autocomplete_open: None,
             status_severity: RecordingStatusSeverity::Idle,
+            live_level_meter: None,
+            live_level: None,
+            last_take_level: None,
             #[cfg(feature = "dev-api")]
             qa_fake_capture: None,
         }

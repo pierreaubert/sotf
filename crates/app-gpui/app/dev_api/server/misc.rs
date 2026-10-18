@@ -89,7 +89,9 @@ pub(super) fn load_room_eq_recording_fixture(fixture_dir: &Path) -> Result<Recor
         .collect();
     recording.model.recording_config.num_channels = 1;
     recording.model.recording_config.channel_mappings = vec![0];
-    recording.model.channel_recordings = imported.recordings();
+    let mut fixture_recordings = imported.recordings();
+    sotf_audio_player::recording_helpers::enrich_results_from_take_csvs(&mut fixture_recordings);
+    recording.model.channel_recordings = fixture_recordings;
     recording.imported_session = Some(imported);
     recording.model.step = RecordingStep::Evaluating;
     recording.model.recording_progress = 1.0;

@@ -1,3 +1,15 @@
+# 0.7.17
+
+## iOS bug fixes
+
+- Fixed the black screen in the simulator: the app now uses the
+  UIScene lifecycle (SceneDelegate hosting the GPUI view), which the
+  current iOS SDK requires.
+- The Server settings option is hidden on iPhone (users stream from a
+  SotF server or a streaming service); it remains available on iPad.
+- Fixed intermittently missing letters via the gpui_wgpu instance
+  upload cache and gpui-ios renderer fixes.
+
 # 0.7.15
 
 ## iOS / GPUI P1 hardening

@@ -5,9 +5,7 @@ use crate::components::graphs::common::render_empty_state;
 use crate::components::graphs::response_graphs::{
     ChartConfig, Series, channel_color, render_line_chart,
 };
-use crate::components::graphs::spectrum_graphs::{
-    SpectrumConfig, SpectrumGrid, render_spectrum_heatmap,
-};
+
 use crate::components::icons::IconName;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -678,6 +676,7 @@ impl PlayerView {
                         .impulse_response
                         .as_ref()
                         .is_some_and(|values| !values.is_empty()))
+                || result.can_reconstruct_impulse()
         });
 
         Card::new().content(
@@ -714,6 +713,7 @@ impl PlayerView {
                         .impulse_response
                         .as_ref()
                         .is_some_and(|values| !values.is_empty()))
+                || result.can_reconstruct_impulse()
         });
 
         Card::new().content(
@@ -766,12 +766,37 @@ impl PlayerView {
         // We only visualize the first selected channel's spectrogram for now
         if let Some((_, _, result)) = results.first()
             && let Some(sample_rate) = result.sample_rate_hz.filter(|rate| *rate > 0)
-            && let Some(spectrogram) = &result.spectrogram_db
-            && !spectrogram.is_empty()
         {
-            return self
-                .render_spectrogram_canvas(*d, spectrogram, theme, sample_rate as f32, language)
-                .into_any_element();
+            if let Some(spectrogram) = &result.spectrogram_db
+                && !spectrogram.is_empty()
+            {
+                return self
+                    .render_spectrogram_canvas(*d, spectrogram, theme, sample_rate as f32, language)
+                    .into_any_element();
+            }
+            // Loaded sessions and response-only results carry no stored
+            // spectrogram (the session format keeps the frequency
+            // response only). Compute it from the impulse response —
+            // measured or reconstructed — over the first two seconds,
+            // which is where the decay lives.
+            if let Some(impulse) = Self::result_impulse_samples(result) {
+                let max_len = (sample_rate as usize * 2).min(impulse.len());
+                if max_len >= 512 {
+                    let (spectrogram, _, _) =
+                        dsp::compute_spectrogram(&impulse[..max_len], sample_rate as f32, 512, 128);
+                    if !spectrogram.is_empty() {
+                        return self
+                            .render_spectrogram_canvas(
+                                *d,
+                                &spectrogram,
+                                theme,
+                                sample_rate as f32,
+                                language,
+                            )
+                            .into_any_element();
+                    }
+                }
+            }
         }
 
         self.render_no_data_placeholder(d, theme, language)
@@ -803,93 +828,102 @@ impl PlayerView {
                 .into_any_element();
         }
 
-        // Limit total cells to avoid exceeding GPU buffer limits.
-        // wgpu max buffer is 256MB; each heatmap cell uses ~48-96 bytes of vertex data.
-        // Cap at ~200K cells by downsampling time and/or frequency axes.
-        const MAX_CELLS: usize = 200_000;
-        let total_cells = num_time_slices * num_freq_bins;
-
-        let (time_step, freq_step) = if total_cells > MAX_CELLS {
-            // Downsample primarily along time axis (usually has more data)
-            let scale = (total_cells as f64 / MAX_CELLS as f64).sqrt().ceil() as usize;
-            let time_step = scale.max(1);
-            let ds_time_est = num_time_slices.div_ceil(time_step);
-            let freq_step = if ds_time_est * num_freq_bins > MAX_CELLS {
-                (ds_time_est * num_freq_bins).div_ceil(MAX_CELLS).max(1)
-            } else {
-                1
-            };
-            log::info!(
-                "[Spectrogram] Downsampling {}x{} ({} cells) by time_step={}, freq_step={}",
-                num_time_slices,
-                num_freq_bins,
-                total_cells,
-                time_step,
-                freq_step,
-            );
-            (time_step, freq_step)
-        } else {
-            (1, 1)
+        // Data preparation (block-max downsampling and peak-relative
+        // normalization) lives in math-dsp next to `compute_spectrogram`;
+        // this panel only paints the returned cells. Plain cells are
+        // painted on a canvas because the gpui-px contour heatmap
+        // rendered this data as a blank white panel: marching-squares
+        // bands over the thin impulse stripe produce almost no filled
+        // polygons, and its plot background ignores the app theme.
+        const MAX_COLS: usize = 128;
+        const MAX_ROWS: usize = 80;
+        let Some(display) = dsp::display_spectrogram(spectrogram, MAX_COLS, MAX_ROWS, 80.0) else {
+            return self
+                .render_no_data_placeholder(&d, theme, language)
+                .into_any_element();
         };
+        let cols = display.cols;
+        let rows = display.rows;
+        let cells = display.cells;
 
-        let ds_time = num_time_slices.div_ceil(time_step);
-        let ds_freq = num_freq_bins.div_ceil(freq_step);
+        // Backend hop size is 128 samples (see math-dsp spectrogram).
+        let duration_s = num_time_slices as f32 * 128.0 / sample_rate;
+        let nyquist_khz = sample_rate / 2000.0;
+        let surface = theme.surface;
+        let border = theme.border;
 
-        // Generate Frequency bins (Y axis) - Linear from 0 to Nyquist
-        let nyquist = sample_rate / 2.0;
-        let y_values: Vec<f64> = (0..ds_freq)
-            .map(|i| (i * freq_step) as f64 * nyquist as f64 / num_freq_bins as f64)
-            .collect();
-
-        // Generate Time bins (X axis) - Seconds
-        // Backend uses hop_size = 128
-        let hop_size = 128.0;
-        let x_values: Vec<f64> = (0..ds_time)
-            .map(|i| (i * time_step) as f64 * hop_size / sample_rate as f64)
-            .collect();
-
-        // Flatten data for Heatmap (Row-major: Y then X)
-        // Spectrogram is [time][freq] (X then Y columns).
-        // We need [Freq0_Time0, Freq0_Time1...], [Freq1_Time0...]
-        // When downsampling, take the max value in each block (preserves peaks)
-        let mut z_values = Vec::with_capacity(ds_time * ds_freq);
-        for fi in 0..ds_freq {
-            let f_start = fi * freq_step;
-            let f_end = (f_start + freq_step).min(num_freq_bins);
-            for ti in 0..ds_time {
-                let t_start = ti * time_step;
-                let t_end = (t_start + time_step).min(num_time_slices);
-                let mut max_val = f32::NEG_INFINITY;
-                for row in spectrogram.iter().take(t_end).skip(t_start) {
-                    for &val in row.iter().take(f_end).skip(f_start) {
-                        if val > max_val {
-                            max_val = val;
+        let plot = div()
+            .relative()
+            .w(px(800.0))
+            .h(px(300.0))
+            .bg(surface)
+            .border_1()
+            .border_color(border)
+            .rounded(d.r_md)
+            .overflow_hidden()
+            .child(
+                canvas(
+                    |_bounds, _window, _cx| (),
+                    move |bounds, _state, window, _cx| {
+                        let width: f32 = bounds.size.width.into();
+                        let height: f32 = bounds.size.height.into();
+                        if width <= 0.0 || height <= 0.0 {
+                            return;
                         }
-                    }
-                }
-                z_values.push(max_val as f64);
-            }
-        }
+                        let cell_w = width / cols as f32;
+                        let cell_h = height / rows as f32;
+                        for row in 0..rows {
+                            for col in 0..cols {
+                                let t = cells[row * cols + col];
+                                if t < 0.02 {
+                                    // Floor cells keep the plot
+                                    // background; skipping them keeps
+                                    // the quad count within scene limits.
+                                    continue;
+                                }
+                                window.paint_quad(PaintQuad {
+                                    bounds: Bounds {
+                                        origin: point(
+                                            bounds.origin.x + px(col as f32 * cell_w),
+                                            bounds.origin.y + px(row as f32 * cell_h),
+                                        ),
+                                        size: size(px(cell_w + 0.5), px(cell_h + 0.5)),
+                                    },
+                                    corner_radii: Corners::default(),
+                                    background: Self::spectrogram_color(t).into(),
+                                    border_widths: Edges::default(),
+                                    border_color: Hsla::transparent_black(),
+                                    border_style: BorderStyle::default(),
+                                });
+                            }
+                        }
+                    },
+                )
+                .size_full(),
+            );
 
-        let grid = SpectrumGrid {
-            x_values,
-            y_values,
-            z_values,
-        };
+        VStack::new()
+            .spacing(StackSpacing::Xs)
+            .child(plot)
+            .child(
+                Text::caption(format!(
+                    "Time 0 – {duration_s:.2} s · Frequency 0 – {nyquist_khz:.1} kHz · 80 dB range"
+                ))
+                .color(theme.text_secondary),
+            )
+            .into_any_element()
+    }
 
-        let config = SpectrumConfig {
-            title: None,
-            x_label: Some("Time (s)".to_string()),
-            y_label: Some("Frequency (Hz)".to_string()),
-            x_scale: ScaleType::Linear, // Time is linear
-            y_scale: ScaleType::Linear, // Freq bins are linear
-            width: 800.0,
-            height: 300.0,
-            color_scale: Some(gpui_px::ColorScale::Magma),
-            ..Default::default()
-        };
-
-        render_spectrum_heatmap(d, grid, config, theme, None).into_any_element()
+    /// Color for one spectrogram cell (`t` in 0…1), from the shared
+    /// gpui-px magma scale also used by the heatmap charts.
+    pub(super) fn spectrogram_color(t: f32) -> Hsla {
+        let color = gpui_px::ColorScale::Magma.map(f64::from(t.clamp(0.0, 1.0)));
+        Hsla::from(Rgba {
+            r: color.r,
+            g: color.g,
+            b: color.b,
+            a: color.a,
+        })
     }
 
     pub(super) fn render_no_data_placeholder(
@@ -1045,7 +1079,7 @@ impl PlayerView {
             .collect();
 
         let config = ChartConfig {
-            y_label: Some("Phase (degrees)".to_string()),
+            y_label: Some("Phase (°)".to_string()),
             x_range: (20.0, 20000.0),
             y_range: (-180.0, 180.0),
             x_scale: ScaleType::Log,
@@ -1064,12 +1098,27 @@ impl PlayerView {
         smoothing: PlotSmoothing,
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
-        // Compute group delay for each result
+        // One group-delay series per channel. The analysis already
+        // stores `excess_group_delay_ms` (group delay of the measured
+        // phase); recomputing it from `phase_deg` yields the identical
+        // curve, so plotting both drew every channel twice and made
+        // the panel look like a duplicate of another curve. Prefer the
+        // stored series and only compute when it is absent.
+        // Raw group delay of a room measurement is extremely spiky;
+        // when the user selected no smoothing, apply a light 1/24-oct
+        // smoothing so the panel stays readable.
+        let gd_smoothing = match smoothing {
+            PlotSmoothing::None => PlotSmoothing::Octave24,
+            other => other,
+        };
         let mut series = Vec::new();
 
         for (name, idx, result) in results {
-            let gd = dsp::compute_group_delay(&result.frequencies, &result.phase_deg);
-            let smoothed_gd = Self::apply_smoothing(&result.frequencies, &gd, smoothing);
+            let gd: Vec<f32> = match &result.excess_group_delay_ms {
+                Some(excess) if excess.len() == result.frequencies.len() => excess.clone(),
+                _ => dsp::compute_group_delay(&result.frequencies, &result.phase_deg),
+            };
+            let smoothed_gd = Self::apply_smoothing(&result.frequencies, &gd, gd_smoothing);
 
             let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| v as f64).collect();
             let gd_f64: Vec<f64> = smoothed_gd.iter().map(|&v| v as f64).collect();
@@ -1077,29 +1126,9 @@ impl PlayerView {
             series.push(Series::new(
                 name.clone(),
                 channel_color(theme, *idx),
-                freqs_f64.clone(),
+                freqs_f64,
                 gd_f64,
             ));
-
-            if let Some(excess) = &result.excess_group_delay_ms {
-                let smoothed_excess = Self::apply_smoothing(&result.frequencies, excess, smoothing);
-                let excess_f64: Vec<f64> = smoothed_excess.iter().map(|&v| v as f64).collect();
-
-                // Add excess as semi-transparent series
-                // Note: Labeling it might clutter legend, maybe skip label or append "(Excess)"?
-                // gpui_px legend uses labels. If we want it hidden from legend we might need a feature in Shared chart or just empty label?
-                // But let's keep it simple.
-                series.push(
-                    Series::new(
-                        format!("{} (Excess)", name),
-                        channel_color(theme, *idx),
-                        freqs_f64,
-                        excess_f64,
-                    )
-                    .with_opacity(0.5)
-                    .with_width(1.0),
-                );
-            }
         }
 
         // Find y-axis range
@@ -1123,7 +1152,7 @@ impl PlayerView {
         };
 
         let config = ChartConfig {
-            y_label: Some("Group Delay (ms)".to_string()),
+            y_label: Some("GD (ms)".to_string()),
             x_range: (20.0, 20000.0),
             y_range: (y_min, y_max),
             x_scale: ScaleType::Log,
@@ -1147,9 +1176,9 @@ impl PlayerView {
         let series: Vec<Series> = results
             .iter()
             .filter_map(|(name, idx, result)| {
-                let thd = result.thd_percent.as_ref()?;
+                let thd = Self::result_thd_percent(result)?;
 
-                let smoothed = Self::apply_smoothing(&result.frequencies, thd, smoothing);
+                let smoothed = Self::apply_smoothing(&result.frequencies, &thd, smoothing);
 
                 let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| v as f64).collect();
                 let thd_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
@@ -1211,6 +1240,74 @@ impl PlayerView {
         render_line_chart(series, config, theme, None).into_any_element()
     }
 
+    /// Impulse samples for a result: the measured IR when present,
+    /// otherwise reconstructed from the frequency response. Response-
+    /// only results (imports, older sessions) have no measured IR, and
+    /// without this fallback the RT60/Clarity panels stayed empty even
+    /// though the same data drives the Impulse Response panel.
+    pub(super) fn result_impulse_samples(result: &RecordingResult) -> Option<Vec<f32>> {
+        if let Some(ir) = &result.impulse_response
+            && !ir.is_empty()
+        {
+            return Some(ir.clone());
+        }
+        if !result.can_reconstruct_impulse() {
+            return None;
+        }
+        let sample_rate = result.sample_rate_hz.filter(|rate| *rate > 0)? as f32;
+        let (_times, impulse) = dsp::compute_impulse_response_from_fr(
+            &result.frequencies,
+            &result.magnitude_db,
+            &result.phase_deg,
+            sample_rate,
+        );
+        if impulse.is_empty() {
+            None
+        } else {
+            Some(impulse)
+        }
+    }
+
+    /// THD per frequency: the stored series when present, otherwise
+    /// derived from the stored harmonic curves. The analysis stores
+    /// harmonic levels as absolute transfer-function dB on the same
+    /// scale as `magnitude_db`, so THD = sqrt(Σ 10^(h/10)) /
+    /// 10^(fundamental/20) · 100 exactly as the engine computes it.
+    /// Returns `None` when neither source exists — for response-only
+    /// results distortion genuinely cannot be recovered.
+    pub(super) fn result_thd_percent(result: &RecordingResult) -> Option<Vec<f32>> {
+        if let Some(thd) = &result.thd_percent
+            && thd.len() == result.frequencies.len()
+        {
+            return Some(thd.clone());
+        }
+        let harmonics = result.harmonic_distortion_db.as_ref().filter(|curves| {
+            !curves.is_empty()
+                && curves
+                    .iter()
+                    .all(|curve| curve.len() == result.frequencies.len())
+        })?;
+        if result.magnitude_db.len() != result.frequencies.len() {
+            return None;
+        }
+        Some(
+            (0..result.frequencies.len())
+                .map(|i| {
+                    let fundamental = 10.0f32.powf(result.magnitude_db[i] / 20.0);
+                    let harmonic_sum_sq: f32 = harmonics
+                        .iter()
+                        .map(|curve| 10.0f32.powf(curve[i] / 10.0))
+                        .sum();
+                    if fundamental > 1e-9 {
+                        harmonic_sum_sq.sqrt() / fundamental * 100.0
+                    } else {
+                        0.0
+                    }
+                })
+                .collect(),
+        )
+    }
+
     /// Render RT60 chart
     pub(super) fn render_rt60_chart(
         &self,
@@ -1223,10 +1320,8 @@ impl PlayerView {
             .map(|(name, idx, result)| {
                 let rt60 = result.rt60_ms.clone().or_else(|| {
                     let sample_rate = result.sample_rate_hz.filter(|rate| *rate > 0)? as f32;
-                    result
-                        .impulse_response
-                        .as_ref()
-                        .map(|ir| dsp::compute_rt60_spectrum(ir, sample_rate, &result.frequencies))
+                    Self::result_impulse_samples(result)
+                        .map(|ir| dsp::compute_rt60_spectrum(&ir, sample_rate, &result.frequencies))
                 });
                 (name, idx, result, rt60)
             })
@@ -1286,8 +1381,8 @@ impl PlayerView {
             .filter_map(|(name, idx, result)| {
                 let c50 = result.clarity_c50_db.clone().or_else(|| {
                     let sample_rate = result.sample_rate_hz.filter(|rate| *rate > 0)? as f32;
-                    result.impulse_response.as_ref().map(|ir| {
-                        dsp::compute_clarity_spectrum(ir, sample_rate, &result.frequencies).0
+                    Self::result_impulse_samples(result).map(|ir| {
+                        dsp::compute_clarity_spectrum(&ir, sample_rate, &result.frequencies).0
                     })
                 })?;
 
@@ -1332,7 +1427,7 @@ impl PlayerView {
         };
 
         let config = ChartConfig {
-            y_label: Some("Clarity C50 (dB)".to_string()),
+            y_label: Some("C50 (dB)".to_string()),
             x_range: (20.0, 20000.0),
             y_range: (y_min, y_max),
             x_scale: ScaleType::Log,
@@ -1434,11 +1529,24 @@ impl PlayerView {
             10.0
         };
 
+        // Scale the amplitude axis to the measured peak: deconvolved
+        // impulse responses peak far below full scale (often < 0.05),
+        // so a fixed −1…1 axis rendered the IR as a flat line.
+        let peak_amplitude = series
+            .iter()
+            .flat_map(|s| s.y_values.iter())
+            .fold(0.0f64, |max, &v| max.max(v.abs()));
+        let y_limit = if peak_amplitude.is_finite() && peak_amplitude > 0.0 {
+            (peak_amplitude * 1.15).max(0.01)
+        } else {
+            1.0
+        };
+
         let config = ChartConfig {
             x_label: Some("Time (ms)".to_string()),
             y_label: Some("Amplitude".to_string()),
             x_range: (x_min, x_max),
-            y_range: (-1.0, 1.0),
+            y_range: (-y_limit, y_limit),
             x_scale: ScaleType::Linear,
             width: 800.0,
             height: 200.0,

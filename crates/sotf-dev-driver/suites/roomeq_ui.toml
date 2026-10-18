@@ -20,6 +20,21 @@ start = false
 ui_driven = true
 
 [[scenario]]
+name = "roomeq-report-open"
+path = "crates/sotf-dev-driver/scenarios/roomeq_report_open.scn"
+timeout = "180s"
+tags = ["roomeq", "ui", "fixtures", "report"]
+[scenario.room_eq]
+fixture_dir = "crates/sotf-dev-driver/testkit/roomeq/stereo_reference"
+dist_path = "fixtures/roomeq/stereo_reference"
+target = "NearField"
+loss = "Flat"
+processing = "Iir"
+crossover = "Lr24"
+start = false
+ui_driven = true
+
+[[scenario]]
 name = "roomeq-simple-mode"
 path = "crates/sotf-dev-driver/scenarios/roomeq_simple_mode.scn"
 timeout = "30s"
