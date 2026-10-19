@@ -283,6 +283,17 @@ fn handle_optimize_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             }
             OptimizationStatus::Running => {}
         },
+        // Cancel a running optimization; the worker callback observes
+        // the shared flag and stops at the next iteration.
+        KeyCode::Char('c')
+            if app.room_eq.model.optimization_status == OptimizationStatus::Running =>
+        {
+            app.room_eq
+                .model
+                .cancel_requested
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            app.room_eq.model.status_message = "Cancelling…".to_string();
+        }
         KeyCode::BackTab => {
             app.room_eq.model.step = RoomEqStep::Configure;
         }

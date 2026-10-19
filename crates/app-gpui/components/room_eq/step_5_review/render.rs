@@ -25,93 +25,72 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let [title, microphone, position, unknown] =
             RoomEqReportTranslations::source_labels(state.app.ui_state.language);
-        let Some(channels) = room
-            .result_inputs
-            .as_ref()
-            .and_then(|inputs| inputs.get("measurements"))
-            .and_then(serde_json::Value::as_array)
-        else {
+        // Typed frozen source identity captured when the run started
+        // (no serialized measurement payloads involved).
+        let Some(channels) = room.result_sources.as_ref() else {
             return div().into_any_element();
         };
-        let source_set = |set: &serde_json::Value| {
-            let provenance = set.get("provenance").and_then(serde_json::Value::as_array);
-            div()
-                .flex()
-                .flex_col()
-                .min_w_0()
-                .gap(d.gap)
-                .when(provenance.is_none_or(Vec::is_empty), |row| {
-                    row.child(Text::caption(unknown).color(theme.text_secondary))
-                })
-                .children(provenance.into_iter().flatten().map(|source| {
-                    let index = |key| {
-                        source
-                            .get(key)
-                            .and_then(serde_json::Value::as_u64)
-                            .and_then(|index| index.checked_add(1))
-                            .map(|index| index.to_string())
-                            .unwrap_or_else(|| unknown.to_owned())
-                    };
-                    let name = source
-                        .get("name")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or(unknown);
-                    div()
-                        .min_w_0()
-                        .child(Text::body(name.to_owned()).color(theme.text_primary))
-                        .child(
-                            Text::caption(format!(
-                                "{microphone}: {} · {position}: {}",
-                                index("mic_index"),
-                                index("mic_position_index")
-                            ))
-                            .color(theme.text_secondary),
-                        )
-                }))
-        };
-        let sources =
-            div()
-                .flex()
-                .flex_col()
-                .gap(d.gap)
-                .min_w_0()
-                .children(channels.iter().map(|channel| {
-                    let name = channel
-                        .get("channel_name")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or(unknown);
-                    let drivers = channel
-                        .get("driver_measurement_sets")
-                        .and_then(serde_json::Value::as_array);
-                    div()
-                        .flex()
-                        .flex_col()
-                        .min_w_0()
-                        .gap(d.gap)
-                        .child(Text::label(name.to_owned()).color(theme.text_primary))
-                        .when(drivers.is_none_or(Vec::is_empty), |row| {
-                            row.child(source_set(channel))
-                        })
-                        .children(drivers.into_iter().flatten().enumerate().map(
-                            |(index, driver)| {
-                                let name = driver
-                                    .get("name")
-                                    .and_then(serde_json::Value::as_str)
-                                    .unwrap_or(unknown);
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .min_w_0()
-                                    .gap(d.gap)
-                                    .pl(d.pad_x)
-                                    .child(
-                                        Text::label(format!("{} · {name}", index + 1))
-                                            .color(theme.text_primary),
-                                    )
-                                    .child(source_set(driver))
-                            },
-                        ))
-                }));
+        let source_set =
+            |provenance: &[sotf_audio_player::room_eq_types::MeasurementProvenance]| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .min_w_0()
+                    .gap(d.gap)
+                    .when(provenance.is_empty(), |row| {
+                        row.child(Text::caption(unknown).color(theme.text_secondary))
+                    })
+                    .children(provenance.iter().map(|source| {
+                        let index = |value: Option<usize>| {
+                            value
+                                .and_then(|index| index.checked_add(1))
+                                .map(|index| index.to_string())
+                                .unwrap_or_else(|| unknown.to_owned())
+                        };
+                        let name = source.name.as_deref().unwrap_or(unknown);
+                        div()
+                            .min_w_0()
+                            .child(Text::body(name.to_owned()).color(theme.text_primary))
+                            .child(
+                                Text::caption(format!(
+                                    "{microphone}: {} · {position}: {}",
+                                    index(source.mic_index),
+                                    index(source.mic_position_index)
+                                ))
+                                .color(theme.text_secondary),
+                            )
+                    }))
+            };
+        let sources = div()
+            .flex()
+            .flex_col()
+            .gap(d.gap)
+            .min_w_0()
+            .children(channels.iter().map(|channel| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .min_w_0()
+                    .gap(d.gap)
+                    .child(Text::label(channel.channel_name.clone()).color(theme.text_primary))
+                    .when(channel.drivers.is_empty(), |row| {
+                        row.child(source_set(&channel.provenance))
+                    })
+                    .children(channel.drivers.iter().enumerate().map(|(index, driver)| {
+                        let name = driver.name.as_deref().unwrap_or(unknown);
+                        div()
+                            .flex()
+                            .flex_col()
+                            .min_w_0()
+                            .gap(d.gap)
+                            .pl(d.pad_x)
+                            .child(
+                                Text::label(format!("{} · {name}", index + 1))
+                                    .color(theme.text_primary),
+                            )
+                            .child(source_set(&driver.provenance))
+                    }))
+            }));
         let owner = cx.entity().downgrade();
         let disclosure = Accordion::new()
             .aria_label(title)

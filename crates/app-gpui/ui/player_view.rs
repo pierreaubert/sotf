@@ -177,6 +177,12 @@ pub struct PlayerView {
     /// when the rack has no compressor). Invalidated on structural plugin
     /// graph changes.
     pub(super) compressor_engine_idx_cache: Option<Option<usize>>,
+    /// Memoized derived Evaluating series (group delay, RT60, clarity),
+    /// keyed by a fingerprint of the borrowed result inputs so steady
+    /// frames do not recompute Schroeder/FFT work. Cleared whenever the
+    /// fingerprint changes.
+    pub(crate) evaluating_derived_cache:
+        std::cell::RefCell<crate::components::recording::evaluating::DerivedSeriesCache>,
     /// Snapshot of the last published tick state — used to suppress
     /// `cx.notify()` when nothing observable changed in the tick.
     pub(super) last_tick_snapshot: Option<TickSnapshot>,
@@ -692,6 +698,7 @@ impl PlayerView {
             geometry_save_sequence: 0,
             pending_geometry_save: std::sync::Arc::new(parking_lot::Mutex::new(None)),
             compressor_engine_idx_cache: None,
+            evaluating_derived_cache: Default::default(),
             last_tick_snapshot: None,
             #[cfg(feature = "dev-api")]
             qa_performance_clock_active: false,

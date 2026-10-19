@@ -18,6 +18,7 @@ impl App {
     fn refresh_library_filter_cache(&mut self) {
         self.library_state.ensure_cache_valid();
         self.library_state.ensure_selection_cache_valid();
+        self.library_state.ensure_track_cache_valid();
     }
 
     /// Get filtered and sorted albums (with selection filters applied).

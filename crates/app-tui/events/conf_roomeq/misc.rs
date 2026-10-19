@@ -85,6 +85,8 @@ pub(super) fn set_room_eq_field_from_string(app: &mut App) {
         }
         _ => {}
     }
+    // Any optimizer-config edit makes stored results inapplicable.
+    app.room_eq.model.note_inputs_changed();
 }
 
 pub(super) fn adjust_room_eq_field(app: &mut App, delta: i32) {
@@ -192,6 +194,8 @@ pub(super) fn adjust_room_eq_field(app: &mut App, delta: i32) {
         28 => c.phase_alignment.enabled = !c.phase_alignment.enabled,
         _ => {}
     }
+    // Any optimizer-config edit makes stored results inapplicable.
+    app.room_eq.model.note_inputs_changed();
 }
 
 pub(crate) fn load_room_eq_measurements(app: &mut App) {
@@ -246,6 +250,10 @@ pub(crate) fn load_room_eq_measurements(app: &mut App) {
                     .as_ref()
                     .and_then(|ctc| ctc.measurements.clone());
                 app.room_eq.model.channel_measurements = channels;
+                // Replaced measurements own no results yet: drop any
+                // result produced from the previous inputs.
+                app.room_eq.model.note_inputs_changed();
+                app.room_eq.model.invalidate_results();
                 app.room_eq.model.init_speaker_configs();
                 app.room_eq.model.apply_smart_defaults(None);
                 app.room_eq.infer_easy_layout();
@@ -278,6 +286,10 @@ pub(crate) fn load_room_eq_measurements(app: &mut App) {
                 app.room_eq.model.ctc_measurements = None;
                 app.room_eq.model.ctc_config = None;
                 app.room_eq.model.speaker_configs.clear();
+                // A failed replacement load must not leave the previous
+                // run's results applicable under the new (empty) inputs.
+                app.room_eq.model.note_inputs_changed();
+                app.room_eq.model.invalidate_results();
             }
         },
         Err(e) => {
@@ -286,6 +298,8 @@ pub(crate) fn load_room_eq_measurements(app: &mut App) {
             app.room_eq.model.ctc_measurements = None;
             app.room_eq.model.ctc_config = None;
             app.room_eq.model.speaker_configs.clear();
+            app.room_eq.model.note_inputs_changed();
+            app.room_eq.model.invalidate_results();
         }
     }
 }
@@ -373,6 +387,26 @@ fn attach_quality_sidecar(
 pub(crate) fn export_room_eq_results(app: &mut App) {
     if app.room_eq.export_path.is_empty() {
         app.room_eq.export_error = Some("No export path specified".to_string());
+        app.room_eq.export_success = false;
+        return;
+    }
+
+    // Export the full DSP chain output, exactly like the GPUI app.
+    // Flattening per-channel `eq_filters` into one PEQ bank (the old
+    // behavior) lost channel routing, filter types, gains, delays, FIR
+    // and crossover stages, and silently substituted Peak filters.
+    let Some(dsp_output) = app.room_eq.model.dsp_output.clone() else {
+        app.room_eq.export_error =
+            Some("No optimization results to export. Run the optimizer first.".to_string());
+        app.room_eq.export_success = false;
+        return;
+    };
+    if !app.room_eq.model.results_are_current() {
+        app.room_eq.export_error = Some(
+            "Optimization results are stale — inputs changed since the run. Re-run the optimizer before exporting."
+                .to_string(),
+        );
+        app.room_eq.export_success = false;
         return;
     }
 
@@ -382,43 +416,60 @@ pub(crate) fn export_room_eq_results(app: &mut App) {
         .copied()
         .unwrap_or(("json", "JSON", ".json"));
 
-    // Collect all EQ filters from channel results and convert to Biquad
-    let biquads: Vec<math_audio_iir_fir::Biquad> = app
-        .room_eq
-        .model
-        .channel_results
-        .iter()
-        .flat_map(|ch| {
-            ch.eq_filters.iter().map(|f| {
-                let ft = match f.filter_type.as_str() {
-                    "peak" => math_audio_iir_fir::BiquadFilterType::Peak,
-                    "lowshelf" => math_audio_iir_fir::BiquadFilterType::Lowshelf,
-                    "highshelf" => math_audio_iir_fir::BiquadFilterType::Highshelf,
-                    "lowpass" => math_audio_iir_fir::BiquadFilterType::Lowpass,
-                    "highpass" => math_audio_iir_fir::BiquadFilterType::Highpass,
-                    _ => math_audio_iir_fir::BiquadFilterType::Peak,
-                };
-                math_audio_iir_fir::Biquad::new(ft, f.frequency, 48000.0, f.q, f.gain_db)
-            })
-        })
-        .collect();
+    let sample_rate = app.room_eq.model.optimizer_config.sample_rate as f64;
+    let path = std::path::Path::new(&app.room_eq.export_path).to_path_buf();
+    let artifact_dir = app.room_eq.model.artifact_dir.clone().unwrap_or_else(|| {
+        path.parent().map_or_else(
+            || std::path::PathBuf::from("."),
+            std::path::Path::to_path_buf,
+        )
+    });
 
-    let content =
-        match sotf_audio_player::autoeq::format_peq_export(format_id, "Room EQ", &biquads, 48000) {
-            Ok(c) => c,
-            Err(e) => {
-                app.room_eq.export_error = Some(format!("Format error: {}", e));
-                return;
+    let result: Result<(), String> = (|| {
+        // `room_eq_types::DspChainOutput` is the autoeq type the chain
+        // exporter expects, re-exported by the player crate.
+        let autoeq_output = &dsp_output;
+
+        match format_id {
+            // SotF JSON: the complete chain, pretty-printed.
+            "json" => {
+                let content =
+                    serde_json::to_string_pretty(autoeq_output).map_err(|e| e.to_string())?;
+                std::fs::write(&path, content).map_err(|e| format!("Write error: {e}"))
             }
-        };
+            "camilladsp" | "apo" | "easyeffects" | "wavelet" | "pipewire" | "roon" => {
+                let format = match format_id {
+                    "camilladsp" => autoeq::roomeq::ExportFormat::CamillaDsp,
+                    "apo" => autoeq::roomeq::ExportFormat::EqualizerApo,
+                    "easyeffects" => autoeq::roomeq::ExportFormat::EasyEffects,
+                    "wavelet" => autoeq::roomeq::ExportFormat::Wavelet,
+                    "pipewire" => autoeq::roomeq::ExportFormat::PipeWire,
+                    _ => autoeq::roomeq::ExportFormat::RoonDsp,
+                };
+                autoeq::roomeq::export_dsp_chain_with_convolution_sidecars(
+                    autoeq_output,
+                    format,
+                    &path,
+                    sample_rate,
+                    &artifact_dir,
+                )
+                .map_err(|e| format!("Export failed: {e}"))
+            }
+            // PEQ-only formats cannot represent the full chain; reject
+            // explicitly instead of silently dropping stages.
+            other => Err(format!(
+                "Format '{other}' cannot represent the full RoomEQ chain (channel routing, gains, delays, FIR and crossover stages would be dropped). Export as JSON or CamillaDSP instead."
+            )),
+        }
+    })();
 
-    match std::fs::write(&app.room_eq.export_path, content) {
+    match result {
         Ok(()) => {
             app.room_eq.export_success = true;
             app.room_eq.export_error = None;
         }
         Err(e) => {
-            app.room_eq.export_error = Some(format!("Write error: {}", e));
+            app.room_eq.export_error = Some(e);
             app.room_eq.export_success = false;
         }
     }

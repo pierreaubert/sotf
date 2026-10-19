@@ -1,5 +1,6 @@
 [package]
 name = "sotf-gpui"
+autotests = false
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -271,3 +272,111 @@ path = "tests/eq_chart_tests.rs"
 
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 wry = { version = "0.57", default-features = false, features = ["os-webview"], optional = true }
+
+[[test]]
+name = "custom_keybinding_tests"
+path = "tests/custom_keybinding_tests.rs"
+
+[[test]]
+name = "desktop_upmixer_eof_tests"
+path = "tests/desktop_upmixer_eof_tests.rs"
+
+[[test]]
+name = "dev_api_commands"
+path = "tests/dev_api_commands.rs"
+
+[[test]]
+name = "dev_api_regressions"
+path = "tests/dev_api_regressions.rs"
+
+[[test]]
+name = "external_controls_tests"
+path = "tests/external_controls_tests.rs"
+
+[[test]]
+name = "external_numeric_tests"
+path = "tests/external_numeric_tests.rs"
+
+[[test]]
+name = "federation_persistence_test"
+path = "tests/federation_persistence_test.rs"
+
+[[test]]
+name = "keymap_accessibility_tests"
+path = "tests/keymap_accessibility_tests.rs"
+
+[[test]]
+name = "library_workflow_test"
+path = "tests/library_workflow_test.rs"
+
+[[test]]
+name = "manager_test"
+path = "tests/manager_test.rs"
+
+[[test]]
+name = "multi_capture_tests"
+path = "tests/multi_capture_tests.rs"
+
+[[test]]
+name = "player_handle_tests"
+path = "tests/player_handle_tests.rs"
+
+[[test]]
+name = "plugin_resource_target_tests"
+path = "tests/plugin_resource_target_tests.rs"
+
+[[test]]
+name = "qa_parameter_receipt"
+path = "tests/qa_parameter_receipt.rs"
+
+[[test]]
+name = "qa_profile_action_status"
+path = "tests/qa_profile_action_status.rs"
+
+[[test]]
+name = "remote_state_tests"
+path = "tests/remote_state_tests.rs"
+
+[[test]]
+name = "resource_edit_acknowledgement_tests"
+path = "tests/resource_edit_acknowledgement_tests.rs"
+
+[[test]]
+name = "room_eq_chart_canvas_tests"
+path = "tests/room_eq_chart_canvas_tests.rs"
+
+[[test]]
+name = "room_eq_plot_tests"
+path = "tests/room_eq_plot_tests.rs"
+
+[[test]]
+name = "search_logic_test"
+path = "tests/search_logic_test.rs"
+
+[[test]]
+name = "slider_sequential_input_tests"
+path = "tests/slider_sequential_input_tests.rs"
+
+[[test]]
+name = "spatial_correlation_tests"
+path = "tests/spatial_correlation_tests.rs"
+
+[[test]]
+name = "spectrum_poll_tests"
+path = "tests/spectrum_poll_tests.rs"
+
+[[test]]
+name = "studio_picker_tooltip_tests"
+path = "tests/studio_picker_tooltip_tests.rs"
+
+[[test]]
+name = "studio_tabs_click_tests"
+path = "tests/studio_tabs_click_tests.rs"
+
+[[test]]
+name = "room_eq_apply_tests"
+path = "tests/room_eq_apply_tests.rs"
+
+[[test]]
+name = "room_eq_config_tests"
+path = "tests/room_eq_config_tests.rs"

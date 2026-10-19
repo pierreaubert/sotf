@@ -55,6 +55,8 @@ fn fixture() -> (Golden, RawCaptureManifest, Vec<f32>, Vec<f32>) {
         plan: session.plan().clone(),
         // This fixture has no loopback, probe, or bass-anchor acquisition.
         loopback_files: vec![],
+        // Nor any localization calibration snapshot.
+        localization_calibration: None,
         probe_pass: None,
         bass_anchor_pass: None,
         stimulus: stimulus.layout,

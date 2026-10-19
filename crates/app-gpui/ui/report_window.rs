@@ -73,7 +73,7 @@ impl PlayerView {
                 room.artifact_dir.clone(),
                 capture_quality_report(&room.channel_measurements),
                 app.ui_state.theme_id != crate::app::theme::ThemeId::Light,
-                room.result_inputs.clone(),
+                room.result_inputs,
                 labels,
             )
         };

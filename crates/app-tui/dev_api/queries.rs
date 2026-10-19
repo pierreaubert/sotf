@@ -546,26 +546,32 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         "roomeq.file_path" => json!(app.room_eq.file_path.as_str()),
         "roomeq.export_path" => json!(app.room_eq.export_path.as_str()),
         "roomeq.export_exists" => json!(std::path::Path::new(&app.room_eq.export_path).is_file()),
+        // The JSON export is the full DspChainOutput: count EQ filters
+        // across every channel chain in the exported file.
         "roomeq.export_filter_count" => json!(
             std::fs::read_to_string(&app.room_eq.export_path)
                 .ok()
                 .and_then(|contents| serde_json::from_str::<serde_json::Value>(&contents).ok())
-                .and_then(|value| value.as_array().map(Vec::len))
+                .map(|value| chain_filter_count(&value))
                 .unwrap_or(0)
         ),
         "roomeq.export_filter_count_matches_result" => {
             let exported_count = std::fs::read_to_string(&app.room_eq.export_path)
                 .ok()
                 .and_then(|contents| serde_json::from_str::<serde_json::Value>(&contents).ok())
-                .and_then(|value| value.as_array().map(Vec::len));
+                .map(|value| chain_filter_count(&value));
             let result_count = app
                 .room_eq
                 .model
-                .channel_results
-                .iter()
-                .map(|result| result.eq_filters.len())
-                .sum::<usize>();
-            json!(exported_count == Some(result_count))
+                .dsp_output
+                .as_ref()
+                .and_then(|output| serde_json::to_value(output).ok())
+                .map(|value| chain_filter_count(&value));
+            json!(
+                exported_count.is_some()
+                    && result_count.is_some()
+                    && exported_count == result_count
+            )
         }
         "roomeq.result_filter_count" => json!(
             app.room_eq
@@ -997,6 +1003,56 @@ impl App {
             &directory.join(sotf_audio_player::recording_helpers::RECORDINGS_FILENAME),
         )
     }
+}
+
+/// Count EQ filters in a serialized full-chain output
+/// (`channels -> plugins -> parameters.filters`).
+fn chain_filter_count(value: &Value) -> usize {
+    let mut total = 0usize;
+    if let Some(channels) = value.get("channels").and_then(Value::as_object) {
+        for channel in channels.values() {
+            for collection in ["plugins", "global_plugins"] {
+                if let Some(plugins) = channel.get(collection).and_then(Value::as_array) {
+                    for plugin in plugins {
+                        if let Some(filters) = plugin
+                            .get("parameters")
+                            .and_then(|p| p.get("filters"))
+                            .and_then(Value::as_array)
+                        {
+                            total += filters.len();
+                        }
+                    }
+                }
+            }
+            if let Some(drivers) = channel.get("drivers").and_then(Value::as_array) {
+                for driver in drivers {
+                    if let Some(plugins) = driver.get("plugins").and_then(Value::as_array) {
+                        for plugin in plugins {
+                            if let Some(filters) = plugin
+                                .get("parameters")
+                                .and_then(|p| p.get("filters"))
+                                .and_then(Value::as_array)
+                            {
+                                total += filters.len();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if let Some(plugins) = value.get("global_plugins").and_then(Value::as_array) {
+        for plugin in plugins {
+            if let Some(filters) = plugin
+                .get("parameters")
+                .and_then(|p| p.get("filters"))
+                .and_then(Value::as_array)
+            {
+                total += filters.len();
+            }
+        }
+    }
+    total
 }
 
 fn average_room_eq_score(

@@ -215,6 +215,24 @@ impl RoomEqMeasurementsFile {
                 let safe_head = sanitize_ctc_filename(&head_position);
                 let safe_speaker = sanitize_ctc_filename(&speaker);
 
+                // IR samples belong to the rate the take was captured
+                // and analyzed at, which the result now carries; the
+                // caller-provided rate is only a legacy fallback. The
+                // two ears must share one rate for a stereo IR file.
+                let take_sample_rate = |result: &RecordingResult| {
+                    result
+                        .sample_rate_hz
+                        .filter(|rate| *rate > 0)
+                        .unwrap_or(sample_rate)
+                };
+                let left_rate = take_sample_rate(left);
+                let right_rate = take_sample_rate(right);
+                if left_rate != right_rate {
+                    return Err(format!(
+                        "CTC take for speaker {speaker} mixes capture sample rates (left ear {left_rate} Hz, right ear {right_rate} Hz); re-record both ears at one rate"
+                    ));
+                }
+
                 match strategy {
                     CtcMatrixExportStrategy::ImpulseResponse => {
                         let left_ir = left
@@ -233,7 +251,7 @@ impl RoomEqMeasurementsFile {
                             })?;
                         let file_name = format!("{}_{}_ears_ir.wav", safe_head, safe_speaker);
                         let abs_path = matrix_dir.join(&file_name);
-                        write_stereo_ir_wav(&abs_path, left_ir, right_ir, sample_rate)?;
+                        write_stereo_ir_wav(&abs_path, left_ir, right_ir, left_rate)?;
 
                         used_positions.insert(*position_idx);
                         files.push(autoeq::roomeq::CtcMeasurementFileConfig {
@@ -273,10 +291,7 @@ impl RoomEqMeasurementsFile {
                             format!("{}_{}_ears_raw_sweep.wav", safe_head, safe_speaker);
                         let abs_path = matrix_dir.join(&file_name);
                         write_stereo_wav_from_mono_wavs(
-                            &abs_path,
-                            &left_wav,
-                            &right_wav,
-                            sample_rate,
+                            &abs_path, &left_wav, &right_wav, left_rate,
                         )?;
 
                         used_positions.insert(*position_idx);

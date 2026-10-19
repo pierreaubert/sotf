@@ -16,7 +16,12 @@ use std::ops::{Deref, DerefMut};
 pub struct RoomEqState {
     /// Shared, UI-agnostic Room EQ domain state.
     pub model: RoomEqScreenModel,
-    pub result_inputs: Option<serde_json::Value>,
+    pub result_inputs: Option<u64>,
+    /// Frozen source identity of the inputs the current result was
+    /// produced from (channel/driver names and capture provenance),
+    /// captured when the run starts so the Review step can describe
+    /// the result's sources without serializing measurement payloads.
+    pub result_sources: Option<Vec<RoomEqResultSource>>,
     pub delivery: sotf_audio_player::ui_models::correction_delivery::CorrectionDelivery,
 
     // === UI State ===
@@ -46,6 +51,11 @@ pub struct RoomEqState {
     pub selected_preset: String,
     /// Explicit speaker layout used by the beginner RoomEQ workflow.
     pub easy_layout: RoomEqEasyLayout,
+
+    /// Monotonic generation of the current optimization run. Progress
+    /// receivers and completions from older generations are dropped,
+    /// so a cancelled/superseded run cannot write into a newer one.
+    pub optimization_generation: u64,
 }
 
 impl Default for RoomEqState {
@@ -53,6 +63,7 @@ impl Default for RoomEqState {
         Self {
             model: RoomEqScreenModel::default(),
             result_inputs: None,
+            result_sources: None,
             delivery: Default::default(),
             dropdowns: RoomEqDropdowns::default(),
             review_smoothing_octaves: 1.0 / 6.0, // Match display-roomeq.py default
@@ -68,6 +79,7 @@ impl Default for RoomEqState {
             detail_level: sotf_audio_player::autoeq::DetailLevel::Simple,
             selected_preset: "full-range".to_string(),
             easy_layout: RoomEqEasyLayout::Stereo20,
+            optimization_generation: 0,
         }
     }
 }
@@ -87,25 +99,98 @@ impl DerefMut for RoomEqState {
 }
 
 impl RoomEqState {
-    pub fn optimization_input_snapshot(&self) -> serde_json::Value {
-        // RoomConfig contains non-serializable InMemory measurement variants.
-        // Snapshot their source records separately, retaining every position and
-        // driver, while serializing the remaining effective optimizer settings.
-        let mut config = self.model.to_room_config();
-        config.speakers.clear();
-        serde_json::json!({
-            "config": config,
-            "measurements": self.model.channel_measurements,
-            "speakers": self.model.speaker_configs,
-            "probe_arrivals": self.model.delay_detection.probe_arrival_map(),
-            "preset": format!("{:?}", self.model.simple_preset),
-            "mode": format!("{:?}", self.model.wizard_mode),
-            "layout": format!("{:?}", self.easy_layout),
-        })
+    /// Capture the typed source identity of the current measurements.
+    pub fn capture_result_sources(&self) -> Vec<RoomEqResultSource> {
+        self.model
+            .channel_measurements
+            .iter()
+            .map(|channel| RoomEqResultSource {
+                channel_name: channel.channel_name.clone(),
+                provenance: channel.provenance.clone(),
+                drivers: channel
+                    .driver_measurement_sets
+                    .iter()
+                    .map(|driver| RoomEqResultDriverSource {
+                        name: driver.name.clone(),
+                        provenance: driver.provenance.clone(),
+                    })
+                    .collect(),
+            })
+            .collect()
+    }
+
+    /// Cheap digest of every input that determines the optimization
+    /// result: optimizer configuration, speaker configs, wizard
+    /// preset/mode/layout, probe arrivals, and measurement identity
+    /// with sampled response points. Replaces the previous full serde
+    /// snapshot, which serialized every response curve on each
+    /// freshness check (and therefore on each review/save render).
+    pub fn input_digest(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+
+        if let Ok(config) = serde_json::to_string(&self.model.optimizer_config) {
+            config.hash(&mut hasher);
+        }
+        if let Ok(speakers) = serde_json::to_string(&self.model.speaker_configs) {
+            speakers.hash(&mut hasher);
+        }
+        format!("{:?}", self.model.simple_preset).hash(&mut hasher);
+        format!("{:?}", self.model.wizard_mode).hash(&mut hasher);
+        format!("{:?}", self.easy_layout).hash(&mut hasher);
+
+        if let Some(arrivals) = self.model.delay_detection.probe_arrival_map() {
+            arrivals.len().hash(&mut hasher);
+            let mut arrival_entries: Vec<(&String, &f64)> = arrivals.iter().collect();
+            arrival_entries.sort_by(|a, b| a.0.cmp(b.0));
+            for (name, seconds) in arrival_entries {
+                name.hash(&mut hasher);
+                (*seconds).to_bits().hash(&mut hasher);
+            }
+        }
+
+        fn hash_result(
+            hasher: &mut std::collections::hash_map::DefaultHasher,
+            result: &sotf_audio_player::recording_types::RecordingResult,
+        ) {
+            use std::hash::Hash;
+            result.frequencies.len().hash(hasher);
+            result.sample_rate_hz.hash(hasher);
+            if let Some(ir) = &result.impulse_response {
+                ir.len().hash(hasher);
+            }
+            // Hash every grid value: still orders of magnitude cheaper
+            // than serializing the responses to JSON, and an interior
+            // edit cannot slip past sampled points.
+            result.frequencies.len().hash(hasher);
+            for value in &result.frequencies {
+                value.to_bits().hash(hasher);
+            }
+            for values in [&result.magnitude_db, &result.phase_deg] {
+                values.len().hash(hasher);
+                for value in values {
+                    value.to_bits().hash(hasher);
+                }
+            }
+        }
+
+        for channel in &self.model.channel_measurements {
+            channel.channel_name.hash(&mut hasher);
+            channel.is_group.hash(&mut hasher);
+            hash_result(&mut hasher, &channel.measurement);
+            for driver in &channel.group_drivers {
+                hash_result(&mut hasher, driver);
+            }
+            for extra in &channel.multi_mic_measurements {
+                hash_result(&mut hasher, extra);
+            }
+        }
+
+        hasher.finish()
     }
 
     pub fn result_is_current(&self) -> bool {
-        self.result_inputs.as_ref() == Some(&self.optimization_input_snapshot())
+        self.result_inputs == Some(self.input_digest())
     }
 
     /// Load Room EQ domain state from the app-specific RecordingState.
@@ -159,4 +244,19 @@ impl RoomEqState {
     pub fn normalize_points(points: &[(f64, f64)], offset: f64) -> Vec<(f64, f64)> {
         RoomEqScreenModel::normalize_points(points, offset)
     }
+}
+
+/// One channel's frozen source identity for the Review step.
+#[derive(Debug, Clone, Default)]
+pub struct RoomEqResultSource {
+    pub channel_name: String,
+    pub provenance: Vec<sotf_audio_player::room_eq_types::MeasurementProvenance>,
+    pub drivers: Vec<RoomEqResultDriverSource>,
+}
+
+/// One driver's frozen source identity for the Review step.
+#[derive(Debug, Clone, Default)]
+pub struct RoomEqResultDriverSource {
+    pub name: Option<String>,
+    pub provenance: Vec<sotf_audio_player::room_eq_types::MeasurementProvenance>,
 }

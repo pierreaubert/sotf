@@ -17,6 +17,23 @@ use gpui_ui_kit::{
 };
 use sotf_audio::signal_analysis as dsp;
 
+/// Which derived Evaluating series a memo entry belongs to.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum DerivedSeriesKind {
+    GroupDelay,
+    Rt60,
+    Clarity,
+}
+
+/// Memo of derived Evaluating series, keyed by input fingerprint.
+#[derive(Default)]
+pub(crate) struct DerivedSeriesCache {
+    fingerprint: u64,
+    group_delay: std::collections::HashMap<usize, Vec<f32>>,
+    rt60: std::collections::HashMap<usize, Vec<f32>>,
+    clarity: std::collections::HashMap<usize, Vec<f32>>,
+}
+
 impl PlayerView {
     fn render_take_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
@@ -487,13 +504,13 @@ impl PlayerView {
         )
     }
 
-    /// Get filtered results based on selected channel
-    pub(super) fn get_filtered_results(
-        &self,
-        cx: &mut Context<Self>,
-    ) -> Vec<(String, usize, RecordingResult)> {
-        let state = self.state.read(cx);
-        let recording_state = &state.app.measurement_state.recording_state;
+    /// Filtered results based on the selected channel, borrowed from
+    /// the recording state. Rendering runs per frame over multi-MB
+    /// impulse/spectral payloads; cloning them per panel (the previous
+    /// behavior) dominated the Evaluating frame cost.
+    pub(super) fn filtered_result_refs(
+        recording_state: &crate::app::types::RecordingState,
+    ) -> Vec<(&str, usize, &RecordingResult)> {
         let selected_channel = recording_state.plot_selected_channel;
 
         recording_state
@@ -508,7 +525,7 @@ impl PlayerView {
                 }
                 r.result
                     .as_ref()
-                    .map(|res| (r.channel_name.clone(), idx, res.clone()))
+                    .map(|res| (r.channel_name.as_str(), idx, res))
             })
             .collect()
     }
@@ -535,7 +552,7 @@ impl PlayerView {
         let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
-        let results = self.get_filtered_results(cx);
+        let results = Self::filtered_result_refs(&state.app.measurement_state.recording_state);
         let has_results = !results.is_empty();
 
         Card::new().content(
@@ -561,7 +578,7 @@ impl PlayerView {
         let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
-        let results = self.get_filtered_results(cx);
+        let results = Self::filtered_result_refs(&state.app.measurement_state.recording_state);
         let has_results = !results.is_empty();
 
         Card::new().content(
@@ -587,7 +604,7 @@ impl PlayerView {
         let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
-        let results = self.get_filtered_results(cx);
+        let results = Self::filtered_result_refs(&state.app.measurement_state.recording_state);
         let has_results = !results.is_empty();
 
         Card::new().content(
@@ -611,8 +628,8 @@ impl PlayerView {
         let language = state.app.ui_state.language;
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
-        let results = self.get_filtered_results(cx);
-        let has_results = results.iter().any(|(_, _, result)| {
+        let results = Self::filtered_result_refs(&state.app.measurement_state.recording_state);
+        let has_results = results.iter().any(|&(_, _, result)| {
             result.measured_impulse().is_some() || result.can_reconstruct_impulse()
         });
 
@@ -620,6 +637,10 @@ impl PlayerView {
             VStack::new()
                 .spacing(StackSpacing::Sm)
                 .child(Text::eyebrow(translations.recording_impulse_response).color(theme.accent))
+                .when_some(
+                    Self::reconstructed_caption(&results, language),
+                    |stack, caption| stack.child(Text::caption(caption).color(theme.text_muted)),
+                )
                 .child(if has_results {
                     self.render_impulse_response_chart(&results, &theme)
                         .into_any_element()
@@ -639,7 +660,7 @@ impl PlayerView {
         let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
-        let results = self.get_filtered_results(cx);
+        let results = Self::filtered_result_refs(&state.app.measurement_state.recording_state);
         let has_results = !results.is_empty();
 
         Card::new().content(
@@ -665,8 +686,8 @@ impl PlayerView {
         let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
-        let results = self.get_filtered_results(cx);
-        let has_results = results.iter().any(|(_, _, result)| {
+        let results = Self::filtered_result_refs(&state.app.measurement_state.recording_state);
+        let has_results = results.iter().any(|&(_, _, result)| {
             result
                 .rt60_ms
                 .as_ref()
@@ -683,6 +704,10 @@ impl PlayerView {
             VStack::new()
                 .spacing(StackSpacing::Sm)
                 .child(Text::eyebrow(translations.recording_rt60).color(theme.accent))
+                .when_some(
+                    Self::reconstructed_caption(&results, language),
+                    |stack, caption| stack.child(Text::caption(caption).color(theme.text_muted)),
+                )
                 .child(if has_results {
                     self.render_rt60_chart(&results, smoothing, &theme)
                         .into_any_element()
@@ -702,8 +727,8 @@ impl PlayerView {
         let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
-        let results = self.get_filtered_results(cx);
-        let has_results = results.iter().any(|(_, _, result)| {
+        let results = Self::filtered_result_refs(&state.app.measurement_state.recording_state);
+        let has_results = results.iter().any(|&(_, _, result)| {
             result
                 .clarity_c50_db
                 .as_ref()
@@ -720,6 +745,10 @@ impl PlayerView {
             VStack::new()
                 .spacing(StackSpacing::Sm)
                 .child(Text::eyebrow(translations.recording_clarity).color(theme.accent))
+                .when_some(
+                    Self::reconstructed_caption(&results, language),
+                    |stack, caption| stack.child(Text::caption(caption).color(theme.text_muted)),
+                )
                 .child(if has_results {
                     self.render_clarity_chart(&results, smoothing, &theme)
                         .into_any_element()
@@ -738,7 +767,7 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
 
-        let results = self.get_filtered_results(cx);
+        let results = Self::filtered_result_refs(&state.app.measurement_state.recording_state);
         let has_results = !results.is_empty();
 
         Card::new().content(
@@ -759,7 +788,7 @@ impl PlayerView {
     pub(super) fn render_spectrogram_chart(
         &self,
         d: &Ds,
-        results: &[(String, usize, RecordingResult)],
+        results: &[(&str, usize, &RecordingResult)],
         theme: &crate::theme::Theme,
         language: crate::app::i18n::Language,
     ) -> impl IntoElement {
@@ -967,7 +996,7 @@ impl PlayerView {
     /// Render magnitude chart
     pub(super) fn render_magnitude_chart(
         &self,
-        results: &[(String, usize, RecordingResult)],
+        results: &[(&str, usize, &RecordingResult)],
         smoothing: PlotSmoothing,
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
@@ -984,7 +1013,7 @@ impl PlayerView {
         // Prepare series (filter out noise-floor placeholders from the analysis)
         let series: Vec<Series> = results
             .iter()
-            .map(|(name, idx, result)| {
+            .map(|&(name, idx, result)| {
                 // Filter out noise-floor sentinel values (-200 dB) produced by
                 // the analysis for frequencies outside the sweep range (e.g., LFE above 500 Hz)
                 let (filtered_freqs, filtered_mags): (Vec<f32>, Vec<f32>) = result
@@ -1011,12 +1040,7 @@ impl PlayerView {
                 let freqs_f64: Vec<f64> = filtered_freqs.iter().map(|&v| v as f64).collect();
                 let mags_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
 
-                Series::new(
-                    name.clone(),
-                    channel_color(theme, *idx),
-                    freqs_f64,
-                    mags_f64,
-                )
+                Series::new(name, channel_color(theme, idx), freqs_f64, mags_f64)
             })
             .collect();
 
@@ -1055,26 +1079,21 @@ impl PlayerView {
     /// Render phase chart
     pub(super) fn render_phase_chart(
         &self,
-        results: &[(String, usize, RecordingResult)],
+        results: &[(&str, usize, &RecordingResult)],
         smoothing: PlotSmoothing,
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
         // Process results with smoothing
         let series: Vec<Series> = results
             .iter()
-            .map(|(name, idx, result)| {
+            .map(|&(name, idx, result)| {
                 let smoothed =
                     Self::apply_smoothing(&result.frequencies, &result.phase_deg, smoothing);
 
                 let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| v as f64).collect();
                 let phases_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
 
-                Series::new(
-                    name.clone(),
-                    channel_color(theme, *idx),
-                    freqs_f64,
-                    phases_f64,
-                )
+                Series::new(name, channel_color(theme, idx), freqs_f64, phases_f64)
             })
             .collect();
 
@@ -1094,7 +1113,7 @@ impl PlayerView {
     /// Render group delay chart
     pub(super) fn render_group_delay_chart(
         &self,
-        results: &[(String, usize, RecordingResult)],
+        results: &[(&str, usize, &RecordingResult)],
         smoothing: PlotSmoothing,
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
@@ -1113,19 +1132,27 @@ impl PlayerView {
         };
         let mut series = Vec::new();
 
-        for (name, idx, result) in results {
-            let gd: Vec<f32> = match &result.excess_group_delay_ms {
-                Some(excess) if excess.len() == result.frequencies.len() => excess.clone(),
-                _ => dsp::compute_group_delay(&result.frequencies, &result.phase_deg),
-            };
-            let smoothed_gd = Self::apply_smoothing(&result.frequencies, &gd, gd_smoothing);
+        for &(name, idx, result) in results {
+            let smoothed_gd = self.cached_derived_series(
+                results,
+                smoothing,
+                DerivedSeriesKind::GroupDelay,
+                idx,
+                || {
+                    let gd: Vec<f32> = match &result.excess_group_delay_ms {
+                        Some(excess) if excess.len() == result.frequencies.len() => excess.clone(),
+                        _ => dsp::compute_group_delay(&result.frequencies, &result.phase_deg),
+                    };
+                    Self::apply_smoothing(&result.frequencies, &gd, gd_smoothing)
+                },
+            );
 
             let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| v as f64).collect();
             let gd_f64: Vec<f64> = smoothed_gd.iter().map(|&v| v as f64).collect();
 
             series.push(Series::new(
-                name.clone(),
-                channel_color(theme, *idx),
+                name.to_string(),
+                channel_color(theme, idx),
                 freqs_f64,
                 gd_f64,
             ));
@@ -1168,7 +1195,7 @@ impl PlayerView {
     pub(super) fn render_distortion_chart(
         &self,
         d: &Ds,
-        results: &[(String, usize, RecordingResult)],
+        results: &[(&str, usize, &RecordingResult)],
         smoothing: PlotSmoothing,
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
@@ -1184,7 +1211,7 @@ impl PlayerView {
                 let thd_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
 
                 Some(Series::new(
-                    name.clone(),
+                    name.to_string(),
                     channel_color(theme, *idx),
                     freqs_f64,
                     thd_f64,
@@ -1255,17 +1282,108 @@ impl PlayerView {
             return None;
         }
         let sample_rate = result.sample_rate_hz.filter(|rate| *rate > 0)? as f32;
-        let (_times, impulse) = dsp::compute_impulse_response_from_fr(
+        // Validity-gated reconstruction (math-dsp): malformed grids
+        // return None instead of a plausible-looking decay.
+        let (_times, impulse) = dsp::reconstruct_impulse_response(
             &result.frequencies,
             &result.magnitude_db,
             &result.phase_deg,
             sample_rate,
-        );
-        if impulse.is_empty() {
-            None
-        } else {
-            Some(impulse)
+        )?;
+        Some(impulse)
+    }
+
+    /// Fingerprint of the borrowed Evaluating inputs (selection,
+    /// smoothing, grid shapes and edge samples). Derived series are
+    /// memoized against it; any input change invalidates the memo.
+    pub(super) fn derived_fingerprint(
+        results: &[(&str, usize, &RecordingResult)],
+        smoothing: PlotSmoothing,
+    ) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        smoothing.as_str().hash(&mut hasher);
+        for (name, idx, result) in results {
+            name.hash(&mut hasher);
+            idx.hash(&mut hasher);
+            result.frequencies.len().hash(&mut hasher);
+            result.sample_rate_hz.hash(&mut hasher);
+            if let Some(ir) = &result.impulse_response {
+                ir.len().hash(&mut hasher);
+            }
+            for values in [&result.magnitude_db, &result.phase_deg] {
+                values.len().hash(&mut hasher);
+                if let (Some(first), Some(last)) = (values.first(), values.last()) {
+                    first.to_bits().hash(&mut hasher);
+                    last.to_bits().hash(&mut hasher);
+                }
+            }
         }
+        hasher.finish()
+    }
+
+    /// Memoized derived series (group delay / RT60 / clarity) for one
+    /// channel. Recomputes only when the inputs fingerprint changed.
+    pub(super) fn cached_derived_series(
+        &self,
+        results: &[(&str, usize, &RecordingResult)],
+        smoothing: PlotSmoothing,
+        kind: DerivedSeriesKind,
+        channel_idx: usize,
+        compute: impl FnOnce() -> Vec<f32>,
+    ) -> Vec<f32> {
+        let fingerprint = Self::derived_fingerprint(results, smoothing);
+        let mut cache = self.evaluating_derived_cache.borrow_mut();
+        if cache.fingerprint != fingerprint {
+            cache.fingerprint = fingerprint;
+            cache.group_delay.clear();
+            cache.rt60.clear();
+            cache.clarity.clear();
+        }
+        let map = match kind {
+            DerivedSeriesKind::GroupDelay => &mut cache.group_delay,
+            DerivedSeriesKind::Rt60 => &mut cache.rt60,
+            DerivedSeriesKind::Clarity => &mut cache.clarity,
+        };
+        map.entry(channel_idx).or_insert_with(compute).clone()
+    }
+
+    /// True when the impulse behind RT60/Clarity/IR panels would be
+    /// reconstructed from the frequency response rather than measured.
+    pub(super) fn result_impulse_is_reconstructed(result: &RecordingResult) -> bool {
+        result
+            .impulse_response
+            .as_ref()
+            .is_none_or(|ir| ir.is_empty())
+            && result.can_reconstruct_impulse()
+    }
+
+    /// Localized provenance caption for panels fed by a reconstructed IR.
+    pub(super) fn reconstructed_caption(
+        results: &[(&str, usize, &RecordingResult)],
+        language: crate::app::i18n::Language,
+    ) -> Option<String> {
+        if !results
+            .iter()
+            .any(|&(_, _, result)| Self::result_impulse_is_reconstructed(result))
+        {
+            return None;
+        }
+        Some(match language {
+            crate::app::i18n::Language::French => {
+                "Réponse impulsionnelle reconstruite depuis la réponse en fréquence (non mesurée)"
+                    .to_string()
+            }
+            crate::app::i18n::Language::German => {
+                "Impulsantwort aus dem Frequenzgang rekonstruiert (nicht gemessen)".to_string()
+            }
+            crate::app::i18n::Language::Spanish => {
+                "Respuesta al impulso reconstruida desde la respuesta en frecuencia (no medida)"
+                    .to_string()
+            }
+            _ => "Impulse response reconstructed from the frequency response (not measured)"
+                .to_string(),
+        })
     }
 
     /// THD per frequency: the stored series when present, otherwise
@@ -1311,17 +1429,24 @@ impl PlayerView {
     /// Render RT60 chart
     pub(super) fn render_rt60_chart(
         &self,
-        results: &[(String, usize, RecordingResult)],
+        results: &[(&str, usize, &RecordingResult)],
         smoothing: PlotSmoothing,
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
         let series: Vec<Series> = results
             .iter()
-            .map(|(name, idx, result)| {
+            .map(|&(name, idx, result)| {
                 let rt60 = result.rt60_ms.clone().or_else(|| {
                     let sample_rate = result.sample_rate_hz.filter(|rate| *rate > 0)? as f32;
-                    Self::result_impulse_samples(result)
-                        .map(|ir| dsp::compute_rt60_spectrum(&ir, sample_rate, &result.frequencies))
+                    Self::result_impulse_samples(result).map(|ir| {
+                        self.cached_derived_series(
+                            results,
+                            smoothing,
+                            DerivedSeriesKind::Rt60,
+                            idx,
+                            || dsp::compute_rt60_spectrum(&ir, sample_rate, &result.frequencies),
+                        )
+                    })
                 });
                 (name, idx, result, rt60)
             })
@@ -1339,10 +1464,10 @@ impl PlayerView {
                     let label = if (max_val - min_val).abs() < 1e-3 {
                         format!("{} (Broadband)", name)
                     } else {
-                        name.clone()
+                        name.to_string()
                     };
 
-                    Series::new(label, channel_color(theme, *idx), freqs_f64, rt60_f64)
+                    Series::new(label, channel_color(theme, idx), freqs_f64, rt60_f64)
                 })
             })
             .collect();
@@ -1371,7 +1496,7 @@ impl PlayerView {
     /// Render Clarity chart
     pub(super) fn render_clarity_chart(
         &self,
-        results: &[(String, usize, RecordingResult)],
+        results: &[(&str, usize, &RecordingResult)],
         smoothing: PlotSmoothing,
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
@@ -1382,7 +1507,16 @@ impl PlayerView {
                 let c50 = result.clarity_c50_db.clone().or_else(|| {
                     let sample_rate = result.sample_rate_hz.filter(|rate| *rate > 0)? as f32;
                     Self::result_impulse_samples(result).map(|ir| {
-                        dsp::compute_clarity_spectrum(&ir, sample_rate, &result.frequencies).0
+                        self.cached_derived_series(
+                            results,
+                            smoothing,
+                            DerivedSeriesKind::Clarity,
+                            *idx,
+                            || {
+                                dsp::compute_clarity_spectrum(&ir, sample_rate, &result.frequencies)
+                                    .0
+                            },
+                        )
                     })
                 })?;
 
@@ -1397,7 +1531,7 @@ impl PlayerView {
                 let label = if (max_val - min_val).abs() < 0.1 {
                     format!("{} (Broadband)", name)
                 } else {
-                    name.clone()
+                    name.to_string()
                 };
 
                 Some(Series::new(
@@ -1457,7 +1591,7 @@ impl PlayerView {
     #[allow(clippy::type_complexity)]
     pub(super) fn render_impulse_response_chart(
         &self,
-        results: &[(String, usize, RecordingResult)],
+        results: &[(&str, usize, &RecordingResult)],
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
         // Compute impulse response and find peak time for each channel
@@ -1471,15 +1605,15 @@ impl PlayerView {
                         return None;
                     }
                     let sample_rate = result.sample_rate_hz.filter(|rate| *rate > 0)? as f32;
-                    dsp::compute_impulse_response_from_fr(
+                    dsp::reconstruct_impulse_response(
                         &result.frequencies,
                         &result.magnitude_db,
                         &result.phase_deg,
                         sample_rate,
-                    )
+                    )?
                 };
                 let peak_time = Self::find_ir_peak_time(&times, &impulse);
-                Some((name.clone(), *idx, times, impulse, peak_time))
+                Some((name.to_string(), *idx, times, impulse, peak_time))
             })
             .collect();
 
@@ -1500,7 +1634,7 @@ impl PlayerView {
                 let impulse_f64: Vec<f64> = impulse.iter().map(|&v| v as f64).collect();
 
                 Series::new(
-                    name.clone(),
+                    name,
                     channel_color(theme, *idx),
                     adjusted_times,
                     impulse_f64,

@@ -77,6 +77,17 @@ pub struct LibraryController {
     /// field changes or `cached_albums` is rebuilt. `None` means "not yet
     /// computed" (cold start); empty Vec means "computed, result is empty".
     pub(super) cached_selection_indices: Option<Vec<usize>>,
+
+    /// Cache for the track view: `(cached_albums index, track index)` pairs
+    /// matching the current search + selection filters. Materializing this
+    /// walks every eligible track and lowercases titles/artists, so the
+    /// virtualized track list must not redo it per render or per row.
+    /// Populated by `ensure_track_cache_valid`; `cached_track_key` is the
+    /// filter/search/selection fingerprint the snapshot was computed for,
+    /// so direct field edits that bypass `invalidate_cache` are detected
+    /// instead of serving stale rows. `None` means "not yet computed".
+    pub(super) cached_track_indices: Option<Vec<(usize, usize)>>,
+    pub(super) cached_track_key: u64,
 }
 
 impl Default for LibraryController {
@@ -125,6 +136,8 @@ impl LibraryController {
             cached_albums: Vec::new(),
             cache_dirty: true,
             cached_selection_indices: None,
+            cached_track_indices: None,
+            cached_track_key: 0,
         }
     }
 
@@ -143,6 +156,7 @@ impl LibraryController {
     pub fn invalidate_cache(&mut self) {
         self.cache_dirty = true;
         self.cached_selection_indices = None;
+        self.cached_track_indices = None;
     }
 
     pub fn preview_metadata_edit(
@@ -195,6 +209,7 @@ impl LibraryController {
         // Rebuilt cached_albums → any selection-cache snapshot keyed off the
         // old indices is stale.
         self.cached_selection_indices = None;
+        self.cached_track_indices = None;
     }
 
     /// Get filtered and sorted albums from cache.
@@ -332,37 +347,130 @@ impl LibraryController {
             .collect()
     }
 
+    /// Fingerprint of every input that determines the track rows:
+    /// normalized search query, channel/favorites filters, sort and
+    /// result order, all sidebar selection fields, and the shape of
+    /// `cached_albums`. Compared against `cached_track_key` before a
+    /// cached snapshot is served, so callers that assign selection
+    /// fields directly (bypassing `invalidate_cache`) cannot observe
+    /// stale rows.
+    fn track_cache_key(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.search_query.trim().to_lowercase().hash(&mut hasher);
+        format!("{:?}", self.filter).hash(&mut hasher);
+        self.show_favorites_only.hash(&mut hasher);
+        format!("{:?}", self.sort_order).hash(&mut hasher);
+        format!("{:?}", self.result_order).hash(&mut hasher);
+        self.selected_genre.hash(&mut hasher);
+        self.selected_decade.hash(&mut hasher);
+        self.selected_year.hash(&mut hasher);
+        self.selected_artist_letter.hash(&mut hasher);
+        self.selected_artist.hash(&mut hasher);
+        self.selected_composer_letter.hash(&mut hasher);
+        self.selected_composer.hash(&mut hasher);
+        self.selected_album_letter.hash(&mut hasher);
+        self.selected_track_range.hash(&mut hasher);
+        self.cached_albums.len().hash(&mut hasher);
+        for album in &self.cached_albums {
+            album.tracks.len().hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    /// The cached track indices, only when they were computed for the
+    /// current filter/search/selection fingerprint.
+    fn valid_cached_track_indices(&self) -> Option<&[(usize, usize)]> {
+        if self.cache_dirty {
+            return None;
+        }
+        let indices = self.cached_track_indices.as_deref()?;
+        (self.cached_track_key == self.track_cache_key()).then_some(indices)
+    }
+
+    /// Walk eligible albums/tracks once and collect matching indices.
+    /// Track rows retain album filters, but a track-title search must
+    /// not expose every other track in the matching album.
+    fn compute_track_indices(&self) -> Vec<(usize, usize)> {
+        let query = self.search_query.trim().to_lowercase();
+        let mut rows = Vec::new();
+        for (album_index, album) in self.cached_albums.iter().enumerate() {
+            if !self.matches_selection(album) {
+                continue;
+            }
+            let album_matches = query.is_empty()
+                || album.title.to_lowercase().contains(&query)
+                || album.artist().to_lowercase().contains(&query);
+            for (track_index, track) in album.tracks.iter().enumerate() {
+                let matches = album_matches
+                    || track
+                        .title
+                        .as_deref()
+                        .unwrap_or_default()
+                        .to_lowercase()
+                        .contains(&query)
+                    || track
+                        .artist
+                        .as_deref()
+                        .unwrap_or_default()
+                        .to_lowercase()
+                        .contains(&query);
+                if matches {
+                    rows.push((album_index, track_index));
+                }
+            }
+        }
+        rows
+    }
+
+    /// Populate `cached_track_indices` so subsequent track-row reads
+    /// are index lookups rather than a full library walk with per-track
+    /// lowercase allocations. Safe to call from any code that already
+    /// holds `&mut self`; a warm cache for the current fingerprint is
+    /// kept as-is.
+    pub fn ensure_track_cache_valid(&mut self) {
+        self.ensure_cache_valid();
+        if self.valid_cached_track_indices().is_some() {
+            return;
+        }
+        self.cached_track_indices = Some(self.compute_track_indices());
+        self.cached_track_key = self.track_cache_key();
+    }
+
+    /// `(cached_albums index, track index)` rows for the track view.
+    /// Borrows the cached snapshot when `ensure_track_cache_valid` has
+    /// run for the current fingerprint; otherwise computes the rows
+    /// without storing them. Lets virtualized rendering take both the
+    /// row count and the visible rows from one materialization.
+    pub fn selection_filtered_track_indices(&self) -> std::borrow::Cow<'_, [(usize, usize)]> {
+        match self.valid_cached_track_indices() {
+            Some(indices) => std::borrow::Cow::Borrowed(indices),
+            None => std::borrow::Cow::Owned(self.compute_track_indices()),
+        }
+    }
+
+    /// Number of track rows for the current filters, without
+    /// materializing row references when the cache is warm.
+    pub fn selection_filtered_track_count(&self) -> usize {
+        match self.valid_cached_track_indices() {
+            Some(indices) => indices.len(),
+            None => self.compute_track_indices().len(),
+        }
+    }
+
     /// Track rows retain album filters, but a track-title search must not expose
     /// every other track in the matching album. Indices refer to the returned album.
     pub fn selection_filtered_tracks(&self) -> Vec<(&Album, usize)> {
-        let query = self.search_query.trim().to_lowercase();
-        self.selection_filtered_albums()
+        let indices = match self.valid_cached_track_indices() {
+            Some(indices) => indices.to_vec(),
+            None => self.compute_track_indices(),
+        };
+        indices
             .into_iter()
-            .flat_map(|album| {
-                let album_matches = query.is_empty()
-                    || album.title.to_lowercase().contains(&query)
-                    || album.artist().to_lowercase().contains(&query);
-                let query = &query;
-                album
-                    .tracks
-                    .iter()
-                    .enumerate()
-                    .filter_map(move |(index, track)| {
-                        let matches = album_matches
-                            || track
-                                .title
-                                .as_deref()
-                                .unwrap_or_default()
-                                .to_lowercase()
-                                .contains(query)
-                            || track
-                                .artist
-                                .as_deref()
-                                .unwrap_or_default()
-                                .to_lowercase()
-                                .contains(query);
-                        matches.then_some((album, index))
-                    })
+            .filter_map(|(album_index, track_index)| {
+                self.cached_albums
+                    .get(album_index)
+                    .map(|album| (album, track_index))
             })
             .collect()
     }

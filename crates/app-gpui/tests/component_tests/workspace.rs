@@ -928,7 +928,7 @@ fn room_correction_results_become_stale_when_preset_changes() {
     use sotf_audio_player_gpui::app::types::RoomEqState;
     let mut room = RoomEqState::default();
     assert!(!room.result_is_current());
-    room.result_inputs = Some(room.optimization_input_snapshot());
+    room.result_inputs = Some(room.input_digest());
     assert!(room.result_is_current());
     room.export_format_index = 2;
     room.overall_progress = 1.0;
@@ -1469,23 +1469,23 @@ fn room_snapshot_tracks_in_memory_positions_and_drivers_without_panicking() {
         channel_name: "L".into(),
         ..Default::default()
     });
-    let original = room.optimization_input_snapshot();
-    assert_eq!(original, room.optimization_input_snapshot());
+    let original = room.input_digest();
+    assert_eq!(original, room.input_digest());
     room.channel_measurements[0].measurement.magnitude_db[1] += 1.0;
-    assert_ne!(original, room.optimization_input_snapshot());
+    assert_ne!(original, room.input_digest());
     let extra = snapshot_measurement("L").measurement;
     room.channel_measurements[0]
         .multi_mic_measurements
         .push(extra.clone());
-    let multiple = room.optimization_input_snapshot();
+    let multiple = room.input_digest();
     room.channel_measurements[0].multi_mic_measurements[0].magnitude_db[1] += 1.0;
-    assert_ne!(multiple, room.optimization_input_snapshot());
+    assert_ne!(multiple, room.input_digest());
     room.speaker_configs[0].config_type = RoomEqSpeakerConfigType::MultiDriver;
     room.channel_measurements[0].is_group = true;
     room.channel_measurements[0].group_drivers.push(extra);
-    let drivers = room.optimization_input_snapshot();
+    let drivers = room.input_digest();
     room.channel_measurements[0].group_drivers[0].phase_deg = vec![0.0, 20.0, 40.0];
-    assert_ne!(drivers, room.optimization_input_snapshot());
+    assert_ne!(drivers, room.input_digest());
 }
 
 #[test]

@@ -110,6 +110,22 @@ pub struct RoomEqScreenModel {
 
     /// Per-speaker measurement counts: (channel_name, count).
     pub multi_position_counts: Vec<(String, usize)>,
+
+    /// Monotonic revision of the semantic optimization inputs
+    /// (measurements, speaker configs, optimizer configuration).
+    /// Incremented by [`Self::note_inputs_changed`]; results carry the
+    /// revision they were produced from, so frontends can tell whether
+    /// a result still belongs to the current inputs.
+    pub input_revision: u64,
+
+    /// Input revision the stored `channel_results`/`dsp_output` were
+    /// produced from; `None` when no applicable result exists.
+    pub result_revision: Option<u64>,
+
+    /// Input revision captured when the current run started. A worker
+    /// completion whose revision no longer matches is obsolete and
+    /// must be discarded instead of applied.
+    pub run_revision: Option<u64>,
 }
 
 impl Default for RoomEqScreenModel {
@@ -144,6 +160,9 @@ impl Default for RoomEqScreenModel {
             error_message: None,
             has_multi_position_data: false,
             multi_position_counts: Vec::new(),
+            input_revision: 0,
+            result_revision: None,
+            run_revision: None,
         }
     }
 }
@@ -260,17 +279,23 @@ impl RoomEqScreenModel {
                 self.init_speaker_configs();
                 self.apply_smart_defaults(None);
                 self.refresh_position_metadata();
+                self.note_inputs_changed();
+                self.invalidate_results();
             }
             RoomEqViewEvent::LoadFromRecording(recording_state) => {
                 self.load_from_recording(&recording_state);
                 self.init_speaker_configs();
                 self.apply_smart_defaults(None);
+                self.note_inputs_changed();
+                self.invalidate_results();
             }
             RoomEqViewEvent::ClearMeasurements => {
                 self.channel_measurements.clear();
                 self.speaker_configs.clear();
                 self.has_multi_position_data = false;
                 self.multi_position_counts.clear();
+                self.note_inputs_changed();
+                self.invalidate_results();
             }
             RoomEqViewEvent::SetWizardMode(mode) => {
                 self.wizard_mode = mode;
@@ -278,9 +303,11 @@ impl RoomEqScreenModel {
             RoomEqViewEvent::SetSimplePreset(preset) => {
                 self.simple_preset = preset.clone();
                 apply_simple_preset(&preset, &mut self.optimizer_config);
+                self.note_inputs_changed();
             }
             RoomEqViewEvent::SetOptimizerConfig(config) => {
                 self.optimizer_config = *config;
+                self.note_inputs_changed();
             }
             RoomEqViewEvent::StartOptimization => {
                 if self.channel_measurements.is_empty() {
@@ -290,6 +317,7 @@ impl RoomEqScreenModel {
                     ));
                 } else {
                     self.reset_optimization();
+                    self.begin_run();
                     self.optimization_status = OptimizationStatus::Running;
                     self.cancel_requested = Arc::new(AtomicBool::new(false));
                     effects.push(RoomEqEffect::StartOptimization(
@@ -333,6 +361,11 @@ impl RoomEqScreenModel {
                 self.channel_results = channel_results;
                 self.dsp_output = Some(*dsp_output);
                 self.artifact_dir = Some(artifact_dir);
+                // The event carries results of the run started at the
+                // current input revision; stamp them applicable. A
+                // stale run is filtered by frontends before dispatch.
+                self.run_revision = None;
+                self.result_revision = Some(self.input_revision);
                 self.optimization_status = OptimizationStatus::Completed;
                 self.overall_progress = 1.0;
                 self.status_message = "Optimization completed".to_string();
@@ -414,6 +447,61 @@ impl RoomEqScreenModel {
         self.dsp_output = None;
         self.artifact_dir = None;
         self.error_message = None;
+        self.result_revision = None;
+        self.run_revision = None;
+    }
+
+    /// Record that the semantic optimization inputs changed.
+    ///
+    /// Stored results are not deleted: they become inapplicable
+    /// (`results_are_current()` returns false) until a new run
+    /// completes at the new revision. An in-flight run is obsoleted:
+    /// its completion will be rejected by [`Self::complete_run`].
+    pub fn note_inputs_changed(&mut self) {
+        self.input_revision = self.input_revision.wrapping_add(1);
+    }
+
+    /// Drop stored results and their applicability token.
+    ///
+    /// Used when the measurements themselves are replaced (including a
+    /// failed replacement load): previous results must not survive
+    /// under new or empty inputs.
+    pub fn invalidate_results(&mut self) {
+        self.channel_results.clear();
+        self.dsp_output = None;
+        self.artifact_dir = None;
+        self.result_revision = None;
+        if self.optimization_status == OptimizationStatus::Completed {
+            self.optimization_status = OptimizationStatus::Idle;
+        }
+    }
+
+    /// Capture the current input revision for a starting run.
+    pub fn begin_run(&mut self) -> u64 {
+        self.run_revision = Some(self.input_revision);
+        self.input_revision
+    }
+
+    /// Accept a worker completion only if it belongs to the current run.
+    ///
+    /// Returns true when the completion was accepted and the stored
+    /// results (which the caller installs before calling this) are now
+    /// applicable. On false the caller must discard the completion and
+    /// drop any results it installed.
+    #[must_use]
+    pub fn complete_run(&mut self, revision: u64) -> bool {
+        let accepted = self.run_revision == Some(revision) && revision == self.input_revision;
+        self.run_revision = None;
+        if accepted {
+            self.result_revision = Some(revision);
+        }
+        accepted
+    }
+
+    /// True when stored results exist and belong to the current inputs.
+    #[must_use]
+    pub fn results_are_current(&self) -> bool {
+        self.dsp_output.is_some() && self.result_revision == Some(self.input_revision)
     }
 
     /// Initialize speaker configs from loaded measurements.
@@ -1501,6 +1589,79 @@ mod tests {
         assert_eq!(model.status_message, "Optimization completed");
         assert_eq!(model.average_pre_score(), 0.5);
         assert_eq!(model.average_post_score(), 0.9);
+    }
+
+    #[test]
+    fn results_become_stale_when_inputs_change_after_completion() {
+        let mut model = RoomEqScreenModel::default();
+        model.apply(RoomEqViewEvent::LoadMeasurements(vec![make_measurement(
+            "L",
+        )]));
+        model.apply(RoomEqViewEvent::StartOptimization);
+        model.apply(RoomEqViewEvent::SetOptimizationResults {
+            channel_results: Vec::new(),
+            dsp_output: Box::new(DspChainOutput {
+                version: "1.0.0".to_string(),
+                artifact_bundle_schema_version: None,
+                global_plugins: Vec::new(),
+                channels: HashMap::new(),
+                metadata: None,
+                deployed_source_curves: Default::default(),
+                correction_decisions: None,
+            }),
+            artifact_dir: PathBuf::from("/tmp/room_eq"),
+        });
+        assert!(model.results_are_current());
+
+        // Editing optimizer inputs makes the stored result inapplicable.
+        model.note_inputs_changed();
+        assert!(!model.results_are_current());
+        // The result itself is retained for display, just not applicable.
+        assert!(model.dsp_output.is_some());
+    }
+
+    #[test]
+    fn replacing_measurements_invalidates_previous_results() {
+        let mut model = RoomEqScreenModel::default();
+        model.apply(RoomEqViewEvent::LoadMeasurements(vec![make_measurement(
+            "L",
+        )]));
+        model.apply(RoomEqViewEvent::StartOptimization);
+        model.apply(RoomEqViewEvent::SetOptimizationResults {
+            channel_results: Vec::new(),
+            dsp_output: Box::new(DspChainOutput {
+                version: "1.0.0".to_string(),
+                artifact_bundle_schema_version: None,
+                global_plugins: Vec::new(),
+                channels: HashMap::new(),
+                metadata: None,
+                deployed_source_curves: Default::default(),
+                correction_decisions: None,
+            }),
+            artifact_dir: PathBuf::from("/tmp/room_eq"),
+        });
+        assert!(model.results_are_current());
+
+        model.apply(RoomEqViewEvent::LoadMeasurements(vec![make_measurement(
+            "R",
+        )]));
+        assert!(model.dsp_output.is_none());
+        assert!(!model.results_are_current());
+    }
+
+    #[test]
+    fn completion_from_an_obsolete_run_is_rejected() {
+        let mut model = RoomEqScreenModel::default();
+        let run = model.begin_run();
+        // Inputs change while the worker runs.
+        model.note_inputs_changed();
+        assert!(!model.complete_run(run));
+        assert_eq!(model.result_revision, None);
+
+        // A fresh run at the current revision completes normally.
+        let run = model.begin_run();
+        assert!(model.complete_run(run));
+        assert_eq!(model.result_revision, Some(model.input_revision));
     }
 
     #[test]

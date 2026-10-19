@@ -55,6 +55,79 @@ fn track_view_search_filters_individual_tracks_and_preserves_favorites() {
 }
 
 #[test]
+fn track_indices_cache_is_reused_and_never_serves_stale_rows() {
+    use sotf_audio_player::controllers::LibraryController;
+    let mut library = MusicLibrary::new();
+    for (album_title, track_titles) in [
+        ("Alpha", ["Alpha one", "Alpha two"]),
+        ("Beta", ["Beta one", "Beta two"]),
+    ] {
+        let tracks = track_titles
+            .into_iter()
+            .map(|title| {
+                let mut track = test_track(PathBuf::from(format!("{title}.flac")));
+                track.title = Some(title.into());
+                track.artist = Some("Performer".into());
+                track
+            })
+            .collect();
+        library.albums.push(Album {
+            title: album_title.into(),
+            tracks,
+            ..Default::default()
+        });
+    }
+    let mut controller = LibraryController::with_library(library);
+    controller.ensure_track_cache_valid();
+    assert_eq!(controller.selection_filtered_track_count(), 4);
+    assert_eq!(
+        controller.selection_filtered_track_indices().as_ref(),
+        &[(0, 0), (0, 1), (1, 0), (1, 1)]
+    );
+    // Warm-cache reads resolve the same rows as the materialized view.
+    let rows = controller.selection_filtered_tracks();
+    assert_eq!(rows.len(), 4);
+    assert_eq!(rows[2].0.title, "Beta");
+    assert_eq!(rows[2].1, 0);
+
+    // A search change invalidates the snapshot.
+    controller.set_search_query_in_current_view("Beta one".into());
+    controller.ensure_cache_valid();
+    assert_eq!(controller.selection_filtered_track_count(), 1);
+    // Indices address `cached_albums`, which the search has already
+    // narrowed to the Beta album.
+    assert_eq!(
+        controller.selection_filtered_track_indices().as_ref(),
+        &[(0, 0)]
+    );
+
+    // Direct selection-field assignment bypasses invalidate_cache; the
+    // fingerprint check must still keep stale rows from being served.
+    controller.set_search_query_in_current_view(String::new());
+    controller.ensure_track_cache_valid();
+    assert_eq!(controller.selection_filtered_track_count(), 4);
+    controller.selected_album_letter = Some('B');
+    assert_eq!(controller.selection_filtered_track_count(), 2);
+    assert_eq!(
+        controller
+            .selection_filtered_tracks()
+            .iter()
+            .map(|(album, _)| album.title.as_str())
+            .collect::<Vec<_>>(),
+        ["Beta", "Beta"]
+    );
+    controller.selected_album_letter = None;
+    assert_eq!(controller.selection_filtered_track_count(), 4);
+
+    // Replacing the loaded albums (scan/reload path) drops the snapshot.
+    controller.ensure_track_cache_valid();
+    controller.replace_loaded_albums(Vec::new());
+    controller.ensure_track_cache_valid();
+    assert_eq!(controller.selection_filtered_track_count(), 0);
+    assert!(controller.selection_filtered_track_indices().is_empty());
+}
+
+#[test]
 fn independent_result_order_preserves_browse_view_and_filters() {
     use sotf_audio_player::LibrarySortOrder;
     use sotf_audio_player::controllers::{LibraryController, LibraryResultOrder};

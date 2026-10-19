@@ -17,8 +17,70 @@ jobs:
     name: Deterministic tests
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: sotf
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: sotf
+      - name: Validate private companion checkout configuration
+        env:
+          WORKSPACE_READ_TOKEN: ${{ secrets.WORKSPACE_READ_TOKEN }}
+        run: |
+          if [[ -z "$WORKSPACE_READ_TOKEN" ]]; then
+            printf 'Configure the WORKSPACE_READ_TOKEN repository secret before running private sibling checks.\n' >&2
+            exit 1
+          fi
+      # Cargo path dependencies need the sibling workspace layout (sotf/
+      # beside its companion repos), mirroring .gitea/workflows/mocked-workflows.yml.
+      # Private peers require WORKSPACE_READ_TOKEN; pinned refs are the
+      # compatible baseline, default branches may lag the exercised APIs.
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/sotf-capture
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          ref: d3a7418aa1b51546dd7e1f1e1e944f32b9623ffa # feat/issue-184-mocked-capture
+          path: sotf-capture
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/sotf-daw
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          ref: 3ed3c7455d35fee0bd839b0afa9461af19a1b56f # feat/issue-184-mocked-playback
+          path: sotf-daw
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/autoeq
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          ref: 0f2d22a1ad6a91a62c57a72d13b90e2a9427ed6a # feat/issue-184-shared-report
+          path: autoeq
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/math-audio
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          path: math-audio
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/gpui-toolkit
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          path: gpui-toolkit
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/sofa-reader
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          path: sofa-reader
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/symphonia-add-ons
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          path: symphonia-add-ons
       - uses: dtolnay/rust-toolchain@stable
       - name: Install audio build dependencies
         run: |
@@ -41,8 +103,70 @@ jobs:
     name: Realtime performance smoke
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: sotf
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: sotf
+      - name: Validate private companion checkout configuration
+        env:
+          WORKSPACE_READ_TOKEN: ${{ secrets.WORKSPACE_READ_TOKEN }}
+        run: |
+          if [[ -z "$WORKSPACE_READ_TOKEN" ]]; then
+            printf 'Configure the WORKSPACE_READ_TOKEN repository secret before running private sibling checks.\n' >&2
+            exit 1
+          fi
+      # Cargo path dependencies need the sibling workspace layout (sotf/
+      # beside its companion repos), mirroring .gitea/workflows/mocked-workflows.yml.
+      # Private peers require WORKSPACE_READ_TOKEN; pinned refs are the
+      # compatible baseline, default branches may lag the exercised APIs.
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/sotf-capture
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          ref: d3a7418aa1b51546dd7e1f1e1e944f32b9623ffa # feat/issue-184-mocked-capture
+          path: sotf-capture
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/sotf-daw
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          ref: 3ed3c7455d35fee0bd839b0afa9461af19a1b56f # feat/issue-184-mocked-playback
+          path: sotf-daw
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/autoeq
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          ref: 0f2d22a1ad6a91a62c57a72d13b90e2a9427ed6a # feat/issue-184-shared-report
+          path: autoeq
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/math-audio
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          path: math-audio
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/gpui-toolkit
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          path: gpui-toolkit
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/sofa-reader
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          path: sofa-reader
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/symphonia-add-ons
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          path: symphonia-add-ons
       - uses: dtolnay/rust-toolchain@stable
       - name: Install audio build dependencies
         run: |
@@ -56,7 +180,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: perf-smoke-${{ github.sha }}
-          path: target/perf/daw-smoke.csv
+          path: sotf/target/perf/daw-smoke.csv
           if-no-files-found: error
 
   nightly:
@@ -64,8 +188,70 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: sotf
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: sotf
+      - name: Validate private companion checkout configuration
+        env:
+          WORKSPACE_READ_TOKEN: ${{ secrets.WORKSPACE_READ_TOKEN }}
+        run: |
+          if [[ -z "$WORKSPACE_READ_TOKEN" ]]; then
+            printf 'Configure the WORKSPACE_READ_TOKEN repository secret before running private sibling checks.\n' >&2
+            exit 1
+          fi
+      # Cargo path dependencies need the sibling workspace layout (sotf/
+      # beside its companion repos), mirroring .gitea/workflows/mocked-workflows.yml.
+      # Private peers require WORKSPACE_READ_TOKEN; pinned refs are the
+      # compatible baseline, default branches may lag the exercised APIs.
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/sotf-capture
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          ref: d3a7418aa1b51546dd7e1f1e1e944f32b9623ffa # feat/issue-184-mocked-capture
+          path: sotf-capture
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/sotf-daw
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          ref: 3ed3c7455d35fee0bd839b0afa9461af19a1b56f # feat/issue-184-mocked-playback
+          path: sotf-daw
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/autoeq
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          ref: 0f2d22a1ad6a91a62c57a72d13b90e2a9427ed6a # feat/issue-184-shared-report
+          path: autoeq
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/math-audio
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          path: math-audio
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/gpui-toolkit
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          path: gpui-toolkit
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/sofa-reader
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          path: sofa-reader
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/symphonia-add-ons
+          github-server-url: ${{ github.server_url }}
+          token: ${{ secrets.WORKSPACE_READ_TOKEN }}
+          path: symphonia-add-ons
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
@@ -90,5 +276,5 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: core-coverage-${{ github.sha }}
-          path: target/coverage/*.json
+          path: sotf/target/coverage/*.json
           if-no-files-found: error

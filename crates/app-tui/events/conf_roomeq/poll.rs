@@ -18,7 +18,7 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
         .clone();
 
     if let Ok(mut guard) = result_slot.lock()
-        && let Some(result) = guard.take()
+        && let Some((run_revision, result)) = guard.take()
     {
         match result {
             Ok(r) => {
@@ -86,12 +86,35 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
                 // chain" action (rack/graph) can run the same algorithm
                 // the GPUI app uses.
                 app.room_eq.model.dsp_output = Some(r.to_dsp_chain_output());
-                app.room_eq.model.optimization_status = OptimizationStatus::Completed;
-                app.room_eq.model.overall_progress = 1.0;
+                // Ownership check: if the inputs changed while the
+                // worker ran, this completion belongs to obsolete
+                // inputs and must not become applicable.
+                if app.room_eq.model.complete_run(run_revision) {
+                    app.room_eq.model.optimization_status = OptimizationStatus::Completed;
+                    app.room_eq.model.overall_progress = 1.0;
+                } else {
+                    app.room_eq.model.invalidate_results();
+                    app.room_eq.model.optimization_status = OptimizationStatus::Idle;
+                    app.room_eq.model.status_message =
+                        "Inputs changed during optimization — results discarded. Run the optimizer again."
+                            .to_string();
+                }
             }
             Err(e) => {
-                app.room_eq.model.optimization_status = OptimizationStatus::Failed;
-                app.room_eq.model.error_message = Some(e);
+                app.room_eq.model.run_revision = None;
+                if app
+                    .room_eq
+                    .model
+                    .cancel_requested
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    app.room_eq.model.optimization_status = OptimizationStatus::Cancelled;
+                    app.room_eq.model.status_message = "Optimization cancelled.".to_string();
+                    app.room_eq.model.error_message = None;
+                } else {
+                    app.room_eq.model.optimization_status = OptimizationStatus::Failed;
+                    app.room_eq.model.error_message = Some(e);
+                }
             }
         }
         return true;

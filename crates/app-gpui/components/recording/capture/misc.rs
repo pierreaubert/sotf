@@ -1479,12 +1479,9 @@ impl PlayerView {
                 .prepare_capture_inputs();
         });
         use sotf_audio_player::recording_helpers::{
-            capture_signal_params, measurement_amplitude, resolve_mic_calibration,
-            sanitize_recording_name, signal_type_for,
+            resolve_mic_calibration, sanitize_recording_name, signal_type_for,
         };
-        use sotf_audio_player::signal_recorder::{
-            SignalType, prepare_measurement_signal, write_temp_wav,
-        };
+        use sotf_audio_player::signal_recorder::SignalType;
 
         // --- Gather parameters from state ---
         #[derive(Clone)]
@@ -1764,128 +1761,6 @@ impl PlayerView {
             mic_vec_indices,
         );
 
-        // Generate signal. dB → linear amplitude via the shared helper
-        // (clamped to ≤ 0 dBFS, R3). The sweep path routes through the
-        // shared helper (B1): with `bass_octave_duration_s` set, the
-        // stimulus becomes the self-timed octave-scaled sweep with silence
-        // windows — the same values persisted at save time.
-        let amplitude = measurement_amplitude(params.level_db as f64);
-        let sig_params = capture_signal_params(
-            params.signal_type,
-            params.sweep_start_freq,
-            params.sweep_end_freq,
-            amplitude,
-            Some(params.bass_octave_duration_s),
-            Some(params.pre_silence_s),
-            params.post_silence_s,
-        );
-
-        // Generate the stimulus through the shared entry point (R4):
-        // validates the parameters (Nyquist, start < end, amplitude) and
-        // applies the standard 20 ms fades + 250 ms pre/post padding
-        // (lag-neutral for the whole-signal cross-correlation analysis).
-        // Validation failures (e.g. sweep end above Nyquist) surface via
-        // the status message and Error channel state below.
-        let signal = match prepare_measurement_signal(
-            params.signal_type,
-            &sig_params,
-            params.duration_secs,
-            params.sample_rate,
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                log::error!("Failed to generate signal: {}", e);
-                self.state.update(cx, |state, _| {
-                    for &vi in &mic_vec_indices {
-                        if let Some(rec) = state
-                            .app
-                            .measurement_state
-                            .recording_state
-                            .channel_recordings
-                            .get_mut(vi)
-                        {
-                            rec.state = ChannelRecordingState::Error;
-                        }
-                    }
-                    let rec_state = &mut state.app.measurement_state.recording_state;
-                    rec_state.current_recording_channel = None;
-                    rec_state.status_message = format!("Error: {}", e);
-                    rec_state.status_severity =
-                        crate::app::types::recording::RecordingStatusSeverity::Error;
-                    // Hard failure before spawn: end the batch, mirroring
-                    // the async error arms (task-9 review C8).
-                    rec_state.auto_record_remaining = false;
-                });
-                cx.notify();
-                return;
-            }
-        };
-
-        let stimulus_config = sotf_audio_player::recording_helpers::effective_acquisition_config(
-            params.signal_type,
-            &sig_params,
-            params.duration_secs,
-            params.sample_rate,
-        )
-        .map_err(|error| {
-            log::warn!("Could not snapshot effective recording stimulus: {error}");
-            error
-        })
-        .ok();
-
-        let temp_wav = match write_temp_wav(&signal, params.sample_rate, 1) {
-            Ok(f) => f,
-            Err(e) => {
-                log::error!("Failed to write temp WAV: {}", e);
-                self.state.update(cx, |state, _| {
-                    for &vi in &mic_vec_indices {
-                        if let Some(rec) = state
-                            .app
-                            .measurement_state
-                            .recording_state
-                            .channel_recordings
-                            .get_mut(vi)
-                        {
-                            rec.state = ChannelRecordingState::Error;
-                        }
-                    }
-                    let rec_state = &mut state.app.measurement_state.recording_state;
-                    rec_state.current_recording_channel = None;
-                    rec_state.status_message = format!("Error: {}", e);
-                    rec_state.status_severity =
-                        crate::app::types::recording::RecordingStatusSeverity::Error;
-                    // Hard failure before spawn: end the batch, mirroring
-                    // the async error arms (task-9 review C8).
-                    rec_state.auto_record_remaining = false;
-                });
-                cx.notify();
-                return;
-            }
-        };
-
-        if params.ctc_strategy == crate::app::types::CtcMatrixExportStrategy::RawSweep {
-            let reference_path = recording_dir.join("ctc_reference_sweep.wav");
-            if let Err(e) = sotf_audio_player::signal_recorder::write_wav_file(
-                &reference_path,
-                &signal,
-                params.sample_rate,
-                1,
-            ) {
-                log::warn!("Failed to persist CTC reference sweep: {}", e);
-            } else {
-                // B1: the octave-scaled sweep is self-timed, so persist the
-                // *actual* stimulus duration alongside the reference path —
-                // `signal_duration_secs` no longer describes this WAV.
-                let actual_duration_s = signal.len() as f32 / params.sample_rate as f32;
-                self.state.update(cx, |state, _| {
-                    let rec_state = &mut state.app.measurement_state.recording_state;
-                    rec_state.ctc_reference_sweep_path =
-                        Some(reference_path.to_string_lossy().to_string());
-                    rec_state.ctc_reference_sweep_duration_s = Some(actual_duration_s);
-                });
-            }
-        }
-
         // Build per-mic paths
         let wav_paths: Vec<std::path::PathBuf> = params
             .mics
@@ -1903,8 +1778,13 @@ impl PlayerView {
 
         let weak_state = self.state.downgrade();
         let weak_view = cx.weak_entity();
-        let reference_signal = signal.clone();
-        let temp_wav_path = temp_wav.path().to_path_buf();
+        let duration_secs = params.duration_secs;
+        let level_db = params.level_db;
+        let bass_octave_duration_s = params.bass_octave_duration_s;
+        let pre_silence_s = params.pre_silence_s;
+        let post_silence_s = params.post_silence_s;
+        let ctc_strategy = params.ctc_strategy;
+        let capture_recording_dir = recording_dir.clone();
         let mics = params.mics.clone();
         let speaker_name = params.speaker_name.clone();
         let signal_type = params.signal_type;
@@ -1915,7 +1795,6 @@ impl PlayerView {
         let input_device = params.input_device.clone();
         let sample_rate = params.sample_rate;
         let num_sweeps = params.num_sweeps;
-        let captured_stimulus_config = stimulus_config.clone();
         let capture_level_meter = level_meter.clone();
         #[cfg(feature = "dev-api")]
         let qa_capture = params.qa_capture;
@@ -1936,6 +1815,84 @@ impl PlayerView {
             let results = capture_executor
                 .spawn(async move {
                     use sotf_audio_player::signal_recorder::SignalType;
+
+                    // Preparation runs on this executor thread, not the
+                    // UI thread: stimulus synthesis, the effective
+                    // acquisition snapshot, the temp WAV write, and the
+                    // CTC reference sweep persistence. Failures return
+                    // through the same error path as capture failures.
+                    use sotf_audio_player::recording_helpers::{
+                        capture_signal_params, effective_acquisition_config,
+                        measurement_amplitude,
+                    };
+                    use sotf_audio_player::signal_recorder::{
+                        prepare_measurement_signal, write_temp_wav,
+                    };
+                    let amplitude = measurement_amplitude(level_db as f64);
+                    let sig_params = capture_signal_params(
+                        signal_type,
+                        capture_sweep_start_freq,
+                        capture_sweep_end_freq,
+                        amplitude,
+                        Some(bass_octave_duration_s),
+                        Some(pre_silence_s),
+                        post_silence_s,
+                    );
+                    let reference_signal = match prepare_measurement_signal(
+                        signal_type,
+                        &sig_params,
+                        duration_secs,
+                        sample_rate,
+                    ) {
+                        Ok(signal) => signal,
+                        Err(error) => return Err(error),
+                    };
+                    let captured_stimulus_config = effective_acquisition_config(
+                        signal_type,
+                        &sig_params,
+                        duration_secs,
+                        sample_rate,
+                    )
+                    .map_err(|error| {
+                        log::warn!(
+                            "Could not snapshot effective recording stimulus: {error}"
+                        );
+                        error
+                    })
+                    .ok();
+                    let temp_wav = match write_temp_wav(&reference_signal, sample_rate, 1) {
+                        Ok(file) => file,
+                        Err(error) => return Err(error),
+                    };
+                    let temp_wav_path = temp_wav.path().to_path_buf();
+                    // Kept alive until the capture calls below finish.
+                    let _temp_wav_guard = &temp_wav;
+                    let _ = _temp_wav_guard;
+                    let ctc_reference = if ctc_strategy
+                        == crate::app::types::CtcMatrixExportStrategy::RawSweep
+                    {
+                        let reference_path =
+                            capture_recording_dir.join("ctc_reference_sweep.wav");
+                        match sotf_audio_player::signal_recorder::write_wav_file(
+                            &reference_path,
+                            &reference_signal,
+                            sample_rate,
+                            1,
+                        ) {
+                            Ok(()) => Some((
+                                reference_path.to_string_lossy().to_string(),
+                                reference_signal.len() as f32 / sample_rate as f32,
+                            )),
+                            Err(error) => {
+                                log::warn!(
+                                    "Failed to persist CTC reference sweep: {error}"
+                                );
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    };
 
                     let sweep_range = if signal_type == SignalType::Sweep {
                         Some((capture_sweep_start_freq, capture_sweep_end_freq))
@@ -2141,7 +2098,12 @@ impl PlayerView {
                         let _ = num_sweeps;
                         Err("Recording not available on iOS".to_string())
                     };
-                    results
+                    match results {
+                        Ok(captures) => {
+                            Ok((captures, captured_stimulus_config, ctc_reference))
+                        }
+                        Err(error) => Err(error),
+                    }
                 })
                 .await;
 
@@ -2184,7 +2146,13 @@ impl PlayerView {
                         }
                     }
                     let should_continue = match results {
-                        Ok(analysis_results) => {
+                        Ok((analysis_results, captured_stimulus_config, ctc_reference)) => {
+                            if let Some((path, duration_s)) = ctc_reference {
+                                let rec_state =
+                                    &mut state.app.measurement_state.recording_state;
+                                rec_state.ctc_reference_sweep_path = Some(path);
+                                rec_state.ctc_reference_sweep_duration_s = Some(duration_s);
+                            }
                             let mut any_low_signal = false;
                             let mut any_review = false;
                             let mut first_verdict: Option<String> = None;
@@ -2227,7 +2195,11 @@ impl PlayerView {
                                 }
 
                                 let rec_result = RecordingResult {
-                                    sample_rate_hz: Some(sample_rate),
+                                    // Actual negotiated capture rate from
+                                    // the engine, not the requested wizard
+                                    // rate (they differ when the input
+                                    // device negotiates another rate).
+                                    sample_rate_hz: Some(capture.analysis_sample_rate),
                                     channel: mic.vec_idx.unwrap_or(usize::MAX),
                                     wav_path: Some(wav_paths[mic_i].to_string_lossy().to_string()),
                                     csv_path: Some(csv_paths[mic_i].to_string_lossy().to_string()),
@@ -2500,7 +2472,6 @@ impl PlayerView {
                 }
             }
 
-            drop(temp_wav);
         })
         .detach();
 

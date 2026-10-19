@@ -726,6 +726,12 @@ impl App {
         let Some(dsp_output) = self.room_eq.model.dsp_output.clone() else {
             return Err("No optimization results to apply. Run the optimizer first.".to_string());
         };
+        if !self.room_eq.model.results_are_current() {
+            return Err(
+                "Optimization results are stale — inputs changed since the run. Re-run the optimizer before applying."
+                    .to_string(),
+            );
+        }
 
         let channel_names: Vec<String> = self
             .room_eq

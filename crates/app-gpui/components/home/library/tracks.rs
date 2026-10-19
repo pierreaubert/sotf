@@ -13,7 +13,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let labels =
             crate::app::i18n::AlbumDetailTranslations::for_language(state.app.ui_state.language);
-        let count = state.app.library_state.selection_filtered_tracks().len();
+        let count = state.app.library_state.selection_filtered_track_count();
         let d = Ds::from_cx(cx);
         if count == 0 {
             return div()
@@ -31,7 +31,10 @@ impl PlayerView {
                     entity
                         .update(cx, |view, cx| {
                             let state = view.state.read(cx);
-                            let rows = state.app.library_state.selection_filtered_tracks();
+                            // Resolve only the visible rows from the cached
+                            // track indices; never re-walk the library here.
+                            let rows = state.app.library_state.selection_filtered_track_indices();
+                            let albums = state.app.library_state.filtered_albums();
                             let theme = state.app.ui_state.theme.clone();
                             let labels = crate::app::i18n::AlbumDetailTranslations::for_language(
                                 state.app.ui_state.language,
@@ -39,7 +42,8 @@ impl PlayerView {
                             let d = Ds::from_cx(cx);
                             range
                                 .filter_map(|row_index| {
-                                    let (album, track_index) = *rows.get(row_index)?;
+                                    let (album_index, track_index) = *rows.get(row_index)?;
+                                    let album = albums.get(album_index)?;
                                     let track = &album.tracks[track_index];
                                     let title = track.title.clone().unwrap_or_else(|| {
                                         track

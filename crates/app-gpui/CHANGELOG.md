@@ -41,6 +41,28 @@
   from the measured or reconstructed impulse response when no stored
   spectrogram exists.
 
+## Audit fixes (2026-10-18)
+
+- RoomEQ freshness checks hash a compact digest of the optimizer
+  inputs (`RoomEqState::input_digest`) instead of serializing every
+  response curve to JSON on each render; the Review step reads frozen
+  typed source metadata (`result_sources`) captured when the run
+  starts. Optimizer progress moved to a bounded channel with a run
+  generation: progress and completions from a cancelled or superseded
+  run are dropped.
+- Evaluating renders from borrowed recording results
+  (`filtered_result_refs`) and memoizes the derived group-delay, RT60,
+  and clarity series per input fingerprint; capture preparation
+  (stimulus synthesis, temp WAV, CTC reference persistence) runs on a
+  background executor instead of blocking the UI thread.
+- Library track list: the toolbar count and the virtualized rows now
+  share one cached materialization of filtered track indices
+  (`LibraryController::ensure_track_cache_valid`), keyed by a
+  filter/search/selection fingerprint so stale rows are never served.
+- All GPUI test targets are declared explicitly in `Cargo.toml`
+  (`autotests = false`) so no integration suite can silently drop
+  out of `cargo test` discovery.
+
 # 0.7.11 (unreleased)
 
 ## Developer tooling

@@ -995,7 +995,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "home.favorite_expanded" => json!(app.ui_state.expanded_home_sections.contains("favorite")),
         "library.filtered_album_count" => json!(app.filtered_albums().len()),
         "library.filtered_track_count" => {
-            json!(app.library_state.selection_filtered_tracks().len())
+            json!(app.library_state.selection_filtered_track_count())
         }
         "library.search_query" => json!(app.library_state.search_query),
         "library.list_view" => json!(app.library_state.album_list_view),

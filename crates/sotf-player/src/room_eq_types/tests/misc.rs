@@ -122,6 +122,70 @@ fn builds_ctc_measurements_from_two_speakers_two_ear_recordings() {
 }
 
 #[test]
+fn ctc_ir_wav_uses_the_take_capture_rate_not_the_caller_rate() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut left = matrix_recording(0, "L", 0, vec![1.0, 0.25]);
+    let mut right = matrix_recording(0, "L", 1, vec![0.5, 0.125]);
+    left.result.as_mut().unwrap().sample_rate_hz = Some(44_100);
+    right.result.as_mut().unwrap().sample_rate_hz = Some(44_100);
+    // CTC export needs at least two speakers; R rides along at 48 kHz.
+    let recordings = vec![
+        left,
+        right,
+        matrix_recording(1, "R", 0, vec![0.75]),
+        matrix_recording(1, "R", 1, vec![0.25]),
+    ];
+    let speakers = vec!["L".to_string(), "R".to_string()];
+    let mics = vec!["left_ear".to_string(), "right_ear".to_string()];
+
+    // The caller still passes the wizard rate; the written IR must be
+    // stamped with the rate the takes were actually captured at.
+    let config = RoomEqMeasurementsFile::build_ctc_measurements_from_recordings(
+        &recordings,
+        &speakers,
+        &mics,
+        48_000,
+        dir.path(),
+    )
+    .unwrap()
+    .unwrap();
+
+    let ir_path = dir.path().join(config.files[0].ir.as_ref().unwrap());
+    let wav = std::fs::read(ir_path).unwrap();
+    assert_eq!(
+        u32::from_le_bytes([wav[24], wav[25], wav[26], wav[27]]),
+        44_100
+    );
+}
+
+#[test]
+fn ctc_rejects_ears_captured_at_different_rates() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut left = matrix_recording(0, "L", 0, vec![1.0]);
+    let mut right = matrix_recording(0, "L", 1, vec![0.5]);
+    left.result.as_mut().unwrap().sample_rate_hz = Some(48_000);
+    right.result.as_mut().unwrap().sample_rate_hz = Some(44_100);
+    let recordings = vec![
+        left,
+        right,
+        matrix_recording(1, "R", 0, vec![0.75]),
+        matrix_recording(1, "R", 1, vec![0.25]),
+    ];
+    let speakers = vec!["L".to_string(), "R".to_string()];
+    let mics = vec!["left_ear".to_string(), "right_ear".to_string()];
+
+    let error = RoomEqMeasurementsFile::build_ctc_measurements_from_recordings(
+        &recordings,
+        &speakers,
+        &mics,
+        48_000,
+        dir.path(),
+    )
+    .unwrap_err();
+    assert!(error.contains("mixes capture sample rates"), "{error}");
+}
+
+#[test]
 fn skips_ctc_measurements_when_second_ear_is_missing() {
     let dir = tempfile::tempdir().unwrap();
     let recordings = vec![

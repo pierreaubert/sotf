@@ -238,7 +238,7 @@ impl PlayerView {
             )
         } else if app.library_state.sort_order == LibrarySortOrder::Tracks {
             (
-                app.library_state.selection_filtered_tracks().len(),
+                app.library_state.selection_filtered_track_count(),
                 t.library_tracks,
             )
         } else {

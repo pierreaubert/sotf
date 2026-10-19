@@ -12,7 +12,7 @@
 mod bass_anchor;
 mod capture;
 mod config;
-mod evaluating;
+pub(crate) mod evaluating;
 #[cfg(not(target_os = "ios"))]
 mod multi_capture;
 mod probe;

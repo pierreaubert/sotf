@@ -56,6 +56,10 @@ impl PlayerView {
         // Ensure library stats are computed (cached - only recomputes when invalidated)
         self.state.update(cx, |state, _| {
             let _ = state.app.get_library_stats();
+            // Warm the cached track indices once per fingerprint so the
+            // toolbar count and the virtualized track rows below reuse
+            // one materialization instead of re-walking the library.
+            state.app.library_state.ensure_track_cache_valid();
         });
 
         // Now read all values including cached stats

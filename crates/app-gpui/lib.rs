@@ -26,6 +26,15 @@ mod recording_display;
 
 #[cfg(test)]
 mod test_harness {
+    // The lib unit-test harness is intentionally minimal: `app`, `ui`,
+    // and `components` are gated out below because compiling the whole
+    // GPUI surface into a `--test` build of this crate currently kills
+    // rustc (SIGBUS in proc-macro expansion) on our toolchain. Inline
+    // `#[cfg(test)]` modules inside those trees therefore do not run;
+    // coverage for them must live in the explicit integration suites
+    // under `tests/` (see `autotests = false` in Cargo.toml). Removing
+    // this gate requires splitting the crate or a toolchain fix — do
+    // not "fix" it by deleting tests.
     #[test]
     fn gpui_app_lib_test_harness_is_intentionally_minimal() {}
 }
