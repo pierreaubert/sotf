@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Result, anyhow};
 use gpui::WindowId;
 use gpui::profiler::{
-    FrameTiming, FrameTimingCollector, frame_trace_enabled, set_frame_trace_enabled,
+    FrameEvent, FrameTiming, FrameTimingCollector, set_trace_enabled, trace_enabled,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -78,8 +78,8 @@ pub(super) fn start(window_id: WindowId, update_frame_count: u64) -> Result<Arc<
 
     verify_allocator_accounting()?;
     let allocation_baseline = allocator_snapshot()?;
-    let frame_trace_was_enabled = frame_trace_enabled();
-    set_frame_trace_enabled(true);
+    let frame_trace_was_enabled = trace_enabled();
+    let _ = set_trace_enabled(true);
     let playback_clock_running = Arc::new(AtomicBool::new(true));
     state.last = None;
     state.active = Some(ActiveCapture {
@@ -110,14 +110,22 @@ pub(super) fn stop(update_frame_count: u64) -> Result<()> {
     // collector's result allocation is outside the measured interval.
     let allocation_after = allocator_snapshot();
     let elapsed = active.started_at.elapsed();
-    let all_frames = active.collector.collect_unseen();
+    let all_frames: Vec<_> = active
+        .collector
+        .collect_unseen()
+        .into_iter()
+        .filter_map(|event| match event {
+            FrameEvent::Draw(timing) => Some(timing),
+            FrameEvent::Present(_) => None,
+        })
+        .collect();
     let frame_count_all_windows = all_frames.len() as u64;
     let frames: Vec<_> = all_frames
         .into_iter()
         .filter(|frame| frame.window_id == active.window_id)
         .collect();
     if !active.frame_trace_was_enabled {
-        set_frame_trace_enabled(false);
+        let _ = set_trace_enabled(false);
     }
 
     let allocation_after = allocation_after?;

@@ -29,6 +29,7 @@ qa = []
 # Native host for the shared AutoEQ WASM report on macOS and Windows.
 report-webview = ["dep:wry"]
 dev-api = [
+    "gpui/profiler",
     "dep:hound",
     "sotf-player/dev-api",
     "visual-qa",
