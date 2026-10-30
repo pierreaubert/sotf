@@ -170,6 +170,8 @@ fn main() {
                     show: true,
                     kind: WindowKind::Normal,
                     is_movable: true,
+                    app_owns_titlebar_drag: false,
+                    inactive_frame_interval: Some(std::time::Duration::from_micros(33_333)),
                     display_id: None,
                     is_minimizable: true,
                     is_resizable: true,

@@ -27,33 +27,6 @@ pub(crate) fn capture_level_review_notes(levels: &[(String, usize, f32)]) -> Vec
     ]
 }
 
-#[cfg(test)]
-mod capture_level_review_tests {
-    use super::capture_level_review_notes;
-
-    #[test]
-    fn mixed_levels_explain_reference_normalization_and_list_each_take() {
-        let notes =
-            capture_level_review_notes(&[("L".to_string(), 1, -6.0), ("R".to_string(), 1, -9.0)]);
-
-        assert_eq!(notes.len(), 2);
-        assert!(notes[0].contains("-9.0 to -6.0 dBFS"));
-        assert!(notes[0].contains("reference-normalized"));
-        assert!(notes[0].contains("THD/SNR depend on level"));
-        assert!(notes[1].contains("L take 1: -6.0 dBFS"));
-        assert!(notes[1].contains("R take 1: -9.0 dBFS"));
-    }
-
-    #[test]
-    fn uniform_or_missing_capture_levels_need_no_variation_note() {
-        assert!(capture_level_review_notes(&[]).is_empty());
-        assert!(
-            capture_level_review_notes(&[("L".to_string(), 1, -6.0), ("R".to_string(), 1, -6.0),])
-                .is_empty()
-        );
-    }
-}
-
 pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
     let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     use ratatui::widgets::{Gauge, Tabs};
@@ -1278,6 +1251,33 @@ fn draw_delay_detection_step(f: &mut Frame, content: Rect, app: &App) {
             Paragraph::new(i18n.ui(" Tab=next step"))
                 .style(Style::default().fg(app.theme.fg_secondary)),
             inner[2],
+        );
+    }
+}
+
+#[cfg(test)]
+mod capture_level_review_tests {
+    use super::capture_level_review_notes;
+
+    #[test]
+    fn mixed_levels_explain_reference_normalization_and_list_each_take() {
+        let notes =
+            capture_level_review_notes(&[("L".to_string(), 1, -6.0), ("R".to_string(), 1, -9.0)]);
+
+        assert_eq!(notes.len(), 2);
+        assert!(notes[0].contains("-9.0 to -6.0 dBFS"));
+        assert!(notes[0].contains("reference-normalized"));
+        assert!(notes[0].contains("THD/SNR depend on level"));
+        assert!(notes[1].contains("L take 1: -6.0 dBFS"));
+        assert!(notes[1].contains("R take 1: -9.0 dBFS"));
+    }
+
+    #[test]
+    fn uniform_or_missing_capture_levels_need_no_variation_note() {
+        assert!(capture_level_review_notes(&[]).is_empty());
+        assert!(
+            capture_level_review_notes(&[("L".to_string(), 1, -6.0), ("R".to_string(), 1, -6.0),])
+                .is_empty()
         );
     }
 }

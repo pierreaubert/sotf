@@ -53,7 +53,7 @@ fn slider_keyboard_uses_latest_gesture_before_redraw(cx: &mut TestAppContext) {
     value.set(13.0);
     cx.update(|window, cx| {
         window.refresh();
-        window.draw(cx).clear();
+        window.draw(cx).clear(cx);
     });
     cx.simulate_keystrokes("right");
     assert_eq!(value.get(), 17.0);

@@ -401,7 +401,12 @@ impl FuzzTarget for SystemwideTarget {
 
     fn capture_hang(&mut self, directory: &Path) -> Result<Vec<PathBuf>, TargetError> {
         fs::create_dir_all(directory)?;
+        // Only the macOS branch below pushes artifacts, so only it needs a
+        // mutable binding; a single `let mut` would warn as unused on Linux.
+        #[cfg(target_os = "macos")]
         let mut artifacts = Vec::new();
+        #[cfg(not(target_os = "macos"))]
+        let artifacts = Vec::new();
         #[cfg(target_os = "macos")]
         if let Some(pid) = self.pid() {
             let path = directory.join("sample.txt");

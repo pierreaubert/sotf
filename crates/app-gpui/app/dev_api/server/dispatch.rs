@@ -769,7 +769,7 @@ pub(super) fn dispatch_screenshot(
         let result = capture_window
             .update(cx, |_view, window, cx| {
                 window.refresh();
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
                 let mut image = window.render_to_image()?;
                 let refreshed_elements =
                     registry::snapshot_for(window.window_handle().window_id().as_u64());
@@ -804,7 +804,7 @@ fn clear_screenshot_view(window: AnyWindowHandle, cx: &mut App) -> Result<()> {
     window
         .update(cx, |_, window, cx| {
             let empty_root = window.replace_root(cx, |_, _| gpui::Empty);
-            window.draw(cx).clear();
+            window.draw(cx).clear(cx);
             registry::clear(window.window_handle().window_id().as_u64());
             drop(empty_root);
         })

@@ -4,7 +4,12 @@
 
 use super::PlayerView;
 use gpui::{prelude::*, *};
-use sotf_report_host::{GeneratedReport, ReportServer};
+use sotf_report_host::GeneratedReport;
+#[cfg(all(
+    feature = "report-webview",
+    any(target_os = "macos", target_os = "windows")
+))]
+use sotf_report_host::ReportServer;
 
 /// Counts initialized shared report views for read-only workflow verification.
 #[cfg(feature = "dev-api")]

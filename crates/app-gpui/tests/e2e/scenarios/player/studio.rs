@@ -81,7 +81,7 @@ impl TestScenario for StudioPickerTooltipScenario {
         gpui::AnyWindowHandle::from(driver.view).update(driver.cx, |_, window, cx| {
             // The test platform does not schedule a native display refresh.
             window.refresh();
-            window.draw(cx).clear();
+            window.draw(cx).clear(cx);
         })?;
         let bounds = driver
             .cx
@@ -112,7 +112,7 @@ impl TestScenario for StudioPickerTooltipScenario {
         driver.cx.run_until_parked();
         gpui::AnyWindowHandle::from(driver.view).update(driver.cx, |_, window, cx| {
             window.refresh();
-            window.draw(cx).clear();
+            window.draw(cx).clear(cx);
         })?;
         assert!(
             driver
@@ -127,7 +127,7 @@ impl TestScenario for StudioPickerTooltipScenario {
             driver.update_app(|_, cx| cx.notify());
             gpui::AnyWindowHandle::from(driver.view).update(driver.cx, |_, window, cx| {
                 window.refresh();
-                window.draw(cx).clear();
+                window.draw(cx).clear(cx);
             })?;
             assert!(
                 driver

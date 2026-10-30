@@ -188,7 +188,7 @@ fn bounds(cx: &mut VisualTestContext, window_id: u64, selector: &str) -> Bounds<
     cx.run_until_parked();
     cx.update(|window, cx| {
         window.refresh();
-        window.draw(cx).clear();
+        window.draw(cx).clear(cx);
     });
     registry::lookup(window_id, selector)
         .unwrap_or_else(|| panic!("missing painted control {selector}"))
@@ -199,7 +199,7 @@ fn click(cx: &mut VisualTestContext, position: Point<Pixels>) {
     cx.run_until_parked();
     cx.update(|window, cx| {
         window.refresh();
-        window.draw(cx).clear();
+        window.draw(cx).clear(cx);
     });
     cx.simulate_mouse_down(position, MouseButton::Left, Modifiers::default());
     cx.simulate_mouse_up(position, MouseButton::Left, Modifiers::default());
@@ -416,7 +416,7 @@ fn mounted_external_widgets_fit_narrow_width_and_dispatch_without_optimistic_per
     cx.simulate_mouse_move(start, None, Modifiers::default());
     cx.update(|window, cx| {
         window.refresh();
-        window.draw(cx).clear();
+        window.draw(cx).clear(cx);
     });
     cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
     let end = point(

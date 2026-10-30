@@ -5,7 +5,7 @@
 //! marshalling commands in via an `mpsc` channel and events out via the
 //! caller-supplied `EventHandler`.
 
-use std::sync::Arc;
+use std::rc::Rc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -155,11 +155,14 @@ fn run_mpris_thread(
             }
         };
 
-        let player = Arc::new(player);
+        // `Player` is neither `Send` nor `Sync`, so it cannot live in an
+        // `Arc`; everything here runs on the same thread inside a `LocalSet`
+        // driven by `spawn_local`, hence a single-threaded `Rc`.
+        let player = Rc::new(player);
         // Player::run returns a future that drives the D-Bus server. Spawn it
         // so command processing can happen in parallel.
         let server_task = {
-            let player = player.clone();
+            let player = Rc::clone(&player);
             tokio::task::spawn_local(async move { player.run().await })
         };
 
@@ -321,10 +324,11 @@ async fn apply_playback(player: &Player, pb: MediaPlayback) {
 }
 
 fn duration_to_time(duration: Duration) -> Time {
-    // Guard against overflow: `Duration::as_micros` returns u128. Clamp
-    // to `i64::MAX` (≈292 000 years) so we never wrap into a negative
-    // MPRIS `Time`.
-    let micros = duration.as_micros().min(i64::MAX as u128) as i64;
+    // Guard against overflow: `Duration::as_micros` returns u128.
+    // Saturate at `i64::MAX` (≈292 000 years) so we never wrap into a
+    // negative MPRIS `Time`. `try_from` fails exactly when the value does
+    // not fit, which is the clamp condition, so no `as` cast is needed.
+    let micros = i64::try_from(duration.as_micros()).unwrap_or(i64::MAX);
     Time::from_micros(micros)
 }
 
