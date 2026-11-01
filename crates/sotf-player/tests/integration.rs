@@ -369,3 +369,108 @@ fn metadata_patch_serde_roundtrip() {
     let decoded: MetadataPatch = serde_json::from_str(&json).unwrap();
     assert_eq!(decoded, patch);
 }
+
+#[test]
+fn metadata_tag_writer_mp3_roundtrip_preserves_unedited_fields() {
+    metadata_tag_writer_roundtrip(
+        "../../../sotf-daw/crates/sotf-engine/tests/data/mp3/tone-1khz-stereo-44100.mp3",
+    );
+}
+
+#[test]
+fn metadata_tag_writer_flac_roundtrip_preserves_unedited_fields() {
+    metadata_tag_writer_roundtrip("../../data_tests/audio/classical.flac");
+}
+
+#[test]
+fn metadata_tag_writer_mp4_roundtrip_preserves_unedited_fields() {
+    metadata_tag_writer_roundtrip("../../data_tests/audio/classical.m4a");
+}
+
+fn metadata_tag_writer_roundtrip(source: &str) {
+    use lofty::config::WriteOptions;
+    use lofty::file::{AudioFile, TaggedFileExt};
+    use lofty::prelude::{Accessor, TagExt};
+    use lofty::probe::Probe;
+    use lofty::tag::{Tag, TagType};
+    use sotf_audio_player::metadata::TagWriter;
+
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(source);
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join(source.file_name().unwrap());
+    std::fs::copy(&source, &path).unwrap();
+    let before = Probe::open(&path).unwrap().read().unwrap();
+    let duration = before.properties().duration();
+    let mut original = Tag::new(before.primary_tag_type());
+    original.set_comment("Preserve this comment".to_string());
+    original.set_artist("Unchanged artist".to_string());
+    original
+        .save_to_path(&path, WriteOptions::default())
+        .unwrap();
+
+    TagWriter::write_patch(
+        &path,
+        &MetadataPatch {
+            title: Some("Release test – 音楽".to_string()),
+            ensemble: Some("Release ensemble".to_string()),
+            edition: Some("First edition".to_string()),
+            album_title: Some("Release album".to_string()),
+            track_number: Some(7),
+            year: Some(2026),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    // A later edit without custom fields must preserve their native storage.
+    TagWriter::write_patch(
+        &path,
+        &MetadataPatch {
+            album_title: Some("Updated release album".to_string()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let written = Probe::open(&path).unwrap().read().unwrap();
+    let tag = written.primary_tag().unwrap();
+    assert_eq!(tag.title().as_deref(), Some("Release test – 音楽"));
+    assert_eq!(tag.album().as_deref(), Some("Updated release album"));
+    assert_eq!(tag.artist().as_deref(), Some("Unchanged artist"));
+    assert_eq!(tag.comment().as_deref(), Some("Preserve this comment"));
+    assert_eq!(tag.track(), Some(7));
+    assert_eq!(tag.date().map(|date| date.year), Some(2026));
+    match tag.tag_type() {
+        TagType::Id3v2 => {
+            let native = lofty::id3::v2::Id3v2Tag::from(tag.clone());
+            assert_eq!(native.get_user_text("ENSEMBLE"), Some("Release ensemble"));
+            assert_eq!(native.get_user_text("VERSION"), Some("First edition"));
+        }
+        TagType::VorbisComments => {
+            let native = lofty::ogg::tag::VorbisComments::from(tag.clone());
+            assert_eq!(native.get("ENSEMBLE"), Some("Release ensemble"));
+            assert_eq!(native.get("VERSION"), Some("First edition"));
+        }
+        TagType::Mp4Ilst => {
+            use lofty::mp4::{AtomData, AtomIdent, Ilst};
+            let native = Ilst::from(tag.clone());
+            for (name, expected) in [
+                ("ENSEMBLE", "Release ensemble"),
+                ("VERSION", "First edition"),
+            ] {
+                let atom = native
+                    .get(&AtomIdent::Freeform {
+                        mean: "com.apple.iTunes".into(),
+                        name: name.into(),
+                    })
+                    .unwrap();
+                assert!(
+                    atom.data()
+                        .any(|data| matches!(data, AtomData::UTF8(value) if value == expected))
+                );
+            }
+        }
+        kind => panic!("unexpected fixture tag type: {kind:?}"),
+    }
+    assert_eq!(written.properties().duration(), duration);
+}

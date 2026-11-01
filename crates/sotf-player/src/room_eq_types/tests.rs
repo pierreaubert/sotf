@@ -15,8 +15,8 @@ use super::room_eq_optimizer_config::RoomEqOptimizerConfig;
 use super::target_response_ui_config::TargetResponseUiConfig;
 use super::types::read_first_wav_channel_f32;
 use crate::recording_types::{ChannelRecording, ChannelRecordingState, RecordingResult};
-pub use autoeq::roomeq::SimplePresetConfig;
 use math_audio_iir_fir::BiquadFilterType;
+pub use roomeq_model::SimplePresetConfig;
 
 mod bare;
 mod misc;
@@ -29,12 +29,12 @@ use routed::routed_physical_sub_output;
 
 #[test]
 fn loaded_measurement_snapshot_uses_frozen_data_without_reopening_source() {
-    let reference = autoeq::read::MeasurementRef::Loaded {
-        original: Box::new(autoeq::read::MeasurementRef::Named {
+    let reference = autoeq_measurements::read::MeasurementRef::Loaded {
+        original: Box::new(autoeq_measurements::read::MeasurementRef::Named {
             path: "missing-capture.csv".into(),
             name: Some("seat A".into()),
         }),
-        loaded_response: Box::new(autoeq::Curve {
+        loaded_response: Box::new(autoeq_core::Curve {
             freq: vec![100.0, 200.0].into(),
             spl: vec![75.0, 76.0].into(),
             phase: Some(vec![12.0, 14.0].into()),
@@ -57,7 +57,7 @@ fn ctc_system_config_maps_speaker_names_to_logical_roles() {
     let system = ctc_system_config_for_speaker_names(["L", "R", "LFE [mic 1]"], None)
         .expect("speaker names produce a system config");
 
-    assert_eq!(system.model, autoeq::roomeq::SystemModel::HomeCinema);
+    assert_eq!(system.model, roomeq_model::SystemModel::HomeCinema);
     assert_eq!(system.speakers.get("L").map(String::as_str), Some("L"));
     assert_eq!(system.speakers.get("R").map(String::as_str), Some("R"));
     assert_eq!(
@@ -303,7 +303,7 @@ fn build_speakers_from_recordings_groups_per_channel() {
             .get(channel)
             .unwrap_or_else(|| panic!("missing speaker entry for {}", channel));
         match entry {
-            autoeq::SpeakerConfig::Single(autoeq::MeasurementSource::Multiple(m)) => {
+            roomeq_model::SpeakerConfig::Single(autoeq_core::MeasurementSource::Multiple(m)) => {
                 assert_eq!(
                     m.measurements.len(),
                     4,
@@ -396,15 +396,15 @@ fn multi_measurement_strategy_strings_match_constants() {
 #[test]
 fn multi_measurement_strategy_accepts_display_labels() {
     let cases = [
-        ("Average", autoeq::roomeq::MultiMeasurementStrategy::Average),
+        ("Average", roomeq_model::MultiMeasurementStrategy::Average),
         (
             "Minimize Variance",
-            autoeq::roomeq::MultiMeasurementStrategy::VariancePenalized,
+            roomeq_model::MultiMeasurementStrategy::VariancePenalized,
         ),
-        ("MinMax", autoeq::roomeq::MultiMeasurementStrategy::Minimax),
+        ("MinMax", roomeq_model::MultiMeasurementStrategy::Minimax),
         (
             "Weighted Sum",
-            autoeq::roomeq::MultiMeasurementStrategy::WeightedSum,
+            roomeq_model::MultiMeasurementStrategy::WeightedSum,
         ),
     ];
 

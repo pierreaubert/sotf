@@ -7,17 +7,17 @@ use super::default::default_area_quadrature_seed;
 use super::default::default_gaussian_truncation_sigmas;
 
 pub(super) fn continuous_area_from_backend(
-    a: &autoeq::roomeq::ContinuousListeningAreaConfig,
+    a: &roomeq_model::ContinuousListeningAreaConfig,
 ) -> ContinuousListeningAreaUiConfig {
     let (prior_kind, gaussian_mean, gaussian_cov_diag, gaussian_truncation_sigmas) = match &a.prior
     {
-        autoeq::roomeq::AreaPriorKind::Uniform => (
+        roomeq_model::AreaPriorKind::Uniform => (
             "uniform".to_string(),
             Vec::new(),
             Vec::new(),
             default_gaussian_truncation_sigmas(),
         ),
-        autoeq::roomeq::AreaPriorKind::Gaussian {
+        roomeq_model::AreaPriorKind::Gaussian {
             mean,
             cov_diag,
             truncation_sigmas,
@@ -31,19 +31,19 @@ pub(super) fn continuous_area_from_backend(
 
     let (quadrature_kind, quadrature_num_points, quadrature_seed, gauss_legendre_points_per_axis) =
         match &a.quadrature {
-            autoeq::roomeq::AreaQuadratureKind::Sobol { num_points, seed } => (
+            roomeq_model::AreaQuadratureKind::Sobol { num_points, seed } => (
                 "sobol".to_string(),
                 *num_points,
                 *seed,
                 default_area_gauss_legendre_points_per_axis(),
             ),
-            autoeq::roomeq::AreaQuadratureKind::LatinHypercube { num_points, seed } => (
+            roomeq_model::AreaQuadratureKind::LatinHypercube { num_points, seed } => (
                 "latin_hypercube".to_string(),
                 *num_points,
                 *seed,
                 default_area_gauss_legendre_points_per_axis(),
             ),
-            autoeq::roomeq::AreaQuadratureKind::GaussLegendre { points_per_axis } => (
+            roomeq_model::AreaQuadratureKind::GaussLegendre { points_per_axis } => (
                 "gauss_legendre".to_string(),
                 default_area_quadrature_num_points(),
                 default_area_quadrature_seed(),
@@ -53,13 +53,13 @@ pub(super) fn continuous_area_from_backend(
 
     let (scalarisation_kind, worst_case_inner_maxiter, worst_case_inner_seed, cvar_alpha) =
         match &a.scalarisation {
-            autoeq::roomeq::AreaScalarisationKind::ExpectedValue => (
+            roomeq_model::AreaScalarisationKind::ExpectedValue => (
                 "expected_value".to_string(),
                 default_area_inner_maxiter(),
                 0,
                 default_area_cvar_alpha(),
             ),
-            autoeq::roomeq::AreaScalarisationKind::WorstCase {
+            roomeq_model::AreaScalarisationKind::WorstCase {
                 inner_maxiter,
                 inner_seed,
             } => (
@@ -68,7 +68,7 @@ pub(super) fn continuous_area_from_backend(
                 *inner_seed,
                 default_area_cvar_alpha(),
             ),
-            autoeq::roomeq::AreaScalarisationKind::Cvar { alpha } => {
+            roomeq_model::AreaScalarisationKind::Cvar { alpha } => {
                 ("cvar".to_string(), default_area_inner_maxiter(), 0, *alpha)
             }
         };
@@ -95,42 +95,42 @@ pub(super) fn continuous_area_from_backend(
 
 pub(super) fn continuous_area_to_backend(
     ui: &ContinuousListeningAreaUiConfig,
-) -> autoeq::roomeq::ContinuousListeningAreaConfig {
+) -> roomeq_model::ContinuousListeningAreaConfig {
     let prior = match ui.prior_kind.as_str() {
-        "gaussian" => autoeq::roomeq::AreaPriorKind::Gaussian {
+        "gaussian" => roomeq_model::AreaPriorKind::Gaussian {
             mean: ui.gaussian_mean.clone(),
             cov_diag: ui.gaussian_cov_diag.clone(),
             truncation_sigmas: ui.gaussian_truncation_sigmas,
         },
-        _ => autoeq::roomeq::AreaPriorKind::Uniform,
+        _ => roomeq_model::AreaPriorKind::Uniform,
     };
 
     let quadrature = match ui.quadrature_kind.as_str() {
-        "latin_hypercube" => autoeq::roomeq::AreaQuadratureKind::LatinHypercube {
+        "latin_hypercube" => roomeq_model::AreaQuadratureKind::LatinHypercube {
             num_points: ui.quadrature_num_points,
             seed: ui.quadrature_seed,
         },
-        "gauss_legendre" => autoeq::roomeq::AreaQuadratureKind::GaussLegendre {
+        "gauss_legendre" => roomeq_model::AreaQuadratureKind::GaussLegendre {
             points_per_axis: ui.gauss_legendre_points_per_axis,
         },
-        _ => autoeq::roomeq::AreaQuadratureKind::Sobol {
+        _ => roomeq_model::AreaQuadratureKind::Sobol {
             num_points: ui.quadrature_num_points,
             seed: ui.quadrature_seed,
         },
     };
 
     let scalarisation = match ui.scalarisation_kind.as_str() {
-        "worst_case" => autoeq::roomeq::AreaScalarisationKind::WorstCase {
+        "worst_case" => roomeq_model::AreaScalarisationKind::WorstCase {
             inner_maxiter: ui.worst_case_inner_maxiter,
             inner_seed: ui.worst_case_inner_seed,
         },
-        "cvar" => autoeq::roomeq::AreaScalarisationKind::Cvar {
+        "cvar" => roomeq_model::AreaScalarisationKind::Cvar {
             alpha: ui.cvar_alpha,
         },
-        _ => autoeq::roomeq::AreaScalarisationKind::ExpectedValue,
+        _ => roomeq_model::AreaScalarisationKind::ExpectedValue,
     };
 
-    autoeq::roomeq::ContinuousListeningAreaConfig {
+    roomeq_model::ContinuousListeningAreaConfig {
         dimensions: ui.dimensions,
         bounds: ui.bounds.iter().map(|b| (b[0], b[1])).collect(),
         seat_positions: ui.seat_positions.clone(),

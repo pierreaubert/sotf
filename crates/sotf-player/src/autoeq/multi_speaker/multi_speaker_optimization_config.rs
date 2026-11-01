@@ -7,7 +7,7 @@ pub struct MultiSpeakerOptimizationConfig {
     /// Speakers to optimize together
     pub speakers: Vec<SpeakerMeasurementData>,
     /// Optimization arguments (shared across all speakers)
-    pub args: autoeq::Args,
+    pub args: autoeq_optim_types::OptimizationConfig,
     /// Callback configuration
     pub callback_config: Option<CallbackConfig>,
 }
@@ -16,7 +16,7 @@ impl Default for MultiSpeakerOptimizationConfig {
     fn default() -> Self {
         Self {
             speakers: Vec::new(),
-            args: autoeq::Args::speaker_defaults(),
+            args: autoeq_optim_types::OptimizationConfig::speaker_defaults(),
             callback_config: Some(CallbackConfig::default()),
         }
     }

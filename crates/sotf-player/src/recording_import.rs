@@ -13,7 +13,7 @@ use std::path::Path;
 /// a file and must never publish only the successfully loaded channels.
 #[derive(Debug, Clone)]
 pub struct RecordingImport {
-    pub configuration: autoeq::RoomConfig,
+    pub configuration: roomeq_model::RoomConfig,
     pub channels: Vec<ChannelMeasurement>,
 }
 
@@ -89,7 +89,7 @@ impl RecordingImport {
     pub fn configuration_with_recordings(
         &self,
         recordings: &[ChannelRecording],
-    ) -> Result<autoeq::RoomConfig, String> {
+    ) -> Result<roomeq_model::RoomConfig, String> {
         let expected: std::collections::HashSet<_> = self
             .recordings()
             .into_iter()
@@ -130,46 +130,50 @@ impl RecordingImport {
                 .get_mut(&address.speaker)
                 .ok_or("Imported speaker is unavailable")?;
             let source = match (speaker, address.driver_index) {
-                (autoeq::SpeakerConfig::Single(source), None) => source,
-                (autoeq::SpeakerConfig::Group(group), Some(index)) => group
+                (roomeq_model::SpeakerConfig::Single(source), None) => source,
+                (roomeq_model::SpeakerConfig::Group(group), Some(index)) => group
                     .measurements
                     .get_mut(index)
                     .ok_or("Imported driver is unavailable")?,
                 _ => return Err("Imported speaker topology changed".into()),
             };
             let measurement = match source {
-                autoeq::MeasurementSource::Single(single) if address.measurement_index == 0 => {
+                autoeq_core::MeasurementSource::Single(single)
+                    if address.measurement_index == 0 =>
+                {
                     &mut single.measurement
                 }
-                autoeq::MeasurementSource::Multiple(multiple) => multiple
+                autoeq_core::MeasurementSource::Multiple(multiple) => multiple
                     .measurements
                     .get_mut(address.measurement_index)
                     .ok_or("Imported measurement position is unavailable")?,
                 _ => return Err("Imported measurement topology changed".into()),
             };
             let name = measurement.name().map(str::to_owned);
-            *measurement = autoeq::read::MeasurementRef::Inline(autoeq::read::InlineMeasurement {
-                frequencies: result
-                    .frequencies
-                    .iter()
-                    .map(|&value| f64::from(value))
-                    .collect(),
-                magnitude_db: result
-                    .magnitude_db
-                    .iter()
-                    .map(|&value| f64::from(value))
-                    .collect(),
-                phase_deg: (!result.phase_deg.is_empty()).then(|| {
-                    result
-                        .phase_deg
+            *measurement = autoeq_measurements::read::MeasurementRef::Inline(
+                autoeq_measurements::read::InlineMeasurement {
+                    frequencies: result
+                        .frequencies
                         .iter()
                         .map(|&value| f64::from(value))
-                        .collect()
-                }),
-                name,
-                wav_path: result.wav_path.clone(),
-                csv_path: result.csv_path.clone(),
-            });
+                        .collect(),
+                    magnitude_db: result
+                        .magnitude_db
+                        .iter()
+                        .map(|&value| f64::from(value))
+                        .collect(),
+                    phase_deg: (!result.phase_deg.is_empty()).then(|| {
+                        result
+                            .phase_deg
+                            .iter()
+                            .map(|&value| f64::from(value))
+                            .collect()
+                    }),
+                    name,
+                    wav_path: result.wav_path.clone(),
+                    csv_path: result.csv_path.clone(),
+                },
+            );
         }
         if !remaining.is_empty() {
             return Err("One or more imported recording sources are missing".into());
@@ -255,7 +259,7 @@ impl RecordingImport {
     }
 
     pub fn from_json(json: &str, base_directory: Option<&Path>) -> Result<Self, String> {
-        let mut configuration: autoeq::RoomConfig =
+        let mut configuration: roomeq_model::RoomConfig =
             serde_json::from_str(json).map_err(|error| format!("Parse error: {error}"))?;
         if configuration.speakers.is_empty() {
             return Err("Recording file contains no speaker measurements".into());
@@ -306,8 +310,8 @@ mod tests {
             None,
         )
         .unwrap();
-        imported.configuration.system = Some(autoeq::roomeq::SystemConfig {
-            model: autoeq::roomeq::SystemModel::HomeCinema,
+        imported.configuration.system = Some(roomeq_model::SystemConfig {
+            model: roomeq_model::SystemModel::HomeCinema,
             speakers: std::collections::HashMap::from([("L".into(), "L".into())]),
             subwoofers: None,
             bass_management: None,
@@ -315,7 +319,7 @@ mod tests {
         });
         imported.configuration.crossovers = Some(std::collections::HashMap::from([(
             "source-crossover".into(),
-            autoeq::roomeq::CrossoverConfig {
+            roomeq_model::CrossoverConfig {
                 crossover_type: "LR48".into(),
                 frequency: Some(55.0),
                 frequencies: None,
@@ -379,7 +383,7 @@ mod tests {
         assert_eq!(channel.provenance[0].name.as_deref(), Some("Left seat"));
         assert_eq!(channel.provenance[1].name.as_deref(), Some("Right seat"));
         assert_eq!(channel.multi_mic_measurements[0].magnitude_db, [-6.0, -1.0]);
-        let autoeq::SpeakerConfig::Single(autoeq::MeasurementSource::Multiple(source)) =
+        let roomeq_model::SpeakerConfig::Single(autoeq_core::MeasurementSource::Multiple(source)) =
             &imported.configuration.speakers["L"]
         else {
             panic!("source hierarchy lost")
@@ -508,8 +512,8 @@ mod tests {
                 ]
             } }
         }"#;
-        let mut configuration: autoeq::RoomConfig = serde_json::from_str(json).unwrap();
-        configuration.recording_config = Some(autoeq::roomeq::RecordingConfiguration {
+        let mut configuration: roomeq_model::RoomConfig = serde_json::from_str(json).unwrap();
+        configuration.recording_config = Some(roomeq_model::RecordingConfiguration {
             recording_sample_rate: Some(96_000),
             ..Default::default()
         });
@@ -567,7 +571,7 @@ mod tests {
             2
         );
         let saved = imported.configuration_with_recordings(&recordings).unwrap();
-        let autoeq::SpeakerConfig::Group(group) = &saved.speakers["L"] else {
+        let roomeq_model::SpeakerConfig::Group(group) = &saved.speakers["L"] else {
             panic!("driver grouping lost")
         };
         assert_eq!(group.name, "Left speaker");

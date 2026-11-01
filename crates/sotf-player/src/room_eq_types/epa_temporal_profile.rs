@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Material profile bias for EPA temporal-masking — UI-facing alias.
 ///
-/// Maps 1:1 onto [`autoeq::loss::epa::score::TemporalMaskingProfile`]; kept
+/// Maps 1:1 onto [`autoeq_optim::loss::epa::score::TemporalMaskingProfile`]; kept
 /// as a separate type so we don't leak the backend enum through the UI
 /// state and the GPUI/TUI can `match` on a stable surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -32,7 +32,7 @@ impl EpaTemporalProfile {
     }
 }
 
-impl From<EpaTemporalProfile> for autoeq::loss::epa::score::TemporalMaskingProfile {
+impl From<EpaTemporalProfile> for autoeq_optim::loss::epa::score::TemporalMaskingProfile {
     fn from(p: EpaTemporalProfile) -> Self {
         match p {
             EpaTemporalProfile::Transient => Self::Transient,

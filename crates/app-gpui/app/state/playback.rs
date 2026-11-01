@@ -40,6 +40,9 @@ pub struct PlaybackState {
     /// Deterministic meter data used only by black-box rendered QA.
     #[cfg(feature = "dev-api")]
     pub qa_loudness_fixture: Option<Arc<LoudnessData>>,
+    /// Isolated rack telemetry, scoped to the selected engine node in rendered QA.
+    #[cfg(feature = "dev-api")]
+    pub qa_rack_loudness_fixture: Option<(usize, Arc<LoudnessData>)>,
     /// Deterministic spectrum data used only by isolated rendered QA.
     #[cfg(feature = "dev-api")]
     pub qa_spectrum_fixture: Option<HeldSpectrumFrame>,
@@ -98,6 +101,8 @@ impl PlaybackState {
             signal_path: None,
             #[cfg(feature = "dev-api")]
             qa_loudness_fixture: None,
+            #[cfg(feature = "dev-api")]
+            qa_rack_loudness_fixture: None,
             #[cfg(feature = "dev-api")]
             qa_spectrum_fixture: None,
             #[cfg(feature = "dev-api")]

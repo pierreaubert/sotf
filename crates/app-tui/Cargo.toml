@@ -27,6 +27,7 @@ qa = []
 dev-api = ["sotf-player/dev-api", "dep:sotf-dev-api", "dep:sotf-capture", "sotf-capture/test-util"]
 
 [dependencies]
+autoeq-measurements = { workspace = true }
 sotf-capture = { workspace = true, optional = true }
 # Shared audio player library (provides business logic, database, plugins, etc.)
 sotf-player = { workspace = true }
@@ -40,7 +41,12 @@ sotf-cast = { workspace = true }
 sotf-service-tidal = { workspace = true, optional = true }
 sotf-service-spotify = { workspace = true, optional = true }
 math-iir-fir = { workspace = true }
-autoeq = { workspace = true }
+autoeq-core = { workspace = true }
+autoeq-optim = { workspace = true }
+autoeq-optim-types = { workspace = true }
+roomeq-engine = { workspace = true }
+roomeq-model = { workspace = true }
+roomeq-workflow = { workspace = true }
 
 # TUI framework
 ratatui = { workspace = true }

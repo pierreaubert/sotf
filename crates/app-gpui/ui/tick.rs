@@ -527,6 +527,14 @@ impl PlayerView {
             None
         };
 
+        #[cfg(feature = "dev-api")]
+        if let Some((fixture_index, fixture)) = &state.app.playback.qa_rack_loudness_fixture
+            && include_rack_data
+            && rack_plugin_idx == Some(*fixture_index)
+        {
+            state.app.playback.rack_plugin_data = Some(fixture.clone());
+        }
+
         // Only current owned External snapshots are published above. Persist
         // the accepted native blob without scheduling a graph rebuild, which
         // would destroy and reload the instance we just edited.

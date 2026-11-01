@@ -170,6 +170,7 @@ impl TuiEditablePlugin for PluginSettings {
                 fir_length,
                 phase_mode,
                 auto_gain,
+                accuracy_mode,
                 mix,
                 filters,
                 ..
@@ -193,6 +194,7 @@ impl TuiEditablePlugin for PluginSettings {
                             });
                         }
                         4 => *mix,
+                        5 => f64::from(*accuracy_mode),
                         _ => return String::new(),
                     };
                     global_specs[index].format_value(val)
@@ -488,6 +490,7 @@ impl TuiEditablePlugin for PluginSettings {
                 fir_length,
                 phase_mode,
                 auto_gain,
+                accuracy_mode,
                 mix,
                 filters,
                 ..
@@ -520,6 +523,7 @@ impl TuiEditablePlugin for PluginSettings {
                         2 => *phase_mode = if *phase_mode >= 0.5 { 0.0 } else { 1.0 },
                         3 => *auto_gain = !*auto_gain,
                         4 => *mix = (*mix + delta * 0.01).clamp(0.0, 1.0),
+                        5 => *accuracy_mode = !*accuracy_mode,
                         _ => return false,
                     }
                     return true;

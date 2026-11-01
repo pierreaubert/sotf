@@ -842,7 +842,7 @@ impl PlayerView {
             return;
         }
         use crate::app::types::{ChannelOptResult, EqFilterConfig, OptimizationStatus};
-        use autoeq::roomeq::CallbackAction;
+        use roomeq_workflow::CallbackAction;
         use sotf_audio_player::autoeq::{
             PipelineStepId, PipelineStepStatus, RoomOptimizationCallback, RoomOptimizationProgress,
             run_room_optimization_with_output_dir,
@@ -1735,8 +1735,8 @@ pub fn room_eq_progress_chart_series(
 /// such as bass-management crossovers. `ChannelOptimizationResult.final_curve`
 /// remains the fallback for older/incomplete backend results.
 pub fn room_eq_display_response_points(
-    chain: Option<&autoeq::roomeq::ChannelDspChain>,
-    fallback_final_curve: Option<&autoeq::Curve>,
+    chain: Option<&roomeq_model::ChannelDspChain>,
+    fallback_final_curve: Option<&autoeq_core::Curve>,
 ) -> Option<Vec<(f64, f64)>> {
     chain
         .and_then(|chain| chain.final_curve.as_ref())
@@ -1746,8 +1746,8 @@ pub fn room_eq_display_response_points(
 }
 
 pub fn room_eq_initial_response_points(
-    chain: Option<&autoeq::roomeq::ChannelDspChain>,
-    fallback_initial_curve: Option<&autoeq::Curve>,
+    chain: Option<&roomeq_model::ChannelDspChain>,
+    fallback_initial_curve: Option<&autoeq_core::Curve>,
 ) -> Option<Vec<(f64, f64)>> {
     chain
         .and_then(|chain| chain.initial_curve.as_ref())
@@ -1757,9 +1757,9 @@ pub fn room_eq_initial_response_points(
 }
 
 pub fn room_eq_channel_chain_by_name<'a>(
-    channels: &'a std::collections::HashMap<String, autoeq::roomeq::ChannelDspChain>,
+    channels: &'a std::collections::HashMap<String, roomeq_model::ChannelDspChain>,
     name: &str,
-) -> Option<&'a autoeq::roomeq::ChannelDspChain> {
+) -> Option<&'a roomeq_model::ChannelDspChain> {
     channels
         .get(name)
         .or_else(|| channels.values().find(|chain| chain.channel == name))
@@ -1790,16 +1790,16 @@ fn room_eq_artifact_dir(
 }
 
 fn room_eq_channel_result_by_name<'a>(
-    results: &'a std::collections::HashMap<String, autoeq::roomeq::ChannelOptimizationResult>,
+    results: &'a std::collections::HashMap<String, roomeq_workflow::ChannelOptimizationResult>,
     name: &str,
-    chain: Option<&autoeq::roomeq::ChannelDspChain>,
-) -> Option<&'a autoeq::roomeq::ChannelOptimizationResult> {
+    chain: Option<&roomeq_model::ChannelDspChain>,
+) -> Option<&'a roomeq_workflow::ChannelOptimizationResult> {
     results
         .get(name)
         .or_else(|| chain.and_then(|chain| results.get(&chain.channel)))
 }
 
-fn room_eq_curve_data_response_points(curve: &autoeq::roomeq::CurveData) -> Vec<(f64, f64)> {
+fn room_eq_curve_data_response_points(curve: &roomeq_model::CurveData) -> Vec<(f64, f64)> {
     curve
         .freq
         .iter()
@@ -1809,7 +1809,7 @@ fn room_eq_curve_data_response_points(curve: &autoeq::roomeq::CurveData) -> Vec<
         .collect()
 }
 
-fn room_eq_curve_response_points(curve: &autoeq::Curve) -> Vec<(f64, f64)> {
+fn room_eq_curve_response_points(curve: &autoeq_core::Curve) -> Vec<(f64, f64)> {
     curve
         .freq
         .iter()

@@ -3,12 +3,14 @@
 //! Provides thin wrappers around the autoeq library for speaker equalization.
 //! Most functionality is delegated to the library.
 
-pub use autoeq::CrossoverType;
-pub use autoeq::de::CallbackAction;
-pub use autoeq::{
-    Cea2034Data, OptimizationOutput, ProgressCallbackConfig, ProgressUpdate, SpeakerOptResult,
-    VisualizationCurves,
-};
+pub use autoeq_optim::CrossoverType;
+pub use autoeq_optim::de::CallbackAction;
+pub use autoeq_workflow::Cea2034Data;
+pub use autoeq_workflow::OptimizationOutput;
+pub use autoeq_workflow::ProgressCallbackConfig;
+pub use autoeq_workflow::ProgressUpdate;
+pub use autoeq_workflow::SpeakerOptResult;
+pub use autoeq_workflow::VisualizationCurves;
 
 mod callback_config;
 mod load;

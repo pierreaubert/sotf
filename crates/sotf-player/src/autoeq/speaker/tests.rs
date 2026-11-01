@@ -73,7 +73,7 @@ fn test_load_measurement_csv_file_not_found() {
 
 #[test]
 fn test_load_measurement_from_curve() {
-    let curve = autoeq::Curve {
+    let curve = autoeq_core::Curve {
         freq: ndarray::Array1::from_vec(vec![20.0, 100.0, 1000.0, 10000.0]),
         spl: ndarray::Array1::from_vec(vec![80.0, 85.0, 90.0, 85.0]),
         phase: None,
@@ -89,7 +89,7 @@ fn test_load_measurement_from_curve() {
 
 #[test]
 fn test_load_measurement_from_curve_with_phase() {
-    let curve = autoeq::Curve {
+    let curve = autoeq_core::Curve {
         freq: ndarray::Array1::from_vec(vec![20.0, 100.0, 1000.0]),
         spl: ndarray::Array1::from_vec(vec![80.0, 85.0, 90.0]),
         phase: Some(ndarray::Array1::from_vec(vec![0.0, 45.0, 90.0])),
@@ -169,7 +169,7 @@ fn test_dba_requires_front_and_rear() {
 
 #[test]
 fn test_dba_requires_front() {
-    let curve = autoeq::Curve {
+    let curve = autoeq_core::Curve {
         freq: ndarray::Array1::from_vec(vec![20.0, 100.0]),
         spl: ndarray::Array1::from_vec(vec![80.0, 85.0]),
         phase: None,
@@ -188,7 +188,7 @@ fn test_dba_requires_front() {
 
 #[test]
 fn test_dba_requires_rear() {
-    let curve = autoeq::Curve {
+    let curve = autoeq_core::Curve {
         freq: ndarray::Array1::from_vec(vec![20.0, 100.0]),
         spl: ndarray::Array1::from_vec(vec![80.0, 85.0]),
         phase: None,
@@ -211,7 +211,7 @@ fn test_dba_requires_rear() {
 
 #[test]
 fn test_optimization_progress_from_update() {
-    let update = autoeq::ProgressUpdate {
+    let update = autoeq_workflow::ProgressUpdate {
         iteration: 100,
         loss: 0.5,
         score: Some(85.0),
@@ -256,7 +256,7 @@ fn test_dummy_result_generation() {
 #[test]
 fn test_speaker_opt_result_from_autoeq() {
     // Create a minimal SpeakerOptResult to test conversion
-    let curves = autoeq::VisualizationCurves {
+    let curves = autoeq_workflow::VisualizationCurves {
         frequencies: vec![20.0, 100.0, 1000.0],
         input_curve: vec![80.0, 85.0, 90.0],
         target_curve: vec![85.0, 85.0, 85.0],
@@ -270,14 +270,14 @@ fn test_speaker_opt_result_from_autoeq() {
     writeln!(measurement_file, "frequency,spl\n20,80\n100,85\n1000,90")
         .expect("write measurement fixture");
     let measurement_path = measurement_file.path().to_path_buf();
-    let measurement =
-        autoeq::read::read_record_from_csv(&measurement_path).expect("load measurement fixture");
-    let lineage = autoeq::OptimizationLineage {
+    let measurement = autoeq_measurements::read::read_record_from_csv(&measurement_path)
+        .expect("load measurement fixture");
+    let lineage = autoeq_workflow::OptimizationLineage {
         input: measurement.clone(),
         normalized_input: measurement.clone(),
         corrected_output: measurement,
     };
-    let optimization_run = autoeq::optim::run_descriptor::OptimizationRunDescriptor {
+    let optimization_run = autoeq_optim::optim::run_descriptor::OptimizationRunDescriptor {
         schema: "autoeq.optimization-run".to_string(),
         schema_version: 1,
         objective: "test".to_string(),
@@ -287,13 +287,13 @@ fn test_speaker_opt_result_from_autoeq() {
         backend: "test".to_string(),
         backend_version: "test".to_string(),
         stopping_reason: "test".to_string(),
-        platform: autoeq::optim::run_descriptor::OptimizerExecutionPlatform {
+        platform: autoeq_optim::optim::run_descriptor::OptimizerExecutionPlatform {
             operating_system: std::env::consts::OS.to_string(),
             architecture: std::env::consts::ARCH.to_string(),
             compiler: "test".to_string(),
         },
     };
-    let autoeq_result = autoeq::SpeakerOptResult {
+    let autoeq_result = autoeq_workflow::SpeakerOptResult {
         biquads: vec![],
         curves,
         spin_data: None,
@@ -335,7 +335,7 @@ fn test_preview_curves_struct() {
 
 #[test]
 fn test_run_speaker_optimization_dummy() {
-    let args = autoeq::Args::speaker_defaults();
+    let args = autoeq_optim_types::OptimizationConfig::speaker_defaults();
     let result = run_speaker_optimization("Dummy Speaker", &args);
     assert!(result.is_ok());
     let opt_result = result.unwrap();
@@ -344,7 +344,7 @@ fn test_run_speaker_optimization_dummy() {
 
 #[test]
 fn curve_optimization_preserves_response_without_inventing_spinorama_data() {
-    let curve = autoeq::Curve {
+    let curve = autoeq_core::Curve {
         freq: ndarray::Array1::from_vec(vec![
             20.0, 50.0, 100.0, 300.0, 1000.0, 3000.0, 10000.0, 20000.0,
         ]),

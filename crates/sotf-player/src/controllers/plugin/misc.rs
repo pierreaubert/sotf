@@ -34,7 +34,11 @@ pub fn ambisonics_layout_transition_error(
 pub fn get_param_count(settings: &PluginSettings) -> usize {
     match settings {
         PluginSettings::EQ { filters, .. } => filters.len() * 4,
-        PluginSettings::LinearPhaseEq { filters, .. } => filters.len() * 6 + 5,
+        PluginSettings::LinearPhaseEq { filters, .. } => {
+            let specs = sotf_plugins::param_specs::linear_phase_eq::PARAMS;
+            let bands = sotf_plugins::param_specs::linear_phase_eq::BAND_TEMPLATE;
+            filters.len() * bands.len() + specs.len()
+        }
         PluginSettings::DynamicEq { num_bands, .. } => 8 + (*num_bands as usize).clamp(1, 8) * 10,
         _ => settings.param_specs().len(),
     }

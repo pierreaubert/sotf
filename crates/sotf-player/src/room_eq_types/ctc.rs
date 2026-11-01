@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 pub fn ctc_system_config_for_speaker_names<I, S>(
     speaker_names: I,
     bass_management_crossover: Option<String>,
-) -> Option<autoeq::roomeq::SystemConfig>
+) -> Option<roomeq_model::SystemConfig>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
@@ -31,8 +31,8 @@ where
         .map(|name| serde_json::json!({"id": name, "speaker": name}))
         .collect();
 
-    Some(autoeq::roomeq::SystemConfig {
-        model: autoeq::roomeq::SystemModel::HomeCinema,
+    Some(roomeq_model::SystemConfig {
+        model: roomeq_model::SystemModel::HomeCinema,
         speakers: speakers
             .into_iter()
             .map(|name| (name.clone(), name))
@@ -79,7 +79,7 @@ fn ctc_position_index(id: &str) -> Option<usize> {
 pub fn ctc_uniform_sweep_range_for_measurements(
     recordings: &[ChannelRecording],
     speaker_names: &[String],
-    measurements: &autoeq::roomeq::CtcMeasurementConfig,
+    measurements: &roomeq_model::CtcMeasurementConfig,
 ) -> Option<(f32, f32)> {
     let mut range: Option<(f32, f32)> = None;
     for file in &measurements.files {

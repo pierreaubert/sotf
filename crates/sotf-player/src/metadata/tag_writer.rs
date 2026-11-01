@@ -3,7 +3,8 @@ use lofty::config::WriteOptions;
 use lofty::file::TaggedFileExt;
 use lofty::prelude::{Accessor, TagExt};
 use lofty::probe::Probe;
-use lofty::tag::{ItemKey, Tag};
+use lofty::tag::items::Timestamp;
+use lofty::tag::{ItemKey, Tag, TagType};
 use std::path::Path;
 
 pub struct TagWriter;
@@ -65,7 +66,12 @@ impl TagWriter {
             tag.insert_text(ItemKey::AlbumArtist, value.clone());
         }
         if let Some(value) = patch.year {
-            tag.set_year(value);
+            let year = u16::try_from(value)
+                .map_err(|_| MetadataError::TagWrite(format!("year {value} is out of range")))?;
+            tag.set_date(Timestamp {
+                year,
+                ..Timestamp::default()
+            });
         }
         if let Some(value) = &patch.genre {
             tag.set_genre(value.clone());
@@ -88,14 +94,64 @@ impl TagWriter {
         if let Some(value) = &patch.isrc {
             tag.insert_text(ItemKey::Isrc, value.clone());
         }
-        if let Some(value) = &patch.ensemble {
-            tag.insert_text(ItemKey::Unknown("ENSEMBLE".to_string()), value.clone());
+        if patch.ensemble.is_some() || patch.edition.is_some() {
+            *tag = with_custom_fields(tag.clone(), patch)?;
         }
-        if let Some(value) = &patch.edition {
-            tag.insert_text(ItemKey::Unknown("VERSION".to_string()), value.clone());
+
+        // Lofty's generic Vorbis writer omits companion items. Save the native
+        // tag so new and previously stored custom fields survive every edit.
+        if tag.tag_type() == TagType::VorbisComments {
+            return lofty::ogg::tag::VorbisComments::from(tag.clone())
+                .save_to_path(path, WriteOptions::default())
+                .map_err(|err| MetadataError::TagWrite(err.to_string()));
         }
 
         tag.save_to_path(path, WriteOptions::default())
             .map_err(|err| MetadataError::TagWrite(err.to_string()))
+    }
+}
+
+// Lofty preserves unmapped native items in a Tag's companion tag. Use native
+// keys for these fields, then convert back so the complete tag is saved once.
+fn with_custom_fields(tag: Tag, patch: &MetadataPatch) -> Result<Tag, MetadataError> {
+    let fields = [("ENSEMBLE", &patch.ensemble), ("VERSION", &patch.edition)];
+    match tag.tag_type() {
+        TagType::Id3v2 => {
+            let mut native = lofty::id3::v2::Id3v2Tag::from(tag);
+            for (key, value) in fields {
+                if let Some(value) = value {
+                    native.insert_user_text(key.to_string(), value.clone());
+                }
+            }
+            Ok(native.into())
+        }
+        TagType::VorbisComments => {
+            let mut native = lofty::ogg::tag::VorbisComments::from(tag);
+            for (key, value) in fields {
+                if let Some(value) = value {
+                    native.insert(key.to_string(), value.clone());
+                }
+            }
+            Ok(native.into())
+        }
+        TagType::Mp4Ilst => {
+            use lofty::mp4::{Atom, AtomData, AtomIdent, Ilst};
+            let mut native = Ilst::from(tag);
+            for (key, value) in fields {
+                if let Some(value) = value {
+                    native.insert(Atom::new(
+                        AtomIdent::Freeform {
+                            mean: "com.apple.iTunes".into(),
+                            name: key.into(),
+                        },
+                        AtomData::UTF8(value.clone()),
+                    ));
+                }
+            }
+            Ok(native.into())
+        }
+        kind => Err(MetadataError::TagWrite(format!(
+            "custom fields are unsupported for {kind:?}"
+        ))),
     }
 }

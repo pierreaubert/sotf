@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 /// UI-facing surface for EPA temporal-masking knobs.
 ///
-/// Maps onto [`autoeq::loss::epa::score::TemporalMaskingConfig`] one-to-one;
+/// Maps onto [`autoeq_optim::loss::epa::score::TemporalMaskingConfig`] one-to-one;
 /// kept separate so the UI never has to import the backend type directly and
 /// so additional UI-only state (e.g. expanded/collapsed) can sit next to the
 /// data without bleeding into the JSON contract with autoeq.
@@ -73,24 +73,20 @@ impl EpaTemporalMaskingConfig {
     /// Build a room-model `TemporalMaskingConfig`, leaving non-UI knobs at the
     /// autoeq defaults. Spread-init keeps any future backend fields at their
     /// `Default::default()` without forcing this layer to track them.
-    pub fn to_backend(&self) -> autoeq::roomeq_model::TemporalMaskingConfig {
-        autoeq::roomeq_model::TemporalMaskingConfig {
+    pub fn to_backend(&self) -> roomeq_model::TemporalMaskingConfig {
+        roomeq_model::TemporalMaskingConfig {
             enabled: self.enabled,
             weight: self.weight,
             profile: match self.profile {
-                EpaTemporalProfile::Transient => {
-                    autoeq::roomeq_model::TemporalMaskingProfile::Transient
-                }
-                EpaTemporalProfile::Mixed => autoeq::roomeq_model::TemporalMaskingProfile::Mixed,
-                EpaTemporalProfile::Sustained => {
-                    autoeq::roomeq_model::TemporalMaskingProfile::Sustained
-                }
+                EpaTemporalProfile::Transient => roomeq_model::TemporalMaskingProfile::Transient,
+                EpaTemporalProfile::Mixed => roomeq_model::TemporalMaskingProfile::Mixed,
+                EpaTemporalProfile::Sustained => roomeq_model::TemporalMaskingProfile::Sustained,
             },
             ir_enabled: self.ir_enabled,
             ir_weight: self.ir_weight,
             pre_mask_ms: self.pre_mask_ms,
             post_mask_ms: self.post_mask_ms,
-            ..autoeq::roomeq_model::TemporalMaskingConfig::default()
+            ..roomeq_model::TemporalMaskingConfig::default()
         }
     }
 }

@@ -23,7 +23,7 @@ macro_rules! dev_track {
 }
 
 /// Export format options shown in the dropdown. Index 0 is the native
-/// SotF JSON; indices 1–6 map to `autoeq::roomeq::ExportFormat` variants.
+/// SotF JSON; indices 1–6 map to `roomeq_workflow::ExportFormat` variants.
 const EXPORT_FORMATS: &[(&str, &str)] = &[
     ("SotF JSON", "json"),
     ("CamillaDSP", "yaml"),
@@ -348,7 +348,7 @@ impl PlayerView {
     /// Export DSP chain in the user-selected format (JSON, CamillaDSP,
     /// APO, EasyEffects, Wavelet, PipeWire, Roon). Index 0 = SotF JSON
     /// (pretty-printed DspChainOutput); indices 1–6 delegate to
-    /// `autoeq::roomeq::export::export_dsp_chain`.
+    /// `roomeq_workflow::export::export_dsp_chain`.
     fn check_room_result_freshness(&mut self, cx: &mut Context<Self>) -> bool {
         let state = self.state.read(cx);
         if state
@@ -409,14 +409,14 @@ impl PlayerView {
             return;
         }
 
-        // External format via autoeq::roomeq::export
+        // External format via roomeq_workflow::export
         let format = match format_idx {
-            1 => autoeq::roomeq::ExportFormat::CamillaDsp,
-            2 => autoeq::roomeq::ExportFormat::EqualizerApo,
-            3 => autoeq::roomeq::ExportFormat::EasyEffects,
-            4 => autoeq::roomeq::ExportFormat::Wavelet,
-            5 => autoeq::roomeq::ExportFormat::PipeWire,
-            6 => autoeq::roomeq::ExportFormat::RoonDsp,
+            1 => roomeq_workflow::ExportFormat::CamillaDsp,
+            2 => roomeq_workflow::ExportFormat::EqualizerApo,
+            3 => roomeq_workflow::ExportFormat::EasyEffects,
+            4 => roomeq_workflow::ExportFormat::Wavelet,
+            5 => roomeq_workflow::ExportFormat::PipeWire,
+            6 => roomeq_workflow::ExportFormat::RoonDsp,
             _ => {
                 log::warn!("Unknown export format index {}", format_idx);
                 return;
@@ -439,7 +439,7 @@ impl PlayerView {
                     .parent()
                     .ok_or_else(|| "missing export parent".to_string())?;
                 std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-                autoeq::roomeq::export_dsp_chain_with_convolution_sidecars(
+                roomeq_workflow::export_dsp_chain_with_convolution_sidecars(
                     &dsp_output,
                     format,
                     &path,
@@ -500,9 +500,9 @@ impl PlayerView {
 
                 if let Some(file) = file {
                     // Parse back into autoeq DspChainOutput
-                    match serde_json::from_str::<autoeq::roomeq::DspChainOutput>(&dsp_json) {
+                    match serde_json::from_str::<roomeq_model::DspChainOutput>(&dsp_json) {
                         Ok(autoeq_output) => {
-                            match autoeq::roomeq::export_dsp_chain_with_convolution_sidecars(
+                            match roomeq_workflow::export_dsp_chain_with_convolution_sidecars(
                                 &autoeq_output,
                                 format,
                                 file.path(),
@@ -602,7 +602,7 @@ impl PlayerView {
                     .parent()
                     .ok_or_else(|| "missing export parent".to_string())?;
                 std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-                let packaged = autoeq::roomeq::package_convolution_sidecars(
+                let packaged = roomeq_workflow::package_convolution_sidecars(
                     &dsp_output,
                     &artifact_dir,
                     parent,
@@ -651,7 +651,7 @@ impl PlayerView {
 
                 if let Some(file) = file {
                     let dest_dir = file.path().parent().unwrap_or(std::path::Path::new("."));
-                    let packaged_output = match autoeq::roomeq::package_convolution_sidecars(
+                    let packaged_output = match roomeq_workflow::package_convolution_sidecars(
                         &dsp_output,
                         &artifact_dir,
                         dest_dir,

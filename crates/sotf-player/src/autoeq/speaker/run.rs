@@ -83,7 +83,7 @@ pub fn run_speaker_optimization_extended(
 /// Backward-compatible entry point
 pub fn run_speaker_optimization(
     speaker_model: &str,
-    args: &autoeq::Args,
+    args: &autoeq_optim_types::OptimizationConfig,
 ) -> Result<SpeakerOptimizationResult, String> {
     // Check for dummy speaker (for testing)
     if speaker_model == "Dummy Speaker" {

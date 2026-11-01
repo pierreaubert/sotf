@@ -2760,7 +2760,7 @@ impl PlayerView {
     }
 
     /// Save recordings to a JSON file in the recording directory
-    /// Outputs autoeq::RoomConfig format compatible with roomeq CLI
+    /// Outputs roomeq_model::RoomConfig format compatible with roomeq CLI
     pub(crate) fn save_recordings(&mut self, cx: &mut Context<Self>) {
         if !self
             .state
@@ -2808,7 +2808,8 @@ impl PlayerView {
             return;
         }
         use crate::app::types::RoomEqMeasurementsFile;
-        use autoeq::{OptimizerConfig, RoomConfig};
+        use roomeq_model::OptimizerConfig;
+        use roomeq_model::RoomConfig;
         use sotf_audio_player::recording_helpers::RECORDINGS_FILENAME;
         use sotf_audio_player::room_eq_types::{
             DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY, build_speakers_from_recordings,
@@ -3021,7 +3022,7 @@ impl PlayerView {
 
             let ctc = ctc_measurements.map(|measurements| {
                 let raw = ctc_reference_sweep.is_some();
-                autoeq::roomeq::CtcConfig {
+                roomeq_model::CtcConfig {
                     // Off by default — binaural CTC is opt-in, the
                     // CTC stanza is written so the user can flip it
                     // on later without re-recording, but roomeq must
@@ -3532,7 +3533,7 @@ impl PlayerView {
     /// 3. Write a new lightweight JSON file to the original location
     pub(super) fn perform_migration(&mut self, cx: &mut Context<Self>) {
         // Legacy `RoomEqMeasurementsFile` migration is no longer
-        // supported — the only on-disk format is `autoeq::RoomConfig`.
+        // supported — the only on-disk format is `roomeq_model::RoomConfig`.
         // The modal trigger has been disabled, but in case the modal
         // surfaces from stale state, dismiss it cleanly with a message
         // instead of touching the legacy parser.

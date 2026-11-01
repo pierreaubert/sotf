@@ -169,9 +169,24 @@ def find_rust_files(root: Path):
         yield path
 
 
+def mask_comments_and_literals(source: str) -> str:
+    """Hide non-code punctuation while preserving offsets and line numbers."""
+    pattern = re.compile(
+        r'//[^\n]*|/\*.*?\*/|r(?P<hashes>\#*)".*?"(?P=hashes)'
+        r'|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\\n])\'',
+        re.DOTALL,
+    )
+    return pattern.sub(
+        lambda match: "".join("\n" if ch == "\n" else " " for ch in match[0]),
+        source,
+    )
+
+
 def count_fields(source: str, start: int) -> int:
     """Count top-level fields inside a struct body starting at source[start]."""
+    source = mask_comments_and_literals(source)
     depth = 0
+    angle_depth = 0
     fields = 0
     last_comma = -1
     i = start
@@ -184,14 +199,16 @@ def count_fields(source: str, start: int) -> int:
             depth -= 1
             if depth == 0:
                 break
-        elif ch == "," and depth == 1:
+        elif ch == "<" and depth == 1:
+            angle_depth += 1
+        elif ch == ">" and depth == 1 and angle_depth and source[i - 1] != "-":
+            angle_depth -= 1
+        elif ch == "," and depth == 1 and angle_depth == 0:
             fields += 1
             last_comma = i
         i += 1
-    # For braced structs there is usually one more field than commas,
-    # unless the last comma is a trailing comma. For tuple structs the
-    # comma count is exact.
-    if source[start] == "{" and fields > 0:
+    # Both named and tuple fields may omit the final trailing comma.
+    if source[start] in "{(" and source[start + 1 : i].strip():
         trailing_comma = last_comma >= 0 and source[last_comma + 1 : i].strip() == ""
         if not trailing_comma:
             fields += 1
@@ -211,7 +228,7 @@ struct_re = re.compile(
 
 def check_file(path: Path) -> list[tuple[str, int, int]]:
     offenders = []
-    source = path.read_text(encoding="utf-8", errors="ignore")
+    source = mask_comments_and_literals(path.read_text(encoding="utf-8", errors="ignore"))
     for match in struct_re.finditer(source):
         name = match.group("name")
         open_char = match.group("open")

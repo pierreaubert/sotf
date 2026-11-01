@@ -1,6 +1,6 @@
 //! Shared recording domain types used by both GPUI and TUI apps.
 
-pub use autoeq::roomeq::SplCalibration;
+pub use roomeq_model::SplCalibration;
 pub use sotf_audio::signal_recorder::{
     BassAnchorChannelResult, BassAnchorResults, ProbeDelayChannelResult as DelayProbeChannelResult,
     ProbeDelayResults as DelayProbeResults, SplCalibrationResult,

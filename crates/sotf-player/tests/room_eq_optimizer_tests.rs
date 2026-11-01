@@ -1,6 +1,6 @@
 //! End-to-end test for the autoeq room-EQ optimizer using synthetic data.
 //!
-//! This test builds a minimal `autoeq::RoomConfig` from in-memory frequency
+//! This test builds a minimal `roomeq_model::RoomConfig` from in-memory frequency
 //! response curves, runs the optimizer, and verifies that the returned DSP
 //! graph contains valid input and final curves for every channel.
 
@@ -11,7 +11,7 @@ use sotf_audio_player::autoeq::{MeasurementSource, RoomConfig, SpeakerConfig, op
 use sotf_audio_player::room_eq_types::RoomEqOptimizerConfig;
 
 /// Build a synthetic measurement curve: flat response with a +3 dB bump at 1 kHz.
-fn synthetic_bump_curve() -> autoeq::Curve {
+fn synthetic_bump_curve() -> autoeq_core::Curve {
     let n = 100;
     let f_min = 20.0_f64;
     let f_max = 16_000.0_f64;
@@ -30,7 +30,7 @@ fn synthetic_bump_curve() -> autoeq::Curve {
         spl.push(bump);
     }
 
-    autoeq::Curve {
+    autoeq_core::Curve {
         freq: Array1::from_vec(freq),
         spl: Array1::from_vec(spl),
         ..Default::default()
@@ -62,7 +62,7 @@ fn build_room_config() -> RoomConfig {
     };
 
     RoomConfig {
-        version: autoeq::roomeq::default_config_version(),
+        version: roomeq_model::default_config_version(),
         system: None,
         speakers,
         crossovers: None,

@@ -26,11 +26,11 @@ pub(crate) fn ensure_spinorama_speakers_loading(app: &mut App) {
 /// `None` case as a failed optimization — never panic, least of all inside
 /// the spawned worker thread where a panic would leave the UI stuck in
 /// `Running` with no result ever arriving in the slot.
-pub(super) fn parse_loss_function(loss_function: &str) -> Option<autoeq::LossType> {
+pub(super) fn parse_loss_function(loss_function: &str) -> Option<autoeq_optim::LossType> {
     match loss_function {
-        "flat" => Some(autoeq::LossType::SpeakerFlat),
-        "flat-asymmetric" => Some(autoeq::LossType::SpeakerFlatAsymmetric),
-        "score" => Some(autoeq::LossType::SpeakerScore),
+        "flat" => Some(autoeq_optim::LossType::SpeakerFlat),
+        "flat-asymmetric" => Some(autoeq_optim::LossType::SpeakerFlatAsymmetric),
+        "score" => Some(autoeq_optim::LossType::SpeakerScore),
         _ => None,
     }
 }
@@ -50,7 +50,7 @@ pub(super) fn spawn_spinorama_speaker_load() {
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
         let result = rt
-            .block_on(async { autoeq::fetch_available_speakers().await })
+            .block_on(async { autoeq_measurements::read::fetch_available_speakers().await })
             .map_err(|e| e.to_string());
         if let Ok(mut guard) = slot.lock() {
             *guard = Some(result);
@@ -143,7 +143,7 @@ pub(super) fn spawn_spinorama_optimization(app: &mut App) {
             run_speaker_optimization_with_callback,
         };
 
-        let mut args = autoeq::Args::speaker_defaults();
+        let mut args = autoeq_optim_types::OptimizationConfig::speaker_defaults();
         args.num_filters = num_filters;
         args.min_freq = min_freq;
         args.max_freq = max_freq;
@@ -169,12 +169,12 @@ pub(super) fn spawn_spinorama_optimization(app: &mut App) {
         args.algo = algorithm.to_autoeq_string().to_string();
         // Map PEQ model string to enum
         args.peq_model = match peq_model_str.as_str() {
-            "pk" => autoeq::PeqModel::Pk,
-            "hp-pk" => autoeq::PeqModel::HpPk,
-            "hp-pk-lp" => autoeq::PeqModel::HpPkLp,
-            "ls-pk" => autoeq::PeqModel::LsPk,
-            "ls-pk-hs" => autoeq::PeqModel::LsPkHs,
-            _ => autoeq::PeqModel::Pk,
+            "pk" => autoeq_core::PeqModel::Pk,
+            "hp-pk" => autoeq_core::PeqModel::HpPk,
+            "hp-pk-lp" => autoeq_core::PeqModel::HpPkLp,
+            "ls-pk" => autoeq_core::PeqModel::LsPk,
+            "ls-pk-hs" => autoeq_core::PeqModel::LsPkHs,
+            _ => autoeq_core::PeqModel::Pk,
         };
         // Map loss function string to LossType enum. Unknown values are
         // rejected at the form layer above; this arm is defense-in-depth so

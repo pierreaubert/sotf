@@ -64,11 +64,11 @@ socket2 = "0.6"
 tokio-rustls = "0.26"
 tokio = { version = "1", features = ["rt-multi-thread", "fs", "macros", "io-util", "process", "signal"] }
 # tokio-tungstenite = "0.21"
-signal-hook = "0.3.18"
+signal-hook = "0.4.5"
 reqwest = { version = "0.13", features = ["json"] }
 url = "2"
 urlencoding = "2.1"
-parking_lot = { version = "0.12", features = ["deadlock_detection"] }
+parking_lot = { version = "0.13.0", features = ["deadlock_detection"] }
 futures = "0.3"
 
 # CLI and system
@@ -98,7 +98,7 @@ log = "0.4.28"
 memmap2 = "0.9.11"
 mimalloc = { version = "0.1" }
 notify = { version = "8.2" }
-libloading = { version = "0.8" }
+libloading = { version = "0.9.0" }
 rand_chacha = "0.10.0"
 num_cpus = "1.17"
 regex = "1.12"
@@ -107,7 +107,7 @@ rfd = { version = "0.17.2", package = "sotf-rfd", git = "https://github.com/pier
 # library crates take the workspace dep bare so dev `cargo check -p <lib>`
 # doesn't pay for the C compile. Feature unification re-enables `bundled`
 # automatically when a shipping app is in the build graph.
-rusqlite = { version = "0.38" }
+rusqlite = { version = "0.41.1" }
 rust-embed = "8"
 smol = "2"
 strsim = "0.11"
@@ -115,7 +115,7 @@ tempfile = "3.23"
 thiserror = "2.0.17"
 criterion = "0.8.2"
 insta = { version = "1.42", features = ["json"] }
-serial_test = "3"
+serial_test = "4.0.1"
 which = "8"
 walkdir = "2"
 qrcode = "0.14"
@@ -140,7 +140,14 @@ math-optimisation = { version = "0.5", path = "../math-audio/crates/math-optimis
 math-dsp = { version = "0.5", path = "../math-audio/crates/math-dsp" }
 math-rir = { version = "0.5", path = "../math-audio/crates/math-rir" }
 sofa-reader = { version = "0.2", git = "https://github.com/pierreaubert/sofa-reader" }
-autoeq = { version = ">=0.5.54", path = "../autoeq" }
+autoeq-core = { path = "../autoeq/crates/autoeq-core" }
+autoeq-optim = { path = "../autoeq/crates/autoeq-optim" }
+autoeq-optim-types = { path = "../autoeq/crates/autoeq-optim-types" }
+autoeq-workflow = { path = "../autoeq/crates/autoeq-workflow" }
+roomeq-dsp = { path = "../autoeq/crates/roomeq-dsp" }
+roomeq-engine = { path = "../autoeq/crates/roomeq-engine" }
+roomeq-model = { path = "../autoeq/crates/roomeq-model" }
+roomeq-workflow = { path = "../autoeq/crates/roomeq-workflow" }
 autoeq-measurements = { version = "0.5.4", path = "../autoeq/crates/autoeq-measurements" }
 
 # Symphonia add-ons from the sibling workspace.
@@ -233,10 +240,10 @@ driver-common = { path = "../sotf-daw/crates/driver-common" }
 driver-hal = { path = "../sotf-daw/crates/driver-hal" }  # macOS only
 
 # audio
-cpal = "0.17"
+cpal = "0.18.2"
 hound = "3.5"
 id3 = "1"
-lofty = "0.22"
+lofty = "0.25.5"
 rubato = { version = "5.0.0",  package = "sotf-rubato",  git = "https://github.com/pierreaubert/sotf-3rdparties" }
 symphonia = { version = "0.6", default-features = false }
 symphonia-core = "0.6"
@@ -294,7 +301,7 @@ syn = { version = "2", features = ["full", "parsing", "extra-traits"] }
 
 # Graphics and visualization
 bytemuck = { version = "1.14", features = ["derive"] }
-glam = "0.33"
+glam = "0.34.1"
 pollster = "1"
 image = "0.25"
 fontdue = "0.9"
@@ -334,14 +341,14 @@ nnnoiseless = { version = "0.1", package = "sotf-nnnoiseless", git = "https://gi
 # by Sonos. Replaced the C++ Microsoft ORT (`ort` crate) here because we only
 # need single-tensor CPU inference for the upmixer's vocal detector and the
 # pure-Rust path eliminates the native libonnxruntime build dependency.
-tract-onnx = { version = "0.22", package = "sotf-tract-onnx", git = "https://github.com/pierreaubert/sotf-3rdparties" }
+tract-onnx = "=0.23.9"
 
 # Font-stack helper crate (Zed fork of font-kit)
 font-kit = { package = "sotf-zed-font-kit", version = "0.14.1-zed", git = "https://github.com/pierreaubert/sotf-3rdparties" }
 
 # TUI extensions
 
-cbindgen = "0.28"
+cbindgen = "0.29.4"
 
 [workspace.lints.rust]
 ambiguous_negative_literals = "warn"

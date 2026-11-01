@@ -237,7 +237,7 @@ pub(crate) fn load_room_eq_measurements(app: &mut App) {
                 app.room_eq.quality_review_entries =
                     attach_quality_sidecar(&mut channels, sidecar.as_ref());
                 app.room_eq.model.ctc_config =
-                    serde_json::from_str::<autoeq::RoomConfig>(&contents)
+                    serde_json::from_str::<roomeq_model::RoomConfig>(&contents)
                         .ok()
                         .and_then(|room_config| room_config.ctc);
                 if let (Some(ctc), Some(dir)) = (app.room_eq.model.ctc_config.as_mut(), base_dir) {
@@ -439,14 +439,14 @@ pub(crate) fn export_room_eq_results(app: &mut App) {
             }
             "camilladsp" | "apo" | "easyeffects" | "wavelet" | "pipewire" | "roon" => {
                 let format = match format_id {
-                    "camilladsp" => autoeq::roomeq::ExportFormat::CamillaDsp,
-                    "apo" => autoeq::roomeq::ExportFormat::EqualizerApo,
-                    "easyeffects" => autoeq::roomeq::ExportFormat::EasyEffects,
-                    "wavelet" => autoeq::roomeq::ExportFormat::Wavelet,
-                    "pipewire" => autoeq::roomeq::ExportFormat::PipeWire,
-                    _ => autoeq::roomeq::ExportFormat::RoonDsp,
+                    "camilladsp" => roomeq_workflow::ExportFormat::CamillaDsp,
+                    "apo" => roomeq_workflow::ExportFormat::EqualizerApo,
+                    "easyeffects" => roomeq_workflow::ExportFormat::EasyEffects,
+                    "wavelet" => roomeq_workflow::ExportFormat::Wavelet,
+                    "pipewire" => roomeq_workflow::ExportFormat::PipeWire,
+                    _ => roomeq_workflow::ExportFormat::RoonDsp,
                 };
-                autoeq::roomeq::export_dsp_chain_with_convolution_sidecars(
+                roomeq_workflow::export_dsp_chain_with_convolution_sidecars(
                     autoeq_output,
                     format,
                     &path,

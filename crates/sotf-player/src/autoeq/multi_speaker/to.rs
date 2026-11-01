@@ -1,7 +1,7 @@
 use super::super::speaker::SpeakerOptimizationResult;
 use super::types::MultiSpeakerOptimizationResult;
 use super::types::SingleSpeakerResult;
-pub use autoeq::roomeq::RoomOptimizationResult;
+pub use roomeq_workflow::RoomOptimizationResult;
 
 /// Convert RoomOptimizationResult to legacy SingleSpeakerResult format
 ///

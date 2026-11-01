@@ -1,6 +1,6 @@
 use crate::EQFilter;
-pub use autoeq::roomeq::DspChainOutput;
 use math_audio_iir_fir::BiquadFilterType;
+pub use roomeq_model::DspChainOutput;
 use std::path::{Path, PathBuf};
 
 /// Return true when a channel name conventionally represents an LFE/sub output.

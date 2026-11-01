@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 // Re-export CrossoverType from autoeq — single source of truth.
-pub use autoeq::CrossoverType;
+pub use autoeq_optim::CrossoverType;
 
 // ============================================================================
 // Speaker Configuration

@@ -5,12 +5,13 @@ use super::multi_speaker_optimization_config::MultiSpeakerOptimizationConfig;
 use super::run::run_multi_speaker_optimization;
 use super::speaker_measurement_data::SpeakerMeasurementData;
 use super::types::multi_speaker_progress_from_pipeline_event;
-pub use autoeq::roomeq::OptimizerConfig;
-pub use autoeq::roomeq::{
-    PipelineEvent, PipelineStepId, PipelineStepStatus, RoomOptimizationProgress,
-};
+pub use roomeq_engine::PipelineEvent;
+pub use roomeq_engine::PipelineStepId;
+pub use roomeq_engine::PipelineStepStatus;
+pub use roomeq_model::OptimizerConfig;
+pub use roomeq_workflow::RoomOptimizationProgress;
 
-fn make_test_curve(base_level: f64) -> autoeq::Curve {
+fn make_test_curve(base_level: f64) -> autoeq_core::Curve {
     let n = 100;
     let freq: Vec<f64> = (0..n)
         .map(|i| 20.0 * (1000.0f64).powf(i as f64 / n as f64))
@@ -19,7 +20,7 @@ fn make_test_curve(base_level: f64) -> autoeq::Curve {
         .iter()
         .map(|f| base_level + (f / 1000.0).ln() * 2.0)
         .collect();
-    autoeq::Curve {
+    autoeq_core::Curve {
         freq: ndarray::Array1::from_vec(freq),
         spl: ndarray::Array1::from_vec(spl),
         phase: None,
@@ -76,7 +77,7 @@ fn test_build_room_config_from_curves() {
 
 #[test]
 fn test_optimizer_config_from_args() {
-    let args = autoeq::Args::speaker_defaults();
+    let args = autoeq_optim_types::OptimizationConfig::speaker_defaults();
     let opt_config = optimizer_config_from_args(&args);
 
     assert_eq!(opt_config.num_filters, args.num_filters);

@@ -4,17 +4,22 @@ use super::to::to_single_speaker_results;
 use super::types::MultiSpeakerOptimizationCallback;
 use super::types::MultiSpeakerOptimizationResult;
 use super::types::multi_speaker_progress_from_pipeline_event;
-pub use autoeq::roomeq::{
-    MeasurementSource, OptimizerConfig, ProcessingMode, RoomConfig, SpeakerConfig,
-};
-pub use autoeq::roomeq::{
-    PipelineControl, PipelineEvent, PipelineObserver, RoomOptimizationCallback,
-    RoomOptimizationResult, RoomPipeline, RoomPipelineRequest,
-};
+pub use autoeq_core::MeasurementSource;
+pub use roomeq_engine::PipelineControl;
+pub use roomeq_engine::PipelineEvent;
+pub use roomeq_engine::PipelineObserver;
+pub use roomeq_model::OptimizerConfig;
+pub use roomeq_model::ProcessingMode;
+pub use roomeq_model::RoomConfig;
+pub use roomeq_model::SpeakerConfig;
+pub use roomeq_workflow::RoomOptimizationCallback;
+pub use roomeq_workflow::RoomOptimizationResult;
+pub use roomeq_workflow::RoomPipeline;
+pub use roomeq_workflow::RoomPipelineRequest;
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Run room optimization using autoeq::roomeq
+/// Run room optimization using roomeq_workflow
 ///
 /// This is the primary entry point for multi-channel room optimization.
 /// Uses parallel processing via rayon for all speakers.
@@ -132,7 +137,7 @@ pub fn run_multi_speaker_optimization(
     }
 
     let room_config = RoomConfig {
-        version: autoeq::roomeq::default_config_version(),
+        version: roomeq_model::default_config_version(),
         system: None,
         speakers: speakers_map,
         crossovers: None,
@@ -224,8 +229,8 @@ pub fn run_multi_speaker_optimization(
         let observer: Box<dyn PipelineObserver> = Box::new(move |event: &PipelineEvent| {
             let legacy_progress = multi_speaker_progress_from_pipeline_event(event);
             match cb(&legacy_progress) {
-                autoeq::de::CallbackAction::Continue => PipelineControl::Continue,
-                autoeq::de::CallbackAction::Stop => PipelineControl::Stop,
+                autoeq_optim::de::CallbackAction::Continue => PipelineControl::Continue,
+                autoeq_optim::de::CallbackAction::Stop => PipelineControl::Stop,
             }
         });
         observer

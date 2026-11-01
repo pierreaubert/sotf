@@ -5,8 +5,9 @@ use super::speaker_optimization_progress::SpeakerOptimizationProgress;
 use super::speaker_optimization_result::SpeakerOptimizationResult;
 use super::types::MeasurementInput;
 use super::types::SpeakerOptimizationCallback;
-pub use autoeq::de::CallbackAction;
-pub use autoeq::{ProgressCallbackConfig, ProgressUpdate};
+pub use autoeq_optim::de::CallbackAction;
+pub use autoeq_workflow::ProgressCallbackConfig;
+pub use autoeq_workflow::ProgressUpdate;
 use std::sync::{Arc, Mutex};
 
 /// Optimize single-driver speaker using autoeq library functions
@@ -57,19 +58,23 @@ pub(super) fn optimize_single_driver(
             }
         });
 
-        let input_config = autoeq::workflow::InputConfig {
+        let input_config = autoeq_workflow::workflow::InputConfig {
             speaker: Some(speaker.to_string()),
             version: Some(version.to_string()),
             measurement: Some(measurement.to_string()),
             curve_name: curve_name.to_string(),
             curve_path: None,
         };
-        let optim_params = autoeq::OptimParams::from(&config.args);
+        let optim_params = autoeq_optim::OptimParams::from(&config.args);
 
-        let result =
-            autoeq::optimize_speaker(&input_config, &optim_params, progress_config, lib_callback)
-                .await
-                .map_err(|e| e.to_string())?;
+        let result = autoeq_workflow::optimize_speaker(
+            &input_config,
+            &optim_params,
+            progress_config,
+            lib_callback,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
 
         Ok(SpeakerOptimizationResult::from(result))
     })
@@ -81,29 +86,32 @@ pub(super) fn optimize_from_csv(
     config: &SpeakerOptimizationConfig,
     callback: Option<SpeakerOptimizationCallback>,
 ) -> Result<SpeakerOptimizationResult, String> {
-    let curve = autoeq::read::read_curve_from_csv(&path.to_path_buf())
+    let curve = autoeq_measurements::read::read_curve_from_csv(&path.to_path_buf())
         .map_err(|e| format!("Failed to read CSV: {}", e))?;
     optimize_from_curve(&curve, config, callback)
 }
 
 /// Optimize from pre-loaded curve
 pub(super) fn optimize_from_curve(
-    curve: &autoeq::Curve,
+    curve: &autoeq_core::Curve,
     config: &SpeakerOptimizationConfig,
     mut callback: Option<SpeakerOptimizationCallback>,
 ) -> Result<SpeakerOptimizationResult, String> {
     // Create standard frequency grid
-    let standard_freq = autoeq::read::create_log_frequency_grid(2000, 20.0, 20000.0);
-    let input_normalized = autoeq::normalize_and_interpolate_response(&standard_freq, curve);
+    let standard_freq = autoeq_measurements::read::create_log_frequency_grid(2000, 20.0, 20000.0);
+    let input_normalized = autoeq_core::normalize_and_interpolate_response(&standard_freq, curve);
 
     // Build target curve
-    let target_config = autoeq::workflow::TargetConfig::from(&config.args);
-    let target_curve =
-        autoeq::workflow::build_target_curve(&target_config, &standard_freq, &input_normalized)
-            .map_err(|e| e.to_string())?;
+    let target_config = autoeq_workflow::workflow::TargetConfig::from(&config.args);
+    let target_curve = autoeq_workflow::workflow::build_target_curve(
+        &target_config,
+        &standard_freq,
+        &input_normalized,
+    )
+    .map_err(|e| e.to_string())?;
 
     // Create deviation curve
-    let deviation_curve = autoeq::Curve {
+    let deviation_curve = autoeq_core::Curve {
         freq: target_curve.freq.clone(),
         spl: &target_curve.spl - &input_normalized.spl,
         phase: None,
@@ -111,8 +119,8 @@ pub(super) fn optimize_from_curve(
     };
 
     // Setup objective data (no spin data for CSV/curve input)
-    let optim_params = autoeq::OptimParams::from(&config.args);
-    let (objective_data, _) = autoeq::workflow::setup_objective_data(
+    let optim_params = autoeq_optim::OptimParams::from(&config.args);
+    let (objective_data, _) = autoeq_workflow::workflow::setup_objective_data(
         &optim_params,
         &input_normalized,
         &target_curve,
@@ -143,7 +151,7 @@ pub(super) fn optimize_from_curve(
         }
     };
 
-    let output = autoeq::perform_optimization_with_progress(
+    let output = autoeq_workflow::perform_optimization_with_progress(
         &optim_params,
         &objective_data,
         progress_config,
@@ -152,7 +160,7 @@ pub(super) fn optimize_from_curve(
     .map_err(|e| e.to_string())?;
 
     // Convert to biquads
-    let biquads: Vec<math_audio_iir_fir::Biquad> = autoeq::x2peq(
+    let biquads: Vec<math_audio_iir_fir::Biquad> = autoeq_workflow::x2peq(
         &output.params,
         config.args.sample_rate,
         config.args.peq_model,
@@ -163,7 +171,7 @@ pub(super) fn optimize_from_curve(
 
     // Compute visualization curves
     let frequencies: Vec<f64> = standard_freq.iter().copied().collect();
-    let curves = autoeq::compute_visualization_curves(
+    let curves = autoeq_workflow::compute_visualization_curves(
         &frequencies,
         &input_normalized,
         &target_curve,
@@ -225,7 +233,8 @@ pub(super) fn optimize_multidriver(
 
     // Create DriversLossData
     let crossover_type = config.crossover_type.unwrap_or_default();
-    let drivers_data = autoeq::loss::DriversLossData::new(driver_measurements, crossover_type);
+    let drivers_data =
+        autoeq_optim::loss::DriversLossData::new(driver_measurements, crossover_type);
 
     // Extract optimization parameters from config
     let min_freq = config.args.min_freq;
@@ -237,7 +246,7 @@ pub(super) fn optimize_multidriver(
     let max_db = config.args.max_db;
 
     // Run crossover optimization
-    let result = autoeq::workflow::optimize_drivers_crossover(
+    let result = autoeq_workflow::workflow::optimize_drivers_crossover(
         drivers_data.clone(),
         min_freq,
         max_freq,
@@ -254,7 +263,7 @@ pub(super) fn optimize_multidriver(
 
     // Create visualization curves from the optimized result
     let n = 2000;
-    let frequencies = autoeq::read::create_log_frequency_grid(n, min_freq, max_freq);
+    let frequencies = autoeq_measurements::read::create_log_frequency_grid(n, min_freq, max_freq);
     let freq_vec: Vec<f64> = frequencies.iter().copied().collect();
 
     // Build result (no EQ filters for multi-driver, just crossover settings)
@@ -304,8 +313,10 @@ pub(super) fn optimize_multisub(
     }
 
     // Create DriversLossData with no crossover (subs don't use crossover between them)
-    let drivers_data =
-        autoeq::loss::DriversLossData::new(driver_measurements, autoeq::CrossoverType::None);
+    let drivers_data = autoeq_optim::loss::DriversLossData::new(
+        driver_measurements,
+        autoeq_optim::CrossoverType::None,
+    );
 
     // Extract optimization parameters from config
     let min_freq = config.args.min_freq.max(20.0); // Sub optimization typically 20-200 Hz
@@ -317,7 +328,7 @@ pub(super) fn optimize_multisub(
     let max_db = config.args.max_db;
 
     // Run multi-sub optimization
-    let result = autoeq::workflow::optimize_multisub(
+    let result = autoeq_workflow::workflow::optimize_multisub(
         drivers_data,
         min_freq,
         max_freq,
@@ -333,7 +344,7 @@ pub(super) fn optimize_multisub(
 
     // Create visualization curves
     let n = 2000;
-    let frequencies = autoeq::read::create_log_frequency_grid(n, min_freq, max_freq);
+    let frequencies = autoeq_measurements::read::create_log_frequency_grid(n, min_freq, max_freq);
     let freq_vec: Vec<f64> = frequencies.iter().copied().collect();
 
     // Build result (multi-sub produces gains and delays, not EQ)
@@ -394,8 +405,10 @@ pub(super) fn optimize_dba(
     }
 
     // Create DriversLossData (using None crossover type for sub optimization)
-    let drivers_data =
-        autoeq::loss::DriversLossData::new(all_measurements, autoeq::CrossoverType::None);
+    let drivers_data = autoeq_optim::loss::DriversLossData::new(
+        all_measurements,
+        autoeq_optim::CrossoverType::None,
+    );
 
     // Extract optimization parameters
     let min_freq = config.args.min_freq.max(20.0);
@@ -407,7 +420,7 @@ pub(super) fn optimize_dba(
     let max_db = config.args.max_db;
 
     // Run multi-sub optimization (DBA is a specialized multi-sub configuration)
-    let result = autoeq::workflow::optimize_multisub(
+    let result = autoeq_workflow::workflow::optimize_multisub(
         drivers_data,
         min_freq,
         max_freq,
@@ -433,7 +446,7 @@ pub(super) fn optimize_dba(
 
     // Create visualization curves
     let n = 200;
-    let frequencies = autoeq::read::create_log_frequency_grid(n, min_freq, max_freq);
+    let frequencies = autoeq_measurements::read::create_log_frequency_grid(n, min_freq, max_freq);
     let freq_vec: Vec<f64> = frequencies.iter().copied().collect();
 
     Ok(SpeakerOptimizationResult {

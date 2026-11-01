@@ -3,14 +3,14 @@
 //! `perform_migration` / `write_room_config` functions that converted
 //! the legacy `RoomEqMeasurementsFile` JSON into the autoeq RoomConfig
 //! format have been removed — the only on-disk format is now
-//! `autoeq::RoomConfig`.
+//! `roomeq_model::RoomConfig`.
 
 use std::path::Path;
 
 /// Stub kept so the load path can still ask "is migration needed?". The
 /// legacy `RoomEqMeasurementsFile` schema is gone, so the answer is
 /// always `false` and the caller should load the file with the
-/// `autoeq::RoomConfig` parser directly.
+/// `roomeq_model::RoomConfig` parser directly.
 pub fn check_needs_migration(_json: &str, _file_size: u64) -> bool {
     false
 }

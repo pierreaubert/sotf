@@ -19,7 +19,7 @@ impl HeadphoneMeasurementPreview {
     pub fn load(path: &std::path::Path) -> Result<Self, String> {
         path.to_str()
             .ok_or_else(|| "Measurement path must be valid UTF-8".to_string())?;
-        let curve = autoeq::read::read_curve_from_csv(&path.to_path_buf())
+        let curve = autoeq_measurements::read::read_curve_from_csv(&path.to_path_buf())
             .map_err(|error| error.to_string())?;
         if curve.freq.len() != curve.spl.len() || curve.freq.len() < 2 {
             return Err("A measurement needs at least two frequency/level pairs".into());
@@ -102,7 +102,8 @@ impl HeadphoneMeasurementPreview {
 }
 
 // Re-export types from autoeq for convenience
-pub use autoeq::{HeadphoneOptResult, VisualizationCurves};
+pub use autoeq_workflow::HeadphoneOptResult;
+pub use autoeq_workflow::VisualizationCurves;
 
 /// Bundled target curve data
 pub mod target_curves {
@@ -182,7 +183,7 @@ pub fn run_headphone_optimization(
     curve_path: &str,
     target: &str,
     target_custom_path: &str,
-    args: &autoeq::Args,
+    args: &autoeq_optim_types::OptimizationConfig,
     _export_format: &str,
 ) -> Result<HeadphoneOptimizationResult, String> {
     // Load headphone measurement
@@ -192,13 +193,13 @@ pub fn run_headphone_optimization(
     let target_curve = load_target_curve(target, target_custom_path)?;
 
     // Use library function (no progress callback, no config)
-    let optim_params = autoeq::OptimParams::from(args);
-    let result = autoeq::optimize_headphone(
+    let optim_params = autoeq_optim::OptimParams::from(args);
+    let result = autoeq_workflow::optimize_headphone(
         &curve_path,
         &target_curve,
         &optim_params,
         None, // No progress config
-        None::<fn(&autoeq::ProgressUpdate) -> autoeq::de::CallbackAction>,
+        None::<fn(&autoeq_workflow::ProgressUpdate) -> autoeq_optim::de::CallbackAction>,
     )
     .map_err(|e| e.to_string())?;
 
@@ -210,24 +211,24 @@ pub fn run_headphone_optimization_with_callback<F>(
     curve_path: &str,
     target: &str,
     target_custom_path: &str,
-    args: &autoeq::Args,
+    args: &autoeq_optim_types::OptimizationConfig,
     progress_callback: Option<F>,
 ) -> Result<HeadphoneOptimizationResult, String>
 where
-    F: FnMut(&autoeq::ProgressUpdate) -> autoeq::de::CallbackAction + Send + 'static,
+    F: FnMut(&autoeq_workflow::ProgressUpdate) -> autoeq_optim::de::CallbackAction + Send + 'static,
 {
     let curve_path = PathBuf::from(curve_path);
     let target_curve = load_target_curve(target, target_custom_path)?;
 
-    let progress_config = Some(autoeq::ProgressCallbackConfig {
+    let progress_config = Some(autoeq_workflow::ProgressCallbackConfig {
         interval: 50,
         include_biquads: false,
         include_filter_response: false,
         frequencies: Vec::new(),
     });
 
-    let optim_params = autoeq::OptimParams::from(args);
-    let result = autoeq::optimize_headphone(
+    let optim_params = autoeq_optim::OptimParams::from(args);
+    let result = autoeq_workflow::optimize_headphone(
         &curve_path,
         &target_curve,
         &optim_params,
@@ -240,7 +241,7 @@ where
 }
 
 /// Load target curve from bundled data or custom file
-pub fn load_target_curve(target: &str, custom_path: &str) -> Result<autoeq::Curve, String> {
+pub fn load_target_curve(target: &str, custom_path: &str) -> Result<autoeq_core::Curve, String> {
     match target {
         "flat" => {
             let mut curve = parse_csv_curve(target_curves::HARMAN_OVER_EAR_2018)?;
@@ -251,15 +252,15 @@ pub fn load_target_curve(target: &str, custom_path: &str) -> Result<autoeq::Curv
         "harman-over-ear-2015" => parse_csv_curve(target_curves::HARMAN_OVER_EAR_2015),
         "harman-over-ear-2013" => parse_csv_curve(target_curves::HARMAN_OVER_EAR_2013),
         "harman-in-ear-2019" => parse_csv_curve(target_curves::HARMAN_IN_EAR_2019),
-        "custom" => autoeq::read::read_curve_from_csv(&PathBuf::from(custom_path))
+        "custom" => autoeq_measurements::read::read_curve_from_csv(&PathBuf::from(custom_path))
             .map_err(|e| format!("Failed to read custom target curve: {}", e)),
-        _ => autoeq::read::read_curve_from_csv(&PathBuf::from(custom_path))
+        _ => autoeq_measurements::read::read_curve_from_csv(&PathBuf::from(custom_path))
             .map_err(|e| format!("A target curve is required for headphone: {}", e)),
     }
 }
 
 /// Parse a CSV string into a Curve
-pub fn parse_csv_curve(csv_data: &str) -> Result<autoeq::Curve, String> {
+pub fn parse_csv_curve(csv_data: &str) -> Result<autoeq_core::Curve, String> {
     use ndarray::Array1;
 
     let mut freq = Vec::new();
@@ -287,7 +288,7 @@ pub fn parse_csv_curve(csv_data: &str) -> Result<autoeq::Curve, String> {
         return Err("No valid data found in CSV".to_string());
     }
 
-    Ok(autoeq::Curve {
+    Ok(autoeq_core::Curve {
         freq: Array1::from(freq),
         spl: Array1::from(spl),
         phase: None,
@@ -345,7 +346,7 @@ mod measurement_preview_tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("headphone.csv");
         std::fs::write(&path, "frequency,spl\n20,-4\n1000,0\n20000,-3\n").unwrap();
-        let curve = autoeq::read::read_curve_from_csv(&path).unwrap();
+        let curve = autoeq_measurements::read::read_curve_from_csv(&path).unwrap();
         let mut record =
             MeasurementRecord::from_source_path(curve, MeasurementOrigin::Csv, &path).unwrap();
         for (key, value) in [

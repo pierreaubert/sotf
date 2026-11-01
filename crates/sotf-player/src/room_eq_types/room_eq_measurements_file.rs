@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 ///
 /// The historical struct used to also be the on-disk shape for the
 /// `recordings.json` file, but every saver now writes
-/// [`autoeq::RoomConfig`] directly via [`build_speakers_from_recordings`].
+/// [`roomeq_model::RoomConfig`] directly via [`build_speakers_from_recordings`].
 /// This type is kept as a unit struct so the long list of static helpers
 /// retains a single namespace; nothing here is serialized.
 #[derive(Debug, Clone, Copy, Default)]
@@ -35,7 +35,7 @@ impl RoomEqMeasurementsFile {
         mic_names: &[String],
         sample_rate: u32,
         output_dir: &Path,
-    ) -> Result<Option<autoeq::roomeq::CtcMeasurementConfig>, String> {
+    ) -> Result<Option<roomeq_model::CtcMeasurementConfig>, String> {
         Self::build_ctc_measurements_from_recordings_with_strategy(
             recordings,
             speaker_names,
@@ -68,7 +68,7 @@ impl RoomEqMeasurementsFile {
         strategy: CtcMatrixExportStrategy,
         loopback_mic_index: Option<usize>,
         loopback_recordings: &[TransferMatrixLoopbackRecording],
-    ) -> Result<Option<autoeq::roomeq::CtcMeasurementConfig>, String> {
+    ) -> Result<Option<roomeq_model::CtcMeasurementConfig>, String> {
         if mic_names.len() < 2 {
             return Ok(None);
         }
@@ -254,7 +254,7 @@ impl RoomEqMeasurementsFile {
                         write_stereo_ir_wav(&abs_path, left_ir, right_ir, left_rate)?;
 
                         used_positions.insert(*position_idx);
-                        files.push(autoeq::roomeq::CtcMeasurementFileConfig {
+                        files.push(roomeq_model::CtcMeasurementFileConfig {
                             head_position,
                             speaker,
                             ir: Some(PathBuf::from("ctc_matrix").join(file_name)),
@@ -295,7 +295,7 @@ impl RoomEqMeasurementsFile {
                         )?;
 
                         used_positions.insert(*position_idx);
-                        files.push(autoeq::roomeq::CtcMeasurementFileConfig {
+                        files.push(roomeq_model::CtcMeasurementFileConfig {
                             head_position,
                             speaker,
                             ir: None,
@@ -313,7 +313,7 @@ impl RoomEqMeasurementsFile {
 
         let head_positions = used_positions
             .into_iter()
-            .map(|idx| autoeq::roomeq::CtcHeadPositionConfig {
+            .map(|idx| roomeq_model::CtcHeadPositionConfig {
                 id: format!("pos_{}", idx + 1),
                 x: 0.0,
                 y: 0.0,
@@ -322,7 +322,7 @@ impl RoomEqMeasurementsFile {
             })
             .collect();
 
-        Ok(Some(autoeq::roomeq::CtcMeasurementConfig {
+        Ok(Some(roomeq_model::CtcMeasurementConfig {
             speakers,
             mics: mic_names.iter().take(2).cloned().collect(),
             head_positions,
@@ -331,7 +331,7 @@ impl RoomEqMeasurementsFile {
     }
 
     /// Try to extract the delay-detection hints from an
-    /// `autoeq::RoomConfig` JSON blob. Returns the canonical channel
+    /// `roomeq_model::RoomConfig` JSON blob. Returns the canonical channel
     /// name order and sample rate the recording session was captured
     /// at, so the Delay Detection step can align its probe with the
     /// same device settings the user measured with.
@@ -340,7 +340,7 @@ impl RoomEqMeasurementsFile {
     /// means the file was recorded without session metadata and the
     /// caller should fall back to defaults (0..N indices, 48 000 Hz).
     pub fn extract_delay_detection_hints(json: &str) -> Option<DelayDetectionHints> {
-        let room_config = serde_json::from_str::<autoeq::RoomConfig>(json).ok()?;
+        let room_config = serde_json::from_str::<roomeq_model::RoomConfig>(json).ok()?;
         let rc = room_config.recording_config?;
         // The autoeq crate stores probe results as `ProbeResultsLegacy`
         // which is shape-compatible with the engine's `ProbeDelayResults`
@@ -361,7 +361,7 @@ impl RoomEqMeasurementsFile {
         })
     }
 
-    /// Load measurements from an `autoeq::RoomConfig` JSON file.
+    /// Load measurements from an `roomeq_model::RoomConfig` JSON file.
     ///
     /// `base_dir` is used to resolve relative wav/csv paths.  Pass the
     /// parent directory of the JSON file.
@@ -369,7 +369,7 @@ impl RoomEqMeasurementsFile {
         json: &str,
         base_dir: Option<&std::path::Path>,
     ) -> Result<Vec<ChannelMeasurement>, String> {
-        let room_config: autoeq::RoomConfig =
+        let room_config: roomeq_model::RoomConfig =
             serde_json::from_str(json).map_err(|e| format!("Parse error: {}", e))?;
         log::info!(
             "Loaded {} speakers (RoomConfig format)",
@@ -379,11 +379,13 @@ impl RoomEqMeasurementsFile {
             .speakers
             .iter()
             .filter_map(|(name, speaker)| {
-                let autoeq::SpeakerConfig::Single(source) = speaker else {
+                let roomeq_model::SpeakerConfig::Single(source) = speaker else {
                     return None;
                 };
                 let count = match source {
-                    autoeq::MeasurementSource::Multiple(multiple) => multiple.measurements.len(),
+                    autoeq_core::MeasurementSource::Multiple(multiple) => {
+                        multiple.measurements.len()
+                    }
                     _ => 1,
                 };
                 Some((name.clone(), count))
@@ -393,14 +395,14 @@ impl RoomEqMeasurementsFile {
             .speakers
             .iter()
             .filter_map(|(name, speaker)| {
-                let autoeq::SpeakerConfig::Group(group) = speaker else {
+                let roomeq_model::SpeakerConfig::Group(group) = speaker else {
                     return None;
                 };
                 let counts: Vec<_> = group
                     .measurements
                     .iter()
                     .map(|source| match source {
-                        autoeq::MeasurementSource::Multiple(multiple) => {
+                        autoeq_core::MeasurementSource::Multiple(multiple) => {
                             multiple.measurements.len()
                         }
                         _ => 1,
@@ -445,9 +447,9 @@ impl RoomEqMeasurementsFile {
         Ok(channels)
     }
 
-    /// Convert an `autoeq::RoomConfig` into `Vec<ChannelMeasurement>`.
+    /// Convert an `roomeq_model::RoomConfig` into `Vec<ChannelMeasurement>`.
     pub(super) fn channels_from_room_config(
-        room_config: autoeq::RoomConfig,
+        room_config: roomeq_model::RoomConfig,
         base_dir: Option<&std::path::Path>,
     ) -> Vec<ChannelMeasurement> {
         let recording_config = room_config.recording_config;
@@ -474,28 +476,28 @@ impl RoomEqMeasurementsFile {
             .into_iter()
             .enumerate()
             .filter_map(|(idx, (channel_name, speaker_config))| {
-                if let autoeq::SpeakerConfig::Group(group) = speaker_config {
+                if let roomeq_model::SpeakerConfig::Group(group) = speaker_config {
                     let driver_measurement_sets = group
                         .measurements
                         .into_iter()
                         .enumerate()
                         .map(|(driver_index, source)| {
                             let name = match &source {
-                                autoeq::MeasurementSource::Single(single) => {
+                                autoeq_core::MeasurementSource::Single(single) => {
                                     single.speaker_name.clone()
                                 }
-                                autoeq::MeasurementSource::Multiple(multiple) => {
+                                autoeq_core::MeasurementSource::Multiple(multiple) => {
                                     multiple.speaker_name.clone()
                                 }
                                 _ => None,
                             };
-                            let mut config = autoeq::RoomConfig {
+                            let mut config = roomeq_model::RoomConfig {
                                 recording_config: recording_config.clone(),
                                 ..Default::default()
                             };
                             config.speakers.insert(
                                 format!("driver_{}", driver_index + 1),
-                                autoeq::SpeakerConfig::Single(source),
+                                roomeq_model::SpeakerConfig::Single(source),
                             );
                             let driver = Self::channels_from_room_config(config, base_dir)
                                 .into_iter()
@@ -527,23 +529,24 @@ impl RoomEqMeasurementsFile {
                 // preserved. The first ref becomes the primary measurement;
                 // any extras are stored as multi_mic_measurements.
                 let acquisition_provenance = match &speaker_config {
-                    autoeq::SpeakerConfig::Single(autoeq::MeasurementSource::Single(source)) => {
-                        source.provenance.clone()
-                    }
-                    autoeq::SpeakerConfig::Single(autoeq::MeasurementSource::Multiple(source)) => {
-                        source.provenance.clone()
-                    }
+                    roomeq_model::SpeakerConfig::Single(
+                        autoeq_core::MeasurementSource::Single(source),
+                    ) => source.provenance.clone(),
+                    roomeq_model::SpeakerConfig::Single(
+                        autoeq_core::MeasurementSource::Multiple(source),
+                    ) => source.provenance.clone(),
                     _ => Default::default(),
                 };
-                let measurement_refs: Vec<autoeq::read::MeasurementRef> = match speaker_config {
-                    autoeq::SpeakerConfig::Single(source) => match source {
-                        autoeq::MeasurementSource::Single(s) => vec![s.measurement],
-                        autoeq::MeasurementSource::Multiple(m) => m.measurements,
-                        autoeq::MeasurementSource::InMemory(_)
-                        | autoeq::MeasurementSource::InMemoryMultiple(_) => Vec::new(),
-                    },
-                    _ => Vec::new(),
-                };
+                let measurement_refs: Vec<autoeq_measurements::read::MeasurementRef> =
+                    match speaker_config {
+                        roomeq_model::SpeakerConfig::Single(source) => match source {
+                            autoeq_core::MeasurementSource::Single(s) => vec![s.measurement],
+                            autoeq_core::MeasurementSource::Multiple(m) => m.measurements,
+                            autoeq_core::MeasurementSource::InMemory(_)
+                            | autoeq_core::MeasurementSource::InMemoryMultiple(_) => Vec::new(),
+                        },
+                        _ => Vec::new(),
+                    };
 
                 let mut iter = measurement_refs.into_iter();
                 let primary_ref = iter.next()?;
@@ -619,7 +622,7 @@ impl RoomEqMeasurementsFile {
                     group_drivers: Vec::new(),
                     multi_mic_measurements,
                 };
-                if acquisition_provenance != autoeq::MeasurementProvenance::default() {
+                if acquisition_provenance != autoeq_core::MeasurementProvenance::default() {
                     channel.acquisition = Some(super::MeasurementAcquisition::new(
                         acquisition_provenance,
                         std::iter::once(&channel.measurement)
@@ -635,11 +638,11 @@ impl RoomEqMeasurementsFile {
     /// Load measurement data from any MeasurementRef variant (inline, named path, or bare path).
     /// Returns (frequencies, magnitude_db, phase_deg, wav_path, csv_path).
     pub(super) fn load_measurement_ref(
-        measurement_ref: &autoeq::read::MeasurementRef,
+        measurement_ref: &autoeq_measurements::read::MeasurementRef,
         resolve_path: &dyn Fn(&str) -> String,
     ) -> MeasurementData {
         match measurement_ref {
-            autoeq::read::MeasurementRef::Loaded {
+            autoeq_measurements::read::MeasurementRef::Loaded {
                 original,
                 loaded_response,
             } => {
@@ -673,7 +676,7 @@ impl RoomEqMeasurementsFile {
                         }),
                 )
             }
-            autoeq::read::MeasurementRef::Inline(data) => {
+            autoeq_measurements::read::MeasurementRef::Inline(data) => {
                 let wav_path = data.wav_path.as_deref().map(resolve_path);
                 let csv_path = data.csv_path.as_deref().map(resolve_path);
 
@@ -698,13 +701,13 @@ impl RoomEqMeasurementsFile {
                     )
                 }
             }
-            autoeq::read::MeasurementRef::Named { path, .. } => {
+            autoeq_measurements::read::MeasurementRef::Named { path, .. } => {
                 let csv_str = resolve_path(&path.to_string_lossy());
                 let loaded = Self::load_curve_from_csv(&csv_str);
                 let (freq, mag, phase) = loaded.unwrap_or_default();
                 (freq, mag, phase, None, Some(csv_str))
             }
-            autoeq::read::MeasurementRef::Path(path) => {
+            autoeq_measurements::read::MeasurementRef::Path(path) => {
                 let csv_str = resolve_path(&path.to_string_lossy());
                 let loaded = Self::load_curve_from_csv(&csv_str);
                 let (freq, mag, phase) = loaded.unwrap_or_default();
@@ -716,7 +719,7 @@ impl RoomEqMeasurementsFile {
     /// Load a curve from a CSV file, returning (frequencies, magnitude_db, phase_deg).
     pub(super) fn load_curve_from_csv(csv_path: &str) -> Option<(Vec<f32>, Vec<f32>, Vec<f32>)> {
         let path = std::path::PathBuf::from(csv_path);
-        match autoeq::read::read_curve_from_csv(&path) {
+        match autoeq_measurements::read::read_curve_from_csv(&path) {
             Ok(curve) => {
                 log::info!(
                     "Loaded {} frequency points from CSV: {}",

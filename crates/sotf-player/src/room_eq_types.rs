@@ -1,10 +1,13 @@
 //! Shared room EQ domain types used by both GPUI and TUI apps.
 
-pub use autoeq::roomeq::{ChannelDspChain, DriverDspChain, DspChainOutput};
-pub use autoeq::roomeq::{
-    SimpleCrossoverChoice, SimpleLossChoice, SimplePresetConfig, SimpleProcessingChoice,
-    SpeakerTier,
-};
+pub use roomeq_model::ChannelDspChain;
+pub use roomeq_model::DriverDspChain;
+pub use roomeq_model::DspChainOutput;
+pub use roomeq_model::SimpleCrossoverChoice;
+pub use roomeq_model::SimpleLossChoice;
+pub use roomeq_model::SimplePresetConfig;
+pub use roomeq_model::SimpleProcessingChoice;
+pub use roomeq_model::SpeakerTier;
 
 mod bootstrap;
 mod bootstrap_uncertainty_ui_config;

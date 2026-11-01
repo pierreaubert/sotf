@@ -144,7 +144,7 @@ impl RecordingTuiState {
     }
 
     /// Build the canonical-metric `RoomDimensions` to persist.
-    pub fn room_dimensions_for_save(&self) -> Option<autoeq::roomeq::RoomDimensions> {
+    pub fn room_dimensions_for_save(&self) -> Option<roomeq_model::RoomDimensions> {
         self.model.room_dimensions_for_save()
     }
 

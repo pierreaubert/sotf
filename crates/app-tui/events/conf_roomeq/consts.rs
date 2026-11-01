@@ -23,7 +23,7 @@ pub(super) static ROOM_OPT_PROGRESS: std::sync::OnceLock<
     Arc<Mutex<Option<sotf_audio_player::autoeq::RoomOptimizationProgress>>>,
 > = std::sync::OnceLock::new();
 
-fn prepare_room_eq_config(app: &mut App) -> Result<autoeq::roomeq::RoomConfig, String> {
+fn prepare_room_eq_config(app: &mut App) -> Result<roomeq_model::RoomConfig, String> {
     if app.room_eq.model.channel_measurements.is_empty() {
         return Err("No measurements loaded".to_string());
     }
@@ -107,7 +107,7 @@ pub(super) fn spawn_room_eq_optimization(app: &mut App) {
     }
 
     std::thread::spawn(move || {
-        use autoeq::roomeq::CallbackAction;
+        use roomeq_workflow::CallbackAction;
         use sotf_audio_player::autoeq::{
             run_room_optimization, run_room_optimization_with_probe_arrivals,
         };

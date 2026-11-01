@@ -5,7 +5,8 @@ mod poll_tests {
     use crate::app::App;
     use crate::events::poll_room_eq_optimization;
     use crate::theme::Theme;
-    use autoeq::roomeq::{PipelineStepId, PipelineStepStatus};
+    use roomeq_engine::PipelineStepId;
+    use roomeq_engine::PipelineStepStatus;
     use sotf_audio_player::autoeq::RoomOptimizationProgress;
     use sotf_audio_player::room_eq_types::OptimizationStatus;
 

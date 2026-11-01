@@ -18,7 +18,7 @@ pub fn desktop_param_indices(settings: &crate::PluginSettings) -> Vec<usize> {
         }
         crate::PluginSettings::LinearPhaseEq { filters, .. } => {
             let mut indices: Vec<usize> = (0..filters.len() * 5).collect();
-            indices.extend(100..105);
+            indices.extend(100..100 + sotf_plugins::param_specs::linear_phase_eq::PARAMS.len());
             indices.extend(200..200 + filters.len());
             indices
         }

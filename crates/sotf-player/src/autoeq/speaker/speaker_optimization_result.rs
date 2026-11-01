@@ -1,4 +1,4 @@
-pub use autoeq::SpeakerOptResult;
+pub use autoeq_workflow::SpeakerOptResult;
 
 /// Result of a speaker optimization run
 #[derive(Clone, Debug)]

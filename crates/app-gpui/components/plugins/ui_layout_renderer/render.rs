@@ -658,7 +658,7 @@ pub(crate) fn shell_owned_param_indices(settings: &PluginSettings) -> Vec<usize>
         PluginSettings::Compressor { .. } => &[7, 8, 14],
         PluginSettings::Upmixer { .. } => &[0],
         PluginSettings::DynamicEq { .. } => &[0, 6],
-        PluginSettings::LinearPhaseEq { .. } => &[100, 101, 102, 103],
+        PluginSettings::LinearPhaseEq { .. } => &[100, 101, 102, 103, 105],
         PluginSettings::MultibandCompressor { .. } => &[0, 1, 12, 14],
         PluginSettings::MultibandExpander { .. } => &[0, 1, 15],
         PluginSettings::SpectrumAnalyzer { .. } => &[4, 5],

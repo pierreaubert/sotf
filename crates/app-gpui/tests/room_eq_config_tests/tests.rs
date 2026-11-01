@@ -92,7 +92,7 @@ fn test_room_eq_to_room_config_simple() {
     assert_eq!(config.optimizer.num_filters, 7);
     assert_eq!(
         config.optimizer.processing_mode,
-        autoeq::roomeq::ProcessingMode::LowLatency
+        roomeq_model::ProcessingMode::LowLatency
     );
 }
 
@@ -296,7 +296,7 @@ fn test_room_eq_to_room_config_advanced() {
     let multi_seat = config.optimizer.multi_seat.as_ref().unwrap();
     assert_eq!(
         multi_seat.strategy,
-        autoeq::roomeq::MultiSeatStrategy::PrimaryWithConstraints
+        roomeq_model::MultiSeatStrategy::PrimaryWithConstraints
     );
 }
 
@@ -315,7 +315,7 @@ fn test_room_eq_to_room_config_modal_basis_multiseat() {
 
     assert_eq!(
         multi_seat.strategy,
-        autoeq::roomeq::MultiSeatStrategy::ModalBasis
+        roomeq_model::MultiSeatStrategy::ModalBasis
     );
 }
 

@@ -595,13 +595,13 @@ mod tests {
 
     #[test]
     fn completed_manifest_enables_import_until_inputs_change() {
-        let mut config = autoeq::RoomConfig::default();
+        let mut config = roomeq_model::RoomConfig::default();
         config.speakers.insert(
             "L".into(),
-            autoeq::SpeakerConfig::Single(autoeq::MeasurementSource::Single(
-                autoeq::read::MeasurementSingle {
-                    measurement: autoeq::read::MeasurementRef::Inline(
-                        autoeq::read::InlineMeasurement {
+            roomeq_model::SpeakerConfig::Single(autoeq_core::MeasurementSource::Single(
+                autoeq_measurements::read::MeasurementSingle {
+                    measurement: autoeq_measurements::read::MeasurementRef::Inline(
+                        autoeq_measurements::read::InlineMeasurement {
                             frequencies: vec![100.0, 1000.0],
                             magnitude_db: vec![0.0, -1.0],
                             phase_deg: None,

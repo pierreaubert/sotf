@@ -1,10 +1,13 @@
 use super::super::build::build_room_eq_plugin_graph_config;
 use super::super::*;
-use autoeq::roomeq::{
-    BassManagementReport, BassManagementRoute, BassManagementRoutingGraph, OptimizationMetadata,
-    PluginConfigWrapper,
-};
-pub use autoeq::roomeq::{ChannelDspChain, DriverDspChain, DspChainOutput};
+use roomeq_model::BassManagementReport;
+use roomeq_model::BassManagementRoute;
+use roomeq_model::BassManagementRoutingGraph;
+pub use roomeq_model::ChannelDspChain;
+pub use roomeq_model::DriverDspChain;
+pub use roomeq_model::DspChainOutput;
+use roomeq_model::OptimizationMetadata;
+use roomeq_model::PluginConfigWrapper;
 
 /// Build a bare `ChannelDspChain` with all optional curve/IR fields
 /// defaulted to `None`. The `is_rack_compatible` check only looks at
@@ -298,7 +301,7 @@ fn test_build_room_eq_graph_ctc_uses_stereo_input_and_speaker_branches() {
         supporting_source: None,
         correction_acceptance: None,
         stage_outcomes: vec![],
-        ctc: Some(autoeq::roomeq::ctc::CtcReport {
+        ctc: Some(roomeq_model::CtcReport {
             enabled: true,
             source: "measured".to_string(),
             artifact: "/tmp/recommended_xtc_matrix.json".to_string(),
@@ -457,7 +460,7 @@ fn test_build_room_eq_graph_tracks_global_variable_channel_widths() {
         supporting_source: None,
         correction_acceptance: None,
         stage_outcomes: vec![],
-        ctc: Some(autoeq::roomeq::ctc::CtcReport {
+        ctc: Some(roomeq_model::CtcReport {
             enabled: true,
             source: "measured".to_string(),
             artifact: "/tmp/recommended_xtc_matrix.json".to_string(),
@@ -600,7 +603,7 @@ fn test_physical_graph_uses_route_gain_without_chain_override() {
             redirected_bass_enabled: true,
             routing_title: "Bass management".into(),
             crossover_cancellation: Vec::new(),
-            lfe: Some(autoeq::roomeq::home_cinema::LfeBassManagementReport {
+            lfe: Some(roomeq_model::home_cinema::LfeBassManagementReport {
                 input_channel: "LFE".to_string(),
                 playback_gain_db: 10.0,
                 low_pass_hz: 120.0,
@@ -784,7 +787,7 @@ fn test_physical_graph_rejects_unconnected_declared_output() {
             redirected_bass_enabled: false,
             routing_title: "Bass management".into(),
             crossover_cancellation: Vec::new(),
-            lfe: Some(autoeq::roomeq::home_cinema::LfeBassManagementReport {
+            lfe: Some(roomeq_model::home_cinema::LfeBassManagementReport {
                 input_channel: "B".to_string(),
                 playback_gain_db: 0.0,
                 low_pass_hz: 120.0,

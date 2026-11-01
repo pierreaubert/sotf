@@ -70,7 +70,7 @@ fn plots_fit_measured_cells_and_do_not_share_retained_data(cx: &mut TestAppConte
     width.set(240.0);
     cx.update(|window, cx| {
         window.refresh();
-        window.draw(cx).clear();
+        window.draw(cx).clear(cx);
     });
     assert_eq!(
         &*observed.borrow(),

@@ -841,6 +841,7 @@ pub(super) fn render_linear_phase_eq(
         fir_length,
         phase_mode,
         auto_gain,
+        accuracy_mode,
         mix,
         filters,
         ..
@@ -909,6 +910,7 @@ pub(super) fn render_linear_phase_eq(
                 selected_band_idx,
                 midi_overlay: ctx.midi_overlay,
                 mode: ui_eq::EqViewMode::LinearPhase {
+                    accuracy_mode: *accuracy_mode,
                     latency_samples,
                     latency_ms,
                     fir_length: fir_len_samples,

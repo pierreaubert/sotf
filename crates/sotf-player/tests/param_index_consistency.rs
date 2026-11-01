@@ -214,7 +214,9 @@ fn test_param_isolation_all_plugins() {
             }
 
             // Set only index i
-            let mut modified = default(&pt);
+            // Preserve randomized defaults (such as the Dither seed) so this
+            // compares one instance before and after the parameter update.
+            let mut modified = baseline;
             modified.set_param_value(i, new_val);
 
             // Verify index i changed

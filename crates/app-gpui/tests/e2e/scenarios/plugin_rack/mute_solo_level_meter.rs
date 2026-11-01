@@ -575,6 +575,30 @@ fn assert_lra_layout(
 }
 
 #[cfg(feature = "dev-api")]
+fn sync_rack_loudness_fixture(app: &mut sotf_audio_player_gpui::app::App) {
+    let graph = &app.plugin_state.graph;
+    let selected = graph
+        .get_plugin(app.plugin_state.selected_plugin_index)
+        .unwrap();
+    let node = graph
+        .nodes
+        .values()
+        .find(|node| node.plugin.id == selected.id)
+        .unwrap();
+    let engine_index = graph.get_engine_index(node.id).unwrap();
+    app.playback.rack_plugin_data = app
+        .playback
+        .qa_loudness_fixture
+        .clone()
+        .map(|data| data as std::sync::Arc<dyn std::any::Any + Send + Sync>);
+    app.playback.qa_rack_loudness_fixture = app
+        .playback
+        .qa_loudness_fixture
+        .clone()
+        .map(|data| (engine_index, data));
+}
+
+#[cfg(feature = "dev-api")]
 impl TestScenario for ProgrammeMaximumTruePeakPluginScenario {
     fn name(&self) -> &'static str {
         "Programme M/S and true-peak maxima are visible in the Loudness Monitor plugin"
@@ -609,6 +633,7 @@ impl TestScenario for ProgrammeMaximumTruePeakPluginScenario {
             app.plugin_state.add_plugin(&PluginType::LoudnessMonitor);
             app.playback.loudness_info = Some(Arc::new(initial.clone()));
             app.playback.qa_loudness_fixture = Some(Arc::new(initial));
+            sync_rack_loudness_fixture(app);
             cx.notify();
         });
         driver.run_until_parked();
@@ -688,6 +713,7 @@ impl TestScenario for ProgrammeMaximumTruePeakPluginScenario {
         driver.update_app(move |app, cx| {
             app.playback.loudness_info = Some(Arc::new(maximum_only.clone()));
             app.playback.qa_loudness_fixture = Some(Arc::new(maximum_only));
+            sync_rack_loudness_fixture(app);
             cx.notify();
         });
         driver.run_until_parked();
@@ -717,6 +743,7 @@ impl TestScenario for ProgrammeMaximumTruePeakPluginScenario {
         driver.update_app(move |app, cx| {
             app.playback.loudness_info = Some(Arc::new(stable.clone()));
             app.playback.qa_loudness_fixture = Some(Arc::new(stable));
+            sync_rack_loudness_fixture(app);
             cx.notify();
         });
         driver.run_until_parked();
@@ -743,6 +770,7 @@ impl TestScenario for ProgrammeMaximumTruePeakPluginScenario {
         driver.update_app(move |app, cx| {
             app.playback.loudness_info = Some(Arc::new(higher.clone()));
             app.playback.qa_loudness_fixture = Some(Arc::new(higher));
+            sync_rack_loudness_fixture(app);
             cx.notify();
         });
         driver.run_until_parked();
@@ -771,6 +799,7 @@ impl TestScenario for ProgrammeMaximumTruePeakPluginScenario {
         driver.update_app(move |app, cx| {
             app.playback.loudness_info = Some(Arc::new(lower.clone()));
             app.playback.qa_loudness_fixture = Some(Arc::new(lower));
+            sync_rack_loudness_fixture(app);
             cx.notify();
         });
         driver.run_until_parked();
@@ -795,6 +824,7 @@ impl TestScenario for ProgrammeMaximumTruePeakPluginScenario {
         driver.update_app(move |app, cx| {
             app.playback.loudness_info = Some(Arc::new(reset.clone()));
             app.playback.qa_loudness_fixture = Some(Arc::new(reset));
+            sync_rack_loudness_fixture(app);
             cx.notify();
         });
         driver.run_until_parked();
@@ -827,6 +857,7 @@ impl TestScenario for ProgrammeMaximumTruePeakPluginScenario {
         driver.update_app(move |app, cx| {
             app.playback.loudness_info = Some(Arc::new(below_gate.clone()));
             app.playback.qa_loudness_fixture = Some(Arc::new(below_gate));
+            sync_rack_loudness_fixture(app);
             cx.notify();
         });
         driver.run_until_parked();
@@ -856,6 +887,7 @@ impl TestScenario for ProgrammeMaximumTruePeakPluginScenario {
         driver.update_app(move |app, cx| {
             app.playback.loudness_info = Some(Arc::new(malformed.clone()));
             app.playback.qa_loudness_fixture = Some(Arc::new(malformed));
+            sync_rack_loudness_fixture(app);
             cx.notify();
         });
         driver.run_until_parked();
@@ -1033,6 +1065,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             view.state.update(cx, |state, _| {
                 state.app.playback.loudness_info = Some(Arc::new(initial.clone()));
                 state.app.playback.qa_loudness_fixture = Some(Arc::new(initial));
+                sync_rack_loudness_fixture(&mut state.app);
             })
         })
         .unwrap();
@@ -1103,6 +1136,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
                 view.state.update(cx, |state, _| {
                     state.app.playback.loudness_info = Some(Arc::new(fixture.clone()));
                     state.app.playback.qa_loudness_fixture = Some(Arc::new(fixture));
+                    sync_rack_loudness_fixture(&mut state.app);
                 })
             })
             .unwrap();
@@ -1122,6 +1156,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             view.state.update(cx, |state, _| {
                 state.app.playback.loudness_info = Some(Arc::new(nonfinite.clone()));
                 state.app.playback.qa_loudness_fixture = Some(Arc::new(nonfinite));
+                sync_rack_loudness_fixture(&mut state.app);
             })
         })
         .unwrap();
@@ -1149,12 +1184,13 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
                 state.app.ui_state.current_screen = Screen::Studio;
                 state.app.playback.loudness_info = Some(Arc::new(control_fixture.clone()));
                 state.app.playback.qa_loudness_fixture = Some(Arc::new(control_fixture.clone()));
+                sync_rack_loudness_fixture(&mut state.app);
                 cx.notify();
             })
         })
         .unwrap();
     visual_cx.run_until_parked();
-    let (visible_graph_id, output_graph_id, output_engine_index, input_engine_index) = window
+    let (visible_graph_id, output_graph_id, rack_engine_index, input_engine_index) = window
         .update(&mut visual_cx, |view, _, cx| {
             let state = view.state.read(cx);
             let graph = &state.app.plugin_state.graph;
@@ -1181,13 +1217,22 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             (
                 visible_id,
                 output_id,
-                graph.output_monitor_engine_index().unwrap(),
+                graph
+                    .get_engine_index(
+                        graph
+                            .nodes
+                            .values()
+                            .find(|node| node.plugin.id == visible_id)
+                            .unwrap()
+                            .id,
+                    )
+                    .unwrap(),
                 graph.input_monitor_engine_index().unwrap(),
             )
         })
         .unwrap();
     assert_ne!(visible_graph_id, output_graph_id);
-    assert_ne!(input_engine_index, output_engine_index);
+    assert_ne!(input_engine_index, rack_engine_index);
     let window_id = window
         .update(&mut visual_cx, |_, window, _| {
             window.window_handle().window_id().as_u64()
@@ -1199,7 +1244,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             .state
             .enabled,
         Some(true),
-        "the visible analyzer panel exposes controls for its displayed output snapshot"
+        "the visible analyzer panel exposes controls for its own selected-node snapshot"
     );
     click_meter_control_route(endpoint, &mut visual_cx, output_pause);
     assert_meter_query_route(
@@ -1210,7 +1255,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             "plugin_id": visible_graph_id,
             "runtime_instance_id": 77,
             "request_id": 1,
-            "engine_index": output_engine_index,
+            "engine_index": rack_engine_index,
             "operation": "pause",
             "command": "77:1:pause",
             "error": null,
@@ -1237,7 +1282,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             "plugin_id": visible_graph_id,
             "runtime_instance_id": 77,
             "request_id": 2,
-            "engine_index": output_engine_index,
+            "engine_index": rack_engine_index,
             "operation": "reset",
             "command": "77:2:reset",
             "error": null,
@@ -1249,6 +1294,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             view.state.update(cx, |state, cx| {
                 state.app.playback.loudness_info = Some(Arc::new(control_fixture.clone()));
                 state.app.playback.qa_loudness_fixture = Some(Arc::new(control_fixture.clone()));
+                sync_rack_loudness_fixture(&mut state.app);
                 cx.notify();
             })
         })
@@ -1269,6 +1315,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             view.state.update(cx, |state, cx| {
                 state.app.playback.loudness_info = Some(Arc::new(control_fixture.clone()));
                 state.app.playback.qa_loudness_fixture = Some(Arc::new(control_fixture.clone()));
+                sync_rack_loudness_fixture(&mut state.app);
                 cx.notify();
             })
         })
@@ -1300,7 +1347,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             "plugin_id": visible_graph_id,
             "runtime_instance_id": 77,
             "request_id": 3,
-            "engine_index": output_engine_index,
+            "engine_index": rack_engine_index,
             "operation": "start",
             "command": "77:3:start",
             "error": null,
@@ -1313,6 +1360,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             view.state.update(cx, |state, cx| {
                 state.app.playback.loudness_info = Some(Arc::new(control_fixture.clone()));
                 state.app.playback.qa_loudness_fixture = Some(Arc::new(control_fixture.clone()));
+                sync_rack_loudness_fixture(&mut state.app);
                 cx.notify();
             })
         })
@@ -1336,7 +1384,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             "plugin_id": visible_graph_id,
             "runtime_instance_id": 77,
             "request_id": 4,
-            "engine_index": output_engine_index,
+            "engine_index": rack_engine_index,
             "operation": "continue",
             "command": "77:4:continue",
             "error": null,
@@ -1349,6 +1397,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             view.state.update(cx, |state, cx| {
                 state.app.playback.loudness_info = Some(Arc::new(control_fixture.clone()));
                 state.app.playback.qa_loudness_fixture = Some(Arc::new(control_fixture.clone()));
+                sync_rack_loudness_fixture(&mut state.app);
                 cx.notify();
             })
         })
@@ -1373,6 +1422,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             view.state.update(cx, |state, cx| {
                 state.app.playback.loudness_info = Some(Arc::new(control_fixture.clone()));
                 state.app.playback.qa_loudness_fixture = Some(Arc::new(control_fixture.clone()));
+                sync_rack_loudness_fixture(&mut state.app);
                 cx.notify();
             })
         })
@@ -1397,6 +1447,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             view.state.update(cx, |state, cx| {
                 state.app.playback.loudness_info = None;
                 state.app.playback.qa_loudness_fixture = None;
+                sync_rack_loudness_fixture(&mut state.app);
                 cx.notify();
             })
         })
@@ -1421,6 +1472,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             view.state.update(cx, |state, cx| {
                 state.app.playback.loudness_info = Some(Arc::new(control_fixture.clone()));
                 state.app.playback.qa_loudness_fixture = Some(Arc::new(control_fixture.clone()));
+                sync_rack_loudness_fixture(&mut state.app);
                 cx.notify();
             })
         })
@@ -1436,7 +1488,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             "plugin_id": visible_graph_id,
             "runtime_instance_id": 88,
             "request_id": 5,
-            "engine_index": output_engine_index,
+            "engine_index": rack_engine_index,
             "operation": "reset",
             "command": "88:5:reset",
             "error": null,
@@ -1449,7 +1501,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
     let late_ack = LoudnessControlUiRequest {
         runtime_instance_id: 88,
         request_id: 6,
-        engine_index: output_engine_index,
+        engine_index: rack_engine_index,
         operation: "pause",
         command: "88:6:pause".to_string(),
         error: Some("temporary submission failure".to_string()),
@@ -1468,6 +1520,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
                     .insert(visible_graph_id, late_ack);
                 state.app.playback.loudness_info = Some(Arc::new(control_fixture.clone()));
                 state.app.playback.qa_loudness_fixture = Some(Arc::new(control_fixture.clone()));
+                sync_rack_loudness_fixture(&mut state.app);
                 cx.notify();
             })
         })
@@ -1493,7 +1546,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
     let replaced_error = LoudnessControlUiRequest {
         runtime_instance_id: 88,
         request_id: 7,
-        engine_index: output_engine_index,
+        engine_index: rack_engine_index,
         operation: "reset",
         command: "88:7:reset".to_string(),
         error: Some("temporary submission failure".to_string()),
@@ -1511,6 +1564,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
                     .insert(visible_graph_id, replaced_error);
                 state.app.playback.loudness_info = Some(Arc::new(control_fixture.clone()));
                 state.app.playback.qa_loudness_fixture = Some(Arc::new(control_fixture.clone()));
+                sync_rack_loudness_fixture(&mut state.app);
                 cx.notify();
             })
         })
@@ -1556,6 +1610,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             view.state.update(cx, |state, cx| {
                 state.app.playback.loudness_info = Some(initial_output.clone());
                 state.app.playback.qa_loudness_fixture = Some(initial_output.clone());
+                sync_rack_loudness_fixture(&mut state.app);
                 cx.notify();
             })
         })
@@ -1585,7 +1640,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
             .as_u64()
             .expect("the UI command contains its selected engine index")
             as usize;
-        assert_eq!(routed_engine_index, output_engine_index);
+        assert_eq!(routed_engine_index, rack_engine_index);
         assert_ne!(routed_engine_index, input_engine_index);
         assert_eq!(
             request["runtime_instance_id"].as_u64(),
@@ -1624,6 +1679,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
                 view.state.update(cx, |state, cx| {
                     state.app.playback.loudness_info = Some(published.clone());
                     state.app.playback.qa_loudness_fixture = Some(published.clone());
+                    sync_rack_loudness_fixture(&mut state.app);
                     cx.notify();
                 })
             })
@@ -1649,7 +1705,7 @@ async fn programme_maximum_loudness_queries_resolve_live_app_state(cx: &mut Test
                 "plugin_id": visible_graph_id,
                 "runtime_instance_id": actual_output_id,
                 "request_id": request_id,
-                "engine_index": output_engine_index,
+                "engine_index": rack_engine_index,
                 "operation": operation,
                 "command": format!("{actual_output_id}:{request_id}:{operation}"),
                 "error": null,

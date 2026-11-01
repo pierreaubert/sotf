@@ -433,8 +433,8 @@ pub struct ChannelOptResult {
     pub impulse_response: Option<Vec<(f64, f64)>>,
 }
 
-/// DSP plugin configuration (alias for `autoeq::roomeq::PluginConfigWrapper`).
-pub type DspPluginConfig = autoeq::roomeq::PluginConfigWrapper;
+/// DSP plugin configuration (alias for `roomeq_model::PluginConfigWrapper`).
+pub type DspPluginConfig = roomeq_model::PluginConfigWrapper;
 
-/// DSP chain metadata (alias for `autoeq::roomeq::OptimizationMetadata`).
-pub type DspChainMetadata = autoeq::roomeq::OptimizationMetadata;
+/// DSP chain metadata (alias for `roomeq_model::OptimizationMetadata`).
+pub type DspChainMetadata = roomeq_model::OptimizationMetadata;

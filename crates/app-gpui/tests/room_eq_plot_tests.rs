@@ -73,7 +73,7 @@ fn room_eq_report_uses_dsp_output_curves_without_recomputing() {
         "L".to_string(),
         make_report_channel("L", vec![-1.0, -30.0, -9.0], vec![-2.0, -31.0, -10.0]),
     );
-    let output = autoeq::roomeq::DspChainOutput {
+    let output = roomeq_model::DspChainOutput {
         version: "test".to_string(),
         artifact_bundle_schema_version: None,
         global_plugins: Vec::new(),
@@ -134,7 +134,7 @@ fn room_eq_report_channel_without_embedded_data_uses_legacy_fallback_guard() {
         "R".to_string(),
         make_report_channel("R", vec![-2.0, -28.0, -8.0], vec![-1.0, -27.0, -7.0]),
     );
-    let output = autoeq::roomeq::DspChainOutput {
+    let output = roomeq_model::DspChainOutput {
         version: "test".to_string(),
         artifact_bundle_schema_version: None,
         global_plugins: Vec::new(),
@@ -192,8 +192,8 @@ fn make_report_channel(
     name: &str,
     initial_spl: Vec<f64>,
     final_spl: Vec<f64>,
-) -> autoeq::roomeq::ChannelDspChain {
-    autoeq::roomeq::ChannelDspChain {
+) -> roomeq_model::ChannelDspChain {
+    roomeq_model::ChannelDspChain {
         channel: name.to_string(),
         plugins: Vec::new(),
         drivers: None,
@@ -217,8 +217,8 @@ fn make_report_channel(
     }
 }
 
-fn make_empty_report_channel(name: &str) -> autoeq::roomeq::ChannelDspChain {
-    autoeq::roomeq::ChannelDspChain {
+fn make_empty_report_channel(name: &str) -> roomeq_model::ChannelDspChain {
+    roomeq_model::ChannelDspChain {
         channel: name.to_string(),
         plugins: Vec::new(),
         drivers: None,
@@ -242,8 +242,8 @@ fn make_empty_report_channel(name: &str) -> autoeq::roomeq::ChannelDspChain {
     }
 }
 
-fn curve_data(spl: Vec<f64>) -> autoeq::roomeq::CurveData {
-    autoeq::roomeq::CurveData {
+fn curve_data(spl: Vec<f64>) -> roomeq_model::CurveData {
+    roomeq_model::CurveData {
         freq: vec![20.0, 50.0, 100.0],
         spl,
         phase: None,

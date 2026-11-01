@@ -1,7 +1,7 @@
 use super::super::types::SpeakerConfigType;
 use super::callback_config::CallbackConfig;
 use super::types::MeasurementInput;
-pub use autoeq::CrossoverType;
+pub use autoeq_optim::CrossoverType;
 
 /// Configuration for speaker optimization
 #[derive(Debug, Clone)]
@@ -17,7 +17,7 @@ pub struct SpeakerOptimizationConfig {
     /// Initial crossover frequency hints (optional)
     pub crossover_freq_hints: Vec<f64>,
     /// Optimization arguments (use Args::speaker_defaults() as base)
-    pub args: autoeq::Args,
+    pub args: autoeq_optim_types::OptimizationConfig,
     /// Callback configuration
     pub callback_config: Option<CallbackConfig>,
     /// Target curve (optional - defaults to flat or curve-name-specific)
@@ -32,7 +32,7 @@ impl Default for SpeakerOptimizationConfig {
             driver_measurements: Vec::new(),
             crossover_type: None,
             crossover_freq_hints: Vec::new(),
-            args: autoeq::Args::speaker_defaults(),
+            args: autoeq_optim_types::OptimizationConfig::speaker_defaults(),
             callback_config: Some(CallbackConfig::default()),
             target: None,
         }

@@ -4,12 +4,13 @@ use super::types::PreviewCurves;
 /// Load a MeasurementInput into an autoeq DriverMeasurement
 pub(super) fn load_measurement_as_driver(
     input: &MeasurementInput,
-) -> Result<autoeq::loss::DriverMeasurement, String> {
+) -> Result<autoeq_optim::loss::DriverMeasurement, String> {
     match input {
         MeasurementInput::CsvFile(path) => {
             let paths = vec![path.clone()];
-            let measurements = autoeq::workflow::load_driver_measurements_from_files(&paths)
-                .map_err(|e| e.to_string())?;
+            let measurements =
+                autoeq_workflow::workflow::load_driver_measurements_from_files(&paths)
+                    .map_err(|e| e.to_string())?;
             measurements
                 .into_iter()
                 .next()
@@ -22,7 +23,7 @@ pub(super) fn load_measurement_as_driver(
                 .phase
                 .as_ref()
                 .map(|p| ndarray::Array1::from_vec(p.iter().copied().collect()));
-            Ok(autoeq::loss::DriverMeasurement::new(freq, spl, phase))
+            Ok(autoeq_optim::loss::DriverMeasurement::new(freq, spl, phase))
         }
         MeasurementInput::Spinorama { .. } => {
             Err("Spinorama input not supported for multi-driver optimization".to_string())
@@ -56,23 +57,31 @@ pub async fn load_preview_curves_async(
     curve_name: &str,
 ) -> Result<PreviewCurves, String> {
     // Load input curve using library function
-    let (input_curve, _spin_data) =
-        autoeq::load_spinorama_with_spin(speaker, version, measurement, curve_name)
-            .await
-            .map_err(|e| e.to_string())?;
+    let (input_curve, _spin_data) = autoeq_measurements::read::load_spinorama_with_spin(
+        speaker,
+        version,
+        measurement,
+        curve_name,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     // Create standard frequency grid
-    let standard_freq = autoeq::read::create_log_frequency_grid(200, 20.0, 20000.0);
+    let standard_freq = autoeq_measurements::read::create_log_frequency_grid(200, 20.0, 20000.0);
 
     // Normalize input curve
-    let input_normalized = autoeq::normalize_and_interpolate_response(&standard_freq, &input_curve);
+    let input_normalized =
+        autoeq_core::normalize_and_interpolate_response(&standard_freq, &input_curve);
 
     // Build target curve using default args
-    let args = autoeq::Args::speaker_defaults();
-    let target_config = autoeq::workflow::TargetConfig::from(&args);
-    let target_curve =
-        autoeq::workflow::build_target_curve(&target_config, &standard_freq, &input_normalized)
-            .map_err(|e| e.to_string())?;
+    let args = autoeq_optim_types::OptimizationConfig::speaker_defaults();
+    let target_config = autoeq_workflow::workflow::TargetConfig::from(&args);
+    let target_curve = autoeq_workflow::workflow::build_target_curve(
+        &target_config,
+        &standard_freq,
+        &input_normalized,
+    )
+    .map_err(|e| e.to_string())?;
 
     // Compute deviation
     let frequencies: Vec<f64> = standard_freq.iter().copied().collect();

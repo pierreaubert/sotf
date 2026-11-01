@@ -250,7 +250,7 @@ impl PlayerView {
                 .background_executor()
                 .spawn(async move {
                     // Construct params using library defaults and override specific fields
-                    let mut params = autoeq::Args::headphone_defaults();
+                    let mut params = autoeq_optim_types::OptimizationConfig::headphone_defaults();
                     params.num_filters = config.num_filters;
                     params.min_q = config.min_q;
                     params.max_q = config.max_q;
@@ -284,11 +284,11 @@ impl PlayerView {
                         &target_preset,
                         &custom_target_path,
                         &params,
-                        Some(move |_: &autoeq::ProgressUpdate| {
+                        Some(move |_: &autoeq_workflow::ProgressUpdate| {
                             if cancel_for_cb.load(std::sync::atomic::Ordering::Relaxed) {
-                                autoeq::de::CallbackAction::Stop
+                                autoeq_optim::de::CallbackAction::Stop
                             } else {
-                                autoeq::de::CallbackAction::Continue
+                                autoeq_optim::de::CallbackAction::Continue
                             }
                         }),
                     )
@@ -938,7 +938,9 @@ impl PlayerView {
                     .map_err(|error| format!("Failed to create network runtime: {error}"))
                     .and_then(|runtime| {
                         runtime
-                            .block_on(async { autoeq::fetch_available_headphones().await })
+                            .block_on(async {
+                                autoeq_measurements::read::fetch_available_headphones().await
+                            })
                             .map_err(|error| error.to_string())
                     });
                 let _ = sender.send(result);
@@ -950,7 +952,9 @@ impl PlayerView {
                 .map_err(|error| format!("Failed to create network runtime: {error}"))
                 .and_then(|runtime| {
                     runtime
-                        .block_on(async { autoeq::fetch_available_headphones().await })
+                        .block_on(async {
+                            autoeq_measurements::read::fetch_available_headphones().await
+                        })
                         .map_err(|error| error.to_string())
                 });
             let _ = sender.send(result);
@@ -1102,9 +1106,11 @@ impl PlayerView {
                 };
                 let result = rt.block_on(async {
                     let (csv_path, curve) =
-                        autoeq::fetch_headphone_frequency_response(&headphone_for_thread)
-                            .await
-                            .map_err(|e| e.to_string())?;
+                        autoeq_measurements::read::fetch_headphone_frequency_response(
+                            &headphone_for_thread,
+                        )
+                        .await
+                        .map_err(|e| e.to_string())?;
 
                     let curve_data: Vec<(f64, f64)> = curve
                         .freq
@@ -1129,9 +1135,11 @@ impl PlayerView {
             };
             let result = rt.block_on(async {
                 let (csv_path, curve) =
-                    autoeq::fetch_headphone_frequency_response(&headphone_for_thread)
-                        .await
-                        .map_err(|error| error.to_string())?;
+                    autoeq_measurements::read::fetch_headphone_frequency_response(
+                        &headphone_for_thread,
+                    )
+                    .await
+                    .map_err(|error| error.to_string())?;
                 Ok::<(String, Vec<(f64, f64)>), String>((
                     csv_path,
                     curve

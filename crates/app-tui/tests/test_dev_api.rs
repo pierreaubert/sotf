@@ -210,7 +210,7 @@ fn query_room_eq_state() {
     let mut app = make_app();
     app.room_eq = sotf_audio_player_tui::app::RoomEqTuiState::default();
     app.room_eq.model.status_message = "running".to_string();
-    app.room_eq.model.error_message = Some("boom".to_string());
+    app.room_eq.load_error = Some("boom".to_string());
 
     resolve("roomeq.step", &app).unwrap();
     assert_eq!(resolve("roomeq.measurement_count", &app).unwrap(), 0);

@@ -12,11 +12,11 @@ fn test_room_eq_to_room_config_preserves_raw_sweep_ctc_config() {
         make_dummy_measurement("R"),
         make_dummy_measurement("LFE [mic 1]"),
     ];
-    state.model.ctc_config = Some(autoeq::roomeq::CtcConfig {
+    state.model.ctc_config = Some(roomeq_model::CtcConfig {
         enabled: true,
         matrix_source: "raw_sweep".to_string(),
         reference_sweep: Some(PathBuf::from("ctc_reference_sweep.wav")),
-        measurements: Some(autoeq::roomeq::CtcMeasurementConfig {
+        measurements: Some(roomeq_model::CtcMeasurementConfig {
             speakers: vec!["L".to_string(), "R".to_string(), "LFE [mic 1]".to_string()],
             mics: vec!["left_ear".to_string(), "right_ear".to_string()],
             head_positions: Vec::new(),
@@ -61,10 +61,10 @@ fn test_room_eq_to_room_config_disables_imported_ctc_config() {
     let mut state = RoomEqState::default();
     state.model.channel_measurements =
         vec![make_dummy_measurement("L"), make_dummy_measurement("R")];
-    state.model.ctc_config = Some(autoeq::roomeq::CtcConfig {
+    state.model.ctc_config = Some(roomeq_model::CtcConfig {
         enabled: true,
         matrix_source: "measured".to_string(),
-        measurements: Some(autoeq::roomeq::CtcMeasurementConfig {
+        measurements: Some(roomeq_model::CtcMeasurementConfig {
             speakers: vec!["L".to_string(), "R".to_string()],
             mics: vec!["left_ear".to_string(), "right_ear".to_string()],
             head_positions: Vec::new(),
@@ -128,19 +128,19 @@ fn test_room_eq_to_room_config_preserves_imported_system_and_crossovers() {
     speakers.insert("L".to_string(), "L".to_string());
     speakers.insert("R".to_string(), "R".to_string());
     speakers.insert("LFE".to_string(), "LFE".to_string());
-    state.model.imported_system = Some(autoeq::roomeq::SystemConfig {
-        model: autoeq::roomeq::SystemModel::HomeCinema,
+    state.model.imported_system = Some(roomeq_model::SystemConfig {
+        model: roomeq_model::SystemModel::HomeCinema,
         speakers,
-        subwoofers: Some(autoeq::roomeq::SubwooferSystemConfig {
-            config: autoeq::roomeq::SubwooferStrategy::Single,
+        subwoofers: Some(roomeq_model::SubwooferSystemConfig {
+            config: roomeq_model::SubwooferStrategy::Single,
             crossover: Some("cli_xover".into()),
             routing: Default::default(),
-            outputs: vec![autoeq::roomeq::SubwooferOutput {
+            outputs: vec![roomeq_model::SubwooferOutput {
                 id: "LFE".into(),
                 speaker: "LFE".into(),
             }],
         }),
-        bass_management: Some(autoeq::roomeq::BassManagementConfig {
+        bass_management: Some(roomeq_model::BassManagementConfig {
             max_sub_boost_db: 3.0,
             ..Default::default()
         }),
@@ -149,7 +149,7 @@ fn test_room_eq_to_room_config_preserves_imported_system_and_crossovers() {
     let mut crossovers = HashMap::new();
     crossovers.insert(
         "cli_xover".to_string(),
-        autoeq::roomeq::CrossoverConfig {
+        roomeq_model::CrossoverConfig {
             crossover_type: "LR48".to_string(),
             frequency: Some(55.0),
             frequencies: None,
@@ -186,9 +186,9 @@ fn test_room_eq_to_room_config_preserves_imported_system_and_crossovers() {
 /// Helper: build a minimal BackendOptimizerConfig with NO feature flags enabled.
 /// This simulates what the roomeq CLI produces when none of the advanced features
 /// are specified in the JSON config.
-fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
-    autoeq::roomeq::OptimizerConfig {
-        processing_mode: autoeq::roomeq::ProcessingMode::LowLatency,
+fn make_bare_backend_config() -> roomeq_model::OptimizerConfig {
+    roomeq_model::OptimizerConfig {
+        processing_mode: roomeq_model::ProcessingMode::LowLatency,
         fir: None,
         mixed_config: None,
         mixed_phase: None,
@@ -407,12 +407,12 @@ fn test_fresh_measurement_gets_smart_defaults() {
 #[test]
 fn test_import_with_features_enabled_preserves_them() {
     let mut backend = make_bare_backend_config();
-    backend.target_response = Some(autoeq::roomeq::TargetResponseConfig {
-        shape: autoeq::roomeq::TargetShape::Harman,
+    backend.target_response = Some(roomeq_model::TargetResponseConfig {
+        shape: roomeq_model::TargetShape::Harman,
         slope_db_per_octave: -1.0,
         reference_freq: 1000.0,
         curve_path: None,
-        preference: autoeq::roomeq::UserPreference {
+        preference: roomeq_model::UserPreference {
             bass_shelf_db: 2.0,
             bass_shelf_freq: 200.0,
             treble_shelf_db: 0.0,
@@ -421,17 +421,17 @@ fn test_import_with_features_enabled_preserves_them() {
         broadband_precorrection: false,
         role_targets: None,
     });
-    backend.schroeder_split = Some(autoeq::roomeq::SchroederSplitConfig {
+    backend.schroeder_split = Some(roomeq_model::SchroederSplitConfig {
         enabled: true,
         schroeder_freq: 250.0,
         room_dimensions: None,
-        low_freq_config: autoeq::roomeq::LowFreqFilterConfig {
+        low_freq_config: roomeq_model::LowFreqFilterConfig {
             max_q: 8.0,
             min_q: 0.5,
             allow_boost: true,
             max_db: None,
         },
-        high_freq_config: autoeq::roomeq::HighFreqFilterConfig {
+        high_freq_config: roomeq_model::HighFreqFilterConfig {
             max_q: 2.0,
             shelving_only: true,
         },
@@ -475,12 +475,12 @@ fn test_import_with_features_enabled_preserves_them() {
 #[test]
 fn test_import_broadband_with_enabled_false() {
     let mut backend = make_bare_backend_config();
-    backend.target_response = Some(autoeq::roomeq::TargetResponseConfig {
-        shape: autoeq::roomeq::TargetShape::Flat,
+    backend.target_response = Some(roomeq_model::TargetResponseConfig {
+        shape: roomeq_model::TargetShape::Flat,
         slope_db_per_octave: 0.0,
         reference_freq: 1000.0,
         curve_path: None,
-        preference: autoeq::roomeq::UserPreference::default(),
+        preference: roomeq_model::UserPreference::default(),
         broadband_precorrection: false,
         role_targets: None,
     });

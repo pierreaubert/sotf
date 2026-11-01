@@ -46,7 +46,6 @@ pub(crate) fn render_header(
     let text =
         crate::app::i18n::EqViewTranslations::for_language(entity.read(cx).app.ui_state.language);
     let mut fir = specs::PARAMS[1];
-    fir.name = text.fir_length;
     let mut phase = specs::PARAMS[2];
     phase.name = text.phase;
     let mut auto = specs::PARAMS[3];
@@ -56,10 +55,16 @@ pub(crate) fn render_header(
         fir_length,
         phase_mode,
         auto_gain,
+        accuracy_mode,
         ..
     } = settings
     else {
         return Empty.into_any_element();
+    };
+    fir.name = if *accuracy_mode {
+        "Saved Manual FIR Length"
+    } else {
+        text.fir_length
     };
     let change_entity = entity.clone();
     let count = NumberInput::new(("fir-eq-count", plugin_idx))
@@ -114,6 +119,15 @@ pub(crate) fn render_header(
             103,
             &auto,
             if *auto_gain { 1.0 } else { 0.0 },
+            theme,
+        ))
+        .child(render_compact_choice_param(
+            d,
+            entity.clone(),
+            plugin_idx,
+            105,
+            &specs::PARAMS[5],
+            f64::from(*accuracy_mode),
             theme,
         ))
         .into_any_element()
@@ -385,6 +399,7 @@ pub(super) fn render(
                 .color(theme.text_muted),
         );
     if let EqViewMode::LinearPhase {
+        accuracy_mode,
         latency_samples,
         latency_ms,
         fir_length,
@@ -392,7 +407,16 @@ pub(super) fn render(
         ..
     } = &state.mode
     {
-        root = root.child(Text::caption(format!("{phase_mode} phase · {fir_length} taps · Latency {latency_samples} samples ({latency_ms:.2} ms)")).color(theme.text_secondary));
+        let summary = if *accuracy_mode {
+            format!(
+                "{phase_mode} phase · Automatic FIR support · Resolved length and latency pending"
+            )
+        } else {
+            format!(
+                "{phase_mode} phase · {fir_length} taps · Latency {latency_samples} samples ({latency_ms:.2} ms)"
+            )
+        };
+        root = root.child(Text::caption(summary).color(theme.text_secondary));
     }
     if let Some(overlay) = state
         .midi_overlay

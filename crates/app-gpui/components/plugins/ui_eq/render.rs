@@ -2659,6 +2659,7 @@ pub fn render_eq_plugin(
             phase_mode,
             auto_gain,
             mix,
+            accuracy_mode: false,
         } => Some((
             *latency_samples,
             *latency_ms,
@@ -2667,7 +2668,11 @@ pub fn render_eq_plugin(
             *auto_gain,
             *mix,
         )),
-        EqViewMode::Standard => None,
+        EqViewMode::Standard
+        | EqViewMode::LinearPhase {
+            accuracy_mode: true,
+            ..
+        } => None,
     };
     let lp_header = fir_summary.map(
         |(latency_samples, latency_ms, fir_length, phase_mode, auto_gain, mix)| {

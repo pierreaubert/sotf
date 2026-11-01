@@ -10,7 +10,7 @@ pub trait ResourceSampler {
 }
 
 pub struct SystemResourceSampler {
-    system: System,
+    system: Result<System, String>,
     pid: Pid,
     started: Instant,
 }
@@ -18,7 +18,7 @@ pub struct SystemResourceSampler {
 impl SystemResourceSampler {
     pub fn new(pid: u32) -> Self {
         Self {
-            system: System::new(),
+            system: System::new().map_err(|error| error.to_string()),
             pid: Pid::from_u32(pid),
             started: Instant::now(),
         }
@@ -27,9 +27,23 @@ impl SystemResourceSampler {
 
 impl ResourceSampler for SystemResourceSampler {
     fn sample(&mut self) -> ResourceSample {
-        self.system.refresh_processes(ProcessesToUpdate::All);
+        let system = match self.system.as_mut() {
+            Ok(system) => system,
+            Err(error) => {
+                let mut sample = NullResourceSampler {
+                    started: Some(self.started),
+                }
+                .sample();
+                sample.unavailable.insert(
+                    "all".into(),
+                    format!("system resource initialization failed: {error}"),
+                );
+                return sample;
+            }
+        };
+        system.refresh_processes(ProcessesToUpdate::All, true);
         let mut unavailable = BTreeMap::new();
-        let process = self.system.process(self.pid);
+        let process = system.process(self.pid);
         let (rss, virtual_bytes, cpu_percent) = match process {
             Some(process) => (
                 Some(process.memory()),
@@ -41,8 +55,7 @@ impl ResourceSampler for SystemResourceSampler {
                 (None, None, None)
             }
         };
-        let children = self
-            .system
+        let children = system
             .processes()
             .values()
             .filter(|process| process.parent() == Some(self.pid))
@@ -92,5 +105,40 @@ impl ResourceSampler for NullResourceSampler {
             children: None,
             unavailable: BTreeMap::from([("all".into(), "resource sampling unavailable".into())]),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn native_sampler_observes_current_process() {
+        let sample = SystemResourceSampler::new(std::process::id()).sample();
+        assert!(sample.rss_bytes.is_some_and(|rss| rss > 0));
+        assert!(sample.virtual_bytes.is_some());
+        assert!(sample.cpu_percent.is_some());
+        assert!(sample.children.is_some());
+        assert!(!sample.unavailable.contains_key("all"));
+        assert!(!sample.unavailable.contains_key("process"));
+    }
+
+    #[test]
+    fn initialization_failure_reports_unavailable_measurements() {
+        let mut sampler = SystemResourceSampler {
+            system: Err("test provider failure".into()),
+            pid: Pid::from_u32(std::process::id()),
+            started: Instant::now(),
+        };
+        let sample = sampler.sample();
+        assert_eq!(sample.rss_bytes, None);
+        assert_eq!(sample.virtual_bytes, None);
+        assert_eq!(sample.cpu_percent, None);
+        assert_eq!(sample.children, None);
+        assert_eq!(
+            sample.unavailable.get("all").map(String::as_str),
+            Some("system resource initialization failed: test provider failure")
+        );
     }
 }

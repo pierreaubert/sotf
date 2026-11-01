@@ -13,7 +13,9 @@ use sotf_audio_player_midi::mapping::MidiOverlay;
 pub enum EqViewMode {
     Standard,
     LinearPhase {
-        /// Actual DSP streaming latency, including convolver partitions and ordered stages.
+        /// Whether FIR support requires a resolved automatic accuracy report.
+        accuracy_mode: bool,
+        /// Manual streaming latency, shown only when automatic accuracy is disabled.
         latency_samples: usize,
         /// Latency in milliseconds at the current sample rate
         latency_ms: f32,

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Target response configuration (UI-facing).
 ///
-/// Mirrors the backend `autoeq::roomeq::TargetResponseConfig` but flattened
+/// Mirrors the backend `roomeq_model::TargetResponseConfig` but flattened
 /// into a single struct for simpler binding in UI widgets. Covers the target
 /// shape (flat / Harman / custom slope / file / derived-from-measurement),
 /// the preference shelves (bass / treble), and the broadband pre-correction

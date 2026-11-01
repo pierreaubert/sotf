@@ -1691,6 +1691,7 @@ fn linear_phase_eq_dense_addresses_preserve_band_stride_and_globals() {
             (102, 1.0),
             (103, 1.0),
             (104, 65.0),
+            (105, 1.0),
             (46, 750.0),
             (47, 2.35),
             (48, -3.5),
@@ -1714,6 +1715,7 @@ fn linear_phase_eq_dense_addresses_preserve_band_stride_and_globals() {
         else {
             unreachable!()
         };
+        assert_eq!(super::linear_phase::value(settings, 105), Some(1.0));
         assert_eq!(*num_filters, 10.0);
         assert_eq!(filters.len(), 10);
         assert!((*mix - 0.65).abs() < 1e-6);
@@ -1750,7 +1752,7 @@ fn linear_phase_eq_dense_addresses_preserve_band_stride_and_globals() {
                 .abs()
                 < 1e-6
         );
-        for param in [46, 47, 48, 49, 209, 104] {
+        for param in [46, 47, 48, 49, 209, 104, 105] {
             let effect = if by_node {
                 controller.reset_plugin_param_by_node_id(node, param)
             } else {
@@ -1775,7 +1777,7 @@ fn linear_phase_eq_dense_addresses_preserve_band_stride_and_globals() {
         controller.set_plugin_param(index, 100, 3.0);
         assert_eq!(
             crate::get_param_count(&controller.graph.get_plugin(index).unwrap().settings),
-            23
+            24
         );
     }
 }
@@ -1794,12 +1796,12 @@ fn linear_phase_eq_dense_query_addresses_cover_globals_and_placements() {
     let key = format!("plugins.plugin.{index}");
     assert_eq!(
         plugin_query(&controller.graph, &format!("{key}.param_count")).unwrap(),
-        serde_json::json!(17)
+        serde_json::json!(18)
     );
     assert_eq!(
         plugin_query(&controller.graph, &format!("{key}.param_indices")).unwrap(),
         serde_json::json!([
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 100, 101, 102, 103, 104, 200, 201
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 100, 101, 102, 103, 104, 105, 200, 201
         ])
     );
     for (param, name, input, expected) in [
@@ -1807,6 +1809,7 @@ fn linear_phase_eq_dense_query_addresses_cover_globals_and_placements() {
         (102, "Phase Mode", 1.0, 1.0),
         (103, "Auto Gain", 1.0, 1.0),
         (104, "Mix", 42.0, 0.42),
+        (105, "Automatic Accuracy", 1.0, 1.0),
         (201, "Placement", 5.0, 5.0),
     ] {
         controller.set_plugin_param(index, param, input);

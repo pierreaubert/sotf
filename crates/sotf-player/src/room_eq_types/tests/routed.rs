@@ -2,11 +2,16 @@ use super::super::build::build_room_eq_plugin_graph_config;
 use super::super::*;
 use super::bare::bare_chain;
 use super::bare::bare_output;
-use autoeq::roomeq::{
-    BassManagementReport, BassManagementRoute, BassManagementRoutingGraph,
-    BassManagementSignalFlowEntry, HomeCinemaRole, OptimizationMetadata, PluginConfigWrapper,
-};
-pub use autoeq::roomeq::{ChannelDspChain, DriverDspChain, DspChainOutput};
+use roomeq_model::BassManagementReport;
+use roomeq_model::BassManagementRoute;
+use roomeq_model::BassManagementRoutingGraph;
+use roomeq_model::BassManagementSignalFlowEntry;
+pub use roomeq_model::ChannelDspChain;
+pub use roomeq_model::DriverDspChain;
+pub use roomeq_model::DspChainOutput;
+use roomeq_model::HomeCinemaRole;
+use roomeq_model::OptimizationMetadata;
+use roomeq_model::PluginConfigWrapper;
 
 #[cfg(test)]
 #[path = "routed/tests.rs"]
@@ -168,7 +173,7 @@ pub(super) fn routed_bass_output() -> DspChainOutput {
             redirected_bass_enabled: true,
             routing_title: "Bass management".into(),
             crossover_cancellation: Vec::new(),
-            lfe: Some(autoeq::roomeq::home_cinema::LfeBassManagementReport {
+            lfe: Some(roomeq_model::home_cinema::LfeBassManagementReport {
                 input_channel: "LFE".to_string(),
                 playback_gain_db: 10.0,
                 low_pass_hz: 120.0,

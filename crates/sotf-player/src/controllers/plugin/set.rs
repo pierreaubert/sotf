@@ -696,6 +696,7 @@ mod tests {
             fir_length: 1024.0,
             phase_mode: 0.0,
             auto_gain: true,
+            accuracy_mode: false,
             mix: 1.0,
             stereo_pairs: None,
         };
@@ -725,6 +726,7 @@ mod tests {
             fir_length: 2048.0,
             phase_mode: 0.0,
             auto_gain: true,
+            accuracy_mode: false,
             mix: 1.0,
             stereo_pairs: None,
         };

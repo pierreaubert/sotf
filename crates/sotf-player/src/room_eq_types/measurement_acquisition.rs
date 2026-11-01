@@ -8,14 +8,14 @@ use crate::recording_types::RecordingResult;
 /// Source acquisition evidence retained across frontend persistence and export.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MeasurementAcquisition {
-    provenance: autoeq::MeasurementProvenance,
+    provenance: autoeq_core::MeasurementProvenance,
     response_sha256: Vec<String>,
 }
 
 impl MeasurementAcquisition {
     /// Binds declared evidence to the responses loaded in acquisition order.
     pub(crate) fn new<'a>(
-        provenance: autoeq::MeasurementProvenance,
+        provenance: autoeq_core::MeasurementProvenance,
         responses: impl IntoIterator<Item = &'a RecordingResult>,
     ) -> Self {
         Self {
@@ -31,7 +31,7 @@ impl MeasurementAcquisition {
     pub(crate) fn for_responses<'a>(
         &self,
         responses: impl IntoIterator<Item = &'a RecordingResult>,
-    ) -> autoeq::MeasurementProvenance {
+    ) -> autoeq_core::MeasurementProvenance {
         let mut valid = true;
         let digests: Vec<_> = responses
             .into_iter()
@@ -65,7 +65,7 @@ impl MeasurementAcquisition {
                 take.quality_passed = false;
             }
         }
-        autoeq::MeasurementProvenance {
+        autoeq_core::MeasurementProvenance {
             capture,
             ..Default::default()
         }

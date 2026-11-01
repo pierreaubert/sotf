@@ -37,7 +37,13 @@ path = "src/bin/album_art_gen.rs"
 [dependencies]
 math-iir-fir = { workspace = true }
 math-optimisation = { workspace = true }
-autoeq = { workspace = true }
+autoeq-core = { workspace = true }
+autoeq-optim = { workspace = true }
+autoeq-optim-types = { workspace = true }
+autoeq-workflow = { workspace = true }
+roomeq-engine = { workspace = true }
+roomeq-model = { workspace = true }
+roomeq-workflow = { workspace = true }
 autoeq-measurements = { workspace = true }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }

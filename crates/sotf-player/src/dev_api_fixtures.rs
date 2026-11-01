@@ -4,7 +4,7 @@ use crate::{Album, Track};
 
 /// Source metadata for exercising the production file-import path in UI QA.
 pub fn write_headphone_provenance_fixture(path: &std::path::Path) -> Result<(), String> {
-    let curve = autoeq::read::read_curve_from_csv(&path.to_path_buf())
+    let curve = autoeq_measurements::read::read_curve_from_csv(&path.to_path_buf())
         .map_err(|error| error.to_string())?;
     let mut record = autoeq_measurements::MeasurementRecord::from_source_path(
         curve,

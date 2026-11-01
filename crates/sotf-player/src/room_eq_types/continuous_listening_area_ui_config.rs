@@ -10,7 +10,7 @@ use super::default::default_gaussian_truncation_sigmas;
 use super::default::default_idw_power;
 use serde::{Deserialize, Serialize};
 
-/// Flat UI configuration mirror of `autoeq::roomeq::ContinuousListeningAreaConfig`.
+/// Flat UI configuration mirror of `roomeq_model::ContinuousListeningAreaConfig`.
 ///
 /// Strings are used in place of tagged enums for ergonomic UI binding; conversion
 /// happens at `to_optimizer_config()` time and is permissive on unknown values

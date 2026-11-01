@@ -612,6 +612,7 @@ pub(super) fn build_rack_mode_plugins(
                 let idx = chain.add_plugin(&PluginType::Gate)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Gate {
+                        speech_protection: None,
                         threshold_db: plugins.gate.threshold_db as f64,
                         ratio: plugins.gate.ratio as f64,
                         attack_ms: plugins.gate.attack_ms as f64,
@@ -789,6 +790,7 @@ pub(super) fn build_rack_mode_plugins(
                 let idx = chain.add_plugin(&PluginType::Pnd)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Pnd {
+                        neural_pitch: None,
                         correction_strength: plugins.pnd.correction_strength as f64,
                         analysis_window_ms: plugins.pnd.analysis_window_ms as f64,
                         drift_smoothing: plugins.pnd.drift_smoothing as f64,

@@ -66,7 +66,9 @@ test: prebuild-report-producer
 	set -euo pipefail
 	CLANG_CACHE_DIR="${TMPDIR:-/tmp}/sotf-clang-module-cache"
 	mkdir -p "$CLANG_CACHE_DIR"
-	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" {{cargo}} test --workspace --lib --bins --tests --examples {{test_features}}
+	# GPUI test apps share the process-wide dev selector registry.
+	# Keep this reference run serial; nextest isolates parallel tests in processes.
+	CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" {{cargo}} test --workspace --lib --bins --tests --examples {{test_features}} -- --test-threads=1
 
 [group('test')]
 test-negative:
@@ -106,9 +108,14 @@ itest:
 	# workspace pass. They are run immediately below, serially, so the test
 	# set remains complete without timing thresholds depending on unrelated
 	# test load.
-	EXCLUDE='not (test(test_play_to_audible_latency) | test(test_loudness_compensation_zero_alloc) | test(test_upmixer_plugin_timing))'
 	SERIAL='test(test_play_to_audible_latency) | test(test_loudness_compensation_zero_alloc) | test(test_upmixer_plugin_timing)'
+	# GPUI deliberately makes debug_selector a no-op in release builds.
+	# Run the selector-dependent hover regressions in debug below, preserving
+	# their assertions without adding selector bookkeeping to shipping code.
+	DEBUG_UI='test(test_studio_picker_description_tooltip) | binary(studio_picker_tooltip_tests) | binary(studio_tabs_click_tests)'
+	EXCLUDE="not ($SERIAL | $DEBUG_UI)"
 	PROPTEST_CASES=10000 CARGO_PROFILE_RELEASE_LTO=off {{cargo}} nextest run --release --no-fail-fast --workspace --tests {{release_test_features}} -E "$EXCLUDE"
+	{{cargo}} nextest run --no-fail-fast -p sotf-gpui --tests {{release_test_features}} -E "$DEBUG_UI"
 	# The serial tests live in the sotf-daw workspace (sotf-engine /
 	# sotf-plugins), so run that pass against its manifest; from this
 	# workspace the filter matches nothing and nextest errors out.

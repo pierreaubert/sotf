@@ -1,5 +1,5 @@
 use super::speaker_optimization_progress::SpeakerOptimizationProgress;
-pub use autoeq::de::CallbackAction;
+pub use autoeq_optim::de::CallbackAction;
 use std::path::PathBuf;
 
 /// Stage of the optimization process
@@ -35,7 +35,7 @@ pub enum MeasurementInput {
         curve_name: String,
     },
     /// Pre-loaded curve data
-    Curve(autoeq::Curve),
+    Curve(autoeq_core::Curve),
 }
 
 /// Extended speaker config types including multi-sub and DBA

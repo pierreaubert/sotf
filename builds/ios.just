@@ -21,7 +21,7 @@ ios-build-rust-sim: ios-rust-sim
 	set -euo pipefail
 	IOS_DIR="crates/app-ios/ios"
 	mkdir -p "$IOS_DIR/lib"
-	cp target/aarch64-apple-ios-sim/release/libsotf_ios.a "$IOS_DIR/lib/"
+	cp "${CARGO_TARGET_DIR:-target}/aarch64-apple-ios-sim/release/libsotf_ios.a" "$IOS_DIR/lib/"
 	echo "Copied libsotf_ios.a to $IOS_DIR/lib/"
 
 # Build SotF iOS Rust lib and copy to Xcode project (device)
@@ -31,7 +31,7 @@ ios-build-rust-device: ios-rust-device
 	set -euo pipefail
 	IOS_DIR="crates/app-ios/ios"
 	mkdir -p "$IOS_DIR/lib"
-	cp target/aarch64-apple-ios/release/libsotf_ios.a "$IOS_DIR/lib/"
+	cp "${CARGO_TARGET_DIR:-target}/aarch64-apple-ios/release/libsotf_ios.a" "$IOS_DIR/lib/"
 	echo "Copied libsotf_ios.a to $IOS_DIR/lib/"
 
 # Generate SotF iOS Xcode project with XcodeGen

@@ -2,9 +2,10 @@ use super::default::default_bo_acquisition;
 use super::misc::canonical_multi_measurement_strategy;
 use super::room_eq_optimizer_config::RoomEqOptimizerConfig;
 use crate::ReleaseChannel;
-pub use autoeq::roomeq::{
-    SimpleCrossoverChoice, SimpleLossChoice, SimplePresetConfig, SimpleProcessingChoice,
-};
+pub use roomeq_model::SimpleCrossoverChoice;
+pub use roomeq_model::SimpleLossChoice;
+pub use roomeq_model::SimplePresetConfig;
+pub use roomeq_model::SimpleProcessingChoice;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;

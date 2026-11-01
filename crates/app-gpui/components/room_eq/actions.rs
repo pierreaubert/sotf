@@ -190,7 +190,7 @@ impl PlayerView {
                         log::debug!("File read successfully, size: {} bytes", json.len());
 
                         // First try to parse as new RoomConfig format
-                        if let Ok(room_config) = serde_json::from_str::<autoeq::RoomConfig>(&json) {
+                        if let Ok(room_config) = serde_json::from_str::<roomeq_model::RoomConfig>(&json) {
                             log::info!(
                                 "Successfully parsed {} speakers from {:?} (RoomConfig format)",
                                 room_config.speakers.len(),
@@ -222,12 +222,12 @@ impl PlayerView {
                             let mut multi_position_counts: Vec<(String, usize)> = Vec::new();
                             for (channel_name, speaker_config) in &room_config.speakers {
                                 match speaker_config {
-                                    autoeq::SpeakerConfig::Single(autoeq::MeasurementSource::Multiple(m)) => {
+                                    roomeq_model::SpeakerConfig::Single(autoeq_core::MeasurementSource::Multiple(m)) => {
                                         multi_position_counts.push((channel_name.clone(), m.measurements.len()));
                                     }
-                                    autoeq::SpeakerConfig::Group(group) => {
+                                    roomeq_model::SpeakerConfig::Group(group) => {
                                         let has_multi = group.measurements.iter().any(|ms| {
-                                            matches!(ms, autoeq::MeasurementSource::Multiple(_))
+                                            matches!(ms, autoeq_core::MeasurementSource::Multiple(_))
                                         });
                                         if has_multi {
                                             log::warn!(

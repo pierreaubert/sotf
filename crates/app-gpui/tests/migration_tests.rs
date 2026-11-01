@@ -31,7 +31,7 @@ fn test_load_new_room_config_format() {
     }"#;
 
     // Should parse as RoomConfig
-    let room_config: autoeq::RoomConfig =
+    let room_config: roomeq_model::RoomConfig =
         serde_json::from_str(room_config_json).expect("Failed to parse RoomConfig");
 
     assert_eq!(room_config.version, "1.1.0");
@@ -40,8 +40,8 @@ fn test_load_new_room_config_format() {
     assert!(room_config.speakers.contains_key("R"));
 
     // Verify inline measurement data
-    if let autoeq::SpeakerConfig::Single(source) = &room_config.speakers["L"] {
-        if let autoeq::MeasurementSource::Single(s) = source {
+    if let roomeq_model::SpeakerConfig::Single(source) = &room_config.speakers["L"] {
+        if let autoeq_core::MeasurementSource::Single(s) = source {
             let inline = s.measurement.inline_data().expect("Expected inline data");
             assert_eq!(inline.frequencies.len(), 3);
             assert_eq!(inline.magnitude_db.len(), 3);
@@ -65,28 +65,33 @@ fn test_load_new_room_config_format() {
 
 #[test]
 fn test_room_config_roundtrip() {
-    use autoeq::{
-        InlineMeasurement, MeasurementRef, MeasurementSource, OptimizerConfig,
-        RecordingConfiguration, RoomConfig, SpeakerConfig,
-    };
+    use autoeq_core::InlineMeasurement;
+    use autoeq_core::MeasurementRef;
+    use autoeq_core::MeasurementSource;
+    use roomeq_model::OptimizerConfig;
+    use roomeq_model::RecordingConfiguration;
+    use roomeq_model::RoomConfig;
+    use roomeq_model::SpeakerConfig;
     use std::collections::HashMap;
 
     // Create a RoomConfig programmatically
     let mut speakers = HashMap::new();
     speakers.insert(
         "L".to_string(),
-        SpeakerConfig::Single(MeasurementSource::Single(autoeq::read::MeasurementSingle {
-            measurement: MeasurementRef::Inline(InlineMeasurement {
-                frequencies: vec![100.0, 1000.0, 10000.0],
-                magnitude_db: vec![-5.0, 0.0, -3.0],
-                phase_deg: Some(vec![0.0, 45.0, 90.0]),
-                name: Some("L".to_string()),
-                wav_path: Some("recording_L.wav".to_string()),
-                csv_path: Some("recording_L.csv".to_string()),
-            }),
-            speaker_name: None,
-            provenance: Default::default(),
-        })),
+        SpeakerConfig::Single(MeasurementSource::Single(
+            autoeq_measurements::read::MeasurementSingle {
+                measurement: MeasurementRef::Inline(InlineMeasurement {
+                    frequencies: vec![100.0, 1000.0, 10000.0],
+                    magnitude_db: vec![-5.0, 0.0, -3.0],
+                    phase_deg: Some(vec![0.0, 45.0, 90.0]),
+                    name: Some("L".to_string()),
+                    wav_path: Some("recording_L.wav".to_string()),
+                    csv_path: Some("recording_L.csv".to_string()),
+                }),
+                speaker_name: None,
+                provenance: Default::default(),
+            },
+        )),
     );
 
     let room_config = RoomConfig {

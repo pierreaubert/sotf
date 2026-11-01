@@ -27,9 +27,9 @@ impl EqPreset {
     pub fn apply(&self) -> Option<OptimizationParamsSerializable> {
         let p = self.params.as_ref()?;
         let base = match self.workflow {
-            EqWorkflow::Headphone => autoeq::Args::headphone_defaults(),
-            EqWorkflow::Spinorama => autoeq::Args::speaker_defaults(),
-            EqWorkflow::RoomEq => autoeq::Args::roomeq_defaults(),
+            EqWorkflow::Headphone => autoeq_optim_types::OptimizationConfig::headphone_defaults(),
+            EqWorkflow::Spinorama => autoeq_optim_types::OptimizationConfig::speaker_defaults(),
+            EqWorkflow::RoomEq => autoeq_optim_types::OptimizationConfig::roomeq_defaults(),
         };
         let mut params = OptimizationParamsSerializable::from(&base);
         params.num_filters = p.num_filters;

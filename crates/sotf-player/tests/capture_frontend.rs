@@ -64,7 +64,6 @@ fn fixture() -> (Golden, RawCaptureManifest, Vec<f32>, Vec<f32>) {
         status: RawCaptureStatus::RawComplete,
         checkpoint: None,
         transport_evidence: Vec::new(),
-        localization_calibration: None,
         pending_processing: vec!["clock_correction".into()],
         calibrations: vec![],
         takes: vec![],
@@ -215,7 +214,7 @@ fn capture_frontend_workflow_processes_and_imports_golden_session() {
         workflow.import_channels().unwrap(),
     ));
     let config = room.to_room_config();
-    let autoeq::SpeakerConfig::Single(autoeq::MeasurementSource::Multiple(source)) =
+    let roomeq_model::SpeakerConfig::Single(autoeq_core::MeasurementSource::Multiple(source)) =
         &config.speakers["left"]
     else {
         panic!("lost simultaneous microphone set")

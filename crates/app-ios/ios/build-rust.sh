@@ -52,10 +52,10 @@ cd "$WORKSPACE_ROOT"
 
 if [ "$PROFILE" = "release" ]; then
     "$CARGO_BIN" build -p sotf-ios --target "$RUST_TARGET" --release
-    LIB_DIR="target/$RUST_TARGET/release"
+    LIB_DIR="${CARGO_TARGET_DIR:-target}/$RUST_TARGET/release"
 else
     "$CARGO_BIN" build -p sotf-ios --target "$RUST_TARGET"
-    LIB_DIR="target/$RUST_TARGET/debug"
+    LIB_DIR="${CARGO_TARGET_DIR:-target}/$RUST_TARGET/debug"
 fi
 
 # Copy the .a file to Xcode's derived-file area so build outputs never land in

@@ -1,7 +1,7 @@
 use crate::recording_types::{ChannelRecording, ChannelRecordingState};
 use std::collections::{BTreeMap, HashMap};
 
-/// Build the per-channel speaker map for an `autoeq::RoomConfig` from a
+/// Build the per-channel speaker map for an `roomeq_model::RoomConfig` from a
 /// finished recording session. All completed takes for the same
 /// `channel_index` (every microphone, every measurement position) are
 /// folded into a single `SpeakerConfig`, so roomeq emits one EQ chain per
@@ -22,9 +22,12 @@ pub fn build_speakers_from_recordings(
     recordings: &[ChannelRecording],
     channel_names: &[String],
     channel_speakers: Option<&std::collections::HashMap<String, String>>,
-) -> HashMap<String, autoeq::SpeakerConfig> {
-    use autoeq::read::{InlineMeasurement, MeasurementMultiple, MeasurementRef, MeasurementSingle};
-    use autoeq::{MeasurementSource, SpeakerConfig};
+) -> HashMap<String, roomeq_model::SpeakerConfig> {
+    use autoeq_core::MeasurementSource;
+    use autoeq_measurements::read::{
+        InlineMeasurement, MeasurementMultiple, MeasurementRef, MeasurementSingle,
+    };
+    use roomeq_model::SpeakerConfig;
 
     let mut grouped: BTreeMap<usize, Vec<&ChannelRecording>> = BTreeMap::new();
     for rec in recordings {

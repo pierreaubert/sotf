@@ -1061,7 +1061,7 @@ impl PlayerView {
         );
 
         // Build Args using library defaults
-        let mut params = autoeq::Args::speaker_defaults();
+        let mut params = autoeq_optim_types::OptimizationConfig::speaker_defaults();
         params.num_filters = optimizer_config.num_filters;
         params.sample_rate = optimizer_config.sample_rate as f64;
         params.min_db = optimizer_config.min_db;
@@ -1099,7 +1099,7 @@ impl PlayerView {
         std::thread::spawn(move || {
             #[cfg(feature = "dev-api")]
             let fixture_measurement = fixture_response.map(|response| {
-                MeasurementInput::Curve(autoeq::Curve {
+                MeasurementInput::Curve(autoeq_core::Curve {
                     freq: ndarray::Array1::from_vec(response.frequencies),
                     spl: ndarray::Array1::from_vec(response.spl),
                     ..Default::default()

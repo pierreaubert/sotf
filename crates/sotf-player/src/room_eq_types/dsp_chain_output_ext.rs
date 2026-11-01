@@ -1,5 +1,5 @@
 use super::misc::requires_room_eq_graph;
-pub use autoeq::roomeq::DspChainOutput;
+pub use roomeq_model::DspChainOutput;
 
 /// Extension trait for `DspChainOutput` providing player-side helpers.
 ///

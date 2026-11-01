@@ -1,4 +1,4 @@
-pub use autoeq::ProgressCallbackConfig;
+pub use autoeq_workflow::ProgressCallbackConfig;
 
 /// Configuration for the callback
 #[derive(Debug, Clone)]

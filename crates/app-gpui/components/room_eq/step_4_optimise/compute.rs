@@ -1,10 +1,12 @@
 /// Compute group delay from a Curve's phase data.
 /// Returns None if no phase data is available.
 /// Group delay is always positive (physical delay cannot be negative).
-pub(super) fn compute_group_delay_from_curve(curve: &autoeq::Curve) -> Option<Vec<(f64, f64)>> {
+pub(super) fn compute_group_delay_from_curve(
+    curve: &autoeq_core::Curve,
+) -> Option<Vec<(f64, f64)>> {
     let phase = curve.phase.as_ref()?;
-    let unwrapped = autoeq::loss::phase_aware::unwrap_phase_degrees(phase);
-    let gd = autoeq::loss::phase_aware::compute_group_delay(&curve.freq, &unwrapped);
+    let unwrapped = autoeq_optim::loss::phase_aware::unwrap_phase_degrees(phase);
+    let gd = autoeq_optim::loss::phase_aware::compute_group_delay(&curve.freq, &unwrapped);
     Some(
         curve
             .freq
@@ -17,9 +19,11 @@ pub(super) fn compute_group_delay_from_curve(curve: &autoeq::Curve) -> Option<Ve
 
 /// Compute phase response from a Curve's phase data (in degrees, -180 to 180).
 /// Returns None if no phase data is available.
-pub(super) fn compute_phase_response_from_curve(curve: &autoeq::Curve) -> Option<Vec<(f64, f64)>> {
+pub(super) fn compute_phase_response_from_curve(
+    curve: &autoeq_core::Curve,
+) -> Option<Vec<(f64, f64)>> {
     let phase = curve.phase.as_ref()?;
-    let unwrapped = autoeq::loss::phase_aware::unwrap_phase_degrees(phase);
+    let unwrapped = autoeq_optim::loss::phase_aware::unwrap_phase_degrees(phase);
     let phase_deg: Vec<f64> = unwrapped
         .iter()
         .map(|&d| (d + 180.0).rem_euclid(360.0) - 180.0)

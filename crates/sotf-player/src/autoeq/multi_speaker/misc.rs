@@ -1,10 +1,14 @@
-pub use autoeq::roomeq::{
-    CallbackAction, PipelineControl, PipelineEvent, PipelineObserver, RoomOptimizationCallback,
-    RoomOptimizationProgress,
-};
-pub use autoeq::roomeq::{
-    MeasurementSource, OptimizerConfig, ProcessingMode, RoomConfig, SpeakerConfig,
-};
+pub use autoeq_core::MeasurementSource;
+pub use roomeq_engine::PipelineControl;
+pub use roomeq_engine::PipelineEvent;
+pub use roomeq_engine::PipelineObserver;
+pub use roomeq_model::OptimizerConfig;
+pub use roomeq_model::ProcessingMode;
+pub use roomeq_model::RoomConfig;
+pub use roomeq_model::SpeakerConfig;
+pub use roomeq_workflow::CallbackAction;
+pub use roomeq_workflow::RoomOptimizationCallback;
+pub use roomeq_workflow::RoomOptimizationProgress;
 use std::collections::HashMap;
 
 pub(super) fn room_callback_observer(
@@ -23,7 +27,7 @@ pub(super) fn room_callback_observer(
 ///
 /// Convenience function to create a RoomConfig from in-memory curves.
 pub fn build_room_config_from_curves(
-    speakers: &[(String, autoeq::Curve)],
+    speakers: &[(String, autoeq_core::Curve)],
     optimizer: OptimizerConfig,
 ) -> RoomConfig {
     let mut speakers_map: HashMap<String, SpeakerConfig> = HashMap::new();
@@ -35,7 +39,7 @@ pub fn build_room_config_from_curves(
     }
 
     RoomConfig {
-        version: autoeq::roomeq::default_config_version(),
+        version: roomeq_model::default_config_version(),
         system: None,
         speakers: speakers_map,
         crossovers: None,
@@ -50,8 +54,10 @@ pub fn build_room_config_from_curves(
     }
 }
 
-/// Create default optimizer config from autoeq::Args
-pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
+/// Create default optimizer config from autoeq_optim_types::OptimizationConfig
+pub fn optimizer_config_from_args(
+    args: &autoeq_optim_types::OptimizationConfig,
+) -> OptimizerConfig {
     let is_bo_algorithm =
         args.algo.eq_ignore_ascii_case("autoeq:bo") || args.algo.eq_ignore_ascii_case("bo");
     OptimizerConfig {

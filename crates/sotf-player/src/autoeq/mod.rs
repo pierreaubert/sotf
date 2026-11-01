@@ -20,11 +20,11 @@
 //! };
 //!
 //! // Use library defaults
-//! let args = autoeq::Args::speaker_defaults();
+//! let args = autoeq_optim_types::OptimizationConfig::speaker_defaults();
 //! let result = run_speaker_optimization("KEF R3", &args)?;
 //!
 //! // Or for headphone
-//! let args = autoeq::Args::headphone_defaults();
+//! let args = autoeq_optim_types::OptimizationConfig::headphone_defaults();
 //! let result = run_headphone_optimization(
 //!     "measurement.csv",
 //!     "harman-over-ear-2018",

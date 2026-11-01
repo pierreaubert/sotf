@@ -18,14 +18,17 @@ pub(super) fn spawn_spinorama_curves_thread(
         let result = spinorama_runtime().and_then(|runtime| {
             runtime.block_on(async {
                 // Fetch CEA2034 measurement data
-                let plot_data =
-                    autoeq::read::fetch_measurement_plot_data(&speaker, &version, "CEA2034")
-                        .await
-                        .map_err(|e| format!("API error: {}", e))?;
+                let plot_data = autoeq_measurements::read::fetch_measurement_plot_data(
+                    &speaker, &version, "CEA2034",
+                )
+                .await
+                .map_err(|e| format!("API error: {}", e))?;
 
                 // Extract curves using original frequency grid
-                let curves = autoeq::read::extract_cea2034_curves_original(&plot_data, "CEA2034")
-                    .map_err(|e| format!("Extraction error: {}", e))?;
+                let curves = autoeq_measurements::read::extract_cea2034_curves_original(
+                    &plot_data, "CEA2034",
+                )
+                .map_err(|e| format!("Extraction error: {}", e))?;
 
                 // Convert to our SpinoramaCurves format
                 let on_axis = curves.get("On Axis").ok_or("On Axis curve not found")?;
@@ -39,9 +42,10 @@ pub(super) fn spawn_spinorama_curves_thread(
                     .unwrap_or_else(|| vec![0.0; frequencies.len()]);
 
                 // Try to fetch directivity data (SPL Horizontal and SPL Vertical)
-                let directivity = autoeq::read::fetch_directivity_data(&speaker, &version)
-                    .await
-                    .ok();
+                let directivity =
+                    autoeq_measurements::read::fetch_directivity_data(&speaker, &version)
+                        .await
+                        .ok();
 
                 let (horizontal_directivity, vertical_directivity) = if let Some(dir) = directivity
                 {
@@ -137,8 +141,13 @@ pub(super) fn spawn_phase_data_check_thread(
     std::thread::spawn(move || {
         let has_phase = match spinorama_runtime() {
             Ok(runtime) => runtime.block_on(async {
-                match autoeq::read::read_spinorama(&speaker, &version, &measurement, &curve_name)
-                    .await
+                match autoeq_measurements::read::read_spinorama(
+                    &speaker,
+                    &version,
+                    &measurement,
+                    &curve_name,
+                )
+                .await
                 {
                     Ok(curve) => curve.phase.is_some(),
                     Err(e) => {

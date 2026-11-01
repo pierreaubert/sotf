@@ -5,7 +5,7 @@ use super::default::default_bootstrap_scalarisation;
 use super::default::default_bootstrap_seed;
 use serde::{Deserialize, Serialize};
 
-/// Flat UI mirror of `autoeq::roomeq::BootstrapUncertaintyConfig`.
+/// Flat UI mirror of `roomeq_model::BootstrapUncertaintyConfig`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BootstrapUncertaintyUiConfig {
     /// Number of case-bootstrap resamples B.

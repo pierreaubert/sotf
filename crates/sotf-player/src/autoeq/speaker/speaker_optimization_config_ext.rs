@@ -1,7 +1,7 @@
 use super::callback_config::CallbackConfig;
 use super::types::MeasurementInput;
 use super::types::SpeakerConfigTypeExt;
-pub use autoeq::CrossoverType;
+pub use autoeq_optim::CrossoverType;
 
 /// Extended configuration for speaker optimization including multi-sub and DBA
 #[derive(Debug, Clone)]
@@ -13,7 +13,7 @@ pub struct SpeakerOptimizationConfigExt {
     pub rear_measurements: Vec<MeasurementInput>,
     pub crossover_type: Option<CrossoverType>,
     pub crossover_freq_hints: Vec<f64>,
-    pub args: autoeq::Args,
+    pub args: autoeq_optim_types::OptimizationConfig,
     pub callback_config: Option<CallbackConfig>,
     pub target: Option<MeasurementInput>,
 }
@@ -28,7 +28,7 @@ impl Default for SpeakerOptimizationConfigExt {
             rear_measurements: Vec::new(),
             crossover_type: None,
             crossover_freq_hints: Vec::new(),
-            args: autoeq::Args::speaker_defaults(),
+            args: autoeq_optim_types::OptimizationConfig::speaker_defaults(),
             callback_config: Some(CallbackConfig::default()),
             target: None,
         }

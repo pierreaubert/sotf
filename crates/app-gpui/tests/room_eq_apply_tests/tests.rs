@@ -46,17 +46,17 @@ fn filter_plot_hidden_when_no_response_data() {
 
 #[test]
 fn review_display_curve_prefers_dsp_chain_final_curve() {
-    let fallback = autoeq::Curve {
+    let fallback = autoeq_core::Curve {
         freq: ndarray::Array1::from(vec![20.0, 80.0, 200.0]),
         spl: ndarray::Array1::from(vec![10.0, 10.0, 10.0]),
         ..Default::default()
     };
-    let chain = autoeq::roomeq::ChannelDspChain {
+    let chain = roomeq_model::ChannelDspChain {
         channel: "L".to_string(),
         plugins: Vec::new(),
         drivers: None,
         initial_curve: None,
-        final_curve: Some(autoeq::roomeq::CurveData {
+        final_curve: Some(roomeq_model::CurveData {
             freq: vec![20.0, 80.0, 200.0],
             spl: vec![-80.0, -10.0, -8.0],
             phase: None,
@@ -94,16 +94,16 @@ fn review_display_curve_prefers_dsp_chain_final_curve() {
 
 #[test]
 fn review_initial_curve_prefers_dsp_chain_initial_curve() {
-    let fallback = autoeq::Curve {
+    let fallback = autoeq_core::Curve {
         freq: ndarray::Array1::from(vec![20.0, 80.0, 200.0]),
         spl: ndarray::Array1::from(vec![5.0, 5.0, 5.0]),
         ..Default::default()
     };
-    let chain = autoeq::roomeq::ChannelDspChain {
+    let chain = roomeq_model::ChannelDspChain {
         channel: "L".to_string(),
         plugins: Vec::new(),
         drivers: None,
-        initial_curve: Some(autoeq::roomeq::CurveData {
+        initial_curve: Some(roomeq_model::CurveData {
             freq: vec![20.0, 80.0, 200.0],
             spl: vec![-60.0, -15.0, -9.0],
             phase: None,
@@ -136,7 +136,7 @@ fn review_initial_curve_prefers_dsp_chain_initial_curve() {
 
 #[test]
 fn review_display_curve_falls_back_to_optimizer_curve_when_dsp_curve_missing() {
-    let fallback = autoeq::Curve {
+    let fallback = autoeq_core::Curve {
         freq: ndarray::Array1::from(vec![20.0, 80.0, 200.0]),
         spl: ndarray::Array1::from(vec![1.0, 2.0, 3.0]),
         ..Default::default()
@@ -150,12 +150,12 @@ fn review_display_curve_falls_back_to_optimizer_curve_when_dsp_curve_missing() {
 
 #[test]
 fn review_display_curve_finds_chain_by_embedded_channel_name() {
-    let chain = autoeq::roomeq::ChannelDspChain {
+    let chain = roomeq_model::ChannelDspChain {
         channel: "R".to_string(),
         plugins: Vec::new(),
         drivers: None,
         initial_curve: None,
-        final_curve: Some(autoeq::roomeq::CurveData {
+        final_curve: Some(roomeq_model::CurveData {
             freq: vec![20.0, 100.0],
             spl: vec![-70.0, -12.0],
             phase: None,

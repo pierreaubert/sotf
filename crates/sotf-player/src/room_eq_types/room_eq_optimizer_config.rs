@@ -201,7 +201,7 @@ impl RoomEqOptimizerConfig {
     /// uses the same optimizer settings as the roomeq CLI.
     /// Sets `imported_from_file = true` so that `apply_smart_defaults()` will
     /// not override the imported feature toggle state.
-    pub fn import_from_backend(&mut self, backend: &autoeq::roomeq::OptimizerConfig) {
+    pub fn import_from_backend(&mut self, backend: &roomeq_model::OptimizerConfig) {
         // Core optimizer parameters
         self.algorithm = backend.algorithm.clone();
         self.strategy = backend.strategy.clone();
@@ -256,24 +256,25 @@ impl RoomEqOptimizerConfig {
 
         // Processing mode → optimization mode
         self.mode = match backend.processing_mode {
-            autoeq::roomeq::ProcessingMode::LowLatency => RoomEqOptimizationMode::Iir,
-            autoeq::roomeq::ProcessingMode::PhaseLinear => RoomEqOptimizationMode::Fir,
-            autoeq::roomeq::ProcessingMode::Hybrid => RoomEqOptimizationMode::Mixed,
-            autoeq::roomeq::ProcessingMode::MixedPhase => RoomEqOptimizationMode::MixedPhase,
+            roomeq_model::ProcessingMode::LowLatency => RoomEqOptimizationMode::Iir,
+            roomeq_model::ProcessingMode::PhaseLinear => RoomEqOptimizationMode::Fir,
+            roomeq_model::ProcessingMode::Hybrid => RoomEqOptimizationMode::Mixed,
+            roomeq_model::ProcessingMode::MixedPhase => RoomEqOptimizationMode::MixedPhase,
             // WarpedIir and KautzModal are IIR-based modes
-            autoeq::roomeq::ProcessingMode::WarpedIir
-            | autoeq::roomeq::ProcessingMode::KautzModal => RoomEqOptimizationMode::Iir,
+            roomeq_model::ProcessingMode::WarpedIir | roomeq_model::ProcessingMode::KautzModal => {
+                RoomEqOptimizationMode::Iir
+            }
         };
 
         // Feature toggles: only override from backend when explicitly present.
         if let Some(ref tr) = backend.target_response {
             self.target_response.enabled = true;
             self.target_response.shape = match tr.shape {
-                autoeq::roomeq::TargetShape::Flat => "flat".to_string(),
-                autoeq::roomeq::TargetShape::Harman => "harman".to_string(),
-                autoeq::roomeq::TargetShape::Custom => "custom".to_string(),
-                autoeq::roomeq::TargetShape::File => "file".to_string(),
-                autoeq::roomeq::TargetShape::FromMeasurement => "from_measurement".to_string(),
+                roomeq_model::TargetShape::Flat => "flat".to_string(),
+                roomeq_model::TargetShape::Harman => "harman".to_string(),
+                roomeq_model::TargetShape::Custom => "custom".to_string(),
+                roomeq_model::TargetShape::File => "file".to_string(),
+                roomeq_model::TargetShape::FromMeasurement => "from_measurement".to_string(),
             };
             self.target_response.slope_db_per_octave = tr.slope_db_per_octave;
             self.target_response.reference_freq = tr.reference_freq;
@@ -298,8 +299,8 @@ impl RoomEqOptimizerConfig {
             self.excursion_protection.f3_reference_max_hz = ep.f3_reference_max_hz;
             self.excursion_protection.filter_order = ep.filter_order;
             self.excursion_protection.filter_type = match ep.filter_type {
-                autoeq::roomeq::HighpassType::Butterworth => "bw".to_string(),
-                autoeq::roomeq::HighpassType::LinkwitzRiley => "lr".to_string(),
+                roomeq_model::HighpassType::Butterworth => "bw".to_string(),
+                roomeq_model::HighpassType::LinkwitzRiley => "lr".to_string(),
             };
             self.excursion_protection.margin_octaves = ep.margin_octaves;
         }
@@ -335,11 +336,11 @@ impl RoomEqOptimizerConfig {
         self.multi_seat.enabled = backend.multi_seat.as_ref().is_some_and(|m| m.enabled);
         if let Some(ref ms) = backend.multi_seat {
             self.multi_seat.strategy = match ms.strategy {
-                autoeq::roomeq::MultiSeatStrategy::MinimizeVariance => "variance".to_string(),
-                autoeq::roomeq::MultiSeatStrategy::PrimaryWithConstraints => "primary".to_string(),
-                autoeq::roomeq::MultiSeatStrategy::Average => "average".to_string(),
-                autoeq::roomeq::MultiSeatStrategy::ModalBasis => "modal_basis".to_string(),
-                autoeq::roomeq::MultiSeatStrategy::ContinuousArea => "continuous_area".to_string(),
+                roomeq_model::MultiSeatStrategy::MinimizeVariance => "variance".to_string(),
+                roomeq_model::MultiSeatStrategy::PrimaryWithConstraints => "primary".to_string(),
+                roomeq_model::MultiSeatStrategy::Average => "average".to_string(),
+                roomeq_model::MultiSeatStrategy::ModalBasis => "modal_basis".to_string(),
+                roomeq_model::MultiSeatStrategy::ContinuousArea => "continuous_area".to_string(),
             };
             self.multi_seat.primary_seat = ms.primary_seat;
             self.multi_seat.max_deviation_db = ms.max_deviation_db;
@@ -352,16 +353,16 @@ impl RoomEqOptimizerConfig {
         if let Some(ref mm) = backend.multi_measurement {
             self.multi_measurement.enabled = true;
             self.multi_measurement.strategy = match mm.strategy {
-                autoeq::roomeq::MultiMeasurementStrategy::Average => "average".to_string(),
-                autoeq::roomeq::MultiMeasurementStrategy::WeightedSum => "weighted_sum".to_string(),
-                autoeq::roomeq::MultiMeasurementStrategy::Minimax => "minimax".to_string(),
-                autoeq::roomeq::MultiMeasurementStrategy::VariancePenalized => {
+                roomeq_model::MultiMeasurementStrategy::Average => "average".to_string(),
+                roomeq_model::MultiMeasurementStrategy::WeightedSum => "weighted_sum".to_string(),
+                roomeq_model::MultiMeasurementStrategy::Minimax => "minimax".to_string(),
+                roomeq_model::MultiMeasurementStrategy::VariancePenalized => {
                     "variance_penalized".to_string()
                 }
-                autoeq::roomeq::MultiMeasurementStrategy::SpatialRobustness => {
+                roomeq_model::MultiMeasurementStrategy::SpatialRobustness => {
                     "spatial_robustness".to_string()
                 }
-                autoeq::roomeq::MultiMeasurementStrategy::MinimaxUncertainty => {
+                roomeq_model::MultiMeasurementStrategy::MinimaxUncertainty => {
                     "minimax_uncertainty".to_string()
                 }
             };
@@ -397,24 +398,34 @@ impl RoomEqOptimizerConfig {
     }
 
     /// Convert the flat UI optimizer config to a backend
-    /// [`OptimizerConfig`](autoeq::roomeq::OptimizerConfig).
+    /// [`OptimizerConfig`](roomeq_model::OptimizerConfig).
     ///
     /// This is the single canonical conversion used by both GPUI and TUI
     /// when building a `RoomConfig` for the optimizer.
-    pub fn to_optimizer_config(&self) -> autoeq::roomeq::OptimizerConfig {
-        use autoeq::roomeq::{
-            ChannelMatchingConfig as BackendChannelMatchingConfig, DecomposedCorrectionSerdeConfig,
-            ExcursionProtectionConfig as BackendExcursionProtectionConfig,
-            FirConfig as BackendFirConfig, HighFreqFilterConfig, HighpassType,
-            InterChannelTimbreMatchingConfig, LowFreqFilterConfig, MixedModeConfig,
-            MixedPhaseSerdeConfig as BackendMixedPhaseConfig, MultiMeasurementConfig,
-            MultiMeasurementStrategy, MultiSeatConfig as BackendMultiSeatConfig, MultiSeatStrategy,
-            OptimizerConfig as BackendOptimizerConfig,
-            PhaseAlignmentConfig as BackendPhaseAlignmentConfig,
-            PreRingingSerdeConfig as BackendPreRingingConfig, ProcessingMode,
-            SchroederSplitConfig as BackendSchroederSplitConfig, SubOptimizerConfig,
-            TargetResponseConfig as BackendTargetResponseConfig, TargetShape, UserPreference,
-        };
+    pub fn to_optimizer_config(&self) -> roomeq_model::OptimizerConfig {
+        use roomeq_model::ChannelMatchingConfig as BackendChannelMatchingConfig;
+        use roomeq_model::DecomposedCorrectionSerdeConfig;
+        use roomeq_model::ExcursionProtectionConfig as BackendExcursionProtectionConfig;
+        use roomeq_model::FirConfig as BackendFirConfig;
+        use roomeq_model::HighFreqFilterConfig;
+        use roomeq_model::HighpassType;
+        use roomeq_model::InterChannelTimbreMatchingConfig;
+        use roomeq_model::LowFreqFilterConfig;
+        use roomeq_model::MixedModeConfig;
+        use roomeq_model::MixedPhaseSerdeConfig as BackendMixedPhaseConfig;
+        use roomeq_model::MultiMeasurementConfig;
+        use roomeq_model::MultiMeasurementStrategy;
+        use roomeq_model::MultiSeatConfig as BackendMultiSeatConfig;
+        use roomeq_model::MultiSeatStrategy;
+        use roomeq_model::OptimizerConfig as BackendOptimizerConfig;
+        use roomeq_model::PhaseAlignmentConfig as BackendPhaseAlignmentConfig;
+        use roomeq_model::PreRingingSerdeConfig as BackendPreRingingConfig;
+        use roomeq_model::ProcessingMode;
+        use roomeq_model::SchroederSplitConfig as BackendSchroederSplitConfig;
+        use roomeq_model::SubOptimizerConfig;
+        use roomeq_model::TargetResponseConfig as BackendTargetResponseConfig;
+        use roomeq_model::TargetShape;
+        use roomeq_model::UserPreference;
 
         let processing_mode = match self.mode {
             RoomEqOptimizationMode::Iir => ProcessingMode::LowLatency,
@@ -568,16 +579,16 @@ impl RoomEqOptimizerConfig {
                 global_eq: true,
                 all_channel_enabled: self.multi_seat.all_channel_enabled,
                 all_channel_strategy: match self.multi_seat.all_channel_strategy.as_str() {
-                    "weighted_sum" => autoeq::roomeq::MultiMeasurementStrategy::WeightedSum,
-                    "minimax" => autoeq::roomeq::MultiMeasurementStrategy::Minimax,
+                    "weighted_sum" => roomeq_model::MultiMeasurementStrategy::WeightedSum,
+                    "minimax" => roomeq_model::MultiMeasurementStrategy::Minimax,
                     "variance_penalized" => {
-                        autoeq::roomeq::MultiMeasurementStrategy::VariancePenalized
+                        roomeq_model::MultiMeasurementStrategy::VariancePenalized
                     }
-                    "average" => autoeq::roomeq::MultiMeasurementStrategy::Average,
+                    "average" => roomeq_model::MultiMeasurementStrategy::Average,
                     "minimax_uncertainty" => {
-                        autoeq::roomeq::MultiMeasurementStrategy::MinimaxUncertainty
+                        roomeq_model::MultiMeasurementStrategy::MinimaxUncertainty
                     }
-                    _ => autoeq::roomeq::MultiMeasurementStrategy::SpatialRobustness,
+                    _ => roomeq_model::MultiMeasurementStrategy::SpatialRobustness,
                 },
                 seat_weights: self.multi_seat.seat_weights.clone(),
                 primary_seat_weight: self.multi_seat.primary_seat_weight,
@@ -718,9 +729,9 @@ impl RoomEqOptimizerConfig {
             // `EpaConfig::default()` (which also includes
             // `flatness_band_weights`, etc.) is the right baseline.
             epa_config: if self.epa_temporal_masking.differs_from_default() {
-                Some(autoeq::roomeq_model::EpaConfig {
+                Some(roomeq_model::EpaConfig {
                     temporal_masking: self.epa_temporal_masking.to_backend(),
-                    ..autoeq::roomeq_model::EpaConfig::default()
+                    ..roomeq_model::EpaConfig::default()
                 })
             } else {
                 None

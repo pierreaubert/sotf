@@ -1,6 +1,8 @@
-use autoeq::roomeq::{SpectralAlignmentResult, create_alignment_plugins, create_eq_plugin};
 use math_audio_iir_fir::BiquadFilterType;
 use math_audio_iir_fir::{Biquad, BiquadFilterType as AutoeqBiquadFilterType};
+use roomeq_dsp::output::create_eq_plugin;
+use roomeq_engine::spectral_align::SpectralAlignmentResult;
+use roomeq_engine::spectral_align::create_alignment_plugins;
 use sotf_audio_player::room_eq_types::{ChannelDspChain, DspPluginConfig};
 use sotf_audio_player::{EQFilter, PluginGraph, PluginSettings, PluginType};
 use sotf_audio_player_gpui::{classify_channel_eq_filters, upsert_named_room_eq_plugins};
@@ -387,7 +389,7 @@ fn old_merge_style_apply_loses_the_two_eq_distinction() {
 /// Convert an autoeq `PluginConfigWrapper` into the sotf-player
 /// `DspPluginConfig` shape. They are structurally identical — both
 /// `(String, serde_json::Value)` — so this is a field-by-field copy.
-fn to_dsp_plugin(w: &autoeq::roomeq::PluginConfigWrapper) -> DspPluginConfig {
+fn to_dsp_plugin(w: &roomeq_model::PluginConfigWrapper) -> DspPluginConfig {
     DspPluginConfig {
         plugin_type: w.plugin_type.clone(),
         parameters: w.parameters.clone(),

@@ -1,5 +1,5 @@
 use super::super::speaker::OptimizationStage;
-pub use autoeq::roomeq::PipelineEvent;
+pub use roomeq_engine::PipelineEvent;
 
 /// Result for a single speaker in multi-speaker optimization
 #[derive(Clone, Debug)]
@@ -53,7 +53,7 @@ pub struct MultiSpeakerProgress {
 
 /// Callback function type for multi-speaker optimization (legacy)
 pub type MultiSpeakerOptimizationCallback =
-    Box<dyn FnMut(&MultiSpeakerProgress) -> autoeq::de::CallbackAction + Send>;
+    Box<dyn FnMut(&MultiSpeakerProgress) -> autoeq_optim::de::CallbackAction + Send>;
 
 pub(super) fn multi_speaker_progress_from_pipeline_event(
     event: &PipelineEvent,

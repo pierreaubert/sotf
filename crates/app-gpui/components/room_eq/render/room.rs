@@ -157,7 +157,7 @@ pub fn room_eq_channel_sort_key(channel_name: &str) -> (u16, String) {
 }
 
 pub fn room_eq_report_data_from_dsp_output(
-    output: &autoeq::roomeq::DspChainOutput,
+    output: &roomeq_model::DspChainOutput,
 ) -> RoomEqReportData {
     let mut channels: Vec<RoomEqReportChannel> = output
         .channels
@@ -266,7 +266,7 @@ pub fn room_eq_report_channel_has_renderable_data(channel: &RoomEqReportChannel)
 }
 
 fn room_eq_report_curve_from_curve_data(
-    curve: &autoeq::roomeq::CurveData,
+    curve: &roomeq_model::CurveData,
 ) -> Option<RoomEqReportCurve> {
     let mut points = Vec::<(f64, f64)>::new();
     let mut phase_values = curve.phase.as_ref().map(|_| Vec::<f64>::new());
@@ -296,7 +296,7 @@ fn room_eq_report_curve_from_curve_data(
     })
 }
 
-fn room_eq_report_ir_from_waveform(ir: &autoeq::roomeq::IrWaveform) -> Option<RoomEqReportIr> {
+fn room_eq_report_ir_from_waveform(ir: &roomeq_model::IrWaveform) -> Option<RoomEqReportIr> {
     let points: Vec<(f64, f64)> = ir
         .time_ms
         .iter()
@@ -312,7 +312,7 @@ fn room_eq_report_ir_from_waveform(ir: &autoeq::roomeq::IrWaveform) -> Option<Ro
 }
 
 fn room_eq_report_eq_passes_from_plugins(
-    plugins: &[autoeq::roomeq::PluginConfigWrapper],
+    plugins: &[roomeq_model::PluginConfigWrapper],
 ) -> Vec<RoomEqReportEqPass> {
     plugins
         .iter()
@@ -397,9 +397,7 @@ fn room_eq_report_pass_color(label: &str) -> u32 {
     }
 }
 
-fn room_eq_report_epa_score_from_score(
-    score: &autoeq::roomeq_model::EpaScore,
-) -> RoomEqReportEpaScore {
+fn room_eq_report_epa_score_from_score(score: &roomeq_model::EpaScore) -> RoomEqReportEpaScore {
     RoomEqReportEpaScore {
         preference: score.preference,
         evaluation: score.evaluation,
@@ -413,7 +411,7 @@ fn room_eq_report_epa_score_from_score(
 }
 
 fn room_eq_report_epa_comparison_from_metrics(
-    metrics: &autoeq::roomeq::EpaChannelMetrics,
+    metrics: &roomeq_model::EpaChannelMetrics,
 ) -> RoomEqReportEpaComparison {
     RoomEqReportEpaComparison {
         pre: room_eq_report_epa_score_from_score(&metrics.pre),
@@ -422,7 +420,7 @@ fn room_eq_report_epa_comparison_from_metrics(
 }
 
 fn room_eq_report_epa_preference_avg(
-    metadata: &autoeq::roomeq::OptimizationMetadata,
+    metadata: &roomeq_model::OptimizationMetadata,
 ) -> Option<(f64, f64)> {
     let per_channel = metadata.epa_per_channel.as_ref()?;
     if per_channel.is_empty() {
@@ -442,7 +440,7 @@ fn room_eq_report_epa_preference_avg(
 }
 
 fn room_eq_report_bass_management_from_report(
-    report: &autoeq::roomeq::BassManagementReport,
+    report: &roomeq_model::BassManagementReport,
 ) -> RoomEqReportBassManagement {
     let routes = report
         .routing_graph

@@ -726,8 +726,10 @@ fn process_progressed(pid: Option<u32>) -> bool {
         return false;
     };
     let pid = sysinfo::Pid::from_u32(pid);
-    let mut system = sysinfo::System::new();
-    system.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]));
+    let Ok(mut system) = sysinfo::System::new() else {
+        return false;
+    };
+    system.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
     system.process(pid).is_some()
 }
 

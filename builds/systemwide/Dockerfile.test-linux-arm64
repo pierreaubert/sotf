@@ -14,6 +14,7 @@ RUN apt-get update && \
         git \
         libasound2-dev \
         libclang-dev \
+        libsqlite3-dev \
         pkg-config \
         && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
@@ -22,5 +23,10 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
     rustup component add clippy && \
     cargo install just --locked && \
     rm -rf /root/.cargo/registry /root/.cargo/git
+
+# The native capture measurement collector uses Python's standard library.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3 && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace/sotf-systemwide

@@ -1,20 +1,20 @@
 //! Optimization parameter types and UI helpers
 //!
 //! This module provides:
-//! - Re-export of autoeq::Args for optimization parameters
+//! - Re-export of autoeq_optim_types::OptimizationConfig for optimization parameters
 //! - UI dropdown options for algorithm selection, loss functions, etc.
 //! - Parameter limits for UI validation
 
 use serde::{Deserialize, Serialize};
 
-// Re-export Args from autoeq for direct use
-pub use autoeq::Args as OptimizationParams;
+// Keep library clients on the parser-independent optimizer configuration.
+pub use autoeq_optim_types::OptimizationConfig as OptimizationParams;
 
 fn default_bo_acquisition() -> String {
     "qei".to_string()
 }
 
-/// Wrapper around autoeq::Args with serde support for UI state persistence
+/// Wrapper around autoeq_optim_types::OptimizationConfig with serde support for UI state persistence
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptimizationParamsSerializable {
     pub num_filters: usize,
@@ -57,13 +57,13 @@ pub struct OptimizationParamsSerializable {
 
 impl Default for OptimizationParamsSerializable {
     fn default() -> Self {
-        let args = autoeq::Args::speaker_defaults();
+        let args = autoeq_optim_types::OptimizationConfig::speaker_defaults();
         Self::from(&args)
     }
 }
 
-impl From<&autoeq::Args> for OptimizationParamsSerializable {
-    fn from(args: &autoeq::Args) -> Self {
+impl From<&autoeq_optim_types::OptimizationConfig> for OptimizationParamsSerializable {
+    fn from(args: &autoeq_optim_types::OptimizationConfig) -> Self {
         Self {
             num_filters: args.num_filters,
             sample_rate: args.sample_rate,
@@ -101,9 +101,9 @@ impl From<&autoeq::Args> for OptimizationParamsSerializable {
 }
 
 impl OptimizationParamsSerializable {
-    /// Convert to autoeq::Args
-    pub fn to_args(&self) -> autoeq::Args {
-        let mut args = autoeq::Args::speaker_defaults();
+    /// Convert to autoeq_optim_types::OptimizationConfig
+    pub fn to_args(&self) -> autoeq_optim_types::OptimizationConfig {
+        let mut args = autoeq_optim_types::OptimizationConfig::speaker_defaults();
         args.num_filters = self.num_filters;
         args.sample_rate = self.sample_rate;
         args.min_db = self.min_db;
@@ -113,13 +113,13 @@ impl OptimizationParamsSerializable {
         args.min_freq = self.min_freq;
         args.max_freq = self.max_freq;
         args.peq_model = match self.peq_model.as_str() {
-            "hp-pk" | "hppk" => autoeq::PeqModel::HpPk,
-            "hp-pk-lp" | "hppklp" => autoeq::PeqModel::HpPkLp,
-            "ls-pk" | "lspk" => autoeq::PeqModel::LsPk,
-            "ls-pk-hs" | "lspkhs" => autoeq::PeqModel::LsPkHs,
-            "free-pk-free" | "freepkfree" => autoeq::PeqModel::FreePkFree,
-            "free" => autoeq::PeqModel::Free,
-            _ => autoeq::PeqModel::Pk,
+            "hp-pk" | "hppk" => autoeq_core::PeqModel::HpPk,
+            "hp-pk-lp" | "hppklp" => autoeq_core::PeqModel::HpPkLp,
+            "ls-pk" | "lspk" => autoeq_core::PeqModel::LsPk,
+            "ls-pk-hs" | "lspkhs" => autoeq_core::PeqModel::LsPkHs,
+            "free-pk-free" | "freepkfree" => autoeq_core::PeqModel::FreePkFree,
+            "free" => autoeq_core::PeqModel::Free,
+            _ => autoeq_core::PeqModel::Pk,
         };
         args.min_spacing_oct = self.min_spacing_oct;
         args.spacing_weight = self.spacing_weight;
@@ -345,17 +345,17 @@ pub fn format_peq_export(
 // ============================================================================
 
 /// Convert loss string to LossType
-pub fn parse_loss_type(loss: &str) -> autoeq::LossType {
+pub fn parse_loss_type(loss: &str) -> autoeq_optim::LossType {
     match loss {
-        "speaker-flat" | "speakerflat" => autoeq::LossType::SpeakerFlat,
+        "speaker-flat" | "speakerflat" => autoeq_optim::LossType::SpeakerFlat,
         "speaker-flat-asymmetric" | "speakerflatasymmetric" => {
-            autoeq::LossType::SpeakerFlatAsymmetric
+            autoeq_optim::LossType::SpeakerFlatAsymmetric
         }
-        "speaker-score" | "speakerscore" => autoeq::LossType::SpeakerScore,
-        "headphone-flat" | "headphoneflat" => autoeq::LossType::HeadphoneFlat,
-        "headphone-score" | "headphonescore" => autoeq::LossType::HeadphoneScore,
-        "epa" => autoeq::LossType::Epa,
-        _ => autoeq::LossType::SpeakerFlat,
+        "speaker-score" | "speakerscore" => autoeq_optim::LossType::SpeakerScore,
+        "headphone-flat" | "headphoneflat" => autoeq_optim::LossType::HeadphoneFlat,
+        "headphone-score" | "headphonescore" => autoeq_optim::LossType::HeadphoneScore,
+        "epa" => autoeq_optim::LossType::Epa,
+        _ => autoeq_optim::LossType::SpeakerFlat,
     }
 }
 
@@ -370,14 +370,14 @@ pub fn label_for<'a>(options: &[(&str, &'a str)], value: &'a str) -> &'a str {
 }
 
 /// Convert PEQ model string to PeqModel
-pub fn parse_peq_model(model: &str) -> autoeq::PeqModel {
+pub fn parse_peq_model(model: &str) -> autoeq_core::PeqModel {
     match model {
-        "hp-pk" | "hppk" => autoeq::PeqModel::HpPk,
-        "hp-pk-lp" | "hppklp" => autoeq::PeqModel::HpPkLp,
-        "ls-pk" | "lspk" => autoeq::PeqModel::LsPk,
-        "ls-pk-hs" | "lspkhs" => autoeq::PeqModel::LsPkHs,
-        "free-pk-free" | "freepkfree" => autoeq::PeqModel::FreePkFree,
-        "free" => autoeq::PeqModel::Free,
-        _ => autoeq::PeqModel::Pk,
+        "hp-pk" | "hppk" => autoeq_core::PeqModel::HpPk,
+        "hp-pk-lp" | "hppklp" => autoeq_core::PeqModel::HpPkLp,
+        "ls-pk" | "lspk" => autoeq_core::PeqModel::LsPk,
+        "ls-pk-hs" | "lspkhs" => autoeq_core::PeqModel::LsPkHs,
+        "free-pk-free" | "freepkfree" => autoeq_core::PeqModel::FreePkFree,
+        "free" => autoeq_core::PeqModel::Free,
+        _ => autoeq_core::PeqModel::Pk,
     }
 }

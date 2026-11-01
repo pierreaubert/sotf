@@ -27,7 +27,7 @@ pub(super) fn spawn_headphone_eq_optimization(app: &mut App) {
     let custom_target = app.headphone_eq.model.custom_target_path.clone();
     let c = &app.headphone_eq.model.optimizer_config;
 
-    let mut args = autoeq::Args::headphone_defaults();
+    let mut args = autoeq_optim_types::OptimizationConfig::headphone_defaults();
     args.num_filters = c.num_filters;
     args.min_freq = c.min_freq;
     args.max_freq = c.max_freq;
@@ -105,7 +105,7 @@ pub(super) fn spawn_headphone_list_load() {
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
         let result = rt
-            .block_on(async { autoeq::fetch_available_headphones().await })
+            .block_on(async { autoeq_measurements::read::fetch_available_headphones().await })
             .map_err(|e| e.to_string());
         if let Ok(mut guard) = slot.lock() {
             *guard = Some(result);
@@ -127,9 +127,10 @@ pub(super) fn spawn_headphone_download(headphone_name: &str) {
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
         let result = rt.block_on(async {
-            let (csv_path, _) = autoeq::fetch_headphone_frequency_response(&name)
-                .await
-                .map_err(|e| e.to_string())?;
+            let (csv_path, _) =
+                autoeq_measurements::read::fetch_headphone_frequency_response(&name)
+                    .await
+                    .map_err(|e| e.to_string())?;
 
             Ok::<String, String>(csv_path)
         });

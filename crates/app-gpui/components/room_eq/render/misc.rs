@@ -21,7 +21,7 @@ pub fn should_render_filter_plot(
 }
 
 pub fn is_room_eq_sub_or_lfe_channel(channel_name: &str) -> bool {
-    autoeq::roomeq::home_cinema::role_for_channel(channel_name).is_sub_or_lfe()
+    roomeq_model::home_cinema::role_for_channel(channel_name).is_sub_or_lfe()
 }
 
 pub(super) fn count_points_in_domain(points: &[(f64, f64)], domain: (f64, f64)) -> usize {

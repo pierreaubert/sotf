@@ -369,7 +369,8 @@ pub(super) fn ctc_raw_capture_channel_indices(app: &App, channel_idx: usize) -> 
 }
 
 pub(crate) fn save_recordings(app: &mut App) {
-    use autoeq::{OptimizerConfig, RoomConfig};
+    use roomeq_model::OptimizerConfig;
+    use roomeq_model::RoomConfig;
     use sotf_audio_player::recording_helpers::RECORDINGS_FILENAME;
     use sotf_audio_player::recording_types::ChannelRecordingState;
     use sotf_audio_player::room_eq_types::{
@@ -523,7 +524,7 @@ pub(crate) fn save_recordings(app: &mut App) {
 
     let ctc = ctc_measurements.map(|measurements| {
         let raw = ctc_reference_sweep.is_some();
-        autoeq::roomeq::CtcConfig {
+        roomeq_model::CtcConfig {
             // Off by default — binaural CTC is opt-in. The stanza is
             // written so the user can flip it on later without
             // re-recording, but roomeq must not run the CTC solver
