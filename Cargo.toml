@@ -465,3 +465,7 @@ strip = "symbols"
 # Dependency patches are root-workspace configuration and are not inherited
 # from the gpui-toolkit git dependency.
 
+# Use the sibling SOFA reader with the same SQLite version as this workspace.
+[patch."https://github.com/pierreaubert/sofa-reader"]
+sofa-reader = { path = "../sofa-reader" }
+

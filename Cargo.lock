@@ -333,7 +333,7 @@ dependencies = [
  "id3",
  "libc",
  "log",
- "math-iir-fir",
+ "math-iir-fir 0.5.28",
  "ndarray",
  "notify",
  "num-complex",
@@ -346,7 +346,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "signal-hook 0.4.5",
+ "signal-hook 0.4.6",
  "sotf-engine",
  "sotf-player",
  "sotf-plugins",
@@ -829,7 +829,7 @@ version = "0.5.12"
 dependencies = [
  "libm",
  "log",
- "math-iir-fir",
+ "math-iir-fir 0.5.28 (git+https://github.com/pierreaubert/math-audio)",
  "ndarray",
  "num-complex",
  "rustfft",
@@ -846,7 +846,7 @@ version = "0.5.3"
 dependencies = [
  "autoeq-core",
  "hound",
- "math-iir-fir",
+ "math-iir-fir 0.5.28 (git+https://github.com/pierreaubert/math-audio)",
  "ndarray",
  "num-complex",
  "rustfft",
@@ -881,8 +881,8 @@ dependencies = [
  "autoeq-measurements",
  "autoeq-optim-types",
  "log",
- "math-dsp",
- "math-iir-fir",
+ "math-dsp 0.5.36 (git+https://github.com/pierreaubert/math-audio)",
+ "math-iir-fir 0.5.28 (git+https://github.com/pierreaubert/math-audio)",
  "ndarray",
  "num-complex",
  "rayon",
@@ -900,9 +900,9 @@ dependencies = [
  "autoeq-objective",
  "autoeq-optim-types",
  "log",
- "math-dsp",
- "math-iir-fir",
- "math-optimisation",
+ "math-dsp 0.5.36 (git+https://github.com/pierreaubert/math-audio)",
+ "math-iir-fir 0.5.28 (git+https://github.com/pierreaubert/math-audio)",
+ "math-optimisation 0.5.15 (git+https://github.com/pierreaubert/math-audio)",
  "ndarray",
  "num-complex",
  "num_cpus",
@@ -1219,7 +1219,8 @@ dependencies = [
 [[package]]
 name = "block"
 version = "0.1.6"
-source = "git+https://github.com/pierreaubert/sotf-3rdparties?rev=5a4634af0916b5f53effa5ef6340efd90af32285#5a4634af0916b5f53effa5ef6340efd90af32285"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d8c1fef690941d3e7788d328517591fecc684c084084702d6ff1641e993699a"
 
 [[package]]
 name = "block-buffer"
@@ -2860,9 +2861,9 @@ checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 
 [[package]]
 name = "encoding_rs"
-version = "0.8.43"
+version = "0.8.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "844dfa6d76a4e6b9d98e03ae5ead89fbedd02cbd1206b7817d6d3dca62326967"
+checksum = "89253175e704ab869b04f9db224d38630e0211a53841a79181deae0889e169f5"
 dependencies = [
  "cfg-if",
  "core_detect",
@@ -3686,9 +3687,9 @@ dependencies = [
 
 [[package]]
 name = "glam"
-version = "0.34.1"
+version = "0.34.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc148d4ddd3930c52f9e5ae79b89805c6f07e9ff417e7b083e0348cea60a5aba"
+checksum = "54af5066834d6c2d404eb26ea036a15b15d9ff80db510b9a73ff95ab07f30831"
 
 [[package]]
 name = "glib"
@@ -3861,6 +3862,7 @@ dependencies = [
 [[package]]
 name = "gpui-android"
 version = "0.10.44"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#95a0c08c7e6d6893f5dc8bbd19a49b2b87ead29a"
 dependencies = [
  "accesskit",
  "android-activity",
@@ -3888,6 +3890,7 @@ dependencies = [
 [[package]]
 name = "gpui-audio-kit"
 version = "0.10.44"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#95a0c08c7e6d6893f5dc8bbd19a49b2b87ead29a"
 dependencies = [
  "gpui-d3rs",
  "gpui-design",
@@ -3899,6 +3902,7 @@ dependencies = [
 [[package]]
 name = "gpui-builder"
 version = "0.10.44"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#95a0c08c7e6d6893f5dc8bbd19a49b2b87ead29a"
 dependencies = [
  "gpui-pretext",
  "serde",
@@ -3907,6 +3911,7 @@ dependencies = [
 [[package]]
 name = "gpui-d3rs"
 version = "0.10.44"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#95a0c08c7e6d6893f5dc8bbd19a49b2b87ead29a"
 dependencies = [
  "bytemuck",
  "delaunator",
@@ -3942,6 +3947,7 @@ dependencies = [
 [[package]]
 name = "gpui-design"
 version = "0.10.44"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#95a0c08c7e6d6893f5dc8bbd19a49b2b87ead29a"
 dependencies = [
  "serde",
  "sotf-gpui-toolkit-gpui",
@@ -3950,6 +3956,7 @@ dependencies = [
 [[package]]
 name = "gpui-design-tools"
 version = "0.10.44"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#95a0c08c7e6d6893f5dc8bbd19a49b2b87ead29a"
 dependencies = [
  "anyhow",
  "clap",
@@ -3962,6 +3969,7 @@ dependencies = [
 [[package]]
 name = "gpui-foreign-parent"
 version = "0.10.44"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#95a0c08c7e6d6893f5dc8bbd19a49b2b87ead29a"
 dependencies = [
  "web-time",
 ]
@@ -3969,6 +3977,7 @@ dependencies = [
 [[package]]
 name = "gpui-ios"
 version = "0.10.45"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#95a0c08c7e6d6893f5dc8bbd19a49b2b87ead29a"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -3995,6 +4004,7 @@ dependencies = [
 [[package]]
 name = "gpui-keybinding"
 version = "0.10.44"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#95a0c08c7e6d6893f5dc8bbd19a49b2b87ead29a"
 dependencies = [
  "serde",
  "serde_json",
@@ -4004,10 +4014,12 @@ dependencies = [
 [[package]]
 name = "gpui-layout-expr"
 version = "0.10.47"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#95a0c08c7e6d6893f5dc8bbd19a49b2b87ead29a"
 
 [[package]]
 name = "gpui-miniapp"
 version = "0.10.44"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#95a0c08c7e6d6893f5dc8bbd19a49b2b87ead29a"
 dependencies = [
  "console_error_panic_hook",
  "gpui-android",
@@ -4028,6 +4040,7 @@ dependencies = [
 [[package]]
 name = "gpui-pretext"
 version = "0.10.44"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#95a0c08c7e6d6893f5dc8bbd19a49b2b87ead29a"
 dependencies = [
  "hashbrown 0.17.1",
  "unicode-bidi",
@@ -4037,10 +4050,12 @@ dependencies = [
 [[package]]
 name = "gpui-profiler"
 version = "0.10.44"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#95a0c08c7e6d6893f5dc8bbd19a49b2b87ead29a"
 
 [[package]]
 name = "gpui-px"
 version = "0.10.44"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#95a0c08c7e6d6893f5dc8bbd19a49b2b87ead29a"
 dependencies = [
  "glam",
  "gpui-builder",
@@ -4058,6 +4073,7 @@ dependencies = [
 [[package]]
 name = "gpui-themes"
 version = "0.10.44"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#95a0c08c7e6d6893f5dc8bbd19a49b2b87ead29a"
 dependencies = [
  "gpui-design",
  "gpui-miniapp",
@@ -4070,6 +4086,7 @@ dependencies = [
 [[package]]
 name = "gpui-ui-kit"
 version = "0.10.44"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#95a0c08c7e6d6893f5dc8bbd19a49b2b87ead29a"
 dependencies = [
  "gpui-builder",
  "gpui-d3rs",
@@ -4090,6 +4107,7 @@ dependencies = [
 [[package]]
 name = "gpui-ui-kit-macros"
 version = "0.10.44"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#95a0c08c7e6d6893f5dc8bbd19a49b2b87ead29a"
 dependencies = [
  "gpui-layout-expr",
  "proc-macro2",
@@ -5602,8 +5620,8 @@ dependencies = [
 name = "math-analog"
 version = "0.5.6"
 dependencies = [
- "math-dsp",
- "math-iir-fir",
+ "math-dsp 0.5.36",
+ "math-iir-fir 0.5.28",
  "rustfft",
  "thiserror 2.0.21",
 ]
@@ -5624,7 +5642,29 @@ dependencies = [
  "clap",
  "hound",
  "log",
- "math-iir-fir",
+ "math-iir-fir 0.5.28",
+ "ndarray",
+ "num-complex",
+ "oxiblas-ndarray",
+ "rand 0.10.3",
+ "rayon",
+ "realfft",
+ "rustfft",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "sotf-nalgebra",
+]
+
+[[package]]
+name = "math-dsp"
+version = "0.5.36"
+source = "git+https://github.com/pierreaubert/math-audio#d344776f19c2af5be081e37cb9cd35669c94d20d"
+dependencies = [
+ "clap",
+ "hound",
+ "log",
+ "math-iir-fir 0.5.28 (git+https://github.com/pierreaubert/math-audio)",
  "ndarray",
  "num-complex",
  "oxiblas-ndarray",
@@ -5655,13 +5695,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "math-iir-fir"
+version = "0.5.28"
+source = "git+https://github.com/pierreaubert/math-audio#d344776f19c2af5be081e37cb9cd35669c94d20d"
+dependencies = [
+ "base64 0.23.1",
+ "byteorder",
+ "hound",
+ "ndarray",
+ "num-complex",
+ "num-traits",
+ "rustfft",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "math-optimisation"
 version = "0.5.15"
 dependencies = [
  "chacha20",
  "clap",
  "directories",
- "math-test-functions",
+ "math-test-functions 0.5.4",
+ "ndarray",
+ "oxiblas-ndarray",
+ "rand 0.10.3",
+ "rayon",
+ "serde",
+ "sha2 0.11.1",
+ "sotf-nalgebra",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "math-optimisation"
+version = "0.5.15"
+source = "git+https://github.com/pierreaubert/math-audio#d344776f19c2af5be081e37cb9cd35669c94d20d"
+dependencies = [
+ "chacha20",
+ "clap",
+ "directories",
+ "math-test-functions 0.5.4 (git+https://github.com/pierreaubert/math-audio)",
  "ndarray",
  "oxiblas-ndarray",
  "rand 0.10.3",
@@ -5676,13 +5752,32 @@ dependencies = [
 name = "math-rir"
 version = "0.5.14"
 dependencies = [
- "math-iir-fir",
+ "math-iir-fir 0.5.28",
+ "rayon",
+]
+
+[[package]]
+name = "math-rir"
+version = "0.5.14"
+source = "git+https://github.com/pierreaubert/math-audio#d344776f19c2af5be081e37cb9cd35669c94d20d"
+dependencies = [
+ "math-iir-fir 0.5.28 (git+https://github.com/pierreaubert/math-audio)",
  "rayon",
 ]
 
 [[package]]
 name = "math-test-functions"
 version = "0.5.4"
+dependencies = [
+ "clap",
+ "directories",
+ "ndarray",
+]
+
+[[package]]
+name = "math-test-functions"
+version = "0.5.4"
+source = "git+https://github.com/pierreaubert/math-audio#d344776f19c2af5be081e37cb9cd35669c94d20d"
 dependencies = [
  "clap",
  "directories",
@@ -7577,7 +7672,7 @@ dependencies = [
 name = "plugins-denoiser"
 version = "0.5.14"
 dependencies = [
- "math-dsp",
+ "math-dsp 0.5.36",
  "serde",
  "sotf-nnnoiseless",
 ]
@@ -7590,7 +7685,7 @@ dependencies = [
  "gpui-design",
  "gpui-px",
  "gpui-ui-kit",
- "math-iir-fir",
+ "math-iir-fir 0.5.28",
  "sotf-gpui-toolkit-gpui",
  "sotf-host",
  "sotf-midi",
@@ -8820,9 +8915,9 @@ dependencies = [
  "autoeq-core",
  "hound",
  "log",
- "math-dsp",
- "math-iir-fir",
- "math-rir",
+ "math-dsp 0.5.36 (git+https://github.com/pierreaubert/math-audio)",
+ "math-iir-fir 0.5.28 (git+https://github.com/pierreaubert/math-audio)",
+ "math-rir 0.5.14 (git+https://github.com/pierreaubert/math-audio)",
  "ndarray",
  "num-complex",
  "rand 0.10.3",
@@ -8838,7 +8933,7 @@ dependencies = [
 name = "roomeq-dsp"
 version = "0.5.0"
 dependencies = [
- "math-iir-fir",
+ "math-iir-fir 0.5.28 (git+https://github.com/pierreaubert/math-audio)",
  "roomeq-model",
  "serde_json",
 ]
@@ -8852,10 +8947,10 @@ dependencies = [
  "autoeq-measurements",
  "autoeq-optim",
  "log",
- "math-dsp",
- "math-iir-fir",
- "math-optimisation",
- "math-rir",
+ "math-dsp 0.5.36 (git+https://github.com/pierreaubert/math-audio)",
+ "math-iir-fir 0.5.28 (git+https://github.com/pierreaubert/math-audio)",
+ "math-optimisation 0.5.15 (git+https://github.com/pierreaubert/math-audio)",
+ "math-rir 0.5.14 (git+https://github.com/pierreaubert/math-audio)",
  "ndarray",
  "num-complex",
  "num_cpus",
@@ -8881,7 +8976,7 @@ dependencies = [
  "anyhow",
  "autoeq-core",
  "hound",
- "math-iir-fir",
+ "math-iir-fir 0.5.28 (git+https://github.com/pierreaubert/math-audio)",
  "roomeq-dsp",
  "roomeq-model",
  "roomeq-quality",
@@ -8911,7 +9006,7 @@ version = "0.5.62"
 dependencies = [
  "autoeq-core",
  "hound",
- "math-iir-fir",
+ "math-iir-fir 0.5.28 (git+https://github.com/pierreaubert/math-audio)",
  "ndarray",
  "num-complex",
  "roomeq-model",
@@ -8933,9 +9028,9 @@ dependencies = [
  "chrono",
  "hound",
  "log",
- "math-dsp",
- "math-iir-fir",
- "math-rir",
+ "math-dsp 0.5.36 (git+https://github.com/pierreaubert/math-audio)",
+ "math-iir-fir 0.5.28 (git+https://github.com/pierreaubert/math-audio)",
+ "math-rir 0.5.14 (git+https://github.com/pierreaubert/math-audio)",
  "ndarray",
  "num-complex",
  "rayon",
@@ -9004,11 +9099,10 @@ dependencies = [
 
 [[package]]
 name = "rsqlite-vfs"
-version = "0.1.1"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c51c9ae4df8a7fba42103df5c621fa3c37eccf3a3c650879e90fc48b11cc192c"
+checksum = "353b74f9810d5b085b6c42c9d86a5f0fdb795553235cdd48753b32e3809d18a7"
 dependencies = [
- "hashbrown 0.16.1",
  "thiserror 2.0.21",
 ]
 
@@ -9654,9 +9748,9 @@ dependencies = [
 
 [[package]]
 name = "signal-hook"
-version = "0.4.5"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b29ffa27d3d59a049bb328258de100f8012848d1b08d444e08bbc02ac468435e"
+checksum = "49f7447afd772ca79ad17ae0a3972a6b0df0cb4b80990fd82707593e9e012a74"
 dependencies = [
  "libc",
  "signal-hook-registry",
@@ -9865,8 +9959,8 @@ dependencies = [
  "hound",
  "libc",
  "log",
- "math-dsp",
- "math-rir",
+ "math-dsp 0.5.36",
+ "math-rir 0.5.14",
  "roomeq-model",
  "roomeq-workflow",
  "rtrb",
@@ -9897,6 +9991,7 @@ dependencies = [
 [[package]]
 name = "sotf-collections"
 version = "0.1.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "indexmap",
  "rustc-hash 2.1.3",
@@ -9906,6 +10001,7 @@ dependencies = [
 [[package]]
 name = "sotf-coreaudio-rs"
 version = "0.14.2"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "bitflags 2.13.2",
  "libc",
@@ -9918,6 +10014,7 @@ dependencies = [
 [[package]]
 name = "sotf-cosmic-text"
 version = "0.19.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "bitflags 2.13.2",
  "fontdb",
@@ -9940,6 +10037,7 @@ dependencies = [
 [[package]]
 name = "sotf-derive_more"
 version = "2.1.2"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "sotf-derive_more-impl",
 ]
@@ -9947,6 +10045,7 @@ dependencies = [
 [[package]]
 name = "sotf-derive_more-impl"
 version = "2.1.2"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "convert_case 0.11.0",
  "proc-macro2",
@@ -9959,6 +10058,7 @@ dependencies = [
 [[package]]
 name = "sotf-derive_refineable"
 version = "0.1.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -10034,8 +10134,8 @@ dependencies = [
  "id3",
  "libc",
  "log",
- "math-dsp",
- "math-iir-fir",
+ "math-dsp 0.5.36",
+ "math-iir-fir 0.5.28",
  "ndarray",
  "notify",
  "num-complex",
@@ -10048,7 +10148,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "signal-hook 0.4.5",
+ "signal-hook 0.4.6",
  "sotf-capture",
  "sotf-coreaudio-rs",
  "sotf-iamf",
@@ -10128,8 +10228,8 @@ dependencies = [
  "id3",
  "image",
  "log",
- "math-iir-fir",
- "math-optimisation",
+ "math-iir-fir 0.5.28",
+ "math-optimisation 0.5.15",
  "mimalloc",
  "ndarray",
  "num-complex",
@@ -10149,7 +10249,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
- "signal-hook 0.4.5",
+ "signal-hook 0.4.6",
  "smol",
  "sotf-cast",
  "sotf-dev-api",
@@ -10192,6 +10292,7 @@ dependencies = [
 [[package]]
 name = "sotf-gpui-toolkit-gpui"
 version = "0.2.3"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -10257,6 +10358,7 @@ dependencies = [
 [[package]]
 name = "sotf-gpui-toolkit-gpui-apple"
 version = "0.1.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "anyhow",
  "async-task",
@@ -10297,6 +10399,7 @@ dependencies = [
 [[package]]
 name = "sotf-gpui-toolkit-gpui-linux"
 version = "0.1.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "accesskit",
  "accesskit_unix",
@@ -10340,6 +10443,7 @@ dependencies = [
 [[package]]
 name = "sotf-gpui-toolkit-gpui-macos"
 version = "0.1.2"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -10378,6 +10482,7 @@ dependencies = [
 [[package]]
 name = "sotf-gpui-toolkit-gpui-macros"
 version = "0.1.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -10388,6 +10493,7 @@ dependencies = [
 [[package]]
 name = "sotf-gpui-toolkit-gpui-web"
 version = "0.1.1"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -10416,6 +10522,7 @@ dependencies = [
 [[package]]
 name = "sotf-gpui-toolkit-gpui-wgpu"
 version = "0.1.3"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -10444,6 +10551,7 @@ dependencies = [
 [[package]]
 name = "sotf-gpui-toolkit-gpui-windows"
 version = "0.1.2"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "anyhow",
  "etagere",
@@ -10469,6 +10577,7 @@ dependencies = [
 [[package]]
 name = "sotf-gpui-toolkit-http-client"
 version = "0.1.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "anyhow",
  "bytes",
@@ -10486,6 +10595,7 @@ dependencies = [
 [[package]]
 name = "sotf-gpui-toolkit-path"
 version = "0.1.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "anyhow",
  "dunce",
@@ -10496,6 +10606,7 @@ dependencies = [
 [[package]]
 name = "sotf-gpui-toolkit-scheduler"
 version = "0.1.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "async-channel",
  "async-task",
@@ -10511,6 +10622,7 @@ dependencies = [
 [[package]]
 name = "sotf-gpui-toolkit-sum-tree"
 version = "0.1.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "heapless",
  "rayon",
@@ -10520,6 +10632,7 @@ dependencies = [
 [[package]]
 name = "sotf-gpui-toolkit-util"
 version = "0.1.1"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "anyhow",
  "async-fs",
@@ -10558,6 +10671,7 @@ dependencies = [
 [[package]]
 name = "sotf-gpui_shared_string"
 version = "0.1.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "schemars",
  "serde",
@@ -10567,6 +10681,7 @@ dependencies = [
 [[package]]
 name = "sotf-gpui_util"
 version = "0.1.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "anyhow",
  "log",
@@ -10585,8 +10700,8 @@ dependencies = [
  "gpui-design",
  "libc",
  "log",
- "math-dsp",
- "math-iir-fir",
+ "math-dsp 0.5.36",
+ "math-iir-fir 0.5.28",
  "memmap2",
  "objc2-audio-toolbox",
  "objc2-core-audio-types",
@@ -10641,6 +10756,7 @@ dependencies = [
 [[package]]
 name = "sotf-librespot-audio"
 version = "0.8.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "aes",
  "bytes",
@@ -10659,6 +10775,7 @@ dependencies = [
 [[package]]
 name = "sotf-librespot-core"
 version = "0.8.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "aes",
  "base64 0.22.1",
@@ -10713,6 +10830,7 @@ dependencies = [
 [[package]]
 name = "sotf-librespot-metadata"
 version = "0.8.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "async-trait",
  "bytes",
@@ -10729,6 +10847,7 @@ dependencies = [
 [[package]]
 name = "sotf-librespot-oauth"
 version = "0.8.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "http",
  "log",
@@ -10742,6 +10861,7 @@ dependencies = [
 [[package]]
 name = "sotf-librespot-playback"
 version = "0.8.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "form_urlencoded",
  "futures-util",
@@ -10762,6 +10882,7 @@ dependencies = [
 [[package]]
 name = "sotf-librespot-protocol"
 version = "0.8.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "protobuf",
  "protobuf-codegen",
@@ -10785,6 +10906,7 @@ dependencies = [
 [[package]]
 name = "sotf-metaheuristics-nature"
 version = "10.1.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "getrandom 0.4.3",
  "num-traits",
@@ -10827,6 +10949,7 @@ dependencies = [
 [[package]]
 name = "sotf-naga"
 version = "29.0.3"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "arrayvec",
  "bit-set 0.9.1",
@@ -10851,6 +10974,7 @@ dependencies = [
 [[package]]
 name = "sotf-nalgebra"
 version = "0.35.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "approx",
  "glam",
@@ -10865,6 +10989,7 @@ dependencies = [
 [[package]]
 name = "sotf-nnnoiseless"
 version = "0.1.1"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "num-complex",
  "once_cell",
@@ -10874,6 +10999,7 @@ dependencies = [
 [[package]]
 name = "sotf-objc"
 version = "0.2.7"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "malloc_buf",
 ]
@@ -10881,6 +11007,7 @@ dependencies = [
 [[package]]
 name = "sotf-oo7"
 version = "0.7.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "aes",
  "ashpd",
@@ -10932,10 +11059,10 @@ dependencies = [
  "insta",
  "lofty",
  "log",
- "math-dsp",
- "math-iir-fir",
- "math-optimisation",
- "math-rir",
+ "math-dsp 0.5.36",
+ "math-iir-fir 0.5.28",
+ "math-optimisation 0.5.15",
+ "math-rir 0.5.14",
  "ndarray",
  "num-complex",
  "num_cpus",
@@ -11002,7 +11129,7 @@ dependencies = [
 name = "sotf-plugin-ab-compare"
 version = "0.6.0"
 dependencies = [
- "math-iir-fir",
+ "math-iir-fir 0.5.28",
  "rand 0.10.3",
  "serde",
  "serde_json",
@@ -11061,7 +11188,7 @@ dependencies = [
 name = "sotf-plugin-analog-eq"
 version = "0.5.0"
 dependencies = [
- "math-iir-fir",
+ "math-iir-fir 0.5.28",
  "serde",
  "serde_json",
  "sotf-host",
@@ -11101,7 +11228,7 @@ dependencies = [
 name = "sotf-plugin-beamformer"
 version = "0.5.4"
 dependencies = [
- "math-dsp",
+ "math-dsp 0.5.36",
  "plugins-spatial",
  "realfft",
  "rustfft",
@@ -11118,8 +11245,8 @@ dependencies = [
  "audioadapter-buffers",
  "hound",
  "log",
- "math-dsp",
- "math-rir",
+ "math-dsp 0.5.36",
+ "math-rir 0.5.14",
  "plugins-spatial",
  "realfft",
  "rustfft",
@@ -11163,8 +11290,8 @@ dependencies = [
 name = "sotf-plugin-crossfeed"
 version = "0.5.14"
 dependencies = [
- "math-dsp",
- "math-iir-fir",
+ "math-dsp 0.5.36",
+ "math-iir-fir 0.5.28",
  "serde",
  "serde_json",
  "sotf-host",
@@ -11182,8 +11309,8 @@ dependencies = [
 name = "sotf-plugin-de-esser"
 version = "0.5.11"
 dependencies = [
- "math-dsp",
- "math-iir-fir",
+ "math-dsp 0.5.36",
+ "math-iir-fir 0.5.28",
  "serde",
  "serde_json",
  "sotf-host",
@@ -11212,7 +11339,7 @@ dependencies = [
 name = "sotf-plugin-denoiser"
 version = "0.5.8"
 dependencies = [
- "math-dsp",
+ "math-dsp 0.5.36",
  "realfft",
  "rustfft",
  "serde",
@@ -11235,8 +11362,8 @@ dependencies = [
 name = "sotf-plugin-downmix"
 version = "0.5.28"
 dependencies = [
- "math-dsp",
- "math-iir-fir",
+ "math-dsp 0.5.36",
+ "math-iir-fir 0.5.28",
  "realfft",
  "rustfft",
  "serde",
@@ -11248,8 +11375,8 @@ dependencies = [
 name = "sotf-plugin-dynamic-eq"
 version = "0.6.0"
 dependencies = [
- "math-dsp",
- "math-iir-fir",
+ "math-dsp 0.5.36",
+ "math-iir-fir 0.5.28",
  "serde",
  "serde_json",
  "sotf-host",
@@ -11259,7 +11386,7 @@ dependencies = [
 name = "sotf-plugin-eq"
 version = "0.6.0"
 dependencies = [
- "math-iir-fir",
+ "math-iir-fir 0.5.28",
  "serde",
  "sotf-host",
 ]
@@ -11277,8 +11404,8 @@ dependencies = [
 name = "sotf-plugin-gate"
 version = "0.5.12"
 dependencies = [
- "math-dsp",
- "math-iir-fir",
+ "math-dsp 0.5.36",
+ "math-iir-fir 0.5.28",
  "serde",
  "serde_json",
  "sotf-host",
@@ -11319,7 +11446,7 @@ dependencies = [
 name = "sotf-plugin-limiter"
 version = "0.5.14"
 dependencies = [
- "math-dsp",
+ "math-dsp 0.5.36",
  "serde",
  "serde_json",
  "sotf-host",
@@ -11329,7 +11456,7 @@ dependencies = [
 name = "sotf-plugin-linear-phase-eq"
 version = "0.5.6"
 dependencies = [
- "math-iir-fir",
+ "math-iir-fir 0.5.28",
  "num-complex",
  "plugins-spatial",
  "realfft",
@@ -11342,7 +11469,7 @@ dependencies = [
 name = "sotf-plugin-loudness-compensation"
 version = "0.5.5"
 dependencies = [
- "math-iir-fir",
+ "math-iir-fir 0.5.28",
  "serde",
  "serde_json",
  "sotf-host",
@@ -11372,8 +11499,8 @@ name = "sotf-plugin-multiband-compressor"
 version = "0.5.16"
 dependencies = [
  "log",
- "math-dsp",
- "math-iir-fir",
+ "math-dsp 0.5.36",
+ "math-iir-fir 0.5.28",
  "serde",
  "serde_json",
  "sotf-host",
@@ -11383,8 +11510,8 @@ dependencies = [
 name = "sotf-plugin-multiband-expander"
 version = "0.5.26"
 dependencies = [
- "math-dsp",
- "math-iir-fir",
+ "math-dsp 0.5.36",
+ "math-iir-fir 0.5.28",
  "rustfft",
  "serde",
  "serde_json",
@@ -11415,7 +11542,7 @@ dependencies = [
 name = "sotf-plugin-saturation"
 version = "0.5.12"
 dependencies = [
- "math-dsp",
+ "math-dsp 0.5.36",
  "serde",
  "serde_json",
  "sotf-host",
@@ -11425,7 +11552,7 @@ dependencies = [
 name = "sotf-plugin-spectral-compressor"
 version = "0.5.25"
 dependencies = [
- "math-dsp",
+ "math-dsp 0.5.36",
  "serde",
  "serde_json",
  "sotf-host",
@@ -11468,8 +11595,8 @@ dependencies = [
  "clap",
  "hound",
  "log",
- "math-dsp",
- "math-iir-fir",
+ "math-dsp 0.5.36",
+ "math-iir-fir 0.5.28",
  "ndarray",
  "plugins-inference",
  "realfft",
@@ -11484,7 +11611,7 @@ dependencies = [
 name = "sotf-plugin-xtc"
 version = "0.5.42"
 dependencies = [
- "math-dsp",
+ "math-dsp 0.5.36",
  "realfft",
  "rustfft",
  "serde",
@@ -11515,8 +11642,8 @@ dependencies = [
  "id3",
  "libc",
  "log",
- "math-dsp",
- "math-iir-fir",
+ "math-dsp 0.5.36",
+ "math-iir-fir 0.5.28",
  "ndarray",
  "notify",
  "rand 0.10.3",
@@ -11528,7 +11655,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "signal-hook 0.4.5",
+ "signal-hook 0.4.6",
  "sotf-host",
  "sotf-plugin-aae",
  "sotf-plugin-ab-compare",
@@ -11600,6 +11727,7 @@ dependencies = [
 [[package]]
 name = "sotf-predicates"
 version = "3.1.5"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "anstyle",
  "difflib",
@@ -11612,6 +11740,7 @@ dependencies = [
 [[package]]
 name = "sotf-refineable"
 version = "0.1.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "sotf-derive_refineable",
 ]
@@ -11634,6 +11763,7 @@ dependencies = [
 [[package]]
 name = "sotf-rfd"
 version = "0.17.2"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "block2 0.6.2",
  "dispatch2",
@@ -11670,6 +11800,7 @@ dependencies = [
 [[package]]
 name = "sotf-rubato"
 version = "5.0.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "audioadapter",
  "audioadapter-buffers",
@@ -11778,7 +11909,7 @@ dependencies = [
  "image",
  "libc",
  "log",
- "math-iir-fir",
+ "math-iir-fir 0.5.28",
  "ndarray",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
@@ -11840,6 +11971,7 @@ dependencies = [
 [[package]]
 name = "sotf-vello"
 version = "0.10.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "bytemuck",
  "futures-intrusive",
@@ -11857,6 +11989,7 @@ dependencies = [
 [[package]]
 name = "sotf-wgpu"
 version = "29.0.3"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "arrayvec",
  "bitflags 2.13.2",
@@ -11885,6 +12018,7 @@ dependencies = [
 [[package]]
 name = "sotf-wgpu-core"
 version = "29.0.3"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "arrayvec",
  "bit-set 0.9.1",
@@ -11916,6 +12050,7 @@ dependencies = [
 [[package]]
 name = "sotf-wgpu-core-deps-apple"
 version = "29.0.3"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "sotf-wgpu-hal",
 ]
@@ -11923,6 +12058,7 @@ dependencies = [
 [[package]]
 name = "sotf-wgpu-core-deps-emscripten"
 version = "29.0.3"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "sotf-wgpu-hal",
 ]
@@ -11930,6 +12066,7 @@ dependencies = [
 [[package]]
 name = "sotf-wgpu-core-deps-windows-linux-android"
 version = "29.0.3"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "sotf-wgpu-hal",
 ]
@@ -11937,6 +12074,7 @@ dependencies = [
 [[package]]
 name = "sotf-wgpu-hal"
 version = "29.0.3"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "android_system_properties",
  "arrayvec",
@@ -11989,6 +12127,7 @@ dependencies = [
 [[package]]
 name = "sotf-wgpu-naga-bridge"
 version = "29.0.3"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "sotf-naga",
  "sotf-wgpu-types",
@@ -11997,6 +12136,7 @@ dependencies = [
 [[package]]
 name = "sotf-wgpu-types"
 version = "29.0.3"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "bitflags 2.13.2",
  "bytemuck",
@@ -12009,6 +12149,7 @@ dependencies = [
 [[package]]
 name = "sotf-xim-ctext"
 version = "0.3.0"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "encoding_rs",
 ]
@@ -12016,6 +12157,7 @@ dependencies = [
 [[package]]
 name = "sotf-xim-parser"
 version = "0.2.1"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "bitflags 2.13.2",
 ]
@@ -12023,6 +12165,7 @@ dependencies = [
 [[package]]
 name = "sotf-zed-font-kit"
 version = "0.14.1-zed"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "bitflags 2.13.2",
  "byteorder",
@@ -12046,6 +12189,7 @@ dependencies = [
 [[package]]
 name = "sotf-zed-scap"
 version = "0.0.8-zed"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "anyhow",
  "cocoa 0.25.0",
@@ -12066,6 +12210,7 @@ dependencies = [
 [[package]]
 name = "sotf-zed-xim"
 version = "0.4.0-zed"
+source = "git+https://github.com/pierreaubert/sotf-3rdparties#91522a7d1dab3e8702a215cd7519ba760f6a84b6"
 dependencies = [
  "ahash",
  "hashbrown 0.14.5",
@@ -12109,9 +12254,9 @@ checksum = "3763264f6b73151db08c50ff20d7d8a0b8796e021cdea7ceedad07b80155fa0e"
 
 [[package]]
 name = "spinning_top"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d96d2d1d716fb500937168cc09353ffdc7a012be8475ac7308e1bdf0e3923300"
+checksum = "9cf02766a1eb909bc7653557c66b384e44edc3ad979e6257c6173c65ea51bc7d"
 dependencies = [
  "lock_api 0.4.14",
 ]
@@ -12137,14 +12282,12 @@ dependencies = [
 
 [[package]]
 name = "sqlite-wasm-rs"
-version = "0.5.5"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc3efc0da82635d7e1ced0053bbbfa8c7ab9645d0bf36ceb4f7127bb85315d75"
+checksum = "36bd8e29bf08189a005b2df1df99823aa0861cabe9044e5f31ed54ca292ee618"
 dependencies = [
  "cc",
- "js-sys",
  "rsqlite-vfs",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -15126,9 +15269,9 @@ dependencies = [
 
 [[package]]
 name = "yazi"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e01738255b5a16e78bbb83e7fbba0a1e7dd506905cfc53f4622d89015a03fbb5"
+checksum = "ac366ea532fa8ee6a992cec9dea525b1dc284e69702f36c2ab5fbebadc81ec86"
 
 [[package]]
 name = "yeslogic-fontconfig-sys"
@@ -15374,9 +15517,9 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "9.1.3"
+version = "9.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1156b39d142a34b999c2310a50455e0cb3760bf7efad0122f796d813bee26ccb"
+checksum = "848dad21639597378c3be94c59fd4de683f0f6d8a5387575896e1245737d4f37"
 dependencies = [
  "crc32fast",
  "getrandom 0.4.3",
