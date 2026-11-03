@@ -87,7 +87,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev libssl-dev pkg-config
       - name: Install just
-        run: cargo install just --locked
+        run: cargo install just
       - name: Run unit tier
         run: just test-unit-core
       - name: Run decoder and manager integration tier
@@ -173,7 +173,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev libssl-dev pkg-config
       - name: Install just
-        run: cargo install just --locked
+        run: cargo install just
       - name: Run release performance gate
         run: just perf-smoke
       - name: Upload performance sample
@@ -261,9 +261,9 @@ jobs:
           sudo apt-get install -y libasound2-dev libssl-dev pkg-config
       - name: Install test tools
         run: |
-          cargo install just --locked
-          cargo install cargo-nextest --locked
-          cargo install cargo-llvm-cov --locked
+          cargo install just
+          cargo install cargo-nextest
+          cargo install cargo-llvm-cov
       - name: Run broad tests
         run: just ntest
       - name: Run high-case property tests

@@ -24,7 +24,7 @@ RUN rustup toolchain install 1.99.0-x86_64-unknown-linux-gnu --component cargo,c
 ENV RUSTUP_TOOLCHAIN=1.99.0-x86_64-unknown-linux-gnu
 
 # Install just (command runner)
-RUN cargo install just --locked && \
+RUN cargo install just && \
     rm -rf /root/.cargo/registry /root/.cargo/git
 
 # Set up environment for static linking

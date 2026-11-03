@@ -90,7 +90,7 @@ RUN rustup target add aarch64-unknown-linux-gnu
 RUN set -u; \
     ok=""; \
     for i in 1 2 3 4 5; do \
-      if cargo install just --locked; then \
+      if cargo install just; then \
         ok=1; \
         break; \
       fi; \

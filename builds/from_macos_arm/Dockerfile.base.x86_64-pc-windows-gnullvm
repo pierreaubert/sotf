@@ -39,7 +39,7 @@ ENV RUSTUP_TOOLCHAIN=1.99.0
 RUN rustup target add --toolchain 1.99.0 x86_64-pc-windows-gnullvm
 
 # Install just
-RUN cargo install just --locked && \
+RUN cargo install just && \
     rm -rf /root/.cargo/registry /root/.cargo/git
 
 ARG LLVM_MINGW_VERSION=20260421

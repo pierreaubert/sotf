@@ -23,7 +23,7 @@ RUN rustup default 1.99.0 && \
     rustup component add clippy rustfmt rust-src rust-analyzer rustc-dev llvm-tools-preview
 
 # Install just (command runner)
-RUN cargo install just --locked && \
+RUN cargo install just && \
     rm -rf /root/.cargo/registry /root/.cargo/git
 
 # Pin the toolchain so the project's `rust-toolchain.toml` does not trigger

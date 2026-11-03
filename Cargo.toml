@@ -133,12 +133,12 @@ realfft = "3.5"
 metaheuristics-nature = { package = "sotf-metaheuristics-nature",  version = "10.1", git = "https://github.com/pierreaubert/sotf-3rdparties" }
 
 # Shared numerical and acoustic crates from sibling workspaces.
-math-test-functions = { version = "0.5", default-features = false, path = "../math-audio/crates/math-test-functions" }
-math-delaunay = { version = "0.5", path = "../math-audio/crates/math-delaunay" }
-math-iir-fir = { version = "0.5", path = "../math-audio/crates/math-iir-fir" }
-math-optimisation = { version = "0.5", path = "../math-audio/crates/math-optimisation" }
-math-dsp = { version = "0.5", path = "../math-audio/crates/math-dsp" }
-math-rir = { version = "0.5", path = "../math-audio/crates/math-rir" }
+math-test-functions = { version = "0.5", default-features = false, git = "https://github.com/pierreaubert/math-audio" }
+math-delaunay = { version = "0.5", git = "https://github.com/pierreaubert/math-audio" }
+math-iir-fir = { version = "0.5", git = "https://github.com/pierreaubert/math-audio" }
+math-optimisation = { version = "0.5", git = "https://github.com/pierreaubert/math-audio" }
+math-dsp = { version = "0.5", git = "https://github.com/pierreaubert/math-audio" }
+math-rir = { version = "0.5", git = "https://github.com/pierreaubert/math-audio" }
 sofa-reader = { version = "0.2", git = "https://github.com/pierreaubert/sofa-reader" }
 autoeq-core = { path = "../autoeq/crates/autoeq-core" }
 autoeq-optim = { path = "../autoeq/crates/autoeq-optim" }
@@ -465,7 +465,6 @@ strip = "symbols"
 # Dependency patches are root-workspace configuration and are not inherited
 # from the gpui-toolkit git dependency.
 
-# Use the sibling SOFA reader with the same SQLite version as this workspace.
-[patch."https://github.com/pierreaubert/sofa-reader"]
-sofa-reader = { path = "../sofa-reader" }
+[patch.crates-io]
+block = { git = "https://github.com/pierreaubert/sotf-3rdparties", rev = "5a4634af0916b5f53effa5ef6340efd90af32285" }
 

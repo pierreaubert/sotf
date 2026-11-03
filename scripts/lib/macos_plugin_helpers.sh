@@ -5,7 +5,7 @@ build_macos_plugin_helpers() {
     local daw_root="$1"
     local target_dir="$2"
     local target="${3:-}"
-    local -a arguments=(build --locked --profile dist --manifest-path "$daw_root/Cargo.toml"
+    local -a arguments=(build --profile dist --manifest-path "$daw_root/Cargo.toml"
         --target-dir "$target_dir" -p sotf-host --features external-plugin-au
         --bin sotf-external-plugin-worker --bin sotf-macos-sandbox-helper)
     if [ -n "$target" ]; then

@@ -27,7 +27,7 @@ ENV RUSTUP_TOOLCHAIN=1.99.0-aarch64-unknown-linux-gnu
 RUN mkdir -p /root/.rustup/tmp /root/.rustup/downloads && \
     chmod -R 777 /root/.rustup/tmp /root/.rustup/downloads
 
-RUN cargo install just --locked && \
+RUN cargo install just && \
     rm -rf /root/.cargo/registry /root/.cargo/git
 
 # Repair clippy state

@@ -21,7 +21,7 @@ RUN apt-get update && \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
     sh -s -- -y --default-toolchain 1.99.0 --profile minimal && \
     rustup component add clippy && \
-    cargo install just --locked && \
+    cargo install just && \
     rm -rf /root/.cargo/registry /root/.cargo/git
 
 # The native capture measurement collector uses Python's standard library.

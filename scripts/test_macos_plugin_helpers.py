@@ -96,7 +96,7 @@ class MacosPluginHelpersTest(unittest.TestCase):
         self.assertEqual(args[args.index("--target-dir") + 1], str(target_dir))
         self.assertEqual(args[args.index("--features") + 1], "external-plugin-au")
         self.assertEqual(args[args.index("--target") + 1], "aarch64-apple-darwin")
-        self.assertIn("--locked", args)
+        self.assertNotIn("--locked", args)
         self.assertEqual([args[i + 1] for i, arg in enumerate(args) if arg == "--bin"], list(HELPERS))
 
 

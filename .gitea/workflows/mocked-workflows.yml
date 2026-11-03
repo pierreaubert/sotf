@@ -89,7 +89,7 @@ jobs:
             build-essential clang cmake mold \
             libasound2-dev libssl-dev libglib2.0-dev libgtk-3-dev \
             libwayland-dev libxkbcommon-x11-dev pkg-config python3-numpy
-          cargo install just --locked
+          cargo install just
       - name: Run deterministic workflow contracts
         run: |
           mkdir -p ../workflow-artifacts

@@ -36,7 +36,7 @@ RUN apk add --no-cache \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
     sh -s -- -y --default-toolchain 1.99.0 --profile minimal && \
     rustup component add clippy llvm-tools-preview rust-analyzer rust-src rustc-dev rustfmt && \
-    cargo install just --locked && \
+    cargo install just && \
     mkdir -p /build-target && \
     rm -rf /root/.cargo/registry /root/.cargo/git
 
