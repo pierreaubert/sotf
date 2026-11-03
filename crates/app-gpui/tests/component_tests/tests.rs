@@ -510,7 +510,7 @@ fn dev_api_compile_guard_is_active_for_release_builds() {
 
 #[test]
 fn release_gpui_recipe_excludes_dev_api_feature() {
-    let justfile = repo_source("justfile");
+    let justfile = repo_source("Justfile");
     let gpui_recipe = justfile
         .split("\n[group('build')]\ngpui:\n")
         .nth(1)

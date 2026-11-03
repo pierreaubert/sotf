@@ -199,7 +199,12 @@ mod tests {
         let fmt = format!(
             "{:?}",
             MediaControls {
-                inner: backend::Backend::new(PlatformConfig::default()).unwrap(),
+                inner: backend::Backend::new(
+                    PlatformConfig::default()
+                        .with_dbus_name("sotf_test")
+                        .with_display_name("SOTF Test"),
+                )
+                .unwrap(),
             }
         );
         assert!(fmt.starts_with("MediaControls"));

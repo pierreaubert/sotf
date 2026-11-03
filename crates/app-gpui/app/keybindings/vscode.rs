@@ -17,8 +17,8 @@ pub(super) fn vscode_bindings() -> Vec<KeyBinding> {
         // Theme and language - VSCode style (ctrl combos stay global)
         KeyBinding::new("ctrl-k ctrl-t", actions::CycleTheme, None),
         KeyBinding::new("ctrl-shift-l", actions::CycleLanguage, None),
-        // Search - VSCode style (/ needs PlayerView, ctrl-f/cmd-f stay global)
-        KeyBinding::new("ctrl-f", actions::ToggleSearch, None),
+        // Search - VSCode style (/ needs PlayerView; secondary-f is
+        // cmd-f on macOS and ctrl-f elsewhere, so one binding covers both)
         KeyBinding::new("secondary-f", actions::ToggleSearch, None),
         KeyBinding::new("/", actions::ToggleSearch, Some("PlayerView")),
         KeyBinding::new("ctrl-shift-e", actions::ToggleLibraryView, None),

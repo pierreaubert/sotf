@@ -57,6 +57,11 @@ pub(crate) struct MprisBackend {
 
 impl MprisBackend {
     pub(crate) fn new(config: &PlatformConfig<'_>) -> Result<Self, Error> {
+        if config.dbus_name.is_empty() {
+            return Err(Error::Init(
+                "empty dbus_name: set PlatformConfig::with_dbus_name".to_owned(),
+            ));
+        }
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<Cmd>();
         // Hand-off channel so `new()` can surface init errors synchronously.
         let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
