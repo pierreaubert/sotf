@@ -486,7 +486,15 @@ mod tests {
                 .unwrap()
                 .wav_path
                 .as_deref(),
-            source_directory.path().join("capture.wav").to_str()
+            // Stored wav paths are portable `/` strings.
+            Some(
+                source_directory
+                    .path()
+                    .join("capture.wav")
+                    .to_string_lossy()
+                    .replace('\\', "/")
+                    .as_str(),
+            )
         );
         assert_eq!(
             reloaded.configuration.ctc.as_ref().unwrap().reference_sweep,

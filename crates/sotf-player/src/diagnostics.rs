@@ -667,11 +667,11 @@ fn redact_home_dir(input: &str) -> String {
         return input.to_string();
     }
 
-    let sep = std::path::MAIN_SEPARATOR;
-    let pattern_with_sep = format!("{}{}", home_normalized, sep);
-
-    // First replace home dir followed by a separator.
-    let result = input.replace(&pattern_with_sep, &format!("{}{}", "~", sep));
+    // Log text may use either separator regardless of platform (e.g. a
+    // Windows path printed with `/`), so match both forms and preserve
+    // the separator style that was present.
+    let result = input.replace(&format!("{}/", home_normalized), "~/");
+    let result = result.replace(&format!("{}\\", home_normalized), "~\\");
 
     // Then replace any remaining exact home dir references at word boundaries.
     replace_word_boundary(&result, home_normalized, "~")

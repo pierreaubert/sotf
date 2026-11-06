@@ -125,7 +125,10 @@ pub fn import_m3u8(input_path: &Path) -> Result<ImportedPlaylist, String> {
 
         // This is a file path
         let path = PathBuf::from(&line);
-        let resolved = if path.is_absolute() {
+        // M3U entries use `/`-style absolute paths; on Windows a leading
+        // separator is root-relative rather than `is_absolute()`, but it
+        // still denotes an absolute location, not a playlist-relative one.
+        let resolved = if path.is_absolute() || line.starts_with(['/', '\\']) {
             path
         } else {
             base_dir.join(&path)

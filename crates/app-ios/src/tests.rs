@@ -2,6 +2,15 @@ use std::path::Path;
 
 const IOS_APP_DIR: &str = "SotFPlayer";
 
+/// Read a checked-in text file with line endings normalized, so CRLF
+/// checkouts compare like LF ones.
+fn read_text(path: impl AsRef<std::path::Path>) -> String {
+    let path = path.as_ref();
+    std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+        .replace("\r\n", "\n")
+}
+
 fn ios_path(relative: &str) -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("ios")
@@ -14,8 +23,8 @@ fn app_path(relative: &str) -> std::path::PathBuf {
 
 #[test]
 fn ios_project_builds_rust_library_instead_of_requiring_committed_archive() {
-    let project_yml = std::fs::read_to_string(ios_path("project.yml")).unwrap();
-    let gitignore = std::fs::read_to_string(ios_path(".gitignore")).unwrap();
+    let project_yml = read_text(ios_path("project.yml"));
+    let gitignore = read_text(ios_path(".gitignore"));
     assert!(project_yml.contains("preBuildScripts:"));
     assert!(project_yml.contains("./build-rust.sh"));
     assert!(project_yml.contains("$(DERIVED_FILE_DIR)/rust/libsotf_ios.a"));
@@ -25,8 +34,8 @@ fn ios_project_builds_rust_library_instead_of_requiring_committed_archive() {
 
 #[test]
 fn ios_bundle_metadata_has_required_shipping_assets() {
-    let project_yml = std::fs::read_to_string(ios_path("project.yml")).unwrap();
-    let plist = std::fs::read_to_string(app_path("Info.plist")).unwrap();
+    let project_yml = read_text(ios_path("project.yml"));
+    let plist = read_text(app_path("Info.plist"));
     assert!(project_yml.contains("MARKETING_VERSION: 0.7.15"));
     assert!(project_yml.contains("CURRENT_PROJECT_VERSION: 0.7.15"));
     assert!(plist.contains("<string>$(MARKETING_VERSION)</string>"));
@@ -36,7 +45,7 @@ fn ios_bundle_metadata_has_required_shipping_assets() {
 
     assert!(app_path("LaunchScreen.storyboard").exists());
     assert!(app_path("PrivacyInfo.xcprivacy").exists());
-    let privacy = std::fs::read_to_string(app_path("PrivacyInfo.xcprivacy")).unwrap();
+    let privacy = read_text(app_path("PrivacyInfo.xcprivacy"));
     assert!(privacy.contains("NSPrivacyAccessedAPICategoryFileTimestamp"));
     assert!(privacy.contains("NSPrivacyAccessedAPICategoryDiskSpace"));
     assert!(privacy.contains("NSPrivacyAccessedAPICategoryUserDefaults"));
@@ -52,7 +61,7 @@ fn ios_bundle_metadata_has_required_shipping_assets() {
         "local network, Bonjour, camera permission, and document import are permission strings, not collected-data declarations"
     );
     let app_icon_dir = app_path("Assets.xcassets/AppIcon.appiconset");
-    let app_icon_json = std::fs::read_to_string(app_icon_dir.join("Contents.json")).unwrap();
+    let app_icon_json = read_text(app_icon_dir.join("Contents.json"));
     let app_icon: serde_json::Value = serde_json::from_str(&app_icon_json).unwrap();
     let images = app_icon["images"].as_array().unwrap();
     assert!(!images.is_empty());
@@ -69,7 +78,7 @@ fn ios_bundle_metadata_has_required_shipping_assets() {
 
 #[test]
 fn ios_route_change_handler_does_not_pause_for_airplay_or_bluetooth_switches() {
-    let audio_manager = std::fs::read_to_string(app_path("AudioManager.swift")).unwrap();
+    let audio_manager = read_text(app_path("AudioManager.swift"));
 
     assert!(audio_manager.contains("shouldPauseForUnavailableRoute"));
     assert!(audio_manager.contains(".headphones"));
@@ -84,8 +93,7 @@ fn ios_route_change_handler_does_not_pause_for_airplay_or_bluetooth_switches() {
 
 #[test]
 fn ios_project_uses_sotfplayer_as_the_canonical_app_target() {
-    let project_yml = std::fs::read_to_string(ios_path("project.yml")).unwrap();
-
+    let project_yml = read_text(ios_path("project.yml"));
     assert!(project_yml.contains("name: SotFPlayer"));
     assert!(project_yml.contains("SotFPlayer:"));
     assert!(project_yml.contains("sources:\n      - SotFPlayer"));
@@ -95,15 +103,15 @@ fn ios_project_uses_sotfplayer_as_the_canonical_app_target() {
     // exists on a Mac that has generated it; check it when present.
     let pbxproj_path = ios_path("SotFPlayer.xcodeproj/project.pbxproj");
     if pbxproj_path.exists() {
-        let pbxproj = std::fs::read_to_string(pbxproj_path).unwrap();
+        let pbxproj = read_text(pbxproj_path);
         assert!(pbxproj.contains("PBXNativeTarget \"SotFPlayer\""));
     }
 }
 
 #[test]
 fn ios_platform_hooks_cover_p1_runtime_events() {
-    let app_delegate = std::fs::read_to_string(app_path("AppDelegate.swift")).unwrap();
-    let bridge = std::fs::read_to_string(app_path("BridgingHeader.h")).unwrap();
+    let app_delegate = read_text(app_path("AppDelegate.swift"));
+    let bridge = read_text(app_path("BridgingHeader.h"));
 
     assert!(app_delegate.contains("UIContentSizeCategory.didChangeNotification"));
     assert!(app_delegate.contains("dynamicTypeScale(for:"));
@@ -120,9 +128,8 @@ fn ios_platform_hooks_cover_p1_runtime_events() {
 
 #[test]
 fn ios_xctest_smoke_target_covers_platform_events() {
-    let project_yml = std::fs::read_to_string(ios_path("project.yml")).unwrap();
-    let tests = std::fs::read_to_string(ios_path("SotFPlayerTests/PlatformSmokeTests.swift"))
-        .expect("missing iOS XCTest smoke suite");
+    let project_yml = read_text(ios_path("project.yml"));
+    let tests = read_text(ios_path("SotFPlayerTests/PlatformSmokeTests.swift"));
 
     assert!(project_yml.contains("SotFPlayerTests:"));
     assert!(project_yml.contains("type: bundle.unit-test"));
@@ -135,12 +142,12 @@ fn ios_xctest_smoke_target_covers_platform_events() {
 
 #[test]
 fn ios_airplay_route_picker_is_exposed_to_gpui() {
-    let app_delegate = std::fs::read_to_string(app_path("AppDelegate.swift")).unwrap();
-    let audio_settings = std::fs::read_to_string(
+    let app_delegate = read_text(app_path("AppDelegate.swift"));
+    let audio_settings = read_text(
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../app-gpui/components/settings/audio_device/device.rs"),
     )
-    .unwrap();
+    ;
 
     assert!(app_delegate.contains("@_cdecl(\"sotf_ios_show_route_picker\")"));
     assert!(app_delegate.contains("MPVolumeView"));
@@ -150,10 +157,10 @@ fn ios_airplay_route_picker_is_exposed_to_gpui() {
 
 #[test]
 fn gpui_ios_safe_area_applies_landscape_side_insets() {
-    let render = std::fs::read_to_string(
+    let render = read_text(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../app-gpui/ui/render.rs"),
     )
-    .unwrap();
+    ;
 
     assert!(render.contains("let (top, left, bottom, right) = gpui_ios::safe_area_insets();"));
     assert!(render.contains(".pl(px(left))"));

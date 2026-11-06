@@ -1,5 +1,14 @@
 use std::path::PathBuf;
 
+/// Read a checked-in text file with line endings normalized, so CRLF
+/// checkouts compare like LF ones.
+fn read_text(path: impl AsRef<std::path::Path>) -> String {
+    let path = path.as_ref();
+    std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+        .replace("\r\n", "\n")
+}
+
 fn tvos_path(path: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tvos")
@@ -8,7 +17,7 @@ fn tvos_path(path: &str) -> PathBuf {
 
 #[test]
 fn tvos_privacy_manifest_declares_accessed_apis_without_tracking() {
-    let manifest = std::fs::read_to_string(tvos_path("SotFTV/PrivacyInfo.xcprivacy")).unwrap();
+    let manifest = read_text(tvos_path("SotFTV/PrivacyInfo.xcprivacy"));
 
     assert!(manifest.contains("NSPrivacyAccessedAPICategoryFileTimestamp"));
     assert!(manifest.contains("NSPrivacyAccessedAPICategoryDiskSpace"));
@@ -22,7 +31,7 @@ fn tvos_privacy_manifest_declares_accessed_apis_without_tracking() {
 
 #[test]
 fn tvos_project_sources_include_privacy_manifest_folder() {
-    let project_yml = std::fs::read_to_string(tvos_path("project.yml")).unwrap();
+    let project_yml = read_text(tvos_path("project.yml"));
 
     assert!(project_yml.contains("sources:"));
     assert!(project_yml.contains("- SotFTV"));
@@ -31,8 +40,8 @@ fn tvos_project_sources_include_privacy_manifest_folder() {
 
 #[test]
 fn tvos_project_builds_rust_library_instead_of_requiring_committed_archive() {
-    let project_yml = std::fs::read_to_string(tvos_path("project.yml")).unwrap();
-    let gitignore = std::fs::read_to_string(tvos_path(".gitignore")).unwrap();
+    let project_yml = read_text(tvos_path("project.yml"));
+    let gitignore = read_text(tvos_path(".gitignore"));
 
     assert!(project_yml.contains("preBuildScripts:"));
     assert!(project_yml.contains("./build-rust.sh"));
@@ -43,15 +52,15 @@ fn tvos_project_builds_rust_library_instead_of_requiring_committed_archive() {
 
 #[test]
 fn tvos_bundle_metadata_has_required_shipping_assets() {
-    let project_yml = std::fs::read_to_string(tvos_path("project.yml")).unwrap();
-    let plist = std::fs::read_to_string(tvos_path("SotFTV/Info.plist")).unwrap();
+    let project_yml = read_text(tvos_path("project.yml"));
+    let plist = read_text(tvos_path("SotFTV/Info.plist"));
 
     assert!(project_yml.contains("MARKETING_VERSION:"));
     assert!(project_yml.contains("CURRENT_PROJECT_VERSION:"));
     assert!(plist.contains("<string>$(MARKETING_VERSION)</string>"));
     assert!(plist.contains("<string>$(CURRENT_PROJECT_VERSION)</string>"));
 
-    let privacy = std::fs::read_to_string(tvos_path("SotFTV/PrivacyInfo.xcprivacy")).unwrap();
+    let privacy = read_text(tvos_path("SotFTV/PrivacyInfo.xcprivacy"));
     assert!(privacy.contains("NSPrivacyAccessedAPICategoryFileTimestamp"));
     assert!(privacy.contains("NSPrivacyAccessedAPICategoryDiskSpace"));
     assert!(privacy.contains("NSPrivacyAccessedAPICategoryUserDefaults"));

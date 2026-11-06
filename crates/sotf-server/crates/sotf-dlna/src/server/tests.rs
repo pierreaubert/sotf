@@ -185,10 +185,23 @@ fn response_header(headers: &str, name: &str) -> Option<String> {
 
 fn test_media_path() -> PathBuf {
     let mut path = std::env::temp_dir();
+    // Thread names contain `::` module separators, invalid in Windows paths.
+    let thread_name: String = std::thread::current()
+        .name()
+        .unwrap_or("unnamed")
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
     path.push(format!(
         "sotf-dlna-http-test-{}-{}.flac",
         std::process::id(),
-        std::thread::current().name().unwrap_or("unnamed")
+        thread_name
     ));
     path
 }

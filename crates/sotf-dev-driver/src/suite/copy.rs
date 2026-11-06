@@ -118,7 +118,12 @@ mod tests {
     fn rejects_absolute_dist_path() {
         let scenario = tempfile::tempdir().expect("temporary scenario directory");
         let mut fixture = config(checked_in_fixture());
-        fixture.dist_path = Some(PathBuf::from("/private/tmp/escape"));
+        // Root-relative paths are not absolute on Windows; use a drive path there.
+        fixture.dist_path = Some(PathBuf::from(if cfg!(windows) {
+            "C:\\escape"
+        } else {
+            "/private/tmp/escape"
+        }));
 
         let error = copy_room_eq_fixture(&fixture, scenario.path())
             .expect_err("absolute fixture destination must be rejected");

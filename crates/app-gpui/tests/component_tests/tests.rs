@@ -112,9 +112,15 @@ fn collect_labels_from_macro_tokens(tokens: &str, labels: &mut BTreeSet<String>)
     }
 }
 
+fn normalized_read(path: impl AsRef<std::path::Path>) -> std::io::Result<String> {
+    std::fs::read_to_string(path).map(|text| text.replace("\r\n", "\n"))
+}
+
 fn app_source(relative: &str) -> String {
-    std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(relative))
+    // Normalize line endings so source assertions work on CRLF checkouts.
+    normalized_read(Path::new(env!("CARGO_MANIFEST_DIR")).join(relative))
         .unwrap_or_else(|err| panic!("failed to read {relative}: {err}"))
+        .replace("\r\n", "\n")
 }
 
 #[test]
@@ -162,8 +168,9 @@ fn repo_source(relative: &str) -> String {
         .parent()
         .and_then(Path::parent)
         .expect("app-gpui should live under crates/");
-    std::fs::read_to_string(repo_root.join(relative))
+    normalized_read(repo_root.join(relative))
         .unwrap_or_else(|err| panic!("failed to read {relative}: {err}"))
+        .replace("\r\n", "\n")
 }
 
 fn matrix_first_gain(graph: &PluginGraph, plugin_instance_id: usize) -> f32 {
@@ -658,8 +665,9 @@ fn app_gpui_unwrap_expect_production_audit_is_current() {
             .strip_prefix(root)
             .unwrap()
             .to_string_lossy()
-            .to_string();
-        let source = std::fs::read_to_string(&file)
+            // Baseline keys are portable `/` paths.
+            .replace('\\', "/");
+        let source = normalized_read(&file)
             .unwrap_or_else(|err| panic!("failed to read {relative}: {err}"));
         let count = production_unwrap_expect_count(&source);
         if count > 0 {
@@ -889,7 +897,7 @@ fn queue_destructive_actions_are_visible_and_recoverable() {
 #[test]
 fn playlists_crud_controls_are_rendered_and_driver_addressable() {
     let playlists = app_source("components/playlists.rs");
-    let scenario = std::fs::read_to_string(concat!(
+    let scenario = normalized_read(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../sotf-dev-driver/scenarios/gpui_playlists.scn"
     ))
@@ -4897,7 +4905,7 @@ fn application_visible_literal_sinks_require_explicit_technical_allowlist() {
                 .components()
                 .any(|component| component.as_os_str() == "tests")
     }) {
-        let source = std::fs::read_to_string(&path)
+        let source = normalized_read(&path)
             .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()))
             // Typed translation lookups are not direct visible literals.
             .replace("text.label(\"", "text.localized_label(\"");
@@ -5256,7 +5264,7 @@ fn indirect_visible_literals_require_translation_or_technical_allowlist() {
     }
 
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let catalog = std::fs::read_to_string(root.join("app/i18n/translations.rs"))
+    let catalog = normalized_read(root.join("app/i18n/translations.rs"))
         .expect("read translation catalog");
     let checker_source = include_str!("tests.rs");
     let allowlist_start = checker_source
@@ -5281,7 +5289,7 @@ fn indirect_visible_literals_require_translation_or_technical_allowlist() {
                 .components()
                 .any(|component| component.as_os_str() == "tests")
     }) {
-        let source = std::fs::read_to_string(&path)
+        let source = normalized_read(&path)
             .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
         let syntax = match syn::parse_file(&source) {
             Ok(syntax) => syntax,
@@ -5460,7 +5468,7 @@ fn first_party_toast_templates_are_in_the_runtime_translation_catalog() {
             .any(|component| component.as_os_str() == "tests")
             && !path.ends_with("runtime_messages.rs")
     }) {
-        let source = std::fs::read_to_string(&path)
+        let source = normalized_read(&path)
             .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
         for marker in markers {
             let mut cursor = 0;
@@ -5689,7 +5697,7 @@ fn application_translation_keys_have_placeholder_parity_and_orphan_debt_does_not
                     .any(|component| component.as_os_str() == "tests")
         })
         .map(|path| {
-            std::fs::read_to_string(&path)
+            normalized_read(&path)
                 .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()))
         })
         .collect::<Vec<_>>();

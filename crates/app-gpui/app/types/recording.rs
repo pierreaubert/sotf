@@ -338,7 +338,8 @@ impl RecordingState {
     /// Rebase a file only when it belongs to the directory the wizard moved.
     pub fn rebase_owned_path(path: &mut String, old_dir: &std::path::Path, dir: &std::path::Path) {
         if let Ok(relative) = std::path::Path::new(path).strip_prefix(old_dir) {
-            *path = dir.join(relative).to_string_lossy().into_owned();
+            // Stored recording paths are portable `/` strings.
+            *path = dir.join(relative).to_string_lossy().replace('\\', "/");
         }
     }
 

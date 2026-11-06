@@ -414,6 +414,8 @@ mod tests {
         let _ = std::fs::remove_file(&outside);
         #[cfg(unix)]
         std::os::unix::fs::symlink(&outside, &link).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&outside, &link).unwrap();
 
         assert!(
             !is_path_within_dir(&link, &base),
@@ -439,6 +441,8 @@ mod tests {
         let _ = std::fs::remove_file(&link);
         #[cfg(unix)]
         std::os::unix::fs::symlink(&outside_file, &link).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&outside_file, &link).unwrap();
 
         let result = validate_write_path(&link);
         assert!(
@@ -463,6 +467,8 @@ mod tests {
             .join("target.txt");
         #[cfg(unix)]
         std::os::unix::fs::symlink(&missing, &link).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&missing, &link).unwrap();
 
         assert!(
             validate_write_path(&link).is_err(),

@@ -192,7 +192,9 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(target_os = "macos"))]
+    // Only platforms whose backend can be constructed off the main thread:
+    // macOS needs the main thread and Windows has no backend (Unsupported).
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     fn media_controls_debug_is_non_exhaustive() {
         // `Debug` must not expose internal backend state. Skipped on macOS
         // because backend construction must happen on the main thread.
