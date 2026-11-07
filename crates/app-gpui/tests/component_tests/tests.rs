@@ -667,8 +667,8 @@ fn app_gpui_unwrap_expect_production_audit_is_current() {
             .to_string_lossy()
             // Baseline keys are portable `/` paths.
             .replace('\\', "/");
-        let source = normalized_read(&file)
-            .unwrap_or_else(|err| panic!("failed to read {relative}: {err}"));
+        let source =
+            normalized_read(&file).unwrap_or_else(|err| panic!("failed to read {relative}: {err}"));
         let count = production_unwrap_expect_count(&source);
         if count > 0 {
             actual.insert(relative, count);
@@ -5264,8 +5264,8 @@ fn indirect_visible_literals_require_translation_or_technical_allowlist() {
     }
 
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let catalog = normalized_read(root.join("app/i18n/translations.rs"))
-        .expect("read translation catalog");
+    let catalog =
+        normalized_read(root.join("app/i18n/translations.rs")).expect("read translation catalog");
     let checker_source = include_str!("tests.rs");
     let allowlist_start = checker_source
         .find("let allowed = [")

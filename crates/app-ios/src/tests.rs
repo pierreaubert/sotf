@@ -146,8 +146,7 @@ fn ios_airplay_route_picker_is_exposed_to_gpui() {
     let audio_settings = read_text(
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../app-gpui/components/settings/audio_device/device.rs"),
-    )
-    ;
+    );
 
     assert!(app_delegate.contains("@_cdecl(\"sotf_ios_show_route_picker\")"));
     assert!(app_delegate.contains("MPVolumeView"));
@@ -157,10 +156,7 @@ fn ios_airplay_route_picker_is_exposed_to_gpui() {
 
 #[test]
 fn gpui_ios_safe_area_applies_landscape_side_insets() {
-    let render = read_text(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../app-gpui/ui/render.rs"),
-    )
-    ;
+    let render = read_text(Path::new(env!("CARGO_MANIFEST_DIR")).join("../app-gpui/ui/render.rs"));
 
     assert!(render.contains("let (top, left, bottom, right) = gpui_ios::safe_area_insets();"));
     assert!(render.contains(".pl(px(left))"));
