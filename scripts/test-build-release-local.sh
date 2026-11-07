@@ -21,7 +21,7 @@ DIST_DIR="$PROJECT_ROOT/dist"
 VERSION=9.8.7
 AGGREGATE_ROOT="$TEST_ROOT/aggregate"
 mkdir -p "$DIST_DIR" "$AGGREGATE_ROOT/sotf" "$AGGREGATE_ROOT/sotf-daw"
-for sibling in sotf-systemwide sotf-capture autoeq math-audio gpui-toolkit sofa-reader; do
+for sibling in sotf-systemwide sotf-capture autoeq math-audio sofa-reader sotf-3rdparties; do
     mkdir -p "$AGGREGATE_ROOT/$sibling"
 done
 for repo in "$AGGREGATE_ROOT" "$AGGREGATE_ROOT"/*; do
@@ -206,14 +206,22 @@ ARCH_SELECTION=all
 SKIP_SIGN=false
 
 # The source manifest must cover sibling source paths and detect changed bytes.
+# A submodule gitlink in the aggregate root must be skipped, not hashed: it
+# has no file content in the parent index.
+mkdir -p "$AGGREGATE_ROOT/skills/ms-rust-skill"
+git -C "$AGGREGATE_ROOT" update-index --add --cacheinfo "160000,$(git -C "$AGGREGATE_ROOT" rev-parse HEAD),skills/ms-rust-skill"
 manifest="$TEST_ROOT/source-manifest.sha256"
 source_files="$TEST_ROOT/source-files.nul"
-write_linux_source_manifest "$AGGREGATE_ROOT" "$manifest" "$source_files" .test-manifest.sha256
+write_source_manifest "$AGGREGATE_ROOT" "$manifest" "$source_files" .test-manifest.sha256
 grep -q '^# source sotf-daw head ' "$manifest"
 grep -q 'sotf-daw/Cargo.toml' "$manifest"
 grep -q 'sotf/tests/data/fixture.bin' "$manifest"
 if grep -q 'autoeq/data/local-dataset.bin' "$manifest"; then
     echo "untracked local dataset entered Linux source manifest" >&2
+    exit 1
+fi
+if grep -q 'skills/ms-rust-skill' "$manifest"; then
+    echo "submodule gitlink entered the source manifest" >&2
     exit 1
 fi
 (cd "$AGGREGATE_ROOT" && grep -v '^#' "$manifest" | shasum -a 256 -c - >/dev/null)
@@ -236,11 +244,12 @@ remote_sotf() {
     [ -n "$result" ] || return 1
     printf '%s\n' "$result"
 }
-ssh_cmd() {
+linux_ssh_cmd() {
     local cmd="$4"
     local remote_root manifest
     case "$cmd" in
         "uname -m") printf '%s\n' "$MOCK_LINUX_UNAME" ;;
+        *"binfmt_misc"*) ;; # pretend the qemu handler is already registered
         *"rm -f dist/*"*)
             local dir
             dir="$(remote_sotf)"
@@ -391,6 +400,113 @@ build_linux
     echo "Linux x86 target did not use Docker on ARM remote" >&2
     exit 1
 }
+
+# Windows: an --arch arm64 run syncs the aggregate snapshot, verifies its
+# hashes, builds only the arm64 binaries + MSIX, and requires exactly those
+# artifacts. win_ssh_cmd is mocked like linux_ssh_cmd above; the already
+# mocked rsync (files-from copy) serves the snapshot sync.
+rm -f "$DIST_DIR"/*"$VERSION"* "$DIST_DIR"/BUILD-SHA256SUMS-"$VERSION" "$DIST_DIR"/source-manifest-*
+mkdir -p "$TEST_ROOT/winremote"
+WINDOWS_HOST=mock-windows
+WINDOWS_PORT=22
+WINDOWS_SSH_KEY=""
+WINDOWS_PROJECT_DIR="$TEST_ROOT/winremote/sotf"
+MOCK_WIN_COMMANDS=""
+detect_win_bash() { WIN_BASH_PATH=/mock/bash.exe; }
+detect_win_rsync() { WIN_RSYNC_PATH=/mock/rsync; }
+win_remote_sotf() {
+    local snapshot result=""
+    for snapshot in "$TEST_ROOT"/winremote/.sotf-release-*; do
+        [ -d "$snapshot" ] && result="$snapshot/sotf"
+    done
+    [ -n "$result" ] || return 1
+    printf '%s\n' "$result"
+}
+win_ssh_cmd() {
+    local cmd="$4"
+    local dir remote_root manifest
+    case "$cmd" in
+        *"sha256sum -c"*)
+            remote_root="$(printf '%s\n' "$cmd" | sed -n "s/^cd '\([^']*\)'.*/\1/p")"
+            manifest="$(printf '%s\n' "$cmd" | sed -n "s/.*grep -v '\^#' '\([^']*\)'.*/\1/p")"
+            (cd "$remote_root" && grep -v '^#' "$manifest" | shasum -a 256 -c - >/dev/null)
+            ;;
+        *"build-msix.ps1"*"arm64"*)
+            dir="$(win_remote_sotf)"
+            mkdir -p "$dir/dist"
+            printf 'arm64 msix\n' > "$dir/dist/sotf-desktop-${VERSION}-windows-arm64.msix"
+            ;;
+        *"build-msix.ps1"*)
+            dir="$(win_remote_sotf)"
+            mkdir -p "$dir/dist"
+            printf 'x86 msix\n' > "$dir/dist/sotf-desktop-${VERSION}-windows-x86_64.msix"
+            ;;
+        *"aarch64-pc-windows-msvc"*)
+            dir="$(win_remote_sotf)"
+            mkdir -p "$dir/dist"
+            MOCK_WIN_COMMANDS+=" arm64-build"
+            printf 'arm64 tui exe\n' > "$dir/dist/sotf-tui-${VERSION}-windows-arm64.exe"
+            ;;
+        *"cargo build"*)
+            dir="$(win_remote_sotf)"
+            mkdir -p "$dir/dist"
+            MOCK_WIN_COMMANDS+=" x86-build"
+            printf 'x86 tui exe\n' > "$dir/dist/sotf-tui-${VERSION}-windows-x86_64.exe"
+            ;;
+        *"rm -f"*)
+            dir="$(win_remote_sotf)"
+            mkdir -p "$dir/dist"
+            case "$cmd" in
+                *".msix"*) rm -f "$dir"/dist/*"$VERSION"*.msix ;;
+                *) rm -f "$dir"/dist/*"$VERSION"* ;;
+            esac
+            ;;
+        *"mkdir"*)
+            dir="$(printf '%s\n' "$cmd" | sed -n "s/.*mkdir '\([^']*\)'$/\1/p")"
+            mkdir -p "$dir"
+            ;;
+        *)
+            echo "unexpected mocked win_ssh command: $cmd" >&2
+            return 96
+            ;;
+    esac
+}
+rsync_from_win() {
+    local remote_win_dir
+    remote_win_dir="$(win_remote_sotf)"
+    cp "$remote_win_dir/dist/"*"$VERSION"* "$DIST_DIR/"
+}
+BUILD_RESULTS=()
+RELEASE_ARTIFACTS=()
+BUILD_FAILED=false
+SKIP_WINDOWS=false
+SKIP_SIGN=true
+ARCH_SELECTION=arm64
+build_windows
+[ "$BUILD_FAILED" = false ] || { echo "mocked Windows arm64 run was marked failed" >&2; exit 1; }
+for artifact in \
+    "$DIST_DIR/sotf-tui-${VERSION}-windows-arm64.exe" \
+    "$DIST_DIR/sotf-desktop-${VERSION}-windows-arm64.msix"; do
+    [ -s "$artifact" ] || { echo "missing mocked Windows artifact: $artifact" >&2; exit 1; }
+done
+[ ! -e "$DIST_DIR/sotf-tui-${VERSION}-windows-x86_64.exe" ] || {
+    echo "unselected Windows x86_64 target was built" >&2
+    exit 1
+}
+[[ "$MOCK_WIN_COMMANDS" == *"arm64-build"* ]] || {
+    echo "Windows arm64 cargo build never ran" >&2
+    exit 1
+}
+[[ "$MOCK_WIN_COMMANDS" != *"x86-build"* ]] || {
+    echo "unselected Windows x86_64 cargo build ran" >&2
+    exit 1
+}
+grep -q 'sotf-daw/Cargo.toml' "$DIST_DIR"/source-manifest-windows-"$VERSION"-*.sha256 || {
+    echo "Windows snapshot manifest omitted sibling sources" >&2
+    exit 1
+}
+ARCH_SELECTION=all
+SKIP_SIGN=false
 
 # Skip-windows contributes no build result, while any recorded target failure
 # makes main fail and prevents post-build signing/metadata.

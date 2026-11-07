@@ -242,14 +242,33 @@ build_ssh_transport() {
     return 0
 }
 
-# Run an SSH command with optional key and port
+# Run an SSH command with optional key and port. The command is passed to
+# the remote host's default shell verbatim, so only use shell-agnostic
+# commands here (e.g. the preflight connectivity checks, which must also
+# work against the Windows host whose default SSH shell is not bash).
+# Callers pass exactly one command string.
 ssh_cmd() {
     local host="$1"
     local port="$2"
     local key="$3"
     shift 3
     build_ssh_transport "$port" "$key"
-    "${SSH_TRANSPORT_CMD[@]}" -o BatchMode=yes -o ConnectTimeout=10 "$host" "$@"
+    "${SSH_TRANSPORT_CMD[@]}" -o BatchMode=yes -o ConnectTimeout=10 "$host" "$*"
+}
+
+# Run a bash command on the Linux builder. The remote command runs in a
+# non-interactive, non-login shell whose PATH lacks ~/.cargo/bin, where
+# rustup installs cargo/rustup/just. Without the PATH prefix below, a
+# distro-packaged `just` (too old to parse the current Justfile's [group]
+# attributes) or a missing `cargo` breaks the remote build.
+linux_ssh_cmd() {
+    local host="$1"
+    local port="$2"
+    local key="$3"
+    shift 3
+    # $HOME/$PATH must expand on the remote host, not locally.
+    # shellcheck disable=SC2016
+    ssh_cmd "$host" "$port" "$key" 'export PATH="$HOME/.cargo/bin:$PATH"; '"$*"
 }
 
 # Detect the path to bash.exe on the remote Windows machine.
@@ -377,59 +396,11 @@ win_ssh_cmd() {
         "\"$WIN_BASH_PATH\"" -s
 }
 
-# Common rsync excludes — mirrors .gitignore for build/generated dirs.
-# Using an array avoids repeating between rsync_to and rsync_to_win.
-RSYNC_EXCLUDES=(
-    # Build artifacts
-    # No trailing slash: these may be symlinks to external build volumes.
-    --exclude='/target'
-    --exclude='/target-static'
-    --exclude='/.docker-target'
-    --exclude='/dist'
-    --exclude='/tools'
-    --exclude='/certs'
-    --exclude='/coverage'
-    --exclude='/mutants.out'
-    --exclude='/appimage-builder-*'
-    --exclude='/site/dist'
-    # Python
-    --exclude='/venv'
-    --exclude='/.venv'
-    --exclude='__pycache__'
-    # Generated data
-    --exclude='/data'
-    --exclude='/data_cached'
-    --exclude='/data_generated'
-    # Node
-    --exclude='node_modules'
-    # Git and editor
-    --exclude='.git/'
-    --exclude='.DS_Store'
-    --exclude='/.vs/'
-    --exclude='/.vscode/'
-    --exclude='/.zed/'
-    --exclude='/.idea/'
-    --exclude='/.fleet/'
-    --exclude='/.qwen/'
-    --exclude='/.worktrees/'
-    # AI assistant / code-graph state — large, machine-specific, never needed
-    # on remote builders.
-    --exclude='/.claude/'
-    --exclude='/.tokensave/'
-    --exclude='/.serena/'
-    # Per-arch Xcode DerivedData for the AU plugins (gigabytes of host-arch
-    # binaries, intermediates, and ModuleCache; rebuilt remotely anyway).
-    --exclude='/crates/sotf-plugins/crates/plugins-au/build/'
-    # Object files
-    --exclude='*.o'
-    --exclude='*.d'
-    # Product/marketing docs
-    --exclude='/product/'
-)
-
-# The Linux builder consumes the aggregate checkout, not just the SOTF child.
-# Its fresh snapshot deliberately omits every repository's build output and
-# VCS metadata, while keeping source files from all sibling workspaces.
+# Remote builders consume the aggregate checkout, not just the SOTF child:
+# sotf's Cargo graph reaches ../sotf-daw, ../autoeq, ../sotf-capture, and
+# (through sotf-daw) ../sotf-3rdparties via path dependencies. The fresh
+# snapshot deliberately omits every repository's build output and VCS
+# metadata, while keeping source files from all sibling workspaces.
 AGGREGATE_RSYNC_EXCLUDES=(
     --exclude='.git/'
     --exclude='target/'
@@ -487,36 +458,6 @@ handle_rsync_status() {
     fi
 
     return "$status"
-}
-
-rsync_to() {
-    local host="$1"
-    local port="$2"
-    local key="$3"
-    local remote_dir="$4"
-    build_ssh_transport "$port" "$key"
-    rsync -avz --delete \
-        "${RSYNC_EXCLUDES[@]}" \
-        -e "${SSH_TRANSPORT_CMD[*]}" \
-        "$PROJECT_ROOT/" "${host}:${remote_dir}/"
-    handle_rsync_status "$?" "rsync to ${host}:${remote_dir}"
-}
-
-# rsync to a Windows host — tells the remote side to use the detected rsync.
-# detect_win_rsync normalizes this to a short cmd.exe-safe path.
-rsync_to_win() {
-    local host="$1"
-    local port="$2"
-    local key="$3"
-    local remote_dir="$4"
-    build_ssh_transport "$port" "$key"
-    rsync -avz --delete \
-        --no-perms --no-owner --no-group --omit-dir-times \
-        "${RSYNC_EXCLUDES[@]}" \
-        -e "${SSH_TRANSPORT_CMD[*]}" \
-        --rsync-path="$WIN_RSYNC_PATH" \
-        "$PROJECT_ROOT/" "${host}:${remote_dir}/"
-    handle_rsync_status "$?" "rsync to ${host}:${remote_dir}" true
 }
 
 rsync_from() {
@@ -595,7 +536,7 @@ clear_versioned_artifacts() {
     [ "$failed" = false ]
 }
 
-is_excluded_linux_source_path() {
+is_excluded_source_path() {
     local path="$1"
     case "/$path/" in
         */target/*|*/target-static/*|*/.docker-target/*|*/dist/*|\
@@ -613,7 +554,16 @@ is_excluded_linux_source_path() {
     return 1
 }
 
-write_linux_source_manifest() {
+# Record every source file of the aggregate checkout (the aggregate root
+# plus each sibling repository) into a NUL-delimited file list and a SHA-256
+# manifest. Remote builders receive exactly the listed files and verify the
+# hashes before building, so a remote build can never silently pick up a
+# stale sibling checkout. The sibling list must match the aggregate layout:
+# gpui-toolkit, math-audio, and sofa-reader are Cargo git dependencies of the
+# standalone sotf workspace, but math-audio/sofa-reader are also aggregate
+# members referenced by the aggregate workspace, while sotf-3rdparties is a
+# hard path dependency (sotf-daw's ../sotf-3rdparties/nih-plug).
+write_source_manifest() {
     local aggregate_root="$1"
     local manifest="$2"
     local source_file_list="$3"
@@ -623,9 +573,9 @@ write_linux_source_manifest() {
     : > "$manifest" || return 1
     : > "$source_file_list" || return 1
 
-    for repo in . sotf sotf-daw sotf-systemwide sotf-capture autoeq math-audio gpui-toolkit sofa-reader; do
+    for repo in . sotf sotf-daw sotf-systemwide sotf-capture autoeq math-audio sofa-reader sotf-3rdparties; do
         if [ ! -d "$aggregate_root/$repo" ] || ! git -C "$aggregate_root/$repo" rev-parse --show-toplevel >/dev/null 2>&1; then
-            log_error "Aggregate Linux source tree is missing a Git workspace: $repo"
+            log_error "Aggregate source tree is missing a Git workspace: $repo"
             rm -f -- "$entries_file"
             return 1
         fi
@@ -648,13 +598,21 @@ write_linux_source_manifest() {
                 case "$path" in
                     sotf|sotf/|sotf-daw|sotf-daw/|sotf-systemwide|sotf-systemwide/|\
                     sotf-capture|sotf-capture/|autoeq|autoeq/|math-audio|math-audio/|\
-                    gpui-toolkit|gpui-toolkit/|sofa-reader|sofa-reader/) continue ;;
+                    sofa-reader|sofa-reader/|sotf-3rdparties|sotf-3rdparties/) continue ;;
                 esac
                 candidate="$path"
             else
                 candidate="$repo/$path"
             fi
-            is_excluded_linux_source_path "$candidate" && continue
+            is_excluded_source_path "$candidate" && continue
+            # Submodules appear in ls-files as one gitlink entry whose path
+            # is a directory with no file content to hash or sync. Sibling
+            # submodules are enumerated as their own repos by this loop; any
+            # other submodule (e.g. skills/ms-rust-skill in the aggregate
+            # root) is not part of the build graph.
+            if [ -d "$aggregate_root/$candidate" ] && [ ! -L "$aggregate_root/$candidate" ]; then
+                continue
+            fi
             printf '%s\0' "$candidate" >> "$source_file_list" || return 1
         done < "$entries_file"
 
@@ -668,7 +626,7 @@ write_linux_source_manifest() {
                 case "$path" in
                     sotf|sotf/|sotf-daw|sotf-daw/|sotf-systemwide|sotf-systemwide/|\
                     sotf-capture|sotf-capture/|autoeq|autoeq/|math-audio|math-audio/|\
-                    gpui-toolkit|gpui-toolkit/|sofa-reader|sofa-reader/) continue ;;
+                    sofa-reader|sofa-reader/|sotf-3rdparties|sotf-3rdparties/) continue ;;
                 esac
                 candidate="$path"
             else
@@ -678,7 +636,7 @@ write_linux_source_manifest() {
             # datasets out of release snapshots. Git-ignored datasets are
             # already omitted by --exclude-standard.
             case "$candidate" in */data/*) continue ;; esac
-            is_excluded_linux_source_path "$candidate" && continue
+            is_excluded_source_path "$candidate" && continue
             printf '%s\0' "$candidate" >> "$source_file_list" || return 1
         done < "$entries_file"
     done
@@ -686,7 +644,7 @@ write_linux_source_manifest() {
 
     while IFS= read -r -d '' path; do
         if [ ! -f "$aggregate_root/$path" ] && [ ! -L "$aggregate_root/$path" ]; then
-            log_error "Source file listed for Linux snapshot is missing: $path"
+            log_error "Source file listed for the remote snapshot is missing: $path"
             return 1
         fi
         (cd "$aggregate_root" && shasum -a 256 "$path") >> "$manifest" || return 1
@@ -696,8 +654,56 @@ write_linux_source_manifest() {
 
 verify_linux_source_manifest() {
     local host="$1" port="$2" key="$3" remote_root="$4" manifest_name="$5"
-    ssh_cmd "$host" "$port" "$key" \
+    linux_ssh_cmd "$host" "$port" "$key" \
         "cd '$remote_root' && grep -v '^#' '$manifest_name' | shasum -a 256 -c - >/dev/null"
+}
+
+verify_windows_source_manifest() {
+    local host="$1" port="$2" key="$3" remote_root="$4" manifest_name="$5"
+    # Git Bash ships GNU sha256sum (shasum is a Perl/macOS tool).
+    win_ssh_cmd "$host" "$port" "$key" \
+        "cd '$remote_root' && grep -v '^#' '$manifest_name' | sha256sum -c - >/dev/null"
+}
+
+# Make sure the Linux builder can execute containers for a non-native
+# architecture. The docker-linux-* recipes build and run containers in the
+# target architecture; on a foreign-arch host that needs a qemu binfmt
+# handler, which Docker Desktop provides automatically but a plain Linux
+# Docker host does not. tonistiigi/binfmt registers the handler from a
+# privileged container (no host package install, no sudo); the registration
+# lasts until the next reboot, so check on every run.
+ensure_linux_docker_binfmt() {
+    local host="$1" port="$2" key="$3" arch="$4"
+    local qemu_name install_arg
+    case "$arch" in
+        arm64)  qemu_name=qemu-aarch64; install_arg=arm64 ;;
+        x86_64) qemu_name=qemu-x86_64;  install_arg=amd64 ;;
+        *)
+            log_error "No binfmt mapping for Docker target architecture: $arch"
+            record_result "Linux Docker ${arch}: FAILED (unknown architecture)"
+            return 1
+            ;;
+    esac
+
+    if $DRY_RUN; then
+        log_dry "ssh ${host} 'test -e /proc/sys/fs/binfmt_misc/${qemu_name} || docker run --privileged --rm tonistiigi/binfmt --install ${install_arg}'"
+        return 0
+    fi
+
+    if linux_ssh_cmd "$host" "$port" "$key" "test -e /proc/sys/fs/binfmt_misc/$qemu_name"; then
+        log_info "Docker binfmt handler $qemu_name already registered on $host"
+        return 0
+    fi
+
+    log_step "Registering $qemu_name binfmt handler on $host (tonistiigi/binfmt)..."
+    if ! linux_ssh_cmd "$host" "$port" "$key" \
+        "docker run --privileged --rm tonistiigi/binfmt --install $install_arg >/dev/null 2>&1 && test -e /proc/sys/fs/binfmt_misc/$qemu_name"; then
+        log_error "Could not register $qemu_name binfmt handler on $host; Docker ${arch} containers cannot run there"
+        record_result "Linux Docker ${arch}: FAILED (no binfmt handler)"
+        return 1
+    fi
+    log_success "Docker binfmt handler $qemu_name registered"
+    return 0
 }
 
 verify_linux_appimage_arch() {
@@ -1013,14 +1019,14 @@ build_linux() {
             record_result "Linux sync: FAILED (manifest collision)"
             return 1
         fi
-        if ! write_linux_source_manifest "$AGGREGATE_ROOT" "$manifest_path" "$source_file_list" "$manifest_name"; then
+        if ! write_source_manifest "$AGGREGATE_ROOT" "$manifest_path" "$source_file_list" "$manifest_name"; then
             rm -f -- "$manifest_path"
             rm -f -- "$source_file_list" "${source_file_list}.entries"
             log_error "Could not record aggregate source hashes"
             record_result "Linux sync: FAILED (manifest generation)"
             return 1
         fi
-        if ! ssh_cmd "$host" "$port" "$key" \
+        if ! linux_ssh_cmd "$host" "$port" "$key" \
             "mkdir -p '${remote_snapshot_root%/*}' && mkdir '$remote_snapshot_root'"; then
             rm -f -- "$manifest_path"
             rm -f -- "$source_file_list"
@@ -1071,7 +1077,7 @@ build_linux() {
         native_machine="$(uname -m)"
         log_dry "ssh ${host} uname -m (mock/native target detection)"
     else
-        native_machine=$(ssh_cmd "$host" "$port" "$key" "uname -m") || {
+        native_machine=$(linux_ssh_cmd "$host" "$port" "$key" "uname -m") || {
             log_error "Could not detect Linux builder architecture"
             record_result "Linux architecture detection: FAILED"
             return 1
@@ -1090,14 +1096,25 @@ build_linux() {
 
     if $DRY_RUN; then
         log_dry "ssh ${host} 'cd ${remote_dir} && mkdir -p dist && rm -f dist/*${VERSION}*'"
-    elif ! ssh_cmd "$host" "$port" "$key" \
+    elif ! linux_ssh_cmd "$host" "$port" "$key" \
         "cd '$remote_dir' && mkdir -p dist && rm -f dist/*${VERSION}*"; then
         log_error "Could not clear stale Linux artifacts for v${VERSION}"
         record_result "Linux cleanup: FAILED"
         return 1
     fi
 
-    local arch build_command method appimage_expected
+    # Non-native architectures build inside target-arch Docker containers;
+    # make sure the host can execute them (qemu binfmt) before starting.
+    local arch
+    for arch in x86_64 arm64; do
+        arch_is_selected "$arch" || continue
+        [ "$arch" = "$native_arch" ] && continue
+        if ! ensure_linux_docker_binfmt "$host" "$port" "$key" "$arch"; then
+            return 1
+        fi
+    done
+
+    local build_command method appimage_expected
     for arch in x86_64 arm64; do
         arch_is_selected "$arch" || continue
         if [ "$arch" = "$native_arch" ]; then
@@ -1118,7 +1135,7 @@ build_linux() {
         log_step "Building Linux ${arch} (${method} on remote)..."
         if $DRY_RUN; then
             log_dry "ssh ${host} 'cd ${remote_dir} && ${build_command}'"
-        elif ssh_cmd "$host" "$port" "$key" \
+        elif linux_ssh_cmd "$host" "$port" "$key" \
             "cd '$remote_dir' && ${build_command}"; then
             record_result "Linux ${arch}: BUILD OK"
         else
@@ -1195,7 +1212,25 @@ build_windows() {
     local host="$WINDOWS_HOST"
     local port="${WINDOWS_PORT:-22}"
     local key="${WINDOWS_SSH_KEY:-}"
-    local remote_dir="${WINDOWS_PROJECT_DIR}"
+    local configured_project_dir="${WINDOWS_PROJECT_DIR}"
+    # Like the Linux phase, build from a fresh aggregate snapshot next to the
+    # configured checkout instead of syncing sotf alone into it: sotf's path
+    # dependencies (../sotf-daw, ../autoeq, ../sotf-capture,
+    # ../sotf-3rdparties) must come from the same source revision, and the
+    # configured checkout provides no such guarantee. Keep the snapshot name
+    # short: Windows toolchains still trip over very long paths once
+    # target/<triple>/dist/build/... is appended.
+    local run_id="$(date +%Y%m%d%H%M)-$$"
+    local remote_snapshot_root="${configured_project_dir%/*}/.sotf-release-${run_id}"
+    local remote_dir="$remote_snapshot_root/$(basename "$PROJECT_ROOT")"
+    local manifest_name=".release-source-manifest-${VERSION}-${run_id}.sha256"
+    local manifest_path="$AGGREGATE_ROOT/$manifest_name"
+    local source_file_list="$DIST_DIR/.release-source-files-${VERSION}-${run_id}.nul"
+    # An explicitly selected arm64 target is required; with --arch all it
+    # stays optional so hosts without the VS ARM64 components can still cut
+    # an x86_64 release (previous behaviour).
+    local windows_arm64_required=false
+    [ "$ARCH_SELECTION" = arm64 ] && windows_arm64_required=true
 
     # Windows OpenSSH defaults to cmd.exe which can't run bash commands or
     # find MSYS2/Git Bash tools. All remote commands go through win_ssh_cmd
@@ -1207,7 +1242,7 @@ build_windows() {
     if ! $DRY_RUN; then
         if ! detect_win_bash "$host" "$port" "$key"; then
             record_result "Windows: FAILED (no Git Bash found)"
-            return
+            return 1
         fi
 
         # Detect rsync location via Git Bash
@@ -1221,34 +1256,79 @@ build_windows() {
             log_info "  3. Manually copy rsync.exe into C:/Program Files/Git/usr/bin/"
             log_info "     If rsync is present but a DLL is missing, reinstall rsync and its MSYS dependencies."
             record_result "Windows: FAILED (no rsync)"
-            return
+            return 1
         fi
         log_success "Git Bash + rsync OK on remote"
     fi
 
-    # Sync source to Windows machine
-    log_step "Syncing source to ${host}:${remote_dir}..."
+    # Sync the aggregate source snapshot to the Windows machine (same
+    # manifest + hash verification as the Linux phase). --copy-links
+    # materializes the few tracked symlinks as regular files: NTFS cannot
+    # store POSIX symlinks and the snapshot only needs their contents.
+    log_step "Syncing aggregate source snapshot to ${host}:${remote_snapshot_root}..."
     if $DRY_RUN; then
-        log_dry "rsync project to ${host}:${remote_dir}"
-        if $CLEAN_REMOTE; then
-            log_dry "win_ssh_cmd ${host} 'rm -rf ${remote_dir}/{target,target-static,node_modules,dist,venv}'"
-        fi
+        log_dry "write source hashes for ${AGGREGATE_ROOT}"
+        log_dry "rsync ${AGGREGATE_ROOT}/ to ${host}:${remote_snapshot_root}/ (aggregate siblings, fresh path)"
+        log_dry "verify ${manifest_name} on ${host}:${remote_snapshot_root}"
     else
-        # Create remote directory via Git Bash
-        win_ssh_cmd "$host" "$port" "$key" "mkdir -p ${remote_dir}" 2>/dev/null || true
-        if ! rsync_to_win "$host" "$port" "$key" "$remote_dir"; then
+        if [ -e "$manifest_path" ]; then
+            log_error "Refusing to overwrite an existing release source manifest: $manifest_path"
+            record_result "Windows sync: FAILED (manifest collision)"
+            return 1
+        fi
+        if ! write_source_manifest "$AGGREGATE_ROOT" "$manifest_path" "$source_file_list" "$manifest_name"; then
+            rm -f -- "$manifest_path"
+            rm -f -- "$source_file_list" "${source_file_list}.entries"
+            log_error "Could not record aggregate source hashes"
+            record_result "Windows sync: FAILED (manifest generation)"
+            return 1
+        fi
+        if ! win_ssh_cmd "$host" "$port" "$key" \
+            "mkdir -p '${remote_snapshot_root%/*}' && mkdir '$remote_snapshot_root'"; then
+            rm -f -- "$manifest_path"
+            rm -f -- "$source_file_list"
+            log_error "Could not create Windows snapshot directory"
+            record_result "Windows sync: FAILED (snapshot directory)"
+            return 1
+        fi
+        build_ssh_transport "$port" "$key"
+        rsync -avz --delete --from0 --files-from="$source_file_list" \
+            --copy-links --no-perms --no-owner --no-group --omit-dir-times \
+            "${AGGREGATE_RSYNC_EXCLUDES[@]}" \
+            -e "${SSH_TRANSPORT_CMD[*]}" \
+            --rsync-path="$WIN_RSYNC_PATH" \
+            "$AGGREGATE_ROOT/" "${host}:${remote_snapshot_root}/"
+        if ! handle_rsync_status "$?" "rsync to ${host}:${remote_snapshot_root}" true; then
+            rm -f -- "$manifest_path"
+            rm -f -- "$source_file_list"
             log_error "rsync to Windows failed"
             log_info "Debug: ssh ${host} '\"$WIN_RSYNC_PATH\" --version'"
             record_result "Windows sync: FAILED"
-            return
+            return 1
         fi
+        if ! verify_windows_source_manifest "$host" "$port" "$key" "$remote_snapshot_root" "$manifest_name"; then
+            rm -f -- "$manifest_path"
+            rm -f -- "$source_file_list"
+            log_error "Windows snapshot source hash verification failed"
+            record_result "Windows sync: FAILED (source hash mismatch)"
+            return 1
+        fi
+        mkdir -p "$DIST_DIR"
+        local retained_manifest="$DIST_DIR/source-manifest-windows-${VERSION}-${run_id}.sha256"
+        if ! cp "$manifest_path" "$retained_manifest"; then
+            rm -f -- "$manifest_path"
+            rm -f -- "$source_file_list"
+            log_error "Could not retain the Windows source hash manifest"
+            record_result "Windows sync: FAILED (manifest copy)"
+            return 1
+        fi
+        record_artifact "$retained_manifest" "Windows source manifest" || return 1
+        rm -f -- "$manifest_path"
+        rm -f -- "$source_file_list"
         if $CLEAN_REMOTE; then
-            log_step "Cleaning build artifacts on remote (--clean-remote)..."
-            win_ssh_cmd "$host" "$port" "$key" \
-                "rm -rf ${remote_dir}/target ${remote_dir}/target-static ${remote_dir}/node_modules ${remote_dir}/dist ${remote_dir}/venv" \
-                || log_warning "Remote cleanup failed (non-fatal)"
+            log_info "The Windows snapshot is fresh; no existing remote build artifacts are reused"
         else
-            log_info "Reusing remote build artifacts (pass --clean-remote to wipe)"
+            log_info "Windows builds use a fresh snapshot directory; prior remote sources and artifacts are not consulted"
         fi
         log_success "Source synced"
     fi
@@ -1262,54 +1342,71 @@ build_windows() {
         fi
     fi
 
-    # Build Windows x86_64 (host arch)
+    # Build Windows x86_64 (host arch), unless another arch was selected.
     # build-msix.ps1 needs both sotf-desktop.exe AND sotf-tui.exe present in
     # the corresponding target dir before it runs.
-    log_step "Building Windows x86_64 (native MSVC on remote, profile=dist)..."
-    local win_build_cmd="cd ${remote_dir} && mkdir -p dist"
-    # Release cuts use the `dist` profile (fat LTO + codegen-units=1).
-    # Artifacts land in target/dist/ instead of target/release/.
-    win_build_cmd+=" && cargo build --profile dist -p sotf-tui --bin sotf-tui"
-    win_build_cmd+=" && cargo build --profile dist -p sotf-gpui --bin sotf-desktop"
-    # Canonical artifact naming: <product>-<version>-<os>-<arch>.<ext>
-    win_build_cmd+=" && cp target/dist/sotf-tui.exe dist/sotf-tui-${VERSION}-windows-x86_64.exe"
+    local windows_x86_64_ok=false
+    if arch_is_selected x86_64; then
+        log_step "Building Windows x86_64 (native MSVC on remote, profile=dist)..."
+        local win_build_cmd="cd ${remote_dir} && mkdir -p dist"
+        # Release cuts use the `dist` profile (fat LTO + codegen-units=1).
+        # Artifacts land in target/dist/ instead of target/release/.
+        win_build_cmd+=" && cargo build --profile dist -p sotf-tui --bin sotf-tui"
+        win_build_cmd+=" && cargo build --profile dist -p sotf-gpui --bin sotf-desktop"
+        # Canonical artifact naming: <product>-<version>-<os>-<arch>.<ext>
+        win_build_cmd+=" && cp target/dist/sotf-tui.exe dist/sotf-tui-${VERSION}-windows-x86_64.exe"
 
-    if $DRY_RUN; then
-        log_dry "win_ssh_cmd ${host} '${win_build_cmd}'"
-    else
-        if ! win_ssh_cmd "$host" "$port" "$key" "$win_build_cmd"; then
-            log_error "Windows x86_64 build failed"
-            record_result "Windows x86_64: FAILED"
-            return
+        if $DRY_RUN; then
+            log_dry "win_ssh_cmd ${host} '${win_build_cmd}'"
+            windows_x86_64_ok=true
+        else
+            if ! win_ssh_cmd "$host" "$port" "$key" "$win_build_cmd"; then
+                log_error "Windows x86_64 build failed"
+                record_result "Windows x86_64: FAILED"
+                return 1
+            fi
+            record_result "Windows x86_64: OK"
+            windows_x86_64_ok=true
         fi
-        record_result "Windows x86_64: OK"
+    else
+        log_info "Skipping Windows x86_64 build (--arch ${ARCH_SELECTION})"
     fi
 
     # Build Windows arm64 (cross-compiled on the x86_64 build host).
     # Required for Microsoft Store ARM64 listing and for native execution on
-    # Windows-on-ARM (Surface Pro X, Copilot+ PCs). Failure here doesn't kill
-    # the x86_64 result; we just skip the arm64 MSIX.
-    log_step "Building Windows arm64 (cross-compiled on remote, profile=dist)..."
-    local win_arm_build_cmd="cd ${remote_dir}"
-    win_arm_build_cmd+=" && rustup target add aarch64-pc-windows-msvc"
-    win_arm_build_cmd+=" && cargo build --profile dist --target aarch64-pc-windows-msvc -p sotf-tui --bin sotf-tui"
-    win_arm_build_cmd+=" && cargo build --profile dist --target aarch64-pc-windows-msvc -p sotf-gpui --bin sotf-desktop"
-    win_arm_build_cmd+=" && cp target/aarch64-pc-windows-msvc/dist/sotf-tui.exe dist/sotf-tui-${VERSION}-windows-arm64.exe"
-
+    # Windows-on-ARM (Surface Pro X, Copilot+ PCs). With --arch all a failure
+    # here doesn't kill the x86_64 result; with --arch arm64 it does.
     local windows_arm64_ok=false
-    if $DRY_RUN; then
-        log_dry "win_ssh_cmd ${host} '${win_arm_build_cmd}'"
-        windows_arm64_ok=true
-    else
-        if win_ssh_cmd "$host" "$port" "$key" "$win_arm_build_cmd"; then
-            record_result "Windows arm64: OK"
+    if arch_is_selected arm64; then
+        log_step "Building Windows arm64 (cross-compiled on remote, profile=dist)..."
+        local win_arm_build_cmd="cd ${remote_dir}"
+        win_arm_build_cmd+=" && rustup target add aarch64-pc-windows-msvc"
+        win_arm_build_cmd+=" && cargo build --profile dist --target aarch64-pc-windows-msvc -p sotf-tui --bin sotf-tui"
+        win_arm_build_cmd+=" && cargo build --profile dist --target aarch64-pc-windows-msvc -p sotf-gpui --bin sotf-desktop"
+        win_arm_build_cmd+=" && cp target/aarch64-pc-windows-msvc/dist/sotf-tui.exe dist/sotf-tui-${VERSION}-windows-arm64.exe"
+
+        if $DRY_RUN; then
+            log_dry "win_ssh_cmd ${host} '${win_arm_build_cmd}'"
             windows_arm64_ok=true
         else
-            log_warning "Windows arm64 build failed (continuing with x86_64 only)"
-            log_info "On the remote: rustup target add aarch64-pc-windows-msvc"
-            log_info "and ensure VS 2022 has the ARM64 build tools component installed."
-            record_result "Windows arm64: UNAVAILABLE (optional target)"
+            if win_ssh_cmd "$host" "$port" "$key" "$win_arm_build_cmd"; then
+                record_result "Windows arm64: OK"
+                windows_arm64_ok=true
+            elif $windows_arm64_required; then
+                log_error "Windows arm64 build failed"
+                log_info "On the remote: rustup target add aarch64-pc-windows-msvc"
+                log_info "and ensure VS 2022 has the ARM64 build tools component installed."
+                record_result "Windows arm64: FAILED"
+                return 1
+            else
+                log_warning "Windows arm64 build failed (continuing with x86_64 only)"
+                log_info "On the remote: rustup target add aarch64-pc-windows-msvc"
+                log_info "and ensure VS 2022 has the ARM64 build tools component installed."
+                record_result "Windows arm64: UNAVAILABLE (optional target)"
+            fi
         fi
+    else
+        log_info "Skipping Windows arm64 build (--arch ${ARCH_SELECTION})"
     fi
 
     # Sign on Windows if cert thumbprint available
@@ -1373,7 +1470,7 @@ build_windows() {
 
     if $DRY_RUN; then
         log_dry "win_ssh_cmd ${host} '${msix_cleanup}'"
-        log_dry "win_ssh_cmd ${host} '${msix_x86}'"
+        $windows_x86_64_ok && log_dry "win_ssh_cmd ${host} '${msix_x86}'"
         $windows_arm64_ok && log_dry "win_ssh_cmd ${host} '${msix_arm}'"
     else
         # Cleanup runs once before either MSIX so we don't wipe the first one.
@@ -1383,11 +1480,16 @@ build_windows() {
             return 1
         fi
 
-        if win_ssh_cmd "$host" "$port" "$key" "cd ${remote_dir} && ${msix_x86}"; then
-            record_result "Windows MSIX x86_64: OK"
+        if $windows_x86_64_ok; then
+            if win_ssh_cmd "$host" "$port" "$key" "cd ${remote_dir} && ${msix_x86}"; then
+                record_result "Windows MSIX x86_64: OK"
+            else
+                log_warning "MSIX x86_64 build failed (continuing)"
+                record_result "Windows MSIX x86_64: FAILED"
+            fi
         else
-            log_warning "MSIX x86_64 build failed (continuing)"
-            record_result "Windows MSIX x86_64: FAILED"
+            log_info "Skipping x86_64 MSIX (--arch ${ARCH_SELECTION})"
+            record_result "Windows MSIX x86_64: SKIPPED"
         fi
 
         # Only try the arm64 MSIX if the arm64 binaries actually built.
@@ -1396,6 +1498,9 @@ build_windows() {
         if $windows_arm64_ok; then
             if win_ssh_cmd "$host" "$port" "$key" "cd ${remote_dir} && ${msix_arm}"; then
                 record_result "Windows MSIX arm64: OK"
+            elif $windows_arm64_required; then
+                log_error "MSIX arm64 build failed"
+                record_result "Windows MSIX arm64: FAILED"
             else
                 log_warning "MSIX arm64 build failed (continuing)"
                 record_result "Windows MSIX arm64: UNAVAILABLE (optional target)"
@@ -1416,15 +1521,24 @@ build_windows() {
             --include='*/' --include="*${VERSION}*" --exclude='*'; then
             log_error "rsync from Windows failed"
             record_result "Windows fetch: FAILED"
-            return
+            return 1
         fi
         log_success "Windows artifacts fetched"
         local windows_artifact
-        for windows_artifact in \
-            "$DIST_DIR/sotf-tui-${VERSION}-windows-x86_64.exe" \
-            "$DIST_DIR/sotf-desktop-${VERSION}-windows-x86_64.msix"; do
-            record_artifact "$windows_artifact" "Windows required artifact" || true
-        done
+        if $windows_x86_64_ok; then
+            for windows_artifact in \
+                "$DIST_DIR/sotf-tui-${VERSION}-windows-x86_64.exe" \
+                "$DIST_DIR/sotf-desktop-${VERSION}-windows-x86_64.msix"; do
+                record_artifact "$windows_artifact" "Windows required artifact" || true
+            done
+        fi
+        if $windows_arm64_ok; then
+            for windows_artifact in \
+                "$DIST_DIR/sotf-tui-${VERSION}-windows-arm64.exe" \
+                "$DIST_DIR/sotf-desktop-${VERSION}-windows-arm64.msix"; do
+                record_artifact "$windows_artifact" "Windows required artifact" || true
+            done
+        fi
     fi
 
     local result_index windows_failed=false
