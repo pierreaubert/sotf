@@ -151,6 +151,11 @@ _docker-linux-x86-debian-distro distro base_image:
 # Linux ARM64: AppImage + tarball → dist/
 # Use the GNU/Linux image for release packaging. The static musl image cannot
 # provide the ALSA pkg-config metadata needed by cpal/alsa-sys.
+# dist/ is staged in the container filesystem (/tmp/sotf-dist) and copied back
+# at the end: linuxdeploy overwrites files it copied read-only into the
+# AppDir, which Docker Desktop's VirtioFS bind mount rejects with EACCES
+# (container root has no DAC override there). Native container FS is also
+# much faster for the AppDir's many small files.
 [group('docker')]
 docker-linux-arm64: docker-base-linux-arm64
 	@echo "Building Docker image..."
@@ -158,23 +163,26 @@ docker-linux-arm64: docker-base-linux-arm64
 	@echo "Building in Docker container..."
 	docker run --rm -v "$(pwd)/..":/workspace -v sotf-target-linux-arm64:/build-target -w /workspace/sotf \
 		-e CARGO_TARGET_DIR=/build-target \
-		sotf-linux-arm64 ./scripts/build-linux.sh --appimage
+		sotf-linux-arm64 bash -c './scripts/build-linux.sh --appimage --dist-dir=/tmp/sotf-dist && mkdir -p dist && cp -a /tmp/sotf-dist/. dist/'
 	@echo "Done! Output in: dist/"
 
 # Linux x86_64: AppImage + tarball → dist/
-# On native x86_64: full build with AppImage. On ARM (macOS): TUI-only tarball via QEMU.
+# On native x86_64: full build with AppImage (GNU image; the musl image lacks
+# the fontconfig/GTK pkg-config metadata the desktop app needs).
+# On ARM (macOS): TUI-only tarball via QEMU (musl image).
 [group('docker')]
-docker-linux-x86: docker-base-linux-x86
+docker-linux-x86: docker-base-linux-x86-gnu
 	#!/usr/bin/env bash
 	set -euo pipefail
 	host_arch=$(uname -m)
 	echo "Building Docker image..."
 	if [ "$host_arch" = "x86_64" ]; then
-		docker build -t sotf-linux-x86 -f builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-musl ..
+		docker build -t sotf-linux-x86-gnu -f builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-gnu ..
 		echo "Building in Docker container..."
-		docker run --rm -v "$(pwd)/..":/workspace -v sotf-target-linux-x86:/build-target -w /workspace/sotf \
+		# Stage dist/ in the container FS (see docker-linux-arm64).
+		docker run --rm -v "$(pwd)/..":/workspace -v sotf-target-linux-x86-gnu:/build-target -w /workspace/sotf \
 			-e CARGO_TARGET_DIR=/build-target \
-			sotf-linux-x86 ./scripts/build-linux.sh --appimage
+			sotf-linux-x86-gnu bash -c './scripts/build-linux.sh --appimage --dist-dir=/tmp/sotf-dist && mkdir -p dist && cp -a /tmp/sotf-dist/. dist/'
 	else
 		docker build --platform linux/amd64 -t sotf-linux-x86 -f builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-musl ..
 		echo "Building in Docker container (QEMU)..."
@@ -196,8 +204,9 @@ docker-debug-linux-x86: docker-base-linux-x86-gnu
 # WINDOWS (cross-compiled in Docker via llvm-mingw)
 # ----------------------------------------------------------------------
 
-# Windows ARM64: sotf-tui.exe + signed MSIX → dist/
-# Set WINDOWS_CERT_FILE and WINDOWS_CERT_PASSWORD to use a CA cert; otherwise self-signed is auto-generated
+# Windows ARM64: sotf-tui.exe + MSIX (desktop + TUI) → dist/
+# Set WINDOWS_CERT_FILE and WINDOWS_CERT_PASSWORD to use a CA cert; otherwise self-signed is auto-generated.
+# Set SOTF_MSIX_SIGN=0 to build an unsigned MSIX (used by build-release-local.sh --skip-sign).
 [group('docker')]
 docker-windows-arm64: docker-base-win-arm64
 	#!/usr/bin/env bash
@@ -207,7 +216,9 @@ docker-windows-arm64: docker-base-win-arm64
 	docker build -t sotf-win-arm64 -f builds/from_macos_arm/Dockerfile.aarch64-pc-windows-gnullvm ..
 	echo "Building in Docker container..."
 	mkdir -p dist
-	docker_env=(-e CARGO_TARGET_DIR=/build-target)
+	msix_sign_flag="--sign"
+	[ "${SOTF_MSIX_SIGN:-1}" = "0" ] && msix_sign_flag=""
+	docker_env=(-e CARGO_TARGET_DIR=/build-target -e MSIX_SIGN_FLAG="$msix_sign_flag")
 	# Forward CA cert env vars into Docker if set
 	if [ -n "${WINDOWS_CERT_FILE:-}" ]; then
 		docker_env+=(-e WINDOWS_CERT_FILE -e WINDOWS_CERT_PASSWORD)
@@ -215,13 +226,16 @@ docker-windows-arm64: docker-base-win-arm64
 	fi
 	# Release cuts use the `dist` profile (fat LTO + codegen-units=1).
 	# Artifacts land in /build-target/<triple>/dist/ instead of .../release/.
+	# build-msix.sh stages both sotf-desktop.exe and sotf-tui.exe; the MSIX
+	# manifest declares the desktop app, so both binaries must be built.
 	docker run --rm -v "$(pwd)/..":/workspace -v sotf-target-win-arm64:/build-target -w /workspace/sotf "${docker_env[@]}" sotf-win-arm64 \
-		bash -c 'cargo build --profile dist --target aarch64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && ./scripts/build-msix.sh --sign --build-dir /build-target/aarch64-pc-windows-gnullvm/dist --arch arm64 && cp /build-target/aarch64-pc-windows-gnullvm/dist/sotf-tui.exe dist/'
+		bash -c 'cargo build --profile dist --target aarch64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && cargo build --profile dist --target aarch64-pc-windows-gnullvm -p sotf-gpui --bin sotf-desktop && ./scripts/build-msix.sh $MSIX_SIGN_FLAG --build-dir /build-target/aarch64-pc-windows-gnullvm/dist --arch arm64 && cp /build-target/aarch64-pc-windows-gnullvm/dist/sotf-tui.exe dist/'
 	mv "dist/sotf-tui.exe" "dist/sotf-tui-${VERSION}-windows-arm64.exe"
 	echo "Done! dist/sotf-tui-${VERSION}-windows-arm64.exe + MSIX in dist/"
 
-# Windows x86_64: sotf-tui.exe + signed MSIX → dist/
-# Set WINDOWS_CERT_FILE and WINDOWS_CERT_PASSWORD to use a CA cert; otherwise self-signed is auto-generated
+# Windows x86_64: sotf-tui.exe + MSIX (desktop + TUI) → dist/
+# Set WINDOWS_CERT_FILE and WINDOWS_CERT_PASSWORD to use a CA cert; otherwise self-signed is auto-generated.
+# Set SOTF_MSIX_SIGN=0 to build an unsigned MSIX (used by build-release-local.sh --skip-sign).
 [group('docker')]
 docker-windows-x86: docker-base-win-x86
 	#!/usr/bin/env bash
@@ -231,15 +245,19 @@ docker-windows-x86: docker-base-win-x86
 	docker build --platform linux/amd64 -t sotf-win-x86 -f builds/from_macos_arm/Dockerfile.x86_64-pc-windows-gnullvm ..
 	echo "Building in Docker container..."
 	mkdir -p dist
-	docker_env=(-e CARGO_TARGET_DIR=/build-target)
+	msix_sign_flag="--sign"
+	[ "${SOTF_MSIX_SIGN:-1}" = "0" ] && msix_sign_flag=""
+	docker_env=(-e CARGO_TARGET_DIR=/build-target -e MSIX_SIGN_FLAG="$msix_sign_flag")
 	# Forward CA cert env vars into Docker if set
 	if [ -n "${WINDOWS_CERT_FILE:-}" ]; then
 		docker_env+=(-e WINDOWS_CERT_FILE -e WINDOWS_CERT_PASSWORD)
 		[ -n "${WINDOWS_TIMESTAMP_URL:-}" ] && docker_env+=(-e WINDOWS_TIMESTAMP_URL)
 	fi
 	# Release cuts use the `dist` profile (fat LTO + codegen-units=1).
+	# build-msix.sh stages both sotf-desktop.exe and sotf-tui.exe; the MSIX
+	# manifest declares the desktop app, so both binaries must be built.
 	docker run --rm --platform linux/amd64 -v "$(pwd)/..":/workspace -v sotf-target-win-x86:/build-target -w /workspace/sotf "${docker_env[@]}" sotf-win-x86 \
-		bash -c 'cargo build --profile dist --target x86_64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && ./scripts/build-msix.sh --sign --build-dir /build-target/x86_64-pc-windows-gnullvm/dist --arch x86_64 && cp /build-target/x86_64-pc-windows-gnullvm/dist/sotf-tui.exe dist/'
+		bash -c 'cargo build --profile dist --target x86_64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && cargo build --profile dist --target x86_64-pc-windows-gnullvm -p sotf-gpui --bin sotf-desktop && ./scripts/build-msix.sh $MSIX_SIGN_FLAG --build-dir /build-target/x86_64-pc-windows-gnullvm/dist --arch x86_64 && cp /build-target/x86_64-pc-windows-gnullvm/dist/sotf-tui.exe dist/'
 	mv "dist/sotf-tui.exe" "dist/sotf-tui-${VERSION}-windows-x86_64.exe"
 	echo "Done! dist/sotf-tui-${VERSION}-windows-x86_64.exe + MSIX in dist/"
 

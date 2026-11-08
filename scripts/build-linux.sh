@@ -56,7 +56,10 @@ CLEAN=false
 TUI_ONLY=false
 TARGET=""
 BUILD_DIR=""
-DIST_DIR="$PROJECT_ROOT/dist"
+# Output directory. The Docker recipes point this at a container-local path
+# (SOTF_DIST_DIR or --dist-dir) because linuxdeploy cannot overwrite the
+# read-only files it copied into the AppDir on Docker Desktop's VirtioFS.
+DIST_DIR="${SOTF_DIST_DIR:-$PROJECT_ROOT/dist}"
 TOOLS_DIR="$PROJECT_ROOT/tools"
 ASSETS_DIR="$PROJECT_ROOT/builds/linux"
 
@@ -133,6 +136,14 @@ while [[ $# -gt 0 ]]; do
             TUI_ONLY=true
             shift
             ;;
+        --dist-dir=*)
+            DIST_DIR="${1#*=}"
+            shift
+            ;;
+        --dist-dir)
+            DIST_DIR="$2"
+            shift 2
+            ;;
         --help|-h)
             echo "Usage: $0 [options]"
             echo ""
@@ -143,6 +154,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --deb            Create .deb package (Debian/Ubuntu)"
             echo "  --install-tools  Download and install linuxdeploy"
             echo "  --clean          Clean build directory before building"
+            echo "  --dist-dir=DIR   Output directory (default: <project>/dist, or \$SOTF_DIST_DIR)"
             echo "  --help           Show this help message"
             exit 0
             ;;
@@ -191,6 +203,53 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Download $1 to $2 with resume. Large release assets are truncated on some
+# networks (curl 18 / short reads), so each pass appends to any partial file
+# (including stale ones from previous failed runs) until the transfer is
+# reported complete. --fail matters: without it an HTTP 5xx error page is
+# saved as if it were the payload and the pass "succeeds" with a tiny HTML
+# file. Returns non-zero after 40 incomplete passes (partial file is kept
+# so a later run resumes instead of restarting).
+download_with_resume() {
+    local url="$1" dest="$2"
+    local downloader=""
+    if command -v curl &> /dev/null; then
+        downloader="curl"
+    elif command -v wget &> /dev/null; then
+        downloader="wget"
+    else
+        log_error "Neither curl nor wget found. Please install one of them."
+        return 1
+    fi
+
+    local pass=1
+    local max_passes=40
+    while [ "$pass" -le "$max_passes" ]; do
+        if [ "$downloader" = "curl" ]; then
+            if curl --fail -L -C - --retry 3 --retry-all-errors -o "$dest" "$url"; then
+                return 0
+            fi
+        else
+            if wget -c -O "$dest" "$url"; then
+                return 0
+            fi
+        fi
+        log_info "Download pass $pass incomplete, resuming..."
+        pass=$((pass + 1))
+        sleep 5
+    done
+    return 1
+}
+
+# Executability probe for a linuxdeploy AppImage at the given path.
+probe_linuxdeploy() {
+    if [ -f /.dockerenv ] || [ ! -e /dev/fuse ]; then
+        APPIMAGE_EXTRACT_AND_RUN=1 "$1" --list-plugins 2>&1
+    else
+        "$1" --list-plugins 2>&1
+    fi
+}
+
 # Download and install linuxdeploy
 install_linuxdeploy() {
     log_info "Installing linuxdeploy..."
@@ -222,42 +281,8 @@ install_linuxdeploy() {
     log_info "Downloading linuxdeploy for $arch..."
     log_info "URL: $tool_url"
 
-    # Large release assets are truncated on some networks (curl 18 / short
-    # reads), so download with resume: each pass appends to any partial file
-    # (including stale ones from previous failed runs) until the transfer is
-    # reported complete. The partial file lives in $TOOLS_DIR, so a retry in
-    # a later run resumes instead of restarting.
-    local downloader=""
-    if command -v curl &> /dev/null; then
-        downloader="curl"
-    elif command -v wget &> /dev/null; then
-        downloader="wget"
-    else
-        log_error "Neither curl nor wget found. Please install one of them."
-        exit 1
-    fi
-
-    local pass=1
-    local max_passes=40
-    local complete=""
-    while [ "$pass" -le "$max_passes" ]; do
-        if [ "$downloader" = "curl" ]; then
-            if curl -L -C - --retry 3 --retry-all-errors -o "$tool_path" "$tool_url"; then
-                complete="1"
-                break
-            fi
-        else
-            if wget -c -O "$tool_path" "$tool_url"; then
-                complete="1"
-                break
-            fi
-        fi
-        log_info "Download pass $pass incomplete, resuming..."
-        pass=$((pass + 1))
-        sleep 5
-    done
-    if [ -z "$complete" ]; then
-        log_error "linuxdeploy download did not complete after $max_passes passes (partial kept in $tool_path, will resume on retry)"
+    if ! download_with_resume "$tool_url" "$tool_path"; then
+        log_error "linuxdeploy download did not complete (partial kept in $tool_path, will resume on retry)"
         exit 1
     fi
 
@@ -273,18 +298,25 @@ install_linuxdeploy() {
     # run_linuxdeploy below. The file is removed on failure so a later run
     # retries cleanly instead of reusing a corrupt download.
     local plugins
-    if [ -f /.dockerenv ] || [ ! -e /dev/fuse ]; then
-        plugins=$(APPIMAGE_EXTRACT_AND_RUN=1 "$tool_path" --list-plugins 2>&1) || {
+    if ! plugins=$(probe_linuxdeploy "$tool_path"); then
+        # Under qemu-user binfmt emulation (foreign-arch Docker build), the
+        # kernel's binfmt_misc mask for qemu requires zero padding in ELF
+        # e_ident bytes 8..15, but type-2 AppImages store their "AI\002"
+        # magic there, so exec fails with "Exec format error" before qemu
+        # ever starts. Zeroing those three bytes makes the ELF header match
+        # the binfmt magic; the AppImage runtime locates its squashfs via
+        # the ELF headers and runs fine with APPIMAGE_EXTRACT_AND_RUN, which
+        # is the only mode used in the FUSE-less case. On native hosts the
+        # first probe succeeds and the file is left untouched.
+        if [ -f /.dockerenv ] || [ ! -e /dev/fuse ]; then
+            log_info "linuxdeploy did not execute; clearing AppImage magic bytes for qemu binfmt and retrying..."
+            printf '\000\000\000' | dd of="$tool_path" bs=1 seek=8 count=3 conv=notrunc 2>/dev/null
+        fi
+        if ! plugins=$(probe_linuxdeploy "$tool_path"); then
             log_error "Downloaded linuxdeploy is not functional (truncated download?)"
             rm -f "$tool_path"
             exit 1
-        }
-    else
-        plugins=$("$tool_path" --list-plugins 2>&1) || {
-            log_error "Downloaded linuxdeploy is not functional (truncated download?)"
-            rm -f "$tool_path"
-            exit 1
-        }
+        fi
     fi
     log_info "linuxdeploy plugins: $plugins"
 
@@ -551,6 +583,36 @@ EOF
     log_success "Tarball created: $DIST_DIR/${tarball_name}.tar.gz"
 }
 
+# Cache the AppImage type2 runtime in $TOOLS_DIR and export it for
+# linuxdeploy's appimage plugin (LDAI_RUNTIME_FILE). appimagetool otherwise
+# downloads the runtime from GitHub on every run with no retry, so a
+# transient GitHub 5xx fails the whole packaging step at the very end.
+# Best-effort: if the download fails here, appimagetool still gets its own
+# attempt, exactly as before.
+ensure_appimage_runtime() {
+    local runtime_arch
+    case "$(uname -m)" in
+        x86_64)        runtime_arch="x86_64" ;;
+        aarch64|arm64) runtime_arch="aarch64" ;;
+        *)             return 0 ;;
+    esac
+    local runtime_path="$TOOLS_DIR/runtime-${runtime_arch}"
+    if [ ! -s "$runtime_path" ]; then
+        mkdir -p "$TOOLS_DIR"
+        log_info "Downloading AppImage runtime (${runtime_arch})..."
+        if ! download_with_resume \
+            "https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-${runtime_arch}" \
+            "$runtime_path"; then
+            log_warning "Could not cache AppImage runtime; appimagetool will try downloading it itself"
+            rm -f "$runtime_path"
+            return 0
+        fi
+        chmod +x "$runtime_path"
+    fi
+    export LDAI_RUNTIME_FILE="$runtime_path"
+    log_info "Using AppImage runtime: $runtime_path"
+}
+
 # Create AppImage (native Linux only)
 create_appimage() {
     if ! $CREATE_APPIMAGE; then
@@ -563,6 +625,7 @@ create_appimage() {
     fi
 
     log_info "Creating AppImage..."
+    ensure_appimage_runtime
 
     local appdir="$DIST_DIR/${APP_NAME}.AppDir"
     rm -rf "$appdir"

@@ -40,7 +40,7 @@ printf 'tracked fixture data\n' > "$AGGREGATE_ROOT/sotf/tests/data/fixture.bin"
 printf 'untracked dataset\n' > "$AGGREGATE_ROOT/autoeq/data/local-dataset.bin"
 git -C "$AGGREGATE_ROOT/sotf" add tests/data/fixture.bin
 git -c user.name=Test -c user.email=test@example.invalid -C "$AGGREGATE_ROOT/sotf" commit -qm 'add tracked data fixture'
-export PROJECT_ROOT VERSION
+export PROJECT_ROOT VERSION TEST_ROOT
 
 cat > "$TEST_ROOT/bin/rustup" <<'MOCK'
 #!/usr/bin/env bash
@@ -74,7 +74,26 @@ cat > "$TEST_ROOT/bin/lipo" <<'MOCK'
 #!/usr/bin/env bash
 exit 0
 MOCK
-chmod +x "$TEST_ROOT/bin/rustup" "$TEST_ROOT/bin/cargo" "$TEST_ROOT/bin/lipo"
+cat > "$TEST_ROOT/bin/docker" <<'MOCK'
+#!/usr/bin/env bash
+exit 0
+MOCK
+cat > "$TEST_ROOT/bin/just" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$TEST_ROOT/just-commands.log"
+case "$*" in
+    *docker-linux-arm64*)
+        mkdir -p dist
+        printf 'arm tar\n' > "dist/sotf-desktop-${VERSION}-linux-arm64.tar.gz"
+        printf 'arm image\n' > "dist/sotf-desktop-${VERSION}-linux-arm64.AppImage"
+        ;;
+    *)
+        echo "unexpected mocked just command: $*" >&2
+        exit 95
+        ;;
+esac
+MOCK
+chmod +x "$TEST_ROOT/bin/rustup" "$TEST_ROOT/bin/cargo" "$TEST_ROOT/bin/lipo" "$TEST_ROOT/bin/docker" "$TEST_ROOT/bin/just"
 PATH="$TEST_ROOT/bin:$PATH"
 export PATH
 
@@ -226,17 +245,23 @@ if grep -q 'skills/ms-rust-skill' "$manifest"; then
 fi
 (cd "$AGGREGATE_ROOT" && grep -v '^#' "$manifest" | shasum -a 256 -c - >/dev/null)
 
-# Exercise the Linux orchestration without a network connection. These shell
-# mocks materialize the remote snapshot under the test directory, perform the
-# same hash check there, and create the two required architecture outputs.
+# Exercise the Linux orchestration without a network connection. In the
+# two-machine topology Linux ARM64 builds in local Docker (mocked docker +
+# just above, snapshot materialized under dist/) and Linux x86_64 builds in
+# Docker on the spin builder (mocked ssh/rsync below). The mocks materialize
+# each snapshot under the test directory and perform the same hash checks.
 LINUX_HOST=mock-builder
 LINUX_PORT=22
 LINUX_SSH_KEY=""
 LINUX_PROJECT_DIR="$TEST_ROOT/remote/sotf"
-MOCK_LINUX_UNAME=x86_64
 MOCK_LINUX_COMMANDS=""
+MOCK_LAST_SPIN_SNAPSHOT=""
 mkdir -p "$TEST_ROOT/remote"
 remote_sotf() {
+    if [ -n "$MOCK_LAST_SPIN_SNAPSHOT" ]; then
+        printf '%s/sotf\n' "$MOCK_LAST_SPIN_SNAPSHOT"
+        return 0
+    fi
     local snapshot result=""
     for snapshot in "$TEST_ROOT"/remote/.sotf-release-*; do
         [ -d "$snapshot" ] && result="$snapshot/sotf"
@@ -246,49 +271,37 @@ remote_sotf() {
 }
 linux_ssh_cmd() {
     local cmd="$4"
-    local remote_root manifest
+    local remote_root manifest dir
     case "$cmd" in
-        "uname -m") printf '%s\n' "$MOCK_LINUX_UNAME" ;;
-        *"binfmt_misc"*) ;; # pretend the qemu handler is already registered
+        "uname -m") printf 'x86_64\n' ;;
+        *"just docker-linux-x86"*)
+            dir="$(remote_sotf)"
+            mkdir -p "$dir/dist"
+            MOCK_LINUX_COMMANDS+=" spin-linux-x86"
+            printf 'x86 tar\n' > "$dir/dist/sotf-desktop-${VERSION}-linux-x86_64.tar.gz"
+            printf 'x86 image\n' > "$dir/dist/sotf-desktop-${VERSION}-linux-x86_64.AppImage"
+            ;;
+        *"just docker-windows-x86"*)
+            dir="$(remote_sotf)"
+            mkdir -p "$dir/dist"
+            MOCK_LINUX_COMMANDS+=" spin-windows-x86"
+            printf 'x86 exe\n' > "$dir/dist/sotf-tui-${VERSION}-windows-x86_64.exe"
+            printf 'x86 msix\n' > "$dir/dist/sotf-desktop-${VERSION}-windows-x86_64.msix"
+            ;;
         *"rm -f dist/*"*)
-            local dir
             dir="$(remote_sotf)"
             rm -f "$dir"/dist/*"$VERSION"*
             ;;
         mkdir*)
-            local dir
             dir="$(printf '%s\n' "$cmd" | sed -n "s/.*mkdir '\\([^']*\\)'$/\\1/p")"
             mkdir -p "$dir"
+            MOCK_LAST_SPIN_SNAPSHOT="$dir"
             ;;
         *"shasum -a 256 -c"*)
             remote_root="$(printf '%s\n' "$cmd" | sed -n "s/^cd '\\([^']*\\)'.*/\\1/p")"
             manifest="$(printf '%s\n' "$cmd" | sed -n "s/.*grep -v '\\^#' '\\([^']*\\)'.*/\\1/p")"
             (cd "$remote_root" && grep -v '^#' "$manifest" | shasum -a 256 -c - >/dev/null)
             ;;
-        *"build-linux.sh --appimage"*)
-            local dir
-            dir="$(remote_sotf)"
-            mkdir -p "$dir/dist"
-            MOCK_LINUX_COMMANDS+=" native:$MOCK_LINUX_UNAME"
-            local native_arch=x86_64
-            [ "$MOCK_LINUX_UNAME" = aarch64 ] && native_arch=arm64
-            printf '%s tar\n' "$native_arch" > "$dir/dist/sotf-desktop-${VERSION}-linux-${native_arch}.tar.gz"
-            printf '%s image\n' "$native_arch" > "$dir/dist/sotf-desktop-${VERSION}-linux-${native_arch}.AppImage"
-        ;;
-        *"just docker-linux-arm64"*)
-            local dir
-            dir="$(remote_sotf)"
-            mkdir -p "$dir/dist"
-            printf 'arm tar\n' > "$dir/dist/sotf-desktop-${VERSION}-linux-arm64.tar.gz"
-            printf 'arm image\n' > "$dir/dist/sotf-desktop-${VERSION}-linux-arm64.AppImage"
-        ;;
-        *"just docker-linux-x86"*)
-            local dir
-            dir="$(remote_sotf)"
-            mkdir -p "$dir/dist"
-            MOCK_LINUX_COMMANDS+=" docker-x86"
-            printf 'x86 tar\n' > "$dir/dist/sotf-desktop-${VERSION}-linux-x86_64.tar.gz"
-        ;;
         *)
             echo "unexpected mocked ssh command: $cmd" >&2
             return 97
@@ -321,15 +334,19 @@ file() {
     case "$*" in
         *linux-x86_64*) printf 'ELF 64-bit LSB pie executable, x86-64\n' ;;
         *linux-arm64*) printf 'ELF 64-bit LSB pie executable, ARM aarch64\n' ;;
+        *windows-x86_64*) printf 'PE32+ executable (console) x86-64, for MS Windows\n' ;;
+        *windows-arm64*) printf 'PE32+ executable (console) Aarch64, for MS Windows\n' ;;
         *) return 1 ;;
     esac
 }
+: > "$TEST_ROOT/just-commands.log"
 BUILD_RESULTS=()
 RELEASE_ARTIFACTS=()
 BUILD_FAILED=false
 SKIP_LINUX=false
 DRY_RUN=false
 build_linux
+[ "$BUILD_FAILED" = false ] || { echo "mocked Linux all-arch run was marked failed" >&2; exit 1; }
 for artifact in \
     "$DIST_DIR/sotf-desktop-${VERSION}-linux-x86_64.tar.gz" \
     "$DIST_DIR/sotf-desktop-${VERSION}-linux-x86_64.AppImage" \
@@ -337,6 +354,14 @@ for artifact in \
     "$DIST_DIR/sotf-desktop-${VERSION}-linux-arm64.AppImage"; do
     [ -s "$artifact" ] || { echo "missing mocked Linux artifact: $artifact" >&2; exit 1; }
 done
+grep -q 'docker-linux-arm64' "$TEST_ROOT/just-commands.log" || {
+    echo "Linux ARM64 did not use the local Docker recipe" >&2
+    exit 1
+}
+[[ "$MOCK_LINUX_COMMANDS" == *"spin-linux-x86"* ]] || {
+    echo "Linux x86_64 did not use Docker on spin" >&2
+    exit 1
+}
 remote_root="$(dirname "$(remote_sotf)")"
 remote_manifest="$remote_root/.release-source-manifest-${VERSION}-"*.sha256
 [ -s $remote_manifest ] || {
@@ -345,6 +370,10 @@ remote_manifest="$remote_root/.release-source-manifest-${VERSION}-"*.sha256
 }
 grep -q 'sotf-daw/Cargo.toml' $remote_manifest
 grep -q 'sotf/tests/data/fixture.bin' $remote_manifest
+grep -q 'sotf-daw/Cargo.toml' "$DIST_DIR"/source-manifest-linux-"$VERSION"-*.sha256 || {
+    echo "Linux snapshot manifest omitted sibling sources" >&2
+    exit 1
+}
 
 printf 'changed source\n' >> "$AGGREGATE_ROOT/sotf-daw/Cargo.toml"
 if (cd "$AGGREGATE_ROOT" && grep -v '^#' "$manifest" | shasum -a 256 -c - >/dev/null 2>&1); then
@@ -352,17 +381,16 @@ if (cd "$AGGREGATE_ROOT" && grep -v '^#' "$manifest" | shasum -a 256 -c - >/dev/
     exit 1
 fi
 
-# ARM selection builds only Linux ARM64 on an x86 remote. An ARM remote builds
-# its native ARM64 target and uses Docker for x86, without mislabeling native
-# binaries as x86_64. The emulated x86 recipe requires only its tarball.
+# ARM selection builds Linux ARM64 locally only: no spin SSH at all.
 rm -f "$DIST_DIR"/*"$VERSION"* "$DIST_DIR"/BUILD-SHA256SUMS-"$VERSION"
+: > "$TEST_ROOT/just-commands.log"
 BUILD_RESULTS=()
 RELEASE_ARTIFACTS=()
 BUILD_FAILED=false
 ARCH_SELECTION=arm64
-MOCK_LINUX_UNAME=x86_64
 MOCK_LINUX_COMMANDS=""
 build_linux
+[ "$BUILD_FAILED" = false ] || { echo "mocked Linux arm64 run was marked failed" >&2; exit 1; }
 [ ! -e "$DIST_DIR/sotf-desktop-${VERSION}-linux-x86_64.tar.gz" ] || {
     echo "unselected Linux x86 target was built" >&2
     exit 1
@@ -371,47 +399,48 @@ build_linux
     echo "selected Linux ARM target missing" >&2
     exit 1
 }
-[[ "$MOCK_LINUX_COMMANDS" != *docker-x86* ]] || {
-    echo "unselected Linux x86 Docker target was built" >&2
+[[ "$MOCK_LINUX_COMMANDS" != *spin* ]] || {
+    echo "Linux ARM selection contacted the spin builder" >&2
     exit 1
 }
 
+# x86 selection builds Linux x86_64 on spin only: no local Docker recipe.
 rm -f "$DIST_DIR"/*"$VERSION"* "$DIST_DIR"/BUILD-SHA256SUMS-"$VERSION"
+: > "$TEST_ROOT/just-commands.log"
 BUILD_RESULTS=()
 RELEASE_ARTIFACTS=()
 BUILD_FAILED=false
-ARCH_SELECTION=all
-MOCK_LINUX_UNAME=aarch64
+ARCH_SELECTION=x86_64
 MOCK_LINUX_COMMANDS=""
 build_linux
-[ -s "$DIST_DIR/sotf-desktop-${VERSION}-linux-arm64.AppImage" ] || {
-    echo "native Linux ARM AppImage missing" >&2
+[ "$BUILD_FAILED" = false ] || { echo "mocked Linux x86 run was marked failed" >&2; exit 1; }
+[ -s "$DIST_DIR/sotf-desktop-${VERSION}-linux-x86_64.AppImage" ] || {
+    echo "selected Linux x86 AppImage missing" >&2
     exit 1
 }
-[ -s "$DIST_DIR/sotf-desktop-${VERSION}-linux-x86_64.tar.gz" ] || {
-    echo "Docker Linux x86 tarball missing on ARM remote" >&2
+[ ! -e "$DIST_DIR/sotf-desktop-${VERSION}-linux-arm64.AppImage" ] || {
+    echo "unselected Linux ARM target was built" >&2
     exit 1
 }
-[ ! -e "$DIST_DIR/sotf-desktop-${VERSION}-linux-x86_64.AppImage" ] || {
-    echo "unexpected emulated Linux x86 AppImage requirement/output" >&2
+if grep -q 'docker-linux-arm64' "$TEST_ROOT/just-commands.log"; then
+    echo "unselected Linux ARM Docker target was built locally" >&2
     exit 1
-}
-[[ "$MOCK_LINUX_COMMANDS" == *docker-x86* ]] || {
-    echo "Linux x86 target did not use Docker on ARM remote" >&2
-    exit 1
-}
+fi
+ARCH_SELECTION=all
 
-# Windows: an --arch arm64 run syncs the aggregate snapshot, verifies its
-# hashes, builds only the arm64 binaries + MSIX, and requires exactly those
-# artifacts. win_ssh_cmd is mocked like linux_ssh_cmd above; the already
-# mocked rsync (files-from copy) serves the snapshot sync.
+# Windows: ARM64 builds natively in the (mocked) UTM VM, x86_64 builds via
+# Docker on spin. Each selection must build only (and exactly) its targets.
 rm -f "$DIST_DIR"/*"$VERSION"* "$DIST_DIR"/BUILD-SHA256SUMS-"$VERSION" "$DIST_DIR"/source-manifest-*
 mkdir -p "$TEST_ROOT/winremote"
-WINDOWS_HOST=mock-windows
-WINDOWS_PORT=22
-WINDOWS_SSH_KEY=""
-WINDOWS_PROJECT_DIR="$TEST_ROOT/winremote/sotf"
+WINDOWS_ARM_VM_NAME=mock-vm
+WINDOWS_ARM_USER=pierre
+WINDOWS_ARM_SSH_KEY=""
+WINDOWS_ARM_PROJECT_DIR="$TEST_ROOT/winremote/sotf"
 MOCK_WIN_COMMANDS=""
+start_windows_arm_vm() {
+    WINDOWS_ARM_HOST="pierre@mock-vm"
+    MOCK_WIN_COMMANDS+=" utm-start"
+}
 detect_win_bash() { WIN_BASH_PATH=/mock/bash.exe; }
 detect_win_rsync() { WIN_RSYNC_PATH=/mock/rsync; }
 win_remote_sotf() {
@@ -436,22 +465,11 @@ win_ssh_cmd() {
             mkdir -p "$dir/dist"
             printf 'arm64 msix\n' > "$dir/dist/sotf-desktop-${VERSION}-windows-arm64.msix"
             ;;
-        *"build-msix.ps1"*)
-            dir="$(win_remote_sotf)"
-            mkdir -p "$dir/dist"
-            printf 'x86 msix\n' > "$dir/dist/sotf-desktop-${VERSION}-windows-x86_64.msix"
-            ;;
-        *"aarch64-pc-windows-msvc"*)
+        *"cargo build"*)
             dir="$(win_remote_sotf)"
             mkdir -p "$dir/dist"
             MOCK_WIN_COMMANDS+=" arm64-build"
             printf 'arm64 tui exe\n' > "$dir/dist/sotf-tui-${VERSION}-windows-arm64.exe"
-            ;;
-        *"cargo build"*)
-            dir="$(win_remote_sotf)"
-            mkdir -p "$dir/dist"
-            MOCK_WIN_COMMANDS+=" x86-build"
-            printf 'x86 tui exe\n' > "$dir/dist/sotf-tui-${VERSION}-windows-x86_64.exe"
             ;;
         *"rm -f"*)
             dir="$(win_remote_sotf)"
@@ -493,16 +511,40 @@ done
     echo "unselected Windows x86_64 target was built" >&2
     exit 1
 }
-[[ "$MOCK_WIN_COMMANDS" == *"arm64-build"* ]] || {
-    echo "Windows arm64 cargo build never ran" >&2
+[[ "$MOCK_WIN_COMMANDS" == *"utm-start"* && "$MOCK_WIN_COMMANDS" == *"arm64-build"* ]] || {
+    echo "Windows arm64 did not build natively in the UTM VM" >&2
     exit 1
 }
-[[ "$MOCK_WIN_COMMANDS" != *"x86-build"* ]] || {
-    echo "unselected Windows x86_64 cargo build ran" >&2
+[[ "$MOCK_LINUX_COMMANDS" != *"spin-windows-x86"* ]] || {
+    echo "unselected Windows x86_64 spin build ran" >&2
     exit 1
 }
-grep -q 'sotf-daw/Cargo.toml' "$DIST_DIR"/source-manifest-windows-"$VERSION"-*.sha256 || {
+grep -q 'sotf-daw/Cargo.toml' "$DIST_DIR"/source-manifest-windows-arm64-"$VERSION"-*.sha256 || {
     echo "Windows snapshot manifest omitted sibling sources" >&2
+    exit 1
+}
+
+# x86 selection builds Windows x86_64 on spin only: no UTM VM.
+rm -f "$DIST_DIR"/*"$VERSION"* "$DIST_DIR"/BUILD-SHA256SUMS-"$VERSION" "$DIST_DIR"/source-manifest-*
+BUILD_RESULTS=()
+RELEASE_ARTIFACTS=()
+BUILD_FAILED=false
+ARCH_SELECTION=x86_64
+MOCK_WIN_COMMANDS=""
+MOCK_LINUX_COMMANDS=""
+build_windows
+[ "$BUILD_FAILED" = false ] || { echo "mocked Windows x86 run was marked failed" >&2; exit 1; }
+for artifact in \
+    "$DIST_DIR/sotf-tui-${VERSION}-windows-x86_64.exe" \
+    "$DIST_DIR/sotf-desktop-${VERSION}-windows-x86_64.msix"; do
+    [ -s "$artifact" ] || { echo "missing mocked Windows x86 artifact: $artifact" >&2; exit 1; }
+done
+[[ "$MOCK_LINUX_COMMANDS" == *"spin-windows-x86"* ]] || {
+    echo "Windows x86_64 did not use Docker on spin" >&2
+    exit 1
+}
+[[ "$MOCK_WIN_COMMANDS" != *"utm-start"* ]] || {
+    echo "unselected Windows ARM VM was started" >&2
     exit 1
 }
 ARCH_SELECTION=all

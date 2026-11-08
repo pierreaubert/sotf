@@ -2,10 +2,13 @@
 #
 # Local release build orchestrator for SotF
 #
-# Builds all platform binaries from a Mac:
-#   - macOS ARM64 + x86_64: built and signed locally
-#   - Linux x86_64 + ARM64: built on a remote Linux x86 machine via SSH
-#   - Windows x86_64: built on a remote Windows machine via SSH
+# Builds all platform binaries using two build machines:
+#   - This Mac (Apple Silicon) builds every ARM64 target:
+#       macOS ARM64 locally, Linux ARM64 in local Docker, and Windows ARM64
+#       natively in the UTM Windows 11 ARM VM.
+#   - The x86_64 Linux builder (spin) builds every x86_64 target via Docker:
+#       Linux x86_64 and Windows x86_64 (llvm-mingw/gnullvm cross).
+#   - macOS x86_64 is cross-compiled locally (it needs a Mac either way).
 #
 # After builds: cosign non-Apple artifacts, generate checksums, update site,
 # and prep GitHub release.
@@ -23,7 +26,7 @@
 #   ./build-release-local.sh --skip-site         # Skip site/docs update
 #   ./build-release-local.sh --deploy-site        # Also push site + binaries to the VPS via update_prod.sh
 #   ./build-release-local.sh --post-only         # Only post-build steps (sign, checksums, site)
-#   ./build-release-local.sh --clean-remote      # Wipe target/, dist/, etc. on remote builders before building
+#   ./build-release-local.sh --clean-remote      # Accepted for compatibility; builders always use fresh source snapshots
 #   ./build-release-local.sh --config <file>     # Use alternate config file
 #
 # Configuration:
@@ -31,12 +34,14 @@
 #   ./build-release-local.sh --init-config       # Generate a template config file
 #
 # Prerequisites:
-#   - macOS with Xcode Command Line Tools
+#   - Apple Silicon Mac with Xcode Command Line Tools and Docker Desktop
 #   - Rust toolchain with x86_64-apple-darwin target
-#   - SSH access to Linux and Windows build machines
+#   - UTM with a Windows 11 ARM VM (OpenSSH Server enabled, Git Bash, rsync,
+#     VS 2022 with the ARM64 MSVC component, Rust stable-aarch64-pc-windows-msvc)
+#   - SSH access to the x86_64 Linux builder (Docker + just installed there)
 #   - cosign (brew install cosign)
 #   - For macOS signing: DEVELOPER_ID, APPLE_ID in config
-#   - For Windows signing: WINDOWS_CERT_FILE, WINDOWS_CERT_PASSWORD in config
+#   - For Windows signing: cert settings in config (see --init-config)
 #
 
 set -uo pipefail
@@ -149,25 +154,29 @@ generate_config_template() {
 # SSH connection details for remote build machines.
 # The script syncs the repo via rsync, builds remotely, and copies artifacts back.
 
-# --- Linux build machine (x86_64) ---
-# Must have: Rust toolchain, Docker (for ARM64 cross builds), just, build-essential,
-# and the system deps listed in .github/workflows/release.yml
+# --- x86_64 build machine (spin): Linux + Windows x86_64 via Docker ---
+# Must have: Docker, just (in ~/.cargo/bin), git, and SSH access.
+# All x86_64 compilation happens inside the builds/from_macos_arm Docker
+# images, so the host itself needs no Rust toolchain for release builds.
 LINUX_HOST="user@linux-builder.local"
 LINUX_PORT="22"
 LINUX_PROJECT_DIR="/home/user/src/sotf"
 # SSH identity file (optional, uses default SSH config if empty)
 LINUX_SSH_KEY=""
 
-# --- Windows build machine (x86_64) ---
-# Must have: Rust toolchain, Visual Studio Build Tools or MSVC,
-#   Git Bash (C:/Program Files/Git), and rsync installed in Git Bash.
-# The script routes all remote commands through Git Bash automatically,
-# even though Windows OpenSSH defaults to cmd.exe.
+# --- Windows ARM64: UTM VM on this Mac ---
+# The script starts the VM if needed, discovers its IP via utmctl, and then
+# works over SSH exactly like a remote Windows machine (Git Bash + rsync).
+# The VM must have: OpenSSH Server enabled with key auth for the user below,
+#   Git Bash (C:/Program Files/Git), rsync (e.g. MSYS2 rsync in C:/msys64),
+#   VS 2022 with the ARM64 MSVC component, and Rust
+#   stable-aarch64-pc-windows-msvc as the user's default toolchain.
+UTMCTL="/Applications/UTM.app/Contents/MacOS/utmctl"
+WINDOWS_ARM_VM_NAME="Win11 ARM AutoEQ"
+WINDOWS_ARM_USER="pierre"
+WINDOWS_ARM_SSH_KEY="$HOME/.ssh/ed25519_win11arm_utm"
 # Use Git Bash / MSYS2 path format for the project directory:
-WINDOWS_HOST="user@windows-builder.local"
-WINDOWS_PORT="22"
-WINDOWS_PROJECT_DIR="/c/Users/user/src/sotf"
-WINDOWS_SSH_KEY=""
+WINDOWS_ARM_PROJECT_DIR="/c/Users/pierre/source/repos/pierreaubert/sotf"
 # Path to bash.exe on the Windows machine (auto-detected if empty)
 WINDOWS_BASH_PATH=""
 
@@ -183,12 +192,19 @@ APPLE_ID=""
 NOTARIZATION_PROFILE="autoeq-notarization"
 
 # --- Windows signing ---
-# Path to .pfx code signing certificate
-WINDOWS_CERT_FILE=""
-WINDOWS_CERT_PASSWORD=""
+# Windows x86_64 (Docker on spin, osslsigncode via build-msix.sh):
+#   Path to a .pfx ON THE SPIN HOST, inside the mounted workspace if the
+#   container must read it (e.g. /workspace/sotf/certs/sotf-selfsigned.pfx).
+#   Empty = build-msix.sh auto-generates/reuses a self-signed certificate.
+SPIN_WINDOWS_CERT_FILE=""
+SPIN_WINDOWS_CERT_PASSWORD=""
+# Windows ARM64 (native SignTool in the UTM VM):
+#   Cert store thumbprint in the VM, or a .pfx path inside the VM.
+#   Empty = build the MSIX unsigned even without --skip-sign.
+WINDOWS_ARM_CERT_THUMBPRINT=""
+WINDOWS_ARM_CERT_FILE=""
+WINDOWS_ARM_CERT_PASSWORD=""
 WINDOWS_TIMESTAMP_URL="http://timestamp.digicert.com"
-# For native Windows signing with SignTool:
-WINDOWS_CERT_THUMBPRINT=""
 
 # --- Cosign (Linux/Windows artifact signing) ---
 # Leave empty for keyless OIDC signing (opens browser)
@@ -226,6 +242,19 @@ fi
 
 # shellcheck source=/dev/null
 source "$CONFIG_FILE"
+
+# Defaults for config values added after older config files were generated.
+# Existing configs keep working; --init-config writes the full set.
+UTMCTL="${UTMCTL:-/Applications/UTM.app/Contents/MacOS/utmctl}"
+WINDOWS_ARM_VM_NAME="${WINDOWS_ARM_VM_NAME:-Win11 ARM AutoEQ}"
+WINDOWS_ARM_USER="${WINDOWS_ARM_USER:-pierre}"
+WINDOWS_ARM_PROJECT_DIR="${WINDOWS_ARM_PROJECT_DIR:-/c/Users/${WINDOWS_ARM_USER}/source/repos/pierreaubert/sotf}"
+WINDOWS_ARM_SSH_KEY="${WINDOWS_ARM_SSH_KEY:-$HOME/.ssh/ed25519_win11arm_utm}"
+WINDOWS_ARM_CERT_THUMBPRINT="${WINDOWS_ARM_CERT_THUMBPRINT:-}"
+WINDOWS_ARM_CERT_FILE="${WINDOWS_ARM_CERT_FILE:-}"
+WINDOWS_ARM_CERT_PASSWORD="${WINDOWS_ARM_CERT_PASSWORD:-}"
+SPIN_WINDOWS_CERT_FILE="${SPIN_WINDOWS_CERT_FILE:-}"
+SPIN_WINDOWS_CERT_PASSWORD="${SPIN_WINDOWS_CERT_PASSWORD:-}"
 
 # -----------------------------------------------------------------------
 # HELPERS
@@ -647,8 +676,13 @@ write_source_manifest() {
             log_error "Source file listed for the remote snapshot is missing: $path"
             return 1
         fi
-        (cd "$aggregate_root" && shasum -a 256 "$path") >> "$manifest" || return 1
     done < "$source_file_list"
+    # Hash in batches: one shasum (Perl) process per file costs ~0.3 s of
+    # startup each, which turns ~20k files into over an hour. xargs feeds
+    # many paths per shasum invocation; output lines stay in list order.
+    if [ -s "$source_file_list" ]; then
+        (cd "$aggregate_root" && xargs -0 shasum -a 256 < "$source_file_list") >> "$manifest" || return 1
+    fi
     printf '%s\0' "$manifest_name" >> "$source_file_list" || return 1
 }
 
@@ -665,44 +699,291 @@ verify_windows_source_manifest() {
         "cd '$remote_root' && grep -v '^#' '$manifest_name' | sha256sum -c - >/dev/null"
 }
 
-# Make sure the Linux builder can execute containers for a non-native
-# architecture. The docker-linux-* recipes build and run containers in the
-# target architecture; on a foreign-arch host that needs a qemu binfmt
-# handler, which Docker Desktop provides automatically but a plain Linux
-# Docker host does not. tonistiigi/binfmt registers the handler from a
-# privileged container (no host package install, no sudo); the registration
-# lasts until the next reboot, so check on every run.
-ensure_linux_docker_binfmt() {
-    local host="$1" port="$2" key="$3" arch="$4"
-    local qemu_name install_arg
-    case "$arch" in
-        arm64)  qemu_name=qemu-aarch64; install_arg=arm64 ;;
-        x86_64) qemu_name=qemu-x86_64;  install_arg=amd64 ;;
+# Make sure the local Docker daemon (Docker Desktop) is running. Linux
+# ARM64 builds run in native linux/arm64 containers on this Mac, so no qemu
+# binfmt handling is needed anywhere in the current topology: spin runs
+# x86_64 containers natively too.
+ensure_local_docker() {
+    if $DRY_RUN; then
+        log_dry "docker info (start Docker Desktop if needed)"
+        return 0
+    fi
+    if docker info >/dev/null 2>&1; then
+        log_info "Local Docker daemon OK"
+        return 0
+    fi
+    log_step "Starting Docker Desktop..."
+    open -a Docker >/dev/null 2>&1 || {
+        log_error "Could not launch Docker Desktop"
+        record_result "Local Docker: FAILED (launch)"
+        return 1
+    }
+    local waited=0
+    while [ "$waited" -lt 180 ]; do
+        if docker info >/dev/null 2>&1; then
+            log_success "Local Docker daemon OK (${waited}s)"
+            return 0
+        fi
+        sleep 5
+        waited=$((waited + 5))
+    done
+    log_error "Local Docker daemon did not become ready within 180s"
+    record_result "Local Docker: FAILED (daemon not ready)"
+    return 1
+}
+
+# Start the UTM Windows ARM VM if needed and wait until SSH answers.
+# Sets WINDOWS_ARM_HOST to "<user>@<vm-ip>".
+WINDOWS_ARM_HOST=""
+start_windows_arm_vm() {
+    if $DRY_RUN; then
+        log_dry "utmctl start '${WINDOWS_ARM_VM_NAME}' + wait for SSH (${WINDOWS_ARM_USER}@<vm-ip>)"
+        WINDOWS_ARM_HOST="${WINDOWS_ARM_USER}@<vm-ip>"
+        return 0
+    fi
+    if [ ! -x "$UTMCTL" ]; then
+        log_error "utmctl not found at $UTMCTL (set UTMCTL in config)"
+        record_result "Windows ARM64 VM: FAILED (no utmctl)"
+        return 1
+    fi
+    local status
+    status=$("$UTMCTL" status "$WINDOWS_ARM_VM_NAME" 2>/dev/null) || {
+        log_error "UTM VM not found: $WINDOWS_ARM_VM_NAME"
+        record_result "Windows ARM64 VM: FAILED (VM not found)"
+        return 1
+    }
+    if [ "$status" != started ]; then
+        log_step "Starting UTM VM '${WINDOWS_ARM_VM_NAME}' (was: ${status})..."
+        if ! "$UTMCTL" start "$WINDOWS_ARM_VM_NAME" >/dev/null 2>&1; then
+            log_error "Could not start UTM VM: $WINDOWS_ARM_VM_NAME"
+            record_result "Windows ARM64 VM: FAILED (start)"
+            return 1
+        fi
+    else
+        log_info "UTM VM '${WINDOWS_ARM_VM_NAME}' already running"
+    fi
+    local waited=0 vm_ip=""
+    while [ "$waited" -lt 300 ]; do
+        vm_ip=$("$UTMCTL" ip-address "$WINDOWS_ARM_VM_NAME" 2>/dev/null | grep -E '^[0-9]' | head -n 1)
+        if [ -n "$vm_ip" ] && ssh_cmd "${WINDOWS_ARM_USER}@${vm_ip}" 22 "$WINDOWS_ARM_SSH_KEY" "echo ok" >/dev/null 2>&1; then
+            WINDOWS_ARM_HOST="${WINDOWS_ARM_USER}@${vm_ip}"
+            log_success "Windows ARM VM SSH OK: ${WINDOWS_ARM_HOST} (${waited}s)"
+            return 0
+        fi
+        sleep 10
+        waited=$((waited + 10))
+    done
+    log_error "Windows ARM VM SSH did not answer within 300s (last IP: ${vm_ip:-unknown})"
+    record_result "Windows ARM64 VM: FAILED (SSH timeout)"
+    return 1
+}
+
+verify_windows_exe_arch() {
+    local path="$1" arch="$2" description
+    description=$(file -b "$path") || {
+        log_error "Could not inspect Windows executable architecture: $path"
+        record_result "Windows ${arch} exe: FAILED (file inspection)"
+        return 1
+    }
+    # `file` spellings vary by platform ("Aarch64", "ARM64", "x86-64", ...).
+    local lowered
+    lowered=$(printf '%s' "$description" | tr '[:upper:]' '[:lower:]')
+    case "$arch:$lowered" in
+        x86_64:*x86-64*|x86_64:*x86_64*|arm64:*aarch64*|arm64:*arm64*) return 0 ;;
         *)
-            log_error "No binfmt mapping for Docker target architecture: $arch"
-            record_result "Linux Docker ${arch}: FAILED (unknown architecture)"
+            log_error "Windows ${arch} executable has unexpected file type: $description"
+            record_result "Windows ${arch} exe: FAILED (architecture mismatch)"
             return 1
             ;;
     esac
+}
 
-    if $DRY_RUN; then
-        log_dry "ssh ${host} 'test -e /proc/sys/fs/binfmt_misc/${qemu_name} || docker run --privileged --rm tonistiigi/binfmt --install ${install_arg}'"
-        return 0
-    fi
+# --- Aggregate snapshot sync helpers -------------------------------------
+# Every builder (local Docker, spin, UTM VM) builds from a fresh snapshot of
+# the aggregate checkout, transferred as exactly the files listed in a
+# SHA-256 manifest and verified on arrival. The sync_* functions below set
+# SYNCED_SNAPSHOT_ROOT (aggregate root on the builder) and SYNCED_SOTF_DIR
+# (its sotf/ child). $1 of each sync function is a short slug used in file
+# names; record_result labels are derived from the label argument.
+SYNCED_SNAPSHOT_ROOT=""
+SYNCED_SOTF_DIR=""
+SNAPSHOT_RUN_ID=""
+MANIFEST_NAME=""
+MANIFEST_PATH=""
+SOURCE_FILE_LIST=""
 
-    if linux_ssh_cmd "$host" "$port" "$key" "test -e /proc/sys/fs/binfmt_misc/$qemu_name"; then
-        log_info "Docker binfmt handler $qemu_name already registered on $host"
-        return 0
-    fi
+cleanup_manifest_temps() {
+    rm -f -- "$MANIFEST_PATH" "$SOURCE_FILE_LIST" "${SOURCE_FILE_LIST}.entries"
+}
 
-    log_step "Registering $qemu_name binfmt handler on $host (tonistiigi/binfmt)..."
-    if ! linux_ssh_cmd "$host" "$port" "$key" \
-        "docker run --privileged --rm tonistiigi/binfmt --install $install_arg >/dev/null 2>&1 && test -e /proc/sys/fs/binfmt_misc/$qemu_name"; then
-        log_error "Could not register $qemu_name binfmt handler on $host; Docker ${arch} containers cannot run there"
-        record_result "Linux Docker ${arch}: FAILED (no binfmt handler)"
+prepare_source_manifest() {
+    local slug="$1" label="$2"
+    # Callers set SNAPSHOT_RUN_ID before deriving snapshot paths from it;
+    # only generate one here when a caller did not.
+    [ -n "$SNAPSHOT_RUN_ID" ] || SNAPSHOT_RUN_ID="$(date +%Y%m%d%H%M%S)-$$-${slug}"
+    MANIFEST_NAME=".release-source-manifest-${VERSION}-${SNAPSHOT_RUN_ID}.sha256"
+    MANIFEST_PATH="$AGGREGATE_ROOT/$MANIFEST_NAME"
+    SOURCE_FILE_LIST="$DIST_DIR/.release-source-files-${VERSION}-${SNAPSHOT_RUN_ID}.nul"
+    if [ -e "$MANIFEST_PATH" ]; then
+        log_error "Refusing to overwrite an existing release source manifest: $MANIFEST_PATH"
+        record_result "${label} sync: FAILED (manifest collision)"
         return 1
     fi
-    log_success "Docker binfmt handler $qemu_name registered"
+    if ! write_source_manifest "$AGGREGATE_ROOT" "$MANIFEST_PATH" "$SOURCE_FILE_LIST" "$MANIFEST_NAME"; then
+        cleanup_manifest_temps
+        log_error "Could not record aggregate source hashes"
+        record_result "${label} sync: FAILED (manifest generation)"
+        return 1
+    fi
+    return 0
+}
+
+retain_source_manifest() {
+    local slug="$1" label="$2"
+    mkdir -p "$DIST_DIR"
+    local retained_manifest="$DIST_DIR/source-manifest-${slug}-${VERSION}-${SNAPSHOT_RUN_ID}.sha256"
+    if ! cp "$MANIFEST_PATH" "$retained_manifest"; then
+        cleanup_manifest_temps
+        log_error "Could not retain the ${label} source hash manifest"
+        record_result "${label} sync: FAILED (manifest copy)"
+        return 1
+    fi
+    record_artifact "$retained_manifest" "${label} source manifest" || return 1
+    cleanup_manifest_temps
+    return 0
+}
+
+# Snapshot on the x86 builder (spin), next to its configured checkout.
+sync_snapshot_spin() {
+    local slug="$1" label="$2"
+    local host="$LINUX_HOST" port="${LINUX_PORT:-22}" key="${LINUX_SSH_KEY:-}"
+    # Dry-run still needs deterministic would-be paths for later log lines.
+    SNAPSHOT_RUN_ID="$(date +%Y%m%d%H%M%S)-$$-${slug}"
+    SYNCED_SNAPSHOT_ROOT="${LINUX_PROJECT_DIR%/*}/.sotf-release-${VERSION}-${SNAPSHOT_RUN_ID}"
+    SYNCED_SOTF_DIR="$SYNCED_SNAPSHOT_ROOT/$(basename "$PROJECT_ROOT")"
+    log_step "Syncing aggregate source snapshot to ${host}:${SYNCED_SNAPSHOT_ROOT}..."
+    if $DRY_RUN; then
+        log_dry "write source hashes for ${AGGREGATE_ROOT}"
+        log_dry "rsync ${AGGREGATE_ROOT}/ to ${host}:${SYNCED_SNAPSHOT_ROOT}/ (aggregate siblings, fresh path)"
+        log_dry "verify source manifest on ${host}:${SYNCED_SNAPSHOT_ROOT}"
+        return 0
+    fi
+    prepare_source_manifest "$slug" "$label" || return 1
+    if ! linux_ssh_cmd "$host" "$port" "$key" \
+        "mkdir -p '${SYNCED_SNAPSHOT_ROOT%/*}' && mkdir '$SYNCED_SNAPSHOT_ROOT'"; then
+        cleanup_manifest_temps
+        log_error "Could not create snapshot directory on $host"
+        record_result "${label} sync: FAILED (snapshot directory)"
+        return 1
+    fi
+    build_ssh_transport "$port" "$key"
+    if ! rsync -avz --delete --from0 --files-from="$SOURCE_FILE_LIST" \
+        "${AGGREGATE_RSYNC_EXCLUDES[@]}" \
+        -e "${SSH_TRANSPORT_CMD[*]}" \
+        "$AGGREGATE_ROOT/" "${host}:${SYNCED_SNAPSHOT_ROOT}/"; then
+        cleanup_manifest_temps
+        log_error "rsync to $host failed"
+        record_result "${label} sync: FAILED"
+        return 1
+    fi
+    if ! verify_linux_source_manifest "$host" "$port" "$key" "$SYNCED_SNAPSHOT_ROOT" "$MANIFEST_NAME"; then
+        cleanup_manifest_temps
+        log_error "Snapshot source hash verification failed on $host"
+        record_result "${label} sync: FAILED (source hash mismatch)"
+        return 1
+    fi
+    retain_source_manifest "$slug" "$label" || return 1
+    log_success "Source synced to $host"
+    return 0
+}
+
+# Snapshot on this Mac, for the local Docker Linux ARM64 build. Lives under
+# dist/ (excluded from manifest enumeration) so it can never feed back into
+# a later phase's source list.
+sync_snapshot_local() {
+    local slug="$1" label="$2"
+    SNAPSHOT_RUN_ID="$(date +%Y%m%d%H%M%S)-$$-${slug}"
+    SYNCED_SNAPSHOT_ROOT="$DIST_DIR/.snapshot-${SNAPSHOT_RUN_ID}"
+    SYNCED_SOTF_DIR="$SYNCED_SNAPSHOT_ROOT/$(basename "$PROJECT_ROOT")"
+    log_step "Creating local aggregate source snapshot at ${SYNCED_SNAPSHOT_ROOT}..."
+    if $DRY_RUN; then
+        log_dry "write source hashes for ${AGGREGATE_ROOT}"
+        log_dry "rsync ${AGGREGATE_ROOT}/ to ${SYNCED_SNAPSHOT_ROOT}/ (aggregate siblings, fresh path)"
+        log_dry "verify source manifest in ${SYNCED_SNAPSHOT_ROOT}"
+        return 0
+    fi
+    prepare_source_manifest "$slug" "$label" || return 1
+    if ! mkdir -p "$DIST_DIR" || ! mkdir "$SYNCED_SNAPSHOT_ROOT"; then
+        cleanup_manifest_temps
+        log_error "Could not create local snapshot directory"
+        record_result "${label} sync: FAILED (snapshot directory)"
+        return 1
+    fi
+    if ! rsync -a --delete --from0 --files-from="$SOURCE_FILE_LIST" \
+        "${AGGREGATE_RSYNC_EXCLUDES[@]}" \
+        "$AGGREGATE_ROOT/" "$SYNCED_SNAPSHOT_ROOT/"; then
+        cleanup_manifest_temps
+        log_error "Local snapshot rsync failed"
+        record_result "${label} sync: FAILED"
+        return 1
+    fi
+    if ! (cd "$SYNCED_SNAPSHOT_ROOT" && grep -v '^#' "$MANIFEST_NAME" | shasum -a 256 -c - >/dev/null); then
+        cleanup_manifest_temps
+        log_error "Local snapshot source hash verification failed"
+        record_result "${label} sync: FAILED (source hash mismatch)"
+        return 1
+    fi
+    retain_source_manifest "$slug" "$label" || return 1
+    log_success "Local source snapshot created"
+    return 0
+}
+
+# Snapshot on a Windows host over SSH/Git Bash (the UTM ARM VM). Requires
+# detect_win_bash + detect_win_rsync to have run for this host first.
+# --copy-links materializes the few tracked symlinks as regular files:
+# NTFS cannot store POSIX symlinks and the snapshot only needs contents.
+sync_snapshot_windows() {
+    local host="$1" port="$2" key="$3" configured_dir="$4" slug="$5" label="$6"
+    SNAPSHOT_RUN_ID="$(date +%Y%m%d%H%M)-$$-${slug}"
+    SYNCED_SNAPSHOT_ROOT="${configured_dir%/*}/.sotf-release-${SNAPSHOT_RUN_ID}"
+    SYNCED_SOTF_DIR="$SYNCED_SNAPSHOT_ROOT/$(basename "$PROJECT_ROOT")"
+    log_step "Syncing aggregate source snapshot to ${host}:${SYNCED_SNAPSHOT_ROOT}..."
+    if $DRY_RUN; then
+        log_dry "write source hashes for ${AGGREGATE_ROOT}"
+        log_dry "rsync ${AGGREGATE_ROOT}/ to ${host}:${SYNCED_SNAPSHOT_ROOT}/ (aggregate siblings, fresh path)"
+        log_dry "verify source manifest on ${host}:${SYNCED_SNAPSHOT_ROOT}"
+        return 0
+    fi
+    prepare_source_manifest "$slug" "$label" || return 1
+    if ! win_ssh_cmd "$host" "$port" "$key" \
+        "mkdir -p '${SYNCED_SNAPSHOT_ROOT%/*}' && mkdir '$SYNCED_SNAPSHOT_ROOT'"; then
+        cleanup_manifest_temps
+        log_error "Could not create Windows snapshot directory"
+        record_result "${label} sync: FAILED (snapshot directory)"
+        return 1
+    fi
+    build_ssh_transport "$port" "$key"
+    rsync -avz --delete --from0 --files-from="$SOURCE_FILE_LIST" \
+        --copy-links --no-perms --no-owner --no-group --omit-dir-times \
+        "${AGGREGATE_RSYNC_EXCLUDES[@]}" \
+        -e "${SSH_TRANSPORT_CMD[*]}" \
+        --rsync-path="$WIN_RSYNC_PATH" \
+        "$AGGREGATE_ROOT/" "${host}:${SYNCED_SNAPSHOT_ROOT}/"
+    if ! handle_rsync_status "$?" "rsync to ${host}:${SYNCED_SNAPSHOT_ROOT}" true; then
+        cleanup_manifest_temps
+        log_error "rsync to Windows failed"
+        log_info "Debug: ssh ${host} '\"$WIN_RSYNC_PATH\" --version'"
+        record_result "${label} sync: FAILED"
+        return 1
+    fi
+    if ! verify_windows_source_manifest "$host" "$port" "$key" "$SYNCED_SNAPSHOT_ROOT" "$MANIFEST_NAME"; then
+        cleanup_manifest_temps
+        log_error "Windows snapshot source hash verification failed"
+        record_result "${label} sync: FAILED (source hash mismatch)"
+        return 1
+    fi
+    retain_source_manifest "$slug" "$label" || return 1
+    log_success "Source synced to Windows host"
     return 0
 }
 
@@ -772,6 +1053,12 @@ preflight() {
     command -v cargo &>/dev/null || missing+=("cargo")
     command -v just &>/dev/null  || missing+=("just")
     command -v rsync &>/dev/null || missing+=("rsync")
+    if ! $SKIP_LINUX && arch_is_selected arm64; then
+        command -v docker &>/dev/null || missing+=("docker (Linux ARM64 local build)")
+    fi
+    if ! $SKIP_WINDOWS && arch_is_selected arm64; then
+        [ -x "$UTMCTL" ] || missing+=("utmctl at $UTMCTL (Windows ARM64 UTM VM)")
+    fi
 
     if ! $SKIP_SIGN; then
         command -v cosign &>/dev/null || missing+=("cosign")
@@ -789,9 +1076,17 @@ preflight() {
         log_info "Builds will use the current working tree state"
     fi
 
-    # Check SSH connectivity
-    if ! $SKIP_LINUX && ! $POST_ONLY; then
-        log_step "Testing SSH to Linux: ${LINUX_HOST:-<not configured>}"
+    # Check SSH connectivity to the x86 builder (spin). It is only needed
+    # when an x86_64 Linux or Windows build is selected; ARM64 builds run
+    # entirely on this Mac (local Docker + UTM VM, checked in their phases).
+    local need_spin=false
+    if ! $POST_ONLY && arch_is_selected x86_64; then
+        if ! $SKIP_LINUX || ! $SKIP_WINDOWS; then
+            need_spin=true
+        fi
+    fi
+    if $need_spin; then
+        log_step "Testing SSH to x86 builder: ${LINUX_HOST:-<not configured>}"
         if [ -z "${LINUX_HOST:-}" ]; then
             log_error "LINUX_HOST not configured in $CONFIG_FILE"
             exit 1
@@ -800,27 +1095,9 @@ preflight() {
             log_dry "ssh ${LINUX_HOST} echo ok"
         else
             if ssh_cmd "$LINUX_HOST" "${LINUX_PORT:-22}" "${LINUX_SSH_KEY:-}" "echo ok" &>/dev/null; then
-                log_success "Linux SSH OK"
+                log_success "x86 builder SSH OK"
             else
                 log_error "Cannot SSH to $LINUX_HOST"
-                exit 1
-            fi
-        fi
-    fi
-
-    if ! $SKIP_WINDOWS && ! $POST_ONLY; then
-        log_step "Testing SSH to Windows: ${WINDOWS_HOST:-<not configured>}"
-        if [ -z "${WINDOWS_HOST:-}" ]; then
-            log_error "WINDOWS_HOST not configured in $CONFIG_FILE"
-            exit 1
-        fi
-        if $DRY_RUN; then
-            log_dry "ssh ${WINDOWS_HOST} echo ok"
-        else
-            if ssh_cmd "$WINDOWS_HOST" "${WINDOWS_PORT:-22}" "${WINDOWS_SSH_KEY:-}" "echo ok" &>/dev/null; then
-                log_success "Windows SSH OK"
-            else
-                log_error "Cannot SSH to $WINDOWS_HOST"
                 exit 1
             fi
         fi
@@ -981,8 +1258,138 @@ build_macos() {
 }
 
 # -----------------------------------------------------------------------
-# PHASE 2: LINUX BUILDS (remote SSH)
+# PHASE 2: LINUX BUILDS (arm64: local Docker; x86_64: spin Docker)
 # -----------------------------------------------------------------------
+
+build_linux_arm64_local() {
+    log_step "Building Linux arm64 (local Docker, native)..."
+    ensure_local_docker || return 1
+    sync_snapshot_local "linux" "Linux" || return 1
+    local snapshot_sotf="$SYNCED_SOTF_DIR"
+
+    if $DRY_RUN; then
+        log_dry "cd ${snapshot_sotf} && just docker-linux-arm64"
+        log_dry "cp ${snapshot_sotf}/dist/sotf-desktop-${VERSION}-linux-arm64.{tar.gz,AppImage} -> ${DIST_DIR}/"
+        return 0
+    fi
+
+    mkdir -p "$snapshot_sotf/dist"
+    rm -f "$snapshot_sotf"/dist/*"${VERSION}"*
+    # Seed the linuxdeploy download cache from the live checkout when it has
+    # a matching-arch copy: tools/ is a cache directory by design, and this
+    # keeps local builds working through transient GitHub download failures.
+    if [ -s "$PROJECT_ROOT/tools/linuxdeploy" ] &&
+        file -b "$PROJECT_ROOT/tools/linuxdeploy" | grep -q aarch64; then
+        mkdir -p "$snapshot_sotf/tools"
+        cp "$PROJECT_ROOT/tools/linuxdeploy" "$snapshot_sotf/tools/linuxdeploy"
+        chmod +x "$snapshot_sotf/tools/linuxdeploy"
+        # Also seed the AppImage runtime cache (same tools-cache design).
+        local runtime_cache
+        for runtime_cache in "$PROJECT_ROOT"/tools/runtime-*; do
+            [ -s "$runtime_cache" ] || continue
+            cp "$runtime_cache" "$snapshot_sotf/tools/"
+            chmod +x "$snapshot_sotf/tools/$(basename "$runtime_cache")"
+        done
+        log_info "Seeded linuxdeploy from $PROJECT_ROOT/tools/ cache"
+    fi
+    if (cd "$snapshot_sotf" && just docker-linux-arm64); then
+        record_result "Linux arm64: BUILD OK"
+    else
+        log_error "Linux arm64 build failed"
+        record_result "Linux arm64: FAILED"
+        return 1
+    fi
+
+    local fetched_ok=true artifact
+    for artifact in \
+        "sotf-desktop-${VERSION}-linux-arm64.tar.gz" \
+        "sotf-desktop-${VERSION}-linux-arm64.AppImage"; do
+        cp "$snapshot_sotf/dist/$artifact" "$DIST_DIR/$artifact" 2>/dev/null || true
+        if ! record_artifact "$DIST_DIR/$artifact" "Linux arm64 ${artifact##*.}"; then
+            fetched_ok=false
+        fi
+    done
+    if [ -s "$DIST_DIR/sotf-desktop-${VERSION}-linux-arm64.AppImage" ] &&
+        ! verify_linux_appimage_arch "$DIST_DIR/sotf-desktop-${VERSION}-linux-arm64.AppImage" arm64; then
+        fetched_ok=false
+    fi
+    [ "$fetched_ok" = true ] || return 1
+    log_success "Linux arm64 artifacts verified"
+    return 0
+}
+
+build_linux_x86_spin() {
+    local host="$LINUX_HOST"
+    local port="${LINUX_PORT:-22}"
+    local key="${LINUX_SSH_KEY:-}"
+    log_step "Building Linux x86_64 (Docker on ${host})..."
+    sync_snapshot_spin "linux" "Linux" || return 1
+    local remote_dir="$SYNCED_SOTF_DIR"
+
+    if $DRY_RUN; then
+        log_dry "ssh ${host} 'cd ${remote_dir} && just docker-linux-x86'"
+        log_dry "rsync ${host}:${remote_dir}/dist/*${VERSION}* -> ${DIST_DIR}/"
+        return 0
+    fi
+
+    # This topology requires the Docker builder to be x86_64: the
+    # docker-linux-x86 recipe only produces the full AppImage build on a
+    # native x86_64 host (on ARM it deliberately degrades to TUI-only).
+    local native_machine
+    native_machine=$(linux_ssh_cmd "$host" "$port" "$key" "uname -m") || {
+        log_error "Could not detect x86 builder architecture"
+        record_result "Linux x86_64: FAILED (architecture detection)"
+        return 1
+    }
+    case "$native_machine" in
+        x86_64|amd64) ;;
+        *)
+            log_error "x86 builder reports ${native_machine}, expected x86_64"
+            record_result "Linux x86_64: FAILED (builder arch ${native_machine})"
+            return 1
+            ;;
+    esac
+
+    if ! linux_ssh_cmd "$host" "$port" "$key" \
+        "cd '$remote_dir' && mkdir -p dist && rm -f dist/*${VERSION}*"; then
+        log_error "Could not clear stale Linux artifacts for v${VERSION}"
+        record_result "Linux x86_64 cleanup: FAILED"
+        return 1
+    fi
+
+    if linux_ssh_cmd "$host" "$port" "$key" \
+        "cd '$remote_dir' && just docker-linux-x86"; then
+        record_result "Linux x86_64: BUILD OK"
+    else
+        log_error "Linux x86_64 build failed"
+        record_result "Linux x86_64: FAILED"
+        return 1
+    fi
+
+    log_step "Fetching Linux x86_64 artifacts (v${VERSION})..."
+    if ! rsync_from "$host" "$port" "$key" \
+        "${remote_dir}/dist/" "$DIST_DIR/" \
+        --include='*/' --include="*${VERSION}*" --exclude='*'; then
+        log_error "rsync from $host failed"
+        record_result "Linux x86_64 fetch: FAILED"
+        return 1
+    fi
+    local fetched_ok=true artifact
+    for artifact in \
+        "sotf-desktop-${VERSION}-linux-x86_64.tar.gz" \
+        "sotf-desktop-${VERSION}-linux-x86_64.AppImage"; do
+        if ! record_artifact "$DIST_DIR/$artifact" "Linux x86_64 ${artifact##*.}"; then
+            fetched_ok=false
+        fi
+    done
+    if [ -s "$DIST_DIR/sotf-desktop-${VERSION}-linux-x86_64.AppImage" ] &&
+        ! verify_linux_appimage_arch "$DIST_DIR/sotf-desktop-${VERSION}-linux-x86_64.AppImage" x86_64; then
+        fetched_ok=false
+    fi
+    [ "$fetched_ok" = true ] || return 1
+    log_success "Linux x86_64 artifacts verified"
+    return 0
+}
 
 build_linux() {
     if $SKIP_LINUX; then
@@ -990,204 +1397,26 @@ build_linux() {
         return
     fi
 
-    log_phase "Phase 2: Linux Builds (remote: ${LINUX_HOST})"
+    log_phase "Phase 2: Linux Builds (arm64: local Docker; x86_64: ${LINUX_HOST:-spin} Docker)"
     start_timer
-
-    local host="$LINUX_HOST"
-    local port="${LINUX_PORT:-22}"
-    local key="${LINUX_SSH_KEY:-}"
-    local configured_project_dir="${LINUX_PROJECT_DIR}"
-    local run_id="$(date +%Y%m%d%H%M%S)-$$"
-    local remote_snapshot_root="${configured_project_dir%/*}/.sotf-release-${VERSION}-${run_id}"
-    local remote_dir="$remote_snapshot_root/$(basename "$PROJECT_ROOT")"
-    local manifest_name=".release-source-manifest-${VERSION}-${run_id}.sha256"
-    local manifest_path="$AGGREGATE_ROOT/$manifest_name"
-    local source_file_list="$DIST_DIR/.release-source-files-${VERSION}-${run_id}.nul"
-    local fetched_ok=true
-
-    # Use a unique sibling-root snapshot so the build cannot resolve a stale
-    # or unknown checkout already present on the Linux host. The manifest
-    # records every transferred source file and the HEAD of each sibling.
-    log_step "Syncing aggregate source snapshot to ${host}:${remote_snapshot_root}..."
-    if $DRY_RUN; then
-        log_dry "write source hashes for ${AGGREGATE_ROOT}"
-        log_dry "rsync ${AGGREGATE_ROOT}/ to ${host}:${remote_snapshot_root}/ (aggregate siblings, fresh path)"
-        log_dry "verify ${manifest_name} on ${host}:${remote_snapshot_root}"
-    else
-        if [ -e "$manifest_path" ]; then
-            log_error "Refusing to overwrite an existing release source manifest: $manifest_path"
-            record_result "Linux sync: FAILED (manifest collision)"
-            return 1
-        fi
-        if ! write_source_manifest "$AGGREGATE_ROOT" "$manifest_path" "$source_file_list" "$manifest_name"; then
-            rm -f -- "$manifest_path"
-            rm -f -- "$source_file_list" "${source_file_list}.entries"
-            log_error "Could not record aggregate source hashes"
-            record_result "Linux sync: FAILED (manifest generation)"
-            return 1
-        fi
-        if ! linux_ssh_cmd "$host" "$port" "$key" \
-            "mkdir -p '${remote_snapshot_root%/*}' && mkdir '$remote_snapshot_root'"; then
-            rm -f -- "$manifest_path"
-            rm -f -- "$source_file_list"
-            log_error "Could not create Linux snapshot directory"
-            record_result "Linux sync: FAILED (snapshot directory)"
-            return 1
-        fi
-        build_ssh_transport "$port" "$key"
-        if ! rsync -avz --delete --from0 --files-from="$source_file_list" \
-            "${AGGREGATE_RSYNC_EXCLUDES[@]}" \
-            -e "${SSH_TRANSPORT_CMD[*]}" \
-            "$AGGREGATE_ROOT/" "${host}:${remote_snapshot_root}/"; then
-            rm -f -- "$manifest_path"
-            rm -f -- "$source_file_list"
-            log_error "rsync to Linux failed"
-            record_result "Linux sync: FAILED"
-            return 1
-        fi
-        if ! verify_linux_source_manifest "$host" "$port" "$key" "$remote_snapshot_root" "$manifest_name"; then
-            rm -f -- "$manifest_path"
-            rm -f -- "$source_file_list"
-            log_error "Linux snapshot source hash verification failed"
-            record_result "Linux sync: FAILED (source hash mismatch)"
-            return 1
-        fi
-        mkdir -p "$DIST_DIR"
-        local retained_manifest="$DIST_DIR/source-manifest-linux-${VERSION}-${run_id}.sha256"
-        if ! cp "$manifest_path" "$retained_manifest"; then
-            rm -f -- "$manifest_path"
-            rm -f -- "$source_file_list"
-            log_error "Could not retain the Linux source hash manifest"
-            record_result "Linux sync: FAILED (manifest copy)"
-            return 1
-        fi
-        record_artifact "$retained_manifest" "Linux source manifest" || fetched_ok=false
-        rm -f -- "$manifest_path"
-        rm -f -- "$source_file_list"
-        if $CLEAN_REMOTE; then
-            log_info "The Linux snapshot is fresh; no existing remote build artifacts are reused"
-        else
-            log_info "Linux builds use a fresh snapshot directory; prior remote sources and artifacts are not consulted"
-        fi
-        log_success "Source synced"
+    local phase_failed=false
+    if arch_is_selected arm64; then
+        build_linux_arm64_local || phase_failed=true
+    fi
+    if arch_is_selected x86_64; then
+        build_linux_x86_spin || phase_failed=true
     fi
 
-    local native_machine native_arch
-    if $DRY_RUN; then
-        native_machine="$(uname -m)"
-        log_dry "ssh ${host} uname -m (mock/native target detection)"
-    else
-        native_machine=$(linux_ssh_cmd "$host" "$port" "$key" "uname -m") || {
-            log_error "Could not detect Linux builder architecture"
-            record_result "Linux architecture detection: FAILED"
-            return 1
-        }
-    fi
-    case "$native_machine" in
-        x86_64|amd64) native_arch=x86_64 ;;
-        aarch64|arm64) native_arch=arm64 ;;
-        *)
-            log_error "Unsupported Linux builder architecture: $native_machine"
-            record_result "Linux architecture detection: FAILED ($native_machine)"
-            return 1
-            ;;
-    esac
-    log_info "Linux builder native architecture: $native_arch"
-
-    if $DRY_RUN; then
-        log_dry "ssh ${host} 'cd ${remote_dir} && mkdir -p dist && rm -f dist/*${VERSION}*'"
-    elif ! linux_ssh_cmd "$host" "$port" "$key" \
-        "cd '$remote_dir' && mkdir -p dist && rm -f dist/*${VERSION}*"; then
-        log_error "Could not clear stale Linux artifacts for v${VERSION}"
-        record_result "Linux cleanup: FAILED"
-        return 1
-    fi
-
-    # Non-native architectures build inside target-arch Docker containers;
-    # make sure the host can execute them (qemu binfmt) before starting.
-    local arch
-    for arch in x86_64 arm64; do
-        arch_is_selected "$arch" || continue
-        [ "$arch" = "$native_arch" ] && continue
-        if ! ensure_linux_docker_binfmt "$host" "$port" "$key" "$arch"; then
-            return 1
-        fi
-    done
-
-    local build_command method appimage_expected
-    for arch in x86_64 arm64; do
-        arch_is_selected "$arch" || continue
-        if [ "$arch" = "$native_arch" ]; then
-            build_command="./scripts/build-linux.sh --appimage"
-            method="native"
-            appimage_expected=true
-        elif [ "$arch" = arm64 ]; then
-            build_command="just docker-linux-arm64"
-            method="Docker"
-            appimage_expected=true
-        else
-            build_command="just docker-linux-x86"
-            method="Docker"
-            # On an ARM host the x86 recipe uses QEMU and deliberately builds
-            # TUI-only, so its tarball is the only required output.
-            appimage_expected=false
-        fi
-        log_step "Building Linux ${arch} (${method} on remote)..."
-        if $DRY_RUN; then
-            log_dry "ssh ${host} 'cd ${remote_dir} && ${build_command}'"
-        elif linux_ssh_cmd "$host" "$port" "$key" \
-            "cd '$remote_dir' && ${build_command}"; then
-            record_result "Linux ${arch}: BUILD OK"
-        else
-            log_error "Linux ${arch} build failed"
-            record_result "Linux ${arch}: FAILED"
-            fetched_ok=false
-        fi
-    done
-
-    # Copy artifacts back (current version only)
-    log_step "Fetching Linux artifacts (v${VERSION})..."
-    if $DRY_RUN; then
-        log_dry "rsync ${host}:${remote_dir}/dist/*${VERSION}* -> ${DIST_DIR}/"
-    else
-        if ! rsync_from "$host" "$port" "$key" \
-            "${remote_dir}/dist/" "$DIST_DIR/" \
-            --include='*/' --include="*${VERSION}*" --exclude='*'; then
-            log_error "rsync from Linux failed"
-            record_result "Linux fetch: FAILED"
-            return 1
-        fi
-        local arch artifact artifact_label appimage_expected
-        for arch in x86_64 arm64; do
-            arch_is_selected "$arch" || continue
-            appimage_expected=true
-            if [ "$arch" = x86_64 ] && [ "$native_arch" = arm64 ]; then
-                appimage_expected=false
-            fi
-            local expected_artifacts=("sotf-desktop-${VERSION}-linux-${arch}.tar.gz")
-            $appimage_expected && expected_artifacts+=("sotf-desktop-${VERSION}-linux-${arch}.AppImage")
-            for artifact in "${expected_artifacts[@]}"; do
-                artifact_label="Linux ${arch} ${artifact##*.}"
-                if ! record_artifact "$DIST_DIR/$artifact" "$artifact_label"; then
-                    fetched_ok=false
-                elif [[ "$artifact" == *.AppImage ]] &&
-                    ! verify_linux_appimage_arch "$DIST_DIR/$artifact" "$arch"; then
-                    fetched_ok=false
-                fi
-            done
-        done
-        if [ "$fetched_ok" = true ]; then
-            if ! write_artifact_hashes "$DIST_DIR/BUILD-SHA256SUMS-${VERSION}"; then
-                log_error "Could not write the build artifact hash manifest"
-                record_result "Linux artifact hashes: FAILED"
-                return 1
-            fi
-            log_success "Linux artifacts fetched and required outputs verified"
+    if ! $DRY_RUN && ! $phase_failed; then
+        if write_artifact_hashes "$DIST_DIR/BUILD-SHA256SUMS-${VERSION}"; then
             record_result "Linux required artifacts: OK"
+        else
+            log_error "Could not write the build artifact hash manifest"
+            record_result "Linux artifact hashes: FAILED"
+            phase_failed=true
         fi
     fi
-
-    if [ "$fetched_ok" != true ]; then
+    if $phase_failed; then
         log_error "Linux phase failed ($(elapsed))"
         return 1
     fi
@@ -1196,8 +1425,209 @@ build_linux() {
 }
 
 # -----------------------------------------------------------------------
-# PHASE 3: WINDOWS BUILDS (remote SSH)
+# PHASE 3: WINDOWS BUILDS (arm64: UTM VM native; x86_64: spin Docker)
 # -----------------------------------------------------------------------
+
+build_windows_arm64_utm() {
+    log_step "Building Windows arm64 (native MSVC in UTM VM '${WINDOWS_ARM_VM_NAME}', profile=dist)..."
+    start_windows_arm_vm || return 1
+    local host="$WINDOWS_ARM_HOST"
+    local port=22
+    local key="$WINDOWS_ARM_SSH_KEY"
+
+    # Windows OpenSSH defaults to cmd.exe which can't run bash commands or
+    # find MSYS2/Git Bash tools. All remote commands go through win_ssh_cmd
+    # which routes them via Git Bash. rsync uses --rsync-path to invoke the
+    # Git Bash rsync binary on the remote side.
+    log_step "Detecting Git Bash on Windows ARM VM..."
+    if ! $DRY_RUN; then
+        if ! detect_win_bash "$host" "$port" "$key"; then
+            record_result "Windows arm64: FAILED (no Git Bash found)"
+            return 1
+        fi
+        log_step "Detecting rsync on Windows ARM VM..."
+        if ! detect_win_rsync "$host" "$port" "$key"; then
+            log_info "rsync is not bundled with standard Git for Windows."
+            log_info "Install the MSYS2 rsync package (usr/bin/rsync.exe + its"
+            log_info "msys-*.dll dependencies) into C:/msys64/usr/bin/ in the VM."
+            record_result "Windows arm64: FAILED (no rsync)"
+            return 1
+        fi
+        log_success "Git Bash + rsync OK on Windows ARM VM"
+    fi
+
+    sync_snapshot_windows "$host" "$port" "$key" "$WINDOWS_ARM_PROJECT_DIR" \
+        "windows-arm64" "Windows arm64" || return 1
+    local remote_dir="$SYNCED_SOTF_DIR"
+
+    if $DRY_RUN; then
+        log_dry "win_ssh_cmd ${host} 'cd ${remote_dir} && cargo build --profile dist (native arm64: sotf-tui + sotf-desktop)'"
+        log_dry "win_ssh_cmd ${host} 'build-msix.ps1 -Arch arm64 -BuildDir target/dist'"
+        log_dry "rsync ${host}:${remote_dir}/dist/*${VERSION}*-windows-arm64* -> ${DIST_DIR}/"
+        return 0
+    fi
+
+    if ! win_ssh_cmd "$host" "$port" "$key" \
+        "mkdir -p ${remote_dir}/dist && rm -f ${remote_dir}/dist/*${VERSION}*"; then
+        log_error "Could not clear stale Windows artifacts for v${VERSION}"
+        record_result "Windows arm64 cleanup: FAILED"
+        return 1
+    fi
+
+    # Native build: the VM's host triple is aarch64-pc-windows-msvc, so no
+    # --target flag; binaries land in target/dist/.
+    # build-msix.ps1 needs both sotf-desktop.exe AND sotf-tui.exe present in
+    # the build dir before it runs.
+    # ring (and other cc-rs crates) require clang on Windows ARM64; LLVM is
+    # installed in the VM but its installer does not update PATH.
+    local win_build_cmd="cd ${remote_dir} && mkdir -p dist"
+    win_build_cmd+=" && export PATH=\"/c/Program Files/LLVM/bin:\$PATH\""
+    win_build_cmd+=" && cargo build --profile dist -p sotf-tui --bin sotf-tui"
+    win_build_cmd+=" && cargo build --profile dist -p sotf-gpui --bin sotf-desktop"
+    # Canonical artifact naming: <product>-<version>-<os>-<arch>.<ext>
+    win_build_cmd+=" && cp target/dist/sotf-tui.exe dist/sotf-tui-${VERSION}-windows-arm64.exe"
+    if ! win_ssh_cmd "$host" "$port" "$key" "$win_build_cmd"; then
+        log_error "Windows arm64 build failed"
+        record_result "Windows arm64: FAILED"
+        return 1
+    fi
+    record_result "Windows arm64: OK"
+
+    # Sign on Windows if a VM cert thumbprint is configured.
+    if ! $SKIP_SIGN && [ -n "$WINDOWS_ARM_CERT_THUMBPRINT" ]; then
+        log_step "Signing Windows executables (SignTool in VM)..."
+        local sign_cmd="cd ${remote_dir}"
+        sign_cmd+=" && powershell.exe -ExecutionPolicy Bypass -File scripts/sign-windows.ps1"
+        sign_cmd+=" -CertificateThumbprint ${WINDOWS_ARM_CERT_THUMBPRINT}"
+        if win_ssh_cmd "$host" "$port" "$key" "$sign_cmd"; then
+            log_success "Windows signing complete"
+            record_result "Windows signing (SignTool): OK"
+        else
+            log_warning "Windows signing failed (continuing)"
+            record_result "Windows signing (SignTool): FAILED"
+        fi
+    fi
+
+    # Build the MSIX with native PowerShell (see build-msix.ps1). Signing is
+    # forwarded as explicit cert flags because Windows OpenSSH usually
+    # strips env vars. With no VM cert configured the MSIX stays unsigned.
+    log_step "Building MSIX package (arm64)..."
+    local ps_sign=""
+    if ! $SKIP_SIGN; then
+        if [ -n "$WINDOWS_ARM_CERT_THUMBPRINT" ]; then
+            ps_sign=" -Sign -CertThumbprint ${WINDOWS_ARM_CERT_THUMBPRINT}"
+        elif [ -n "$WINDOWS_ARM_CERT_FILE" ]; then
+            ps_sign=" -Sign -CertFile '${WINDOWS_ARM_CERT_FILE}'"
+            if [ -n "$WINDOWS_ARM_CERT_PASSWORD" ]; then
+                ps_sign+=" -CertPassword '${WINDOWS_ARM_CERT_PASSWORD}'"
+            fi
+        else
+            log_warning "No Windows ARM signing certificate configured; building unsigned MSIX"
+            record_result "Windows ARM64 signing: SKIPPED (no cert configured)"
+        fi
+        if [ -n "$ps_sign" ] && [ -n "${WINDOWS_TIMESTAMP_URL:-}" ]; then
+            ps_sign+=" -TimestampUrl '${WINDOWS_TIMESTAMP_URL}'"
+        fi
+    fi
+    local msix_failed=false
+    if ! win_ssh_cmd "$host" "$port" "$key" \
+        "cd ${remote_dir} && rm -f dist/sotf-desktop-${VERSION}-windows-*.msix"; then
+        log_error "Could not clear stale Windows MSIX files"
+        record_result "Windows MSIX cleanup: FAILED"
+        return 1
+    fi
+    if win_ssh_cmd "$host" "$port" "$key" \
+        "cd ${remote_dir} && powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-msix.ps1 -Arch arm64 -BuildDir target/dist${ps_sign}"; then
+        record_result "Windows MSIX arm64: OK"
+    else
+        log_error "MSIX arm64 build failed"
+        record_result "Windows MSIX arm64: FAILED"
+        msix_failed=true
+    fi
+
+    log_step "Fetching Windows arm64 artifacts (v${VERSION})..."
+    if ! rsync_from_win "$host" "$port" "$key" \
+        "${remote_dir}/dist/" "$DIST_DIR/" \
+        --include='*/' --include="*${VERSION}*" --exclude='*'; then
+        log_error "rsync from Windows ARM VM failed"
+        record_result "Windows arm64 fetch: FAILED"
+        return 1
+    fi
+    log_success "Windows arm64 artifacts fetched"
+    local fetched_ok=true windows_artifact
+    for windows_artifact in \
+        "$DIST_DIR/sotf-tui-${VERSION}-windows-arm64.exe" \
+        "$DIST_DIR/sotf-desktop-${VERSION}-windows-arm64.msix"; do
+        record_artifact "$windows_artifact" "Windows arm64 required artifact" || fetched_ok=false
+    done
+    if [ -s "$DIST_DIR/sotf-tui-${VERSION}-windows-arm64.exe" ] &&
+        ! verify_windows_exe_arch "$DIST_DIR/sotf-tui-${VERSION}-windows-arm64.exe" arm64; then
+        fetched_ok=false
+    fi
+    if $msix_failed || [ "$fetched_ok" != true ]; then
+        return 1
+    fi
+    return 0
+}
+
+build_windows_x86_spin() {
+    local host="$LINUX_HOST"
+    local port="${LINUX_PORT:-22}"
+    local key="${LINUX_SSH_KEY:-}"
+    log_step "Building Windows x86_64 (Docker/gnullvm on ${host}, profile=dist)..."
+    sync_snapshot_spin "windows-x86" "Windows x86_64" || return 1
+    local remote_dir="$SYNCED_SOTF_DIR"
+
+    local sign_env="SOTF_MSIX_SIGN=1"
+    $SKIP_SIGN && sign_env="SOTF_MSIX_SIGN=0"
+    local cert_env=""
+    if [ -n "$SPIN_WINDOWS_CERT_FILE" ]; then
+        cert_env="WINDOWS_CERT_FILE='$SPIN_WINDOWS_CERT_FILE' WINDOWS_CERT_PASSWORD='$SPIN_WINDOWS_CERT_PASSWORD' "
+        if [ -n "${WINDOWS_TIMESTAMP_URL:-}" ]; then
+            cert_env+="WINDOWS_TIMESTAMP_URL='${WINDOWS_TIMESTAMP_URL}' "
+        fi
+    fi
+    local build_cmd="cd '$remote_dir' && mkdir -p dist && rm -f dist/*${VERSION}* && ${cert_env}${sign_env} just docker-windows-x86"
+
+    if $DRY_RUN; then
+        log_dry "ssh ${host} '${build_cmd}'"
+        log_dry "rsync ${host}:${remote_dir}/dist/*${VERSION}* -> ${DIST_DIR}/"
+        return 0
+    fi
+
+    if linux_ssh_cmd "$host" "$port" "$key" "$build_cmd"; then
+        record_result "Windows x86_64: OK"
+    else
+        log_error "Windows x86_64 Docker build failed"
+        record_result "Windows x86_64: FAILED"
+        return 1
+    fi
+
+    log_step "Fetching Windows x86_64 artifacts (v${VERSION})..."
+    if ! rsync_from "$host" "$port" "$key" \
+        "${remote_dir}/dist/" "$DIST_DIR/" \
+        --include='*/' --include="*${VERSION}*" --exclude='*'; then
+        log_error "rsync from $host failed"
+        record_result "Windows x86_64 fetch: FAILED"
+        return 1
+    fi
+    log_success "Windows x86_64 artifacts fetched"
+    local fetched_ok=true windows_artifact
+    for windows_artifact in \
+        "$DIST_DIR/sotf-tui-${VERSION}-windows-x86_64.exe" \
+        "$DIST_DIR/sotf-desktop-${VERSION}-windows-x86_64.msix"; do
+        record_artifact "$windows_artifact" "Windows x86_64 required artifact" || fetched_ok=false
+    done
+    if [ -s "$DIST_DIR/sotf-tui-${VERSION}-windows-x86_64.exe" ] &&
+        ! verify_windows_exe_arch "$DIST_DIR/sotf-tui-${VERSION}-windows-x86_64.exe" x86_64; then
+        fetched_ok=false
+    fi
+    if [ "$fetched_ok" = true ]; then
+        record_result "Windows MSIX x86_64: OK"
+        return 0
+    fi
+    return 1
+}
 
 build_windows() {
     if $SKIP_WINDOWS; then
@@ -1205,340 +1635,19 @@ build_windows() {
         return
     fi
 
-    log_phase "Phase 3: Windows Builds (remote: ${WINDOWS_HOST})"
+    log_phase "Phase 3: Windows Builds (arm64: UTM VM native; x86_64: ${LINUX_HOST:-spin} Docker)"
     start_timer
     local first_result_index=${#BUILD_RESULTS[@]}
 
-    local host="$WINDOWS_HOST"
-    local port="${WINDOWS_PORT:-22}"
-    local key="${WINDOWS_SSH_KEY:-}"
-    local configured_project_dir="${WINDOWS_PROJECT_DIR}"
-    # Like the Linux phase, build from a fresh aggregate snapshot next to the
-    # configured checkout instead of syncing sotf alone into it: sotf's path
-    # dependencies (../sotf-daw, ../autoeq, ../sotf-capture,
-    # ../sotf-3rdparties) must come from the same source revision, and the
-    # configured checkout provides no such guarantee. Keep the snapshot name
-    # short: Windows toolchains still trip over very long paths once
-    # target/<triple>/dist/build/... is appended.
-    local run_id="$(date +%Y%m%d%H%M)-$$"
-    local remote_snapshot_root="${configured_project_dir%/*}/.sotf-release-${run_id}"
-    local remote_dir="$remote_snapshot_root/$(basename "$PROJECT_ROOT")"
-    local manifest_name=".release-source-manifest-${VERSION}-${run_id}.sha256"
-    local manifest_path="$AGGREGATE_ROOT/$manifest_name"
-    local source_file_list="$DIST_DIR/.release-source-files-${VERSION}-${run_id}.nul"
-    # An explicitly selected arm64 target is required; with --arch all it
-    # stays optional so hosts without the VS ARM64 components can still cut
-    # an x86_64 release (previous behaviour).
-    local windows_arm64_required=false
-    [ "$ARCH_SELECTION" = arm64 ] && windows_arm64_required=true
-
-    # Windows OpenSSH defaults to cmd.exe which can't run bash commands or
-    # find MSYS2/Git Bash tools. All remote commands go through win_ssh_cmd
-    # which routes them via Git Bash. rsync uses --rsync-path to invoke the
-    # Git Bash rsync binary on the remote side.
-
-    # Detect Git Bash location on the remote machine
-    log_step "Detecting Git Bash on remote..."
-    if ! $DRY_RUN; then
-        if ! detect_win_bash "$host" "$port" "$key"; then
-            record_result "Windows: FAILED (no Git Bash found)"
-            return 1
-        fi
-
-        # Detect rsync location via Git Bash
-        log_step "Detecting rsync on remote..."
-        if ! detect_win_rsync "$host" "$port" "$key"; then
-            log_info "rsync is not bundled with standard Git for Windows."
-            log_info "Install it by one of these methods:"
-            log_info "  1. If you have MSYS2: pacman -S rsync"
-            log_info "  2. Download Git for Windows SDK (includes pacman):"
-            log_info "     https://github.com/git-for-windows/build-extra/releases"
-            log_info "  3. Manually copy rsync.exe into C:/Program Files/Git/usr/bin/"
-            log_info "     If rsync is present but a DLL is missing, reinstall rsync and its MSYS dependencies."
-            record_result "Windows: FAILED (no rsync)"
-            return 1
-        fi
-        log_success "Git Bash + rsync OK on remote"
-    fi
-
-    # Sync the aggregate source snapshot to the Windows machine (same
-    # manifest + hash verification as the Linux phase). --copy-links
-    # materializes the few tracked symlinks as regular files: NTFS cannot
-    # store POSIX symlinks and the snapshot only needs their contents.
-    log_step "Syncing aggregate source snapshot to ${host}:${remote_snapshot_root}..."
-    if $DRY_RUN; then
-        log_dry "write source hashes for ${AGGREGATE_ROOT}"
-        log_dry "rsync ${AGGREGATE_ROOT}/ to ${host}:${remote_snapshot_root}/ (aggregate siblings, fresh path)"
-        log_dry "verify ${manifest_name} on ${host}:${remote_snapshot_root}"
-    else
-        if [ -e "$manifest_path" ]; then
-            log_error "Refusing to overwrite an existing release source manifest: $manifest_path"
-            record_result "Windows sync: FAILED (manifest collision)"
-            return 1
-        fi
-        if ! write_source_manifest "$AGGREGATE_ROOT" "$manifest_path" "$source_file_list" "$manifest_name"; then
-            rm -f -- "$manifest_path"
-            rm -f -- "$source_file_list" "${source_file_list}.entries"
-            log_error "Could not record aggregate source hashes"
-            record_result "Windows sync: FAILED (manifest generation)"
-            return 1
-        fi
-        if ! win_ssh_cmd "$host" "$port" "$key" \
-            "mkdir -p '${remote_snapshot_root%/*}' && mkdir '$remote_snapshot_root'"; then
-            rm -f -- "$manifest_path"
-            rm -f -- "$source_file_list"
-            log_error "Could not create Windows snapshot directory"
-            record_result "Windows sync: FAILED (snapshot directory)"
-            return 1
-        fi
-        build_ssh_transport "$port" "$key"
-        rsync -avz --delete --from0 --files-from="$source_file_list" \
-            --copy-links --no-perms --no-owner --no-group --omit-dir-times \
-            "${AGGREGATE_RSYNC_EXCLUDES[@]}" \
-            -e "${SSH_TRANSPORT_CMD[*]}" \
-            --rsync-path="$WIN_RSYNC_PATH" \
-            "$AGGREGATE_ROOT/" "${host}:${remote_snapshot_root}/"
-        if ! handle_rsync_status "$?" "rsync to ${host}:${remote_snapshot_root}" true; then
-            rm -f -- "$manifest_path"
-            rm -f -- "$source_file_list"
-            log_error "rsync to Windows failed"
-            log_info "Debug: ssh ${host} '\"$WIN_RSYNC_PATH\" --version'"
-            record_result "Windows sync: FAILED"
-            return 1
-        fi
-        if ! verify_windows_source_manifest "$host" "$port" "$key" "$remote_snapshot_root" "$manifest_name"; then
-            rm -f -- "$manifest_path"
-            rm -f -- "$source_file_list"
-            log_error "Windows snapshot source hash verification failed"
-            record_result "Windows sync: FAILED (source hash mismatch)"
-            return 1
-        fi
-        mkdir -p "$DIST_DIR"
-        local retained_manifest="$DIST_DIR/source-manifest-windows-${VERSION}-${run_id}.sha256"
-        if ! cp "$manifest_path" "$retained_manifest"; then
-            rm -f -- "$manifest_path"
-            rm -f -- "$source_file_list"
-            log_error "Could not retain the Windows source hash manifest"
-            record_result "Windows sync: FAILED (manifest copy)"
-            return 1
-        fi
-        record_artifact "$retained_manifest" "Windows source manifest" || return 1
-        rm -f -- "$manifest_path"
-        rm -f -- "$source_file_list"
-        if $CLEAN_REMOTE; then
-            log_info "The Windows snapshot is fresh; no existing remote build artifacts are reused"
-        else
-            log_info "Windows builds use a fresh snapshot directory; prior remote sources and artifacts are not consulted"
-        fi
-        log_success "Source synced"
-    fi
-
-    if ! $DRY_RUN; then
-        if ! win_ssh_cmd "$host" "$port" "$key" \
-            "mkdir -p ${remote_dir}/dist && rm -f ${remote_dir}/dist/*${VERSION}*"; then
-            log_error "Could not clear stale Windows artifacts for v${VERSION}"
-            record_result "Windows cleanup: FAILED"
-            return 1
-        fi
-    fi
-
-    # Build Windows x86_64 (host arch), unless another arch was selected.
-    # build-msix.ps1 needs both sotf-desktop.exe AND sotf-tui.exe present in
-    # the corresponding target dir before it runs.
-    local windows_x86_64_ok=false
-    if arch_is_selected x86_64; then
-        log_step "Building Windows x86_64 (native MSVC on remote, profile=dist)..."
-        local win_build_cmd="cd ${remote_dir} && mkdir -p dist"
-        # Release cuts use the `dist` profile (fat LTO + codegen-units=1).
-        # Artifacts land in target/dist/ instead of target/release/.
-        win_build_cmd+=" && cargo build --profile dist -p sotf-tui --bin sotf-tui"
-        win_build_cmd+=" && cargo build --profile dist -p sotf-gpui --bin sotf-desktop"
-        # Canonical artifact naming: <product>-<version>-<os>-<arch>.<ext>
-        win_build_cmd+=" && cp target/dist/sotf-tui.exe dist/sotf-tui-${VERSION}-windows-x86_64.exe"
-
-        if $DRY_RUN; then
-            log_dry "win_ssh_cmd ${host} '${win_build_cmd}'"
-            windows_x86_64_ok=true
-        else
-            if ! win_ssh_cmd "$host" "$port" "$key" "$win_build_cmd"; then
-                log_error "Windows x86_64 build failed"
-                record_result "Windows x86_64: FAILED"
-                return 1
-            fi
-            record_result "Windows x86_64: OK"
-            windows_x86_64_ok=true
-        fi
-    else
-        log_info "Skipping Windows x86_64 build (--arch ${ARCH_SELECTION})"
-    fi
-
-    # Build Windows arm64 (cross-compiled on the x86_64 build host).
-    # Required for Microsoft Store ARM64 listing and for native execution on
-    # Windows-on-ARM (Surface Pro X, Copilot+ PCs). With --arch all a failure
-    # here doesn't kill the x86_64 result; with --arch arm64 it does.
-    local windows_arm64_ok=false
     if arch_is_selected arm64; then
-        log_step "Building Windows arm64 (cross-compiled on remote, profile=dist)..."
-        local win_arm_build_cmd="cd ${remote_dir}"
-        win_arm_build_cmd+=" && rustup target add aarch64-pc-windows-msvc"
-        win_arm_build_cmd+=" && cargo build --profile dist --target aarch64-pc-windows-msvc -p sotf-tui --bin sotf-tui"
-        win_arm_build_cmd+=" && cargo build --profile dist --target aarch64-pc-windows-msvc -p sotf-gpui --bin sotf-desktop"
-        win_arm_build_cmd+=" && cp target/aarch64-pc-windows-msvc/dist/sotf-tui.exe dist/sotf-tui-${VERSION}-windows-arm64.exe"
-
-        if $DRY_RUN; then
-            log_dry "win_ssh_cmd ${host} '${win_arm_build_cmd}'"
-            windows_arm64_ok=true
-        else
-            if win_ssh_cmd "$host" "$port" "$key" "$win_arm_build_cmd"; then
-                record_result "Windows arm64: OK"
-                windows_arm64_ok=true
-            elif $windows_arm64_required; then
-                log_error "Windows arm64 build failed"
-                log_info "On the remote: rustup target add aarch64-pc-windows-msvc"
-                log_info "and ensure VS 2022 has the ARM64 build tools component installed."
-                record_result "Windows arm64: FAILED"
-                return 1
-            else
-                log_warning "Windows arm64 build failed (continuing with x86_64 only)"
-                log_info "On the remote: rustup target add aarch64-pc-windows-msvc"
-                log_info "and ensure VS 2022 has the ARM64 build tools component installed."
-                record_result "Windows arm64: UNAVAILABLE (optional target)"
-            fi
-        fi
+        build_windows_arm64_utm || true
     else
         log_info "Skipping Windows arm64 build (--arch ${ARCH_SELECTION})"
     fi
-
-    # Sign on Windows if cert thumbprint available
-    if ! $SKIP_SIGN && [ -n "${WINDOWS_CERT_THUMBPRINT:-}" ]; then
-        log_step "Signing Windows executables (SignTool on remote)..."
-        local sign_cmd="cd ${remote_dir}"
-        sign_cmd+=" && powershell.exe -ExecutionPolicy Bypass -File scripts/sign-windows.ps1"
-        sign_cmd+=" -CertificateThumbprint ${WINDOWS_CERT_THUMBPRINT}"
-        if $DRY_RUN; then
-            log_dry "win_ssh_cmd ${host} sign-windows.ps1"
-        else
-            if win_ssh_cmd "$host" "$port" "$key" "$sign_cmd"; then
-                log_success "Windows signing complete"
-                record_result "Windows signing (SignTool): OK"
-            else
-                log_warning "Windows signing failed (continuing)"
-                record_result "Windows signing (SignTool): FAILED"
-            fi
-        fi
-    fi
-
-    # Build MSIX package on remote. Honour --skip-sign so the test path
-    # doesn't try to invoke SignTool / a code-signing cert.
-    #
-    # Pre-clean any stale Windows artifacts for this version on the remote so
-    # that arch suffix changes (e.g. the historical x64 → x86_64 rename) don't
-    # leave both names in dist/ and get rsynced back into the local dist/.
-    #
-    # We invoke build-msix.ps1 directly via powershell.exe rather than the
-    # bash port via Git Bash. Native PowerShell sees `/o`, `/v`, `/d`, `/p`
-    # for what they are (MakeAppx flags) instead of MSYS path-style args, and
-    # has no need for cygpath, MSYS_NO_PATHCONV, or a third-party `zip.exe`
-    # on PATH.
-    log_step "Building MSIX package..."
-    local ps_sign=""
-    if ! $SKIP_SIGN; then
-        ps_sign=" -Sign"
-        # Forward cert credentials to the remote PowerShell. SSH usually
-        # strips env vars (no AcceptEnv on Windows OpenSSH by default), so
-        # we pass them as explicit -CertThumbprint / -CertFile / etc. flags
-        # which build-msix.ps1 prefers over $env:WINDOWS_CERT_*.
-        if [ -n "${WINDOWS_CERT_THUMBPRINT:-}" ]; then
-            ps_sign+=" -CertThumbprint ${WINDOWS_CERT_THUMBPRINT}"
-        elif [ -n "${WINDOWS_CERT_FILE:-}" ]; then
-            ps_sign+=" -CertFile '${WINDOWS_CERT_FILE}'"
-            if [ -n "${WINDOWS_CERT_PASSWORD:-}" ]; then
-                ps_sign+=" -CertPassword '${WINDOWS_CERT_PASSWORD}'"
-            fi
-        fi
-        if [ -n "${WINDOWS_TIMESTAMP_URL:-}" ]; then
-            ps_sign+=" -TimestampUrl '${WINDOWS_TIMESTAMP_URL}'"
-        fi
-    fi
-    local msix_cleanup="cd ${remote_dir} && rm -f dist/sotf-desktop-${VERSION}-windows-*.msix"
-    # Pass -BuildDir explicitly so build-msix.ps1 can't auto-detect the wrong
-    # cargo output dir. The x86_64 cargo build above is native (no --target),
-    # so its binaries land in target/dist/; arm64 is cross-compiled to
-    # target/aarch64-pc-windows-msvc/dist/.
-    local msix_x86="powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-msix.ps1 -Arch x86_64 -BuildDir target/dist${ps_sign}"
-    local msix_arm="powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-msix.ps1 -Arch arm64 -BuildDir target/aarch64-pc-windows-msvc/dist${ps_sign}"
-
-    if $DRY_RUN; then
-        log_dry "win_ssh_cmd ${host} '${msix_cleanup}'"
-        $windows_x86_64_ok && log_dry "win_ssh_cmd ${host} '${msix_x86}'"
-        $windows_arm64_ok && log_dry "win_ssh_cmd ${host} '${msix_arm}'"
+    if arch_is_selected x86_64; then
+        build_windows_x86_spin || true
     else
-        # Cleanup runs once before either MSIX so we don't wipe the first one.
-        if ! win_ssh_cmd "$host" "$port" "$key" "$msix_cleanup"; then
-            log_error "Could not clear stale Windows MSIX files"
-            record_result "Windows MSIX cleanup: FAILED"
-            return 1
-        fi
-
-        if $windows_x86_64_ok; then
-            if win_ssh_cmd "$host" "$port" "$key" "cd ${remote_dir} && ${msix_x86}"; then
-                record_result "Windows MSIX x86_64: OK"
-            else
-                log_warning "MSIX x86_64 build failed (continuing)"
-                record_result "Windows MSIX x86_64: FAILED"
-            fi
-        else
-            log_info "Skipping x86_64 MSIX (--arch ${ARCH_SELECTION})"
-            record_result "Windows MSIX x86_64: SKIPPED"
-        fi
-
-        # Only try the arm64 MSIX if the arm64 binaries actually built.
-        # Skipping silently when the cargo build above failed avoids a second
-        # confusing red error message for the same root cause.
-        if $windows_arm64_ok; then
-            if win_ssh_cmd "$host" "$port" "$key" "cd ${remote_dir} && ${msix_arm}"; then
-                record_result "Windows MSIX arm64: OK"
-            elif $windows_arm64_required; then
-                log_error "MSIX arm64 build failed"
-                record_result "Windows MSIX arm64: FAILED"
-            else
-                log_warning "MSIX arm64 build failed (continuing)"
-                record_result "Windows MSIX arm64: UNAVAILABLE (optional target)"
-            fi
-        else
-            log_info "Skipping arm64 MSIX (arm64 binaries didn't build)"
-            record_result "Windows MSIX arm64: SKIPPED"
-        fi
-    fi
-
-    # Copy artifacts back (current version only)
-    log_step "Fetching Windows artifacts (v${VERSION})..."
-    if $DRY_RUN; then
-        log_dry "rsync ${host}:${remote_dir}/dist/*${VERSION}* -> ${DIST_DIR}/"
-    else
-        if ! rsync_from_win "$host" "$port" "$key" \
-            "${remote_dir}/dist/" "$DIST_DIR/" \
-            --include='*/' --include="*${VERSION}*" --exclude='*'; then
-            log_error "rsync from Windows failed"
-            record_result "Windows fetch: FAILED"
-            return 1
-        fi
-        log_success "Windows artifacts fetched"
-        local windows_artifact
-        if $windows_x86_64_ok; then
-            for windows_artifact in \
-                "$DIST_DIR/sotf-tui-${VERSION}-windows-x86_64.exe" \
-                "$DIST_DIR/sotf-desktop-${VERSION}-windows-x86_64.msix"; do
-                record_artifact "$windows_artifact" "Windows required artifact" || true
-            done
-        fi
-        if $windows_arm64_ok; then
-            for windows_artifact in \
-                "$DIST_DIR/sotf-tui-${VERSION}-windows-arm64.exe" \
-                "$DIST_DIR/sotf-desktop-${VERSION}-windows-arm64.msix"; do
-                record_artifact "$windows_artifact" "Windows required artifact" || true
-            done
-        fi
+        log_info "Skipping Windows x86_64 build (--arch ${ARCH_SELECTION})"
     fi
 
     local result_index windows_failed=false

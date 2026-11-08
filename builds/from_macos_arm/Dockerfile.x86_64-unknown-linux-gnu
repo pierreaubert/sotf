@@ -1,10 +1,16 @@
 # Multi-stage build: Builder stage
-FROM ubuntu:24.04 AS builder
+# NOTE: the Rust toolchain comes from the rust:bookworm base image instead of
+# being installed via rustup-init, because large downloads from
+# static.rust-lang.org are truncated on some networks (curl 18) and neither
+# rustup-init nor rustup retries/resumes them sufficiently. Base-image layers
+# arrive through Docker's own resumable pull. We track stable (rolling tag).
+# This mirrors Dockerfile.aarch64-unknown-linux-gnu (full desktop/AppImage
+# dependency set); the musl variant cannot build the GPUI desktop app.
+FROM --platform=linux/amd64 rust:bookworm AS builder
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=Etc/UTC
+ARG DEBIAN_FRONTEND=noninteractive
 
-# Install build dependencies - combined into single layer
+# Install base build dependencies - combined into single layer
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     curl \
@@ -12,6 +18,7 @@ RUN apt-get update && \
     build-essential \
     gcc \
     g++ \
+    mold \
     pkg-config \
     ca-certificates \
     cmake \
@@ -19,21 +26,98 @@ RUN apt-get update && \
     perl \
     libssl-dev \
     libsqlite3-dev \
+    libglib2.0-dev \
+    libgtk-3-dev \
+    libwebkit2gtk-4.1-dev \
+    libayatana-appindicator3-dev \
+    librsvg2-dev \
+    libasound2-dev \
+    libxkbcommon-x11-dev \
+    libclang-dev \
+    patchelf \
+    libopenblas-dev \
+    gfortran \
+    gnome-browser-connector \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Install the release Rust toolchain (pinned).
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
-    sh -s -- -y --default-toolchain 1.99.0 --profile minimal && \
-    rm -rf /root/.cargo/registry /root/.cargo/git
+# We always compile on stable. rust:bookworm ships the current stable toolchain
+# under its versioned name, so expose it as `stable` via a symlink (rustup
+# discovers toolchains by directory scan). This keeps both this override and
+# the workspace rust-toolchain.toml resolving without any downloads.
+ENV RUSTUP_TOOLCHAIN=stable
+RUN set -u; \
+    cd /usr/local/rustup/toolchains; \
+    REAL=$(ls -d *-x86_64-unknown-linux-gnu 2>/dev/null | grep -v '^stable-' | sort -V | tail -n 1); \
+    [ -n "$REAL" ] || { echo "no preinstalled x86_64 toolchain found"; exit 1; }; \
+    [ -e stable-x86_64-unknown-linux-gnu ] || ln -s "$REAL" stable-x86_64-unknown-linux-gnu; \
+    [ -x stable-x86_64-unknown-linux-gnu/bin/rustc ] || { echo "stable toolchain alias broken"; exit 1; }; \
+    rustc --version && cargo --version
 
-ENV PATH="/root/.cargo/bin:${PATH}"
-ENV RUSTUP_TOOLCHAIN=1.99.0
+# Install clippy without rustup's downloader (see base-image note above):
+# fetch the small channel manifest, resume-download the clippy package with
+# curl, verify its hash, and install it into the toolchain directly.
+RUN set -u; \
+    RUSTC_VER=$(rustc --version | awk '{print $2}'); \
+    [ -n "$RUSTC_VER" ] || { echo "could not determine rustc version"; exit 1; }; \
+    curl --proto '=https' --tlsv1.2 -sSf -o /tmp/channel.toml \
+      "https://static.rust-lang.org/dist/channel-rust-${RUSTC_VER}.toml" \
+      || { echo "failed to download channel manifest"; exit 1; }; \
+    STANZA=$(sed -n '/^\[pkg\.clippy-preview\.target\.x86_64-unknown-linux-gnu\]$/,/^\[pkg\./p' /tmp/channel.toml); \
+    CLIPPY_URL=$(printf '%s\n' "$STANZA" | sed -n 's/^url = "\(.*\)"/\1/p'); \
+    CLIPPY_SHA=$(printf '%s\n' "$STANZA" | sed -n 's/^hash = "\(.*\)"/\1/p'); \
+    [ -n "$CLIPPY_URL" ] && [ -n "$CLIPPY_SHA" ] \
+      || { echo "clippy stanza not found in channel manifest"; exit 1; }; \
+    i=1; \
+    while [ "$i" -le 40 ]; do \
+      if curl --proto '=https' --tlsv1.2 -sS -C - --retry 3 --retry-all-errors \
+          -o /tmp/clippy.tgz "$CLIPPY_URL"; then \
+        break; \
+      fi; \
+      echo "clippy download pass $i incomplete, resuming..."; \
+      i=$((i + 1)); \
+      sleep 5; \
+    done; \
+    ACTUAL_SHA=$(sha256sum /tmp/clippy.tgz | awk '{print $1}'); \
+    [ "$ACTUAL_SHA" = "$CLIPPY_SHA" ] || { echo "clippy checksum mismatch"; exit 1; }; \
+    rm -rf /tmp/clippy-pkg && mkdir -p /tmp/clippy-pkg; \
+    tar -xzf /tmp/clippy.tgz -C /tmp/clippy-pkg \
+      || { echo "clippy archive invalid"; exit 1; }; \
+    SYSROOT=$(rustc --print sysroot) || exit 1; \
+    /tmp/clippy-pkg/clippy-*/install.sh --prefix="$SYSROOT" \
+      || { echo "clippy install failed"; exit 1; }; \
+    rm -rf /tmp/clippy.tgz /tmp/clippy-pkg /tmp/channel.toml; \
+    cargo clippy --version || { echo "clippy not functional"; exit 1; }
 
-# Add the target
+# Add the target (already present on this host triple; kept as a no-op check).
 RUN rustup target add x86_64-unknown-linux-gnu
 
-# Install just
-RUN cargo install just && \
-    rm -rf /root/.cargo/registry /root/.cargo/git
+# Install just (small crates.io files; loop until cargo's cache converges).
+RUN set -u; \
+    ok=""; \
+    for i in 1 2 3 4 5; do \
+      if cargo install just; then \
+        ok=1; \
+        break; \
+      fi; \
+      echo "just install pass $i failed, retrying..."; \
+      sleep 10; \
+    done; \
+    [ -n "$ok" ] || { echo "just install did not converge"; exit 1; }; \
+    rm -rf /usr/local/cargo/registry /usr/local/cargo/git; \
+    just --version
+
+# Set up cross-compilation environment
+ENV CC_x86_64_unknown_linux_gnu=x86_64-linux-gnu-gcc
+ENV CXX_x86_64_unknown_linux_gnu=x86_64-linux-gnu-g++
+ENV AR_x86_64_unknown_linux_gnu=x86_64-linux-gnu-ar
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc
+ENV OPENSSL_NO_PKG_CONFIG=1
 
 WORKDIR /workspace/sotf
+
+
+
+# appimagetool shells out to file when build-linux.sh creates the AppImage.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends file && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
