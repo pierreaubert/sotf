@@ -55,6 +55,33 @@ AI tooling is welcome. Warning: there a are a few areas where Claude and Codex a
 - sotf-plugins: the llm dont really undestand audio plugins and do stupid things which are highly audible.
 The other parts of the code do benefit with using your favorite model and harness.
 
+### Check out the source and dependencies
+
+Clone the parent workspace with its submodules before running any build or
+post-install commands:
+
+```shell
+git clone --recurse-submodules https://github.com/pierreaubert/all_of_sotf.git
+cd all_of_sotf/sotf
+```
+
+SOTF uses sibling repositories through Cargo path dependencies, including
+`../autoeq`, `../sotf-daw`, and `../math-audio`. Cloning only this repository
+leaves those dependencies missing. An error mentioning a missing
+`autoeq-report-wasm/Cargo.toml` during `just post-install` indicates an
+incomplete checkout.
+
+For an existing `all_of_sotf` checkout, initialize its pinned dependencies
+from the parent directory, then return to SOTF:
+
+```shell
+cd all_of_sotf
+git submodule update --init --recursive
+cd sotf
+```
+
+Run the commands below from `all_of_sotf/sotf`.
+
 ### Cargo
 
 Install [rustup](https://rustup.rs/) first.
