@@ -19,6 +19,43 @@ fn chain_autogain_target_limits_accumulated_correction() {
 }
 
 #[test]
+fn chain_autogain_preserves_trim_during_monitor_attenuation() {
+    for control in ["dim", "mute", "solo"] {
+        let mut graph = PluginGraph::with_default_rack();
+        graph.update_channel_dependent_plugins();
+        graph.set_chain_auto_gain(Some(-3.0));
+        let matrix_id = graph.node_id_for_role(NodeRole::Matrix).unwrap();
+        let PluginSettings::Matrix { channel_states, .. } =
+            &mut graph.nodes.get_mut(&matrix_id).unwrap().plugin.settings
+        else {
+            panic!("default rack must contain a Matrix");
+        };
+        channel_states[0].dimmed = control == "dim";
+        channel_states[0].muted = control == "mute";
+        channel_states[0].soloed = control == "solo";
+        for _ in 0..10 {
+            assert_eq!(graph.chain_auto_gain_target(20.0), None, "{control}");
+        }
+        assert_eq!(graph.chain_auto_gain_db(), Some(-3.0));
+        graph.nodes.get_mut(&matrix_id).unwrap().plugin.enabled = false;
+        assert_eq!(graph.chain_auto_gain_target(1.0), Some(-2.0));
+        graph.nodes.get_mut(&matrix_id).unwrap().plugin.enabled = true;
+        graph.nodes.get_mut(&matrix_id).unwrap().plugin.suspended = true;
+        assert_eq!(graph.chain_auto_gain_target(1.0), Some(-2.0));
+        graph.nodes.get_mut(&matrix_id).unwrap().plugin.suspended = false;
+        assert_eq!(graph.chain_auto_gain_target(1.0), None);
+        let PluginSettings::Matrix { channel_states, .. } =
+            &mut graph.nodes.get_mut(&matrix_id).unwrap().plugin.settings
+        else {
+            unreachable!();
+        };
+        channel_states[0] = sotf_plugins::ChannelState::default();
+        assert_eq!(graph.chain_auto_gain_target(0.0), Some(-3.0));
+        assert_eq!(graph.chain_auto_gain_target(1.0), Some(-2.0));
+    }
+}
+
+#[test]
 fn test_add_and_remove_nodes() {
     let mut graph = PluginGraph::new();
 

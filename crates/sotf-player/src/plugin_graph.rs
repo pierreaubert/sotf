@@ -1585,9 +1585,33 @@ impl PluginGraph {
         self.chain_auto_gain_db
     }
 
-    /// Calculate a finite AutoGain target within the Gain plugin's limits.
+    /// Calculate an AutoGain target, holding during intentional monitor attenuation.
+    ///
+    /// Returns `None` for non-finite corrections or active mute, solo, or dim
+    /// controls. Otherwise the target stays within the Gain plugin's limits.
     pub fn chain_auto_gain_target(&self, residual_db: f64) -> Option<f64> {
         use sotf_plugins::param_specs::{find_by_key, gain};
+        // Monitor attenuation is intentional, not processing loss to compensate.
+        // Keep the hidden trim intact so releasing the controls restores it.
+        if self.nodes.values().any(|node| {
+            if !node.plugin.enabled || node.plugin.suspended {
+                return false;
+            }
+            let states = match &node.plugin.settings {
+                PluginSettings::Matrix { channel_states, .. }
+                | PluginSettings::ChannelMuteSolo {
+                    enabled: true,
+                    channel_states,
+                    ..
+                } => channel_states,
+                _ => return false,
+            };
+            states
+                .iter()
+                .any(|state| state.muted || state.soloed || state.dimmed)
+        }) {
+            return None;
+        }
         let target_db = self.chain_auto_gain_db.unwrap_or(0.0) + residual_db;
         if !target_db.is_finite() {
             return None;
