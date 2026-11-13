@@ -1,0 +1,19 @@
+# Change theme after the canvas exists, retaining the selected routing draft.
+focus PluginGraph
+wait_idle 2s
+click routing.node.2
+action IncrementPluginParam
+assert routing.dirty == true
+assert plugins.graph.selection_count == 1
+screenshot routing-theme-dark
+action CycleTheme
+wait_idle 2s
+assert routing.dirty == true
+assert plugins.graph.selection_count == 1
+assert routing.active_matches_base == true
+screenshot routing-theme-light
+action CycleTheme
+wait_idle 2s
+assert routing.dirty == true
+assert plugins.graph.selection_count == 1
+screenshot routing-theme-midnight

@@ -356,6 +356,14 @@ impl PlayerView {
             )
         };
 
+        if let Some(canvas) = &workflow_canvas {
+            // The canvas survives theme switches; refresh its palette without
+            // rebuilding nodes, selection, or the routing draft.
+            canvas.update(cx, |canvas, _| {
+                canvas.set_theme(create_workflow_theme(&theme));
+            });
+        }
+
         div()
             .id("plugin-graph-screen")
             .track_scroll(&self.scroll.routing)
