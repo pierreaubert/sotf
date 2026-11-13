@@ -2,6 +2,7 @@ use crate::app::i18n::FlatQueueTranslations;
 use crate::app::{Screen, ToastMessage};
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
+use crate::queue_render::{FlatQueueRow, flat_queue_rows};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -125,19 +126,45 @@ impl PlayerView {
                 .into_any_element();
         }
         let entity = cx.entity().downgrade();
+        let row_count = flat_queue_rows(
+            &app.queue_state,
+            &app.queue_state.upcoming_track_positions(),
+        )
+        .len();
         root.child(
-            uniform_list("flat-queue-tracks", count, move |range, _, cx| {
+            uniform_list("flat-queue-tracks", row_count, move |range, _, cx| {
                 entity
                     .update(cx, |view, cx| {
                         let state = view.state.read(cx);
                         let queue = &state.app.queue_state;
                         let positions = queue.upcoming_track_positions();
+                        let rows = flat_queue_rows(queue, &positions);
                         let labels =
                             FlatQueueTranslations::for_language(state.app.ui_state.language);
                         let theme = state.app.ui_state.theme.clone();
                         let d = Ds::from_cx(cx);
                         range
-                            .filter_map(|index| {
+                            .filter_map(|row_index| {
+                                let row = *rows.get(row_index)?;
+                                let index = match row {
+                                    FlatQueueRow::Album(item_index) => {
+                                        let album = &queue.get(item_index)?.album;
+                                        return Some(
+                                            div()
+                                                .w_full()
+                                                .h(d.section_xl)
+                                                .flex()
+                                                .items_center()
+                                                .overflow_hidden()
+                                                .child(Text::label(format!(
+                                                    "{} · {}",
+                                                    album.title,
+                                                    album.artist()
+                                                ))),
+                                        );
+                                    }
+                                    FlatQueueRow::Track(index) => index,
+                                };
                                 let position = *positions.get(index)?;
                                 let item = queue.get(position.item)?;
                                 let track = item.album.tracks.get(position.track)?;
@@ -145,8 +172,6 @@ impl PlayerView {
                                     .title
                                     .clone()
                                     .unwrap_or_else(|| track.path.to_string_lossy().into_owned());
-                                let artist =
-                                    track.artist.clone().unwrap_or_else(|| item.album.artist());
                                 let duration = track
                                     .duration_secs
                                     .map(|seconds| format!("{}:{:02}", seconds / 60, seconds % 60))
@@ -248,23 +273,21 @@ impl PlayerView {
                                     div()
                                         .w_full()
                                         .flex()
-                                        .flex_col()
+                                        .h(d.section_xl)
+                                        .items_center()
                                         .gap(d.gap)
-                                        .py(d.pad_y)
                                         .border_b_1()
                                         .border_color(theme.border)
                                         .child(
+                                            div().flex_1().min_w_0().overflow_hidden().child(play),
+                                        )
+                                        .child(Text::caption(duration))
+                                        .child(
                                             div()
                                                 .flex()
-                                                .items_center()
+                                                .flex_shrink_0()
                                                 .gap(d.gap)
-                                                .child(Text::caption((index + 1).to_string()))
-                                                .child(play)
-                                                .child(Text::caption(duration)),
-                                        )
-                                        .child(Text::caption(artist))
-                                        .child(
-                                            div().flex().flex_wrap().gap(d.gap).children(buttons),
+                                                .children(buttons),
                                         ),
                                 )
                             })

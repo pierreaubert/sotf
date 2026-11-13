@@ -9,6 +9,41 @@ use sotf_audio_player::QueueItem;
 const METERS_PANEL_MIN_WIDTH: f32 = 120.0;
 const METERS_PANEL_MAX_AVAILABLE_RATIO: f32 = 0.6;
 
+/// A heading or track in the virtualized queue; track indices remain actionable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlatQueueRow {
+    Album(usize),
+    Track(usize),
+}
+
+/// Insert headings at album boundaries without changing playback order.
+pub fn flat_queue_rows(
+    items: &[QueueItem],
+    positions: &[sotf_audio_player::controllers::QueueTrackPosition],
+) -> Vec<FlatQueueRow> {
+    let mut rows = Vec::new();
+    let mut previous: Option<&sotf_audio_player::Album> = None;
+    for (index, position) in positions.iter().enumerate() {
+        let Some(item) = items.get(position.item) else {
+            continue;
+        };
+        let album = &item.album;
+        let same_album = previous.is_some_and(|last| {
+            last.id == album.id
+                && last.uuid == album.uuid
+                && last.title == album.title
+                && last.edition == album.edition
+                && last.artist() == album.artist()
+        });
+        if !same_album {
+            rows.push(FlatQueueRow::Album(position.item));
+        }
+        rows.push(FlatQueueRow::Track(index));
+        previous = Some(album);
+    }
+    rows
+}
+
 /// Lightweight summary of a queue item used to build the queue accordion.
 /// Keeping this small avoids cloning the full `QueueItem` (album + tracks)
 /// on every render.

@@ -1,5 +1,5 @@
 # A stopped queue can be edited and restored without starting playback.
-focus library
+click sidebar.nav-library
 wait_until library.album_count > 0 timeout=10s
 wait_idle 2s
 click library.tab.search
@@ -14,6 +14,10 @@ wait_until queue.upcoming_count == 2 timeout=2s
 focus Queue
 wait_idle 2s
 assert_visible queue.upcoming.0.play
+resize 600 800
+wait_idle 2s
+assert_in_viewport queue.upcoming.1.remove
+screenshot grouped-queue-two-tracks
 click queue.upcoming.1.up
 assert queue.upcoming_count == 2
 assert playback.is_playing == false

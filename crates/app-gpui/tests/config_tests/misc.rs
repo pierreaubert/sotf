@@ -6,6 +6,65 @@ use sotf_audio_player_gpui::{
 const MAX_CACHE_SIZE: usize = 200;
 
 #[test]
+fn flat_queue_groups_contiguous_albums_without_reordering_tracks() {
+    use sotf_audio_player::controllers::QueueTrackPosition;
+    use sotf_audio_player::{Album, QueueItem, Track};
+    use sotf_audio_player_gpui::queue_render::{FlatQueueRow, flat_queue_rows};
+
+    let item = |title: &str, artist: &str| QueueItem {
+        album: Album {
+            id: None,
+            title: title.into(),
+            year: None,
+            tracks: vec![Track {
+                artist: Some(artist.into()),
+                album_artist: Some(artist.into()),
+                ..Default::default()
+            }],
+            album_art_path: None,
+            album_art_thumbnail: None,
+            play_count: 0,
+            edition: None,
+            dynamic_range: None,
+            is_favorite: false,
+            uuid: None,
+        },
+        current_track_index: 0,
+    };
+    // Moving a track can split one album across several queue items.
+    let items = vec![
+        item("A", "One"),
+        item("A", "One"),
+        item("B", "Two"),
+        item("A", "One"),
+        item("A", "Other"),
+    ];
+    let positions: Vec<_> = (0..items.len())
+        .map(|item| QueueTrackPosition { item, track: 0 })
+        .collect();
+    assert_eq!(
+        flat_queue_rows(&items, &positions),
+        vec![
+            FlatQueueRow::Album(0),
+            FlatQueueRow::Track(0),
+            FlatQueueRow::Track(1),
+            FlatQueueRow::Album(2),
+            FlatQueueRow::Track(2),
+            FlatQueueRow::Album(3),
+            FlatQueueRow::Track(3),
+            FlatQueueRow::Album(4),
+            FlatQueueRow::Track(4),
+        ]
+    );
+    // Positions may begin partway through the queue after playback advances.
+    assert_eq!(
+        flat_queue_rows(&items, &positions[1..2]),
+        vec![FlatQueueRow::Album(1), FlatQueueRow::Track(0),]
+    );
+    assert!(flat_queue_rows(&items, &[]).is_empty());
+}
+
+#[test]
 fn test_tracker_creation() {
     let tracker = ImageAccessTracker::new();
     assert_eq!(tracker.stats().tracked, 0);
