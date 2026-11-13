@@ -1,0 +1,22 @@
+# Resize the embedded editor without opening a fixed-size floating dialog.
+focus PluginGraph
+resize 1440 1000
+wait_idle 2s
+click routing.node.3
+wait_idle 2s
+assert input_mode == "EditingPluginNode"
+assert_in_viewport routing.inspector.close
+screenshot inspector-before-drag
+drag routing.inspector.resize routing.canvas
+wait_idle 2s
+assert_in_viewport routing.inspector.close
+screenshot inspector-after-drag
+resize 600 800
+wait_idle 2s
+assert_in_viewport routing.inspector.close
+screenshot inspector-narrow
+resize 1600 1000
+wait_idle 2s
+assert_in_viewport routing.inspector.close
+screenshot inspector-resized
+assert routing.dirty == false

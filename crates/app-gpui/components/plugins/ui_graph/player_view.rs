@@ -25,9 +25,12 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::workflow::{Position, WorkflowCanvas, WorkflowNodeData};
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant,
+    Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant, SplitPane,
+    SplitPaneTheme,
 };
 use sotf_audio_player::PluginSettings;
+
+const INSPECTOR_DIVIDER_WIDTH: f32 = 10.0;
 
 impl PlayerView {
     /// Ensure the WorkflowCanvas entity exists, creating it if needed
@@ -465,10 +468,51 @@ impl PlayerView {
                             use crate::app::dev_api::DevTrackExt;
                             canvas_area.dev_track("routing.canvas")
                         };
-                        canvas_area
-                    })
-                    .when(inspector_open, |el| {
-                        el.child(self.render_plugin_node_modal(cx))
+                        if inspector_open && !compact {
+                            let owner = self.state.clone();
+                            let ratio = owner
+                                .read(cx)
+                                .app
+                                .plugin_state
+                                .graph_state
+                                .inspector_split_ratio
+                                .unwrap_or(0.4);
+                            SplitPane::new("routing-editor-split")
+                                .ratio(ratio)
+                                .divider_width(px(INSPECTOR_DIVIDER_WIDTH))
+                                // intentional: ratio bounds reserve space for both panes without fixed pixel minimums.
+                                .min_first(px(0.0))
+                                .min_second(px(0.0))
+                                .first(canvas_area)
+                                .second(self.render_plugin_node_modal(cx))
+                                .on_resize(move |ratio, _, cx| {
+                                    owner.update(cx, |state, cx| {
+                                        state.app.plugin_state.graph_state.inspector_split_ratio =
+                                            Some(ratio.clamp(0.1, 0.9));
+                                        cx.notify();
+                                    });
+                                })
+                                .build_with_theme(&SplitPaneTheme {
+                                    divider_gutter: theme.surface,
+                                    divider_gutter_hover: theme.surface_hover,
+                                    divider: theme.border,
+                                    divider_hover: theme.accent,
+                                    divider_active: theme.accent,
+                                })
+                                .into_any_element()
+                        } else {
+                            div()
+                                .flex()
+                                .flex_col()
+                                .size_full()
+                                .min_w_0()
+                                .min_h_0()
+                                .child(canvas_area)
+                                .when(inspector_open, |el| {
+                                    el.child(self.render_plugin_node_modal(cx))
+                                })
+                                .into_any_element()
+                        }
                     }),
             )
     }
@@ -1190,23 +1234,12 @@ impl PlayerView {
             node_name.clone()
         };
 
-        // Compute modal dimensions: 85% of window, clamped to reasonable bounds
+        // The inline editor follows its split pane; overlays retain viewport bounds.
         let window_w = state.app.ui_state.window_width.max(1.0);
         let window_h = state.app.ui_state.window_height.max(1.0);
         let inline = state.app.ui_state.current_screen == Screen::PluginGraph;
         let modal_w = if inline {
-            let sizing = crate::ui::resolve_sizing_context(
-                window_w,
-                window_h,
-                state.app.ui_state.font_scale,
-                state.app.ui_state.min_font_size_px,
-                state.app.ui_state.max_font_size_px,
-            );
-            if sizing.window_width_rems < 64.0 {
-                window_w
-            } else {
-                (window_w * 0.45).min(800.0)
-            }
+            graph_state.inspector_width.unwrap_or(window_w * 0.6)
         } else {
             (window_w * 0.85).min(1600.0)
         };
@@ -1219,13 +1252,16 @@ impl PlayerView {
             state.app.ui_state.max_font_size_px,
         );
         let editor_width = (modal_w - 4.0 * d.card.0 * 16.0 * layout_scale - 4.0).max(1.0);
+        let measured_state = self.state.downgrade();
 
         // Create the modal
         div()
             .when(!inline, |el| {
                 el.absolute().inset_0().bg(theme.feedback.overlay_bg)
             })
-            .when(inline, |el| el.min_w_0().min_h_0().h_full().flex_shrink_0())
+            .when(inline, |el| {
+                el.min_w_0().min_h_0().size_full().flex_shrink_0()
+            })
             .flex()
             .when(!inline, |el| el.items_center().justify_center())
             .when(inline, |el| el.items_start().justify_start())
@@ -1236,7 +1272,59 @@ impl PlayerView {
                     .id("plugin-node-modal")
                     .w(px(modal_w))
                     .max_h(px(modal_h))
-                    .when(inline, |el| el.h_full().max_h_full().min_h_0())
+                    .when(inline, |el| el.size_full().max_h_full().min_h_0())
+                    .relative()
+                    .when(inline, |el| {
+                        el.child(
+                            canvas(
+                                move |bounds, _, cx| {
+                                    let width = f32::from(bounds.size.width);
+                                    if !width.is_finite() || width <= 0.0 {
+                                        return;
+                                    }
+                                    let Some(state) = measured_state.upgrade() else {
+                                        return;
+                                    };
+                                    if state
+                                        .read(cx)
+                                        .app
+                                        .plugin_state
+                                        .graph_state
+                                        .inspector_width
+                                        .is_some_and(|previous| (previous - width).abs() < 0.5)
+                                    {
+                                        return;
+                                    }
+                                    cx.defer(move |cx| {
+                                        state.update(cx, |state, cx| {
+                                            state.app.plugin_state.graph_state.inspector_width =
+                                                Some(width);
+                                            cx.notify();
+                                        })
+                                    });
+                                },
+                                |bounds, _, window, _| {
+                                    #[cfg(feature = "dev-api")]
+                                    crate::app::dev_api::registry::record_with_state(
+                                        window.window_handle().window_id().as_u64(),
+                                        "routing.inspector.resize",
+                                        Bounds::new(
+                                            point(
+                                                bounds.origin.x - px(INSPECTOR_DIVIDER_WIDTH),
+                                                bounds.origin.y,
+                                            ),
+                                            size(px(INSPECTOR_DIVIDER_WIDTH), bounds.size.height),
+                                        ),
+                                        Default::default(),
+                                    );
+                                    #[cfg(not(feature = "dev-api"))]
+                                    let _ = (bounds, window);
+                                },
+                            )
+                            .absolute()
+                            .size_full(),
+                        )
+                    })
                     .bg(theme.surface)
                     .rounded(d.r_lg)
                     .border_1()

@@ -364,6 +364,10 @@ pub struct PluginGraphState {
     /// Whether generic setup/output controls are expanded in the graph node
     /// editor. This is separate from the rack configuration overlay.
     pub graph_config_open: bool,
+    /// User-selected canvas share of the routing editor split.
+    pub inspector_split_ratio: Option<f32>,
+    /// Actual inspector bounds, used to lay out responsive plugin controls.
+    pub inspector_width: Option<f32>,
 }
 
 impl PluginGraphState {
