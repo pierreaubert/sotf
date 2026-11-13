@@ -680,7 +680,6 @@ impl PlayerView {
     fn sync_chain_autogain(state: &mut AppState, frame_count: u64) -> Option<(usize, f64)> {
         const UPDATE_INTERVAL_FRAMES: u64 = 5;
         const DEAD_BAND_DB: f64 = 0.25;
-        const MAX_GAIN_DB: f64 = 24.0;
 
         if !state.app.plugin_state.chain_state.chain_autogain {
             return None;
@@ -711,7 +710,11 @@ impl PlayerView {
             .graph
             .chain_auto_gain_db()
             .unwrap_or(0.0);
-        let next_gain_db = (current_gain_db + residual_db).clamp(-MAX_GAIN_DB, MAX_GAIN_DB);
+        let next_gain_db = state
+            .app
+            .plugin_state
+            .graph
+            .chain_auto_gain_target(residual_db)?;
         if (next_gain_db - current_gain_db).abs() < 0.1 {
             return None;
         }

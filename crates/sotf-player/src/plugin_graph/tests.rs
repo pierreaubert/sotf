@@ -7,6 +7,18 @@ use sotf_audio::plugins::EQFilter;
 use sotf_audio::plugins::{PluginSettings, PluginType};
 
 #[test]
+fn chain_autogain_target_limits_accumulated_correction() {
+    let mut graph = PluginGraph::new();
+    graph.set_chain_auto_gain(Some(4.0));
+    assert_eq!(graph.chain_auto_gain_target(20.0), Some(20.0));
+    assert_eq!(graph.chain_auto_gain_target(-100.0), Some(-60.0));
+    assert_eq!(graph.chain_auto_gain_target(-1.5), Some(2.5));
+    assert_eq!(graph.chain_auto_gain_target(f64::NAN), None);
+    assert_eq!(graph.chain_auto_gain_target(f64::INFINITY), None);
+    assert_eq!(graph.chain_auto_gain_db(), Some(4.0));
+}
+
+#[test]
 fn test_add_and_remove_nodes() {
     let mut graph = PluginGraph::new();
 

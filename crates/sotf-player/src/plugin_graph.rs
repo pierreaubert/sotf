@@ -1585,6 +1585,17 @@ impl PluginGraph {
         self.chain_auto_gain_db
     }
 
+    /// Calculate a finite AutoGain target within the Gain plugin's limits.
+    pub fn chain_auto_gain_target(&self, residual_db: f64) -> Option<f64> {
+        use sotf_plugins::param_specs::{find_by_key, gain};
+        let target_db = self.chain_auto_gain_db.unwrap_or(0.0) + residual_db;
+        if !target_db.is_finite() {
+            return None;
+        }
+        let spec = find_by_key(gain::PARAMS, "gain_db");
+        Some(target_db.clamp(spec.min_f64(), spec.max_f64()))
+    }
+
     fn chain_auto_gain_config(&self, gain_db: f64) -> PluginConfig {
         PluginConfig::new(
             "gain",
