@@ -54,6 +54,10 @@ pub struct NamedCapability {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent capabilities are exposed as booleans in the protocol"
+)]
 pub struct InputCapabilities {
     pub key: bool,
     pub text: bool,
@@ -111,6 +115,10 @@ impl Capabilities {
         }
     }
 
+    /// Hash the serialized capabilities.
+    ///
+    /// # Errors
+    /// Returns an error if serialization fails.
     pub fn fingerprint(&self) -> Result<String, serde_json::Error> {
         canonical_json_hash(&serde_json::to_value(self)?)
     }
@@ -143,6 +151,10 @@ impl Rect {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent element properties are exposed as booleans in the protocol"
+)]
 pub struct TrackedElement {
     pub selector: String,
     pub bounds: Rect,
@@ -189,6 +201,10 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
+    /// Create a snapshot of the supplied state.
+    ///
+    /// # Errors
+    /// Returns an error if the state cannot be serialized for hashing.
     pub fn new(
         target_id: impl Into<String>,
         state_revision: u64,
@@ -256,6 +272,7 @@ pub struct DevReply {
 }
 
 impl DevReply {
+    #[must_use]
     pub fn success(value: Value) -> Self {
         Self {
             ok: true,
@@ -314,6 +331,10 @@ fn default_click_count() -> usize {
 }
 
 impl CoordinateInput {
+    /// Validate input against the configured limits.
+    ///
+    /// # Errors
+    /// Returns an error if the input violates a limit.
     pub fn validate(&self, limits: &InputLimits) -> Result<(), InputError> {
         match self {
             Self::Pointer {
@@ -418,6 +439,10 @@ fn validate_point(x: f64, y: f64, limits: &InputLimits) -> Result<(), InputError
     }
 }
 
+/// Hash JSON independently of object key order.
+///
+/// # Errors
+/// Returns an error if the canonical value cannot be serialized.
 pub fn canonical_json_hash(value: &Value) -> Result<String, serde_json::Error> {
     let canonical = canonicalize(value);
     let bytes = serde_json::to_vec(&canonical)?;

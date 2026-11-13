@@ -23,10 +23,10 @@ pub enum ServiceError {
 impl std::fmt::Display for ServiceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ServiceError::AuthError(msg) => write!(f, "Auth error: {}", msg),
-            ServiceError::NetworkError(msg) => write!(f, "Network error: {}", msg),
-            ServiceError::NotFound(msg) => write!(f, "Not found: {}", msg),
-            ServiceError::Other(msg) => write!(f, "Service error: {}", msg),
+            ServiceError::AuthError(msg) => write!(f, "Auth error: {msg}"),
+            ServiceError::NetworkError(msg) => write!(f, "Network error: {msg}"),
+            ServiceError::NotFound(msg) => write!(f, "Not found: {msg}"),
+            ServiceError::Other(msg) => write!(f, "Service error: {msg}"),
         }
     }
 }
@@ -42,9 +42,9 @@ impl std::error::Error for ServiceError {}
 pub enum ServiceCredentials {
     /// Username + password (Spotify)
     UsernamePassword { username: String, password: String },
-    /// OAuth2 access token (Tidal)
+    /// `OAuth2` access token (Tidal)
     AccessToken(String),
-    /// OAuth2 device code flow (Tidal) — returns a URL for the user to visit
+    /// `OAuth2` device code flow (Tidal) — returns a URL for the user to visit
     DeviceCode,
     /// Cached session from a previous authentication
     CachedSession(Vec<u8>),
@@ -53,12 +53,13 @@ pub enum ServiceCredentials {
 /// Redact a sensitive string for logging: keep the first 4 characters and
 /// replace the rest with `***`. Strings shorter than 4 chars are fully
 /// redacted (no prefix is shown).
+#[must_use]
 pub fn redact_secret(s: &str) -> String {
     let prefix: String = s.chars().take(4).collect();
     if prefix.chars().count() < 4 {
         "***".to_string()
     } else {
-        format!("{}***", prefix)
+        format!("{prefix}***")
     }
 }
 
@@ -124,7 +125,7 @@ pub struct ServiceTrack {
 ///
 /// The service decodes the audio internally (e.g. librespot decodes Vorbis)
 /// and provides interleaved f32 samples. The engine's decoder thread wraps
-/// this in a pass-through AudioDecoder.
+/// this in a pass-through `AudioDecoder`.
 pub struct PcmStream {
     /// Sample rate in Hz
     pub sample_rate: u32,
@@ -139,6 +140,17 @@ pub struct PcmStream {
     pub reader: Box<dyn Read + Send>,
 }
 
+impl std::fmt::Debug for PcmStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PcmStream")
+            .field("sample_rate", &self.sample_rate)
+            .field("channels", &self.channels)
+            .field("bits_per_sample", &self.bits_per_sample)
+            .field("total_frames", &self.total_frames)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Trait for streaming service integrations.
 ///
 /// Each service crate (spotify, tidal) implements this trait.
@@ -147,27 +159,42 @@ pub struct PcmStream {
 pub trait StreamingService: Send + 'static {
     /// Authenticate with the service.
     ///
-    /// For OAuth2 device code flow, this may return `AuthError` with a
+    /// For `OAuth2` device code flow, this may return `AuthError` with a
     /// URL that the user needs to visit. The caller should display this
     /// URL and retry after the user completes authentication.
+    ///
+    /// # Errors
+    /// Returns an error if authentication fails or requires user action.
     fn authenticate(&mut self, credentials: ServiceCredentials) -> Result<(), ServiceError>;
 
     /// Check if we have a valid authenticated session.
     fn is_authenticated(&self) -> bool;
 
     /// Search for tracks matching the query.
+    ///
+    /// # Errors
+    /// Returns an error if the service cannot complete the search.
     fn search_tracks(&self, query: &str, limit: u32) -> Result<Vec<ServiceTrack>, ServiceError>;
 
     /// Search for albums matching the query.
+    ///
+    /// # Errors
+    /// Returns an error if the service cannot complete the search.
     fn search_albums(&self, query: &str, limit: u32) -> Result<Vec<ServiceAlbum>, ServiceError>;
 
     /// Get tracks for an album.
+    ///
+    /// # Errors
+    /// Returns an error if the album cannot be retrieved.
     fn album_tracks(&self, album_id: &str) -> Result<Vec<ServiceTrack>, ServiceError>;
 
     /// Start streaming a track. Returns a PCM reader.
     ///
     /// For services that provide direct URLs (Tidal), this may return
     /// a URL string instead — the caller should use `AudioSource::Url`.
+    ///
+    /// # Errors
+    /// Returns an error if the service cannot start the stream.
     fn start_stream(
         &mut self,
         track_id: &str,
@@ -182,6 +209,7 @@ pub trait StreamingService: Send + 'static {
 }
 
 /// Result of starting a stream — either raw PCM or a URL to feed to the decoder.
+#[derive(Debug)]
 pub enum ServiceStreamResult {
     /// Raw PCM audio stream (e.g. from librespot which decodes internally).
     Pcm(PcmStream),

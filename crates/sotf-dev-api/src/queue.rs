@@ -17,6 +17,7 @@ struct QueueState {
 pub struct QueueTelemetry(Arc<QueueState>);
 
 impl QueueTelemetry {
+    #[must_use]
     pub fn snapshot(&self) -> QueueMetadata {
         QueueMetadata {
             depth: self.0.depth.load(Ordering::Relaxed),
@@ -55,6 +56,11 @@ pub enum QueueError {
     Disconnected,
 }
 
+#[must_use]
+/// Create a bounded channel and its telemetry.
+///
+/// # Panics
+/// Panics if `capacity` is zero.
 pub fn bounded_channel<T>(capacity: usize) -> (BoundedSender<T>, BoundedReceiver<T>) {
     assert!(capacity > 0, "bounded queue capacity must be non-zero");
     let (sender, receiver) = mpsc::sync_channel(capacity);
@@ -72,6 +78,10 @@ pub fn bounded_channel<T>(capacity: usize) -> (BoundedSender<T>, BoundedReceiver
 }
 
 impl<T> BoundedSender<T> {
+    /// Send without blocking.
+    ///
+    /// # Errors
+    /// Returns an error if the queue is full or disconnected.
     pub fn try_send(&self, value: T) -> Result<(), QueueError> {
         let depth = self.telemetry.0.depth.fetch_add(1, Ordering::Relaxed) + 1;
         match self.sender.try_send(value) {
@@ -94,18 +104,24 @@ impl<T> BoundedSender<T> {
         }
     }
 
+    #[must_use]
     pub fn telemetry(&self) -> QueueTelemetry {
         self.telemetry.clone()
     }
 }
 
 impl<T> BoundedReceiver<T> {
+    /// Receive until the timeout expires.
+    ///
+    /// # Errors
+    /// Returns an error if the timeout expires or the sender disconnects.
     pub fn recv_timeout(&self, timeout: Duration) -> Result<T, mpsc::RecvTimeoutError> {
         let value = self.receiver.recv_timeout(timeout)?;
         self.telemetry.0.depth.fetch_sub(1, Ordering::Relaxed);
         Ok(value)
     }
 
+    #[must_use]
     pub fn telemetry(&self) -> QueueTelemetry {
         self.telemetry.clone()
     }

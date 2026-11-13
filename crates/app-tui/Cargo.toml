@@ -143,3 +143,5 @@ path = "tests/integration.rs"
 name = "test_dev_api"
 path = "tests/test_dev_api.rs"
 required-features = ["dev-api"]
+
+[lints]

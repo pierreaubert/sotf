@@ -53,6 +53,10 @@ impl HttpResponse {
         }
     }
 
+    /// Write the response to a stream.
+    ///
+    /// # Errors
+    /// Returns an error on I/O failure or if the response exceeds `limit`.
     pub fn write_to(&self, writer: &mut impl Write, limit: usize) -> Result<(), HttpError> {
         if self.body.len() > limit {
             return Err(HttpError::ResponseTooLarge(self.body.len()));
@@ -102,6 +106,10 @@ pub enum HttpError {
     ResponseTooLarge(usize),
 }
 
+/// Parse a complete request.
+///
+/// # Errors
+/// Returns an error for malformed, truncated, or oversized requests.
 pub fn parse_request_bytes(
     bytes: &[u8],
     limits: &ProtocolLimits,
@@ -113,6 +121,10 @@ pub fn parse_request_bytes(
     finish_request(request, body, limits, true)
 }
 
+/// Read a complete request.
+///
+/// # Errors
+/// Returns an error on I/O failure or an invalid request.
 pub fn read_request(
     reader: &mut impl Read,
     limits: &ProtocolLimits,
@@ -129,6 +141,9 @@ pub fn read_request(
 /// restored afterwards. Trailing garbage sent with the request — the request
 /// desynchronization case this check exists for — is already in the socket
 /// buffer well within that window.
+///
+/// # Errors
+/// Returns an error on I/O failure or an invalid request.
 pub fn read_request_stream(
     stream: &mut TcpStream,
     limits: &ProtocolLimits,
@@ -188,7 +203,7 @@ fn read_head_and_body(
 }
 
 /// Reject bytes after the declared body (request desynchronization), with the
-/// same policy as parse_request_bytes. A read timeout here only means the
+/// same policy as `parse_request_bytes`. A read timeout here only means the
 /// client is holding the connection open while awaiting the response.
 fn reject_trailing_bytes(reader: &mut impl Read) -> Result<(), HttpError> {
     let mut extra = [0_u8; 1];
@@ -211,7 +226,7 @@ fn parse_head(head: &[u8], limits: &ProtocolLimits) -> Result<HttpRequest, HttpE
     if head.len() > limits.header_bytes + limits.request_line_bytes {
         return Err(HttpError::Headers);
     }
-    let text = std::str::from_utf8(head).map_err(|_| HttpError::Headers)?;
+    let text = std::str::from_utf8(head).map_err(|_error| HttpError::Headers)?;
     let mut lines = text.split("\r\n");
     let request_line = lines.next().ok_or(HttpError::RequestLine)?;
     if request_line.is_empty() || request_line.len() > limits.request_line_bytes {
@@ -303,7 +318,7 @@ fn finish_request(
 
 fn content_length(request: &HttpRequest) -> Result<usize, HttpError> {
     match request.header("content-length") {
-        Some(value) => value.parse().map_err(|_| HttpError::ContentLength),
+        Some(value) => value.parse().map_err(|_error| HttpError::ContentLength),
         None if request.method == Method::Post => Err(HttpError::ContentLength),
         None => Ok(0),
     }

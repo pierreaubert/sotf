@@ -84,3 +84,5 @@ sotf-engine = { workspace = true }
 sotf-test = { workspace = true }
 sotf-testkit = { workspace = true }
 sotf-player = { workspace = true, features = ["testing"] }
+
+[lints]

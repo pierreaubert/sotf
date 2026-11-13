@@ -16,3 +16,5 @@ uuid = { workspace = true }
 [dev-dependencies]
 env_logger = { workspace = true }
 proptest = { workspace = true }
+
+[lints]

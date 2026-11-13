@@ -24,3 +24,9 @@ reqwest = { workspace = true, features = ["json", "query", "blocking"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 url = { workspace = true }
+
+[lints]
+
+[lints.cargo]
+# vergen pins the transitive librespot build dependency.
+unused_dependencies = "allow"

@@ -25,7 +25,6 @@ AirPlay and Chromecast audio casting for SOTF.
 ## Dependencies
 
 - `tokio` -- Async networking
-- `uuid` -- Device UUIDs
 
 ## Testing
 

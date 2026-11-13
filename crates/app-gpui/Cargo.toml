@@ -391,3 +391,5 @@ path = "tests/room_eq_apply_tests.rs"
 [[test]]
 name = "room_eq_config_tests"
 path = "tests/room_eq_config_tests.rs"
+
+[lints]

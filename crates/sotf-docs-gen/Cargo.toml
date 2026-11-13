@@ -17,3 +17,5 @@ path = "src/main.rs"
 [dependencies]
 sotf-host = { workspace = true }
 sotf-plugins = { workspace = true, default-features = false }
+
+[lints]

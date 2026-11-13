@@ -10,6 +10,10 @@ pub const MAX_RUN_ID_BYTES: usize = 128;
 pub struct RunId(String);
 
 impl RunId {
+    /// Parse and validate a run ID.
+    ///
+    /// # Errors
+    /// Returns an error when the length or characters are invalid.
     pub fn parse(value: impl Into<String>) -> Result<Self, RunIdError> {
         let value = value.into();
         let bytes = value.as_bytes();
@@ -25,14 +29,17 @@ impl RunId {
         Ok(Self(value))
     }
 
+    #[must_use]
     pub fn authenticate(&self, candidate: &str) -> bool {
         constant_work_eq(self.0.as_bytes(), candidate.as_bytes())
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
+    #[must_use]
     pub fn redacted_hash(&self) -> String {
         use sha2::{Digest, Sha256};
         let digest = Sha256::digest(self.0.as_bytes());
@@ -41,9 +48,8 @@ impl RunId {
 }
 
 impl fmt::Debug for RunId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_tuple("RunId")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("RunId")
             .field(&format_args!("<redacted:{}>", self.redacted_hash()))
             .finish()
     }

@@ -26,3 +26,9 @@ serde_json = { workspace = true }
 # Apple-only logging (oslog wraps os/log.h, only available on Apple platforms)
 [target.'cfg(any(target_os = "ios", target_os = "tvos", target_os = "macos"))'.dependencies]
 oslog = { workspace = true }
+
+[lints]
+
+[lints.cargo]
+# The tvOS implementation and its dependencies are target-gated.
+unused_dependencies = "allow"

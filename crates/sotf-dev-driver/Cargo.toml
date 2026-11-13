@@ -30,3 +30,5 @@ tempfile = { workspace = true }
 [[bin]]
 name = "sotf-dev-driver"
 path = "src/main.rs"
+
+[lints]

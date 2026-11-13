@@ -25,3 +25,5 @@ autoeq-report-native = { path = "../../../autoeq/crates/autoeq-report-native" }
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["blocking"] }
+
+[lints]

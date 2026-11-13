@@ -23,3 +23,5 @@ env_logger = { workspace = true }
 proptest = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 insta = { workspace = true }
+
+[lints]

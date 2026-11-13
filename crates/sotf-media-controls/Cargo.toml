@@ -10,7 +10,6 @@ keywords = ["audio", "media", "controls"]
 categories = ["multimedia::audio"]
 
 [dependencies]
-log = { workspace = true }
 thiserror = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -34,6 +33,7 @@ block2 = { workspace = true }
 dispatch2 = { workspace = true }
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+log = { workspace = true }
 mpris-server = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "macros"] }
 

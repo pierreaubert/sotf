@@ -121,3 +121,5 @@ sotf-testkit = { workspace = true }
 sotf-test = { workspace = true }
 insta = { workspace = true }
 proptest = { workspace = true }
+
+[lints]
