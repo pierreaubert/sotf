@@ -59,3 +59,16 @@ sotf_log_info()    { echo -e "${SOTF_BLUE}[INFO]${SOTF_NC} $1"; }
 sotf_log_success() { echo -e "${SOTF_GREEN}[OK]${SOTF_NC} $1"; }
 sotf_log_warning() { echo -e "${SOTF_YELLOW}[WARN]${SOTF_NC} $1"; }
 sotf_log_error()   { echo -e "${SOTF_RED}[ERROR]${SOTF_NC} $1"; }
+
+sotf_prepare_report_assets() {
+    local autoeq_dir="$1/../autoeq"
+    local report_dist="$autoeq_dir/crates/autoeq-report-wasm/dist"
+    if [ -s "$report_dist/report2d.wasm" ] && [ -s "$report_dist/report2d.js" ]; then
+        return 0
+    fi
+    just --working-directory "$autoeq_dir" --justfile "$autoeq_dir/Justfile" report-dist || return 1
+    if [ ! -s "$report_dist/report2d.wasm" ] || [ ! -s "$report_dist/report2d.js" ]; then
+        sotf_log_error "AutoEQ report-dist did not produce report2d.wasm and report2d.js"
+        return 1
+    fi
+}

@@ -214,6 +214,95 @@ fn eq_frequency_points() -> &'static [f64] {
         .as_slice()
 }
 
+pub(crate) fn render_analog_eq_graph(
+    settings: &PluginSettings,
+    spectrum: Option<std::sync::Arc<[f32]>>,
+    sample_rate: f64,
+    width: f32,
+    height: f32,
+    theme: &Theme,
+) -> AnyElement {
+    let value = |index| settings.param_value(index).unwrap_or(0.0);
+    let filters = [
+        EQFilter::new(BiquadFilterType::Lowshelf, value(0), 0.71, value(1)),
+        EQFilter::new(BiquadFilterType::Peak, value(2), value(4), value(3)),
+        EQFilter::new(BiquadFilterType::Peak, value(5), value(7), value(6)),
+        EQFilter::new(BiquadFilterType::Highshelf, value(8), 0.71, value(9)),
+    ];
+    let points = eq_frequency_points();
+    let curve = eq_curve_cache()
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .get_or_build(&filters, points, sample_rate);
+    let (min_db, max_db) = calculate_dynamic_y_range(&filters);
+    let transparent = gpui::rgba(0x00000000);
+    let chart_theme = ChartTheme {
+        plot_background: transparent,
+        grid_color: theme.plugin_palette.eq_curve_colors.grid,
+        axis_line_color: theme.plugin_palette.graph_colors.grid,
+        axis_label_color: theme.text_secondary,
+        title_color: theme.text_primary,
+        legend_text_color: theme.text_secondary,
+    };
+    let mut chart = line(points, &curve.combined_response)
+        .x_scale(ScaleType::Log)
+        .y_scale(ScaleType::Linear)
+        .right_margin(0.0)
+        .x_range(MIN_FREQ, MAX_FREQ)
+        .y_range(min_db, max_db)
+        .size(width, height)
+        .color(rgba_to_u32(theme.text_primary))
+        .stroke_width(2.5)
+        .theme(chart_theme);
+    for (index, response) in curve.band_responses.iter().enumerate() {
+        let color = theme
+            .plugin_palette
+            .band_colors
+            .get(index)
+            .copied()
+            .map(rgba_to_u32)
+            .unwrap_or(BAND_COLOR_FALLBACK);
+        chart = chart.add_series(response, Option::<String>::None, color, 1.5, 0.7);
+    }
+    let plot = chart
+        .build()
+        .map(|chart| chart.into_any_element())
+        .unwrap_or_else(|_| div().into_any_element());
+    let colors = &theme.plugin_palette.spectrum_colors;
+    div()
+        .relative()
+        .w(px(width))
+        .h(px(height))
+        .bg(theme.plugin_palette.eq_curve_colors.background)
+        .when_some(spectrum, |el, magnitudes| {
+            el.child(
+                div()
+                    .absolute()
+                    .left(px(super::consts::CHART_LEFT_MARGIN))
+                    .right_0()
+                    .top(px(super::consts::GPUI_PX_MARGIN_TOP))
+                    .bottom(px(CHART_BOTTOM_MARGIN))
+                    .opacity(0.35)
+                    .child(
+                        gpui_audio_kit::SpectrumElement::new(magnitudes)
+                            .height(px((height
+                                - super::consts::GPUI_PX_MARGIN_TOP
+                                - CHART_BOTTOM_MARGIN)
+                                .max(1.0)))
+                            .frequency_range(MIN_FREQ as f32, MAX_FREQ as f32)
+                            .colors(gpui_audio_kit::SpectrumColors {
+                                background: transparent,
+                                low: colors.bass,
+                                mid: colors.mids,
+                                high: colors.treble,
+                            }),
+                    ),
+            )
+        })
+        .child(plot)
+        .into_any_element()
+}
+
 #[derive(Clone)]
 struct EqCurveRenderData {
     combined_response: Vec<f64>,
@@ -983,6 +1072,8 @@ fn render_eq_band_popup(
                 let button = button.dev_track(format!("eq.filter_type.{band_idx}.{index}"));
                 button
             }));
+        #[cfg(feature = "dev-api")]
+        let menu = menu.dev_track("eq.filter_type.menu");
         select = select.child(
             deferred(
                 Popover::new("eq-filter-shape-menu")
@@ -2534,7 +2625,6 @@ pub fn render_eq_plugin(
                             if !ui.eq_filter_type_open {
                                 ui.eq_band_popup_open = false;
                             }
-                            ui.eq_filter_type_open = false;
                             cx.notify();
                         });
                     })

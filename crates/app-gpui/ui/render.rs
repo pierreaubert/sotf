@@ -1532,6 +1532,9 @@ impl PlayerView {
         theme: &crate::theme::Theme,
         d: &Ds,
     ) -> AnyElement {
+        if collapsed {
+            return div().into_any_element();
+        }
         let section = div()
             .id(SharedString::from(format!("sidebar-section-{id}")))
             .flex()

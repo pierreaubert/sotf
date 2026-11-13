@@ -675,13 +675,37 @@ mod tests {
         };
         let mut changed = false;
 
-        // Param index 3 = band 0 filter type; 1 = Lowshelf
-        assert!(set_plugin_param_value(&mut settings, 3, 1.0, &mut changed));
-        match settings {
-            PluginSettings::EQ { filters, .. } => {
-                assert_eq!(filters[0].filter_type, BiquadFilterType::Lowshelf)
-            }
-            _ => panic!("expected EQ"),
+        for (index, expected) in [
+            BiquadFilterType::Peak,
+            BiquadFilterType::Lowshelf,
+            BiquadFilterType::Highshelf,
+            BiquadFilterType::Lowpass,
+            BiquadFilterType::Highpass,
+            BiquadFilterType::Bandpass,
+            BiquadFilterType::Notch,
+            BiquadFilterType::AllPass,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert!(set_plugin_param_value(
+                &mut settings,
+                3,
+                index as f64,
+                &mut changed
+            ));
+            let PluginSettings::EQ { filters, .. } = &settings else {
+                panic!("expected EQ")
+            };
+            assert_eq!(filters[0].filter_type, expected);
+            assert_eq!(
+                super::super::desktop_eq_param_value(
+                    &settings,
+                    super::super::EqEditTarget::Global,
+                    3
+                ),
+                Some(index as f64)
+            );
         }
     }
 

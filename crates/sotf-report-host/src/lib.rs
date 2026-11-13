@@ -7,14 +7,17 @@
 
 // Rust guideline compliant 2026-02-21
 
-mod prepare;
 mod producer;
 mod server;
 
 #[doc(inline)]
 pub use autoeq_report_wasm::capture_quality;
 #[doc(inline)]
-pub use producer::{GeneratedReport, generate_report, generate_report_with_quality};
+pub use autoeq_report_wasm::report_document::ReportDocument;
+#[doc(inline)]
+pub use producer::{
+    GeneratedReport, compose_report, export_report, generate_report, generate_report_with_quality,
+};
 #[doc(inline)]
 pub use server::ReportServer;
 

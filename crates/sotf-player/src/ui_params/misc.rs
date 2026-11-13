@@ -38,6 +38,7 @@ pub fn apply_eq_band_field(filter: &mut crate::EQFilter, field_idx: usize, delta
                 BiquadFilterType::Highpass,
                 BiquadFilterType::Bandpass,
                 BiquadFilterType::Notch,
+                BiquadFilterType::AllPass,
             ];
             let current_idx = types
                 .iter()

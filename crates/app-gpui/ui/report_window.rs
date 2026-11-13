@@ -1,48 +1,49 @@
-//! Native window hosting the shared AutoEQ report and its WASM renderer.
+//! Opens or exports the shared AutoEQ RoomEQ report.
 
 // Rust guideline compliant 2026-02-21
 
 use super::PlayerView;
+use crate::app::types::RoomEqResultIdentity;
+use autoeq_report_gpui::native::{NativeReport, ReportView};
 use gpui::{prelude::*, *};
-use sotf_report_host::GeneratedReport;
 #[cfg(all(
     feature = "report-webview",
     any(target_os = "macos", target_os = "windows")
 ))]
 use sotf_report_host::ReportServer;
+use sotf_report_host::{GeneratedReport, ReportDocument};
+use std::sync::Arc;
 
-/// Counts initialized shared report views for read-only workflow verification.
+/// Counts populated native report windows for read-only workflow verification.
 #[cfg(feature = "dev-api")]
 pub(crate) fn shared_report_window_count(cx: &mut App) -> usize {
-    #[cfg(all(
-        feature = "report-webview",
-        any(target_os = "macos", target_os = "windows")
-    ))]
-    {
-        cx.windows()
-            .into_iter()
-            .filter(|handle| {
-                handle
-                    .update(cx, |root, _, cx| {
-                        root.downcast::<SharedReportWindow>()
-                            .map(|entity| {
-                                let report = entity.read(cx);
-                                report.webview.is_some() && report.error.is_none()
-                            })
-                            .unwrap_or(false)
-                    })
-                    .unwrap_or(false)
-            })
-            .count()
-    }
-    #[cfg(not(all(
-        feature = "report-webview",
-        any(target_os = "macos", target_os = "windows")
-    )))]
-    {
-        let _ = cx;
-        0
-    }
+    cx.windows()
+        .into_iter()
+        .filter(|handle| {
+            handle
+                .update(cx, |root, _, cx| {
+                    root.downcast::<NativeReportWindow>()
+                        .is_ok_and(|window| !window.read(cx).document.sections.is_empty())
+                })
+                .unwrap_or(false)
+        })
+        .count()
+}
+
+/// Counts the composed sections in open native report windows.
+#[cfg(feature = "dev-api")]
+pub(crate) fn native_report_section_count(cx: &mut App) -> usize {
+    cx.windows()
+        .into_iter()
+        .map(|handle| {
+            handle
+                .update(cx, |root, _, cx| {
+                    root.downcast::<NativeReportWindow>()
+                        .map_or(0, |window| window.read(cx).document.sections.len())
+                })
+                .unwrap_or(0)
+        })
+        .sum()
 }
 
 impl PlayerView {
@@ -55,14 +56,14 @@ impl PlayerView {
     }
 
     fn prepare_shared_room_eq_report(&mut self, save: bool, cx: &mut Context<Self>) {
-        let (result, artifacts, quality, dark, inputs, labels) = {
+        let (result, artifacts, quality, dark, snapshot, labels) = {
             let app = &self.state.read(cx).app;
             let room = &app.measurement_state.room_eq_state;
             let labels = crate::app::i18n::SharedReportText::for_language(app.ui_state.language);
-            if !room.result_is_current() {
+            let Some(snapshot) = room.current_result_identity() else {
                 self.report_error(labels.stale.into(), cx);
                 return;
-            }
+            };
             let Some(result) = room.dsp_output.as_ref() else {
                 return;
             };
@@ -78,7 +79,7 @@ impl PlayerView {
                 room.artifact_dir.clone(),
                 capture_quality_report(&room.channel_measurements),
                 app.ui_state.theme_id != crate::app::theme::ThemeId::Light,
-                room.result_inputs,
+                snapshot,
                 labels,
             )
         };
@@ -86,21 +87,16 @@ impl PlayerView {
             state.app.measurement_state.room_eq_state.status_message = labels.preparing.into();
         });
         let worker = cx.background_executor().spawn(async move {
-            sotf_report_host::generate_report_with_quality(
-                &result,
-                artifacts.as_deref(),
-                Some(&quality),
-            )
+            let document =
+                sotf_report_host::compose_report(&result, artifacts.as_deref(), Some(&quality))?;
+            Ok::<_, anyhow::Error>(Arc::new(document))
         });
         cx.spawn(async move |view, cx| match worker.await {
-            Ok(report) => {
-                let current = view
-                    .update(cx, |view, cx| {
-                        let room = &view.state.read(cx).app.measurement_state.room_eq_state;
-                        room.result_is_current() && room.result_inputs == inputs
-                    })
-                    .unwrap_or(false);
-                if !current {
+            Ok(document) => {
+                if !view
+                    .update(cx, |view, cx| view.report_result_is_current(snapshot, cx))
+                    .unwrap_or(false)
+                {
                     let _ = view.update(cx, |view, cx| view.report_error(labels.stale.into(), cx));
                     return;
                 }
@@ -110,22 +106,66 @@ impl PlayerView {
                     // falls through to the in-app report window below.
                     #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
                     {
-                        let file = rfd::AsyncFileDialog::new()
-                            .add_filter("AutoEQ HTML", &["html"])
-                            .set_title(labels.save)
-                            .set_file_name("roomeq-report.html")
-                            .save_file()
-                            .await;
-                        if let Some(file) = file
-                            && let Err(error) = report.save(file.path())
+                        let Some(path) = report_destination(labels.save).await else {
+                            return;
+                        };
+                        if !view
+                            .update(cx, |view, cx| view.report_result_is_current(snapshot, cx))
+                            .unwrap_or(false)
                         {
+                            let _ = view
+                                .update(cx, |view, cx| view.report_error(labels.stale.into(), cx));
+                            return;
+                        }
+                        let exported = export_document(document, cx).await;
+                        if !view
+                            .update(cx, |view, cx| view.report_result_is_current(snapshot, cx))
+                            .unwrap_or(false)
+                        {
+                            let _ = view
+                                .update(cx, |view, cx| view.report_error(labels.stale.into(), cx));
+                            return;
+                        }
+                        let saved = match exported {
+                            Ok(report) => save_exported_report(report, path, cx).await,
+                            Err(error) => Err(error),
+                        };
+                        if let Err(error) = saved {
                             let _ = view
                                 .update(cx, |view, cx| view.report_error(error.to_string(), cx));
                         }
                         return;
                     }
                 }
-                if let Err(error) = open_report_window(report, dark, cx) {
+                let native_document = document.clone();
+                let report = cx
+                    .background_executor()
+                    .spawn(async move { NativeReport::try_complete(native_document) })
+                    .await;
+                if !view
+                    .update(cx, |view, cx| view.report_result_is_current(snapshot, cx))
+                    .unwrap_or(false)
+                {
+                    let _ = view.update(cx, |view, cx| view.report_error(labels.stale.into(), cx));
+                    return;
+                }
+                if let Some(report) = report {
+                    if let Err(error) = open_native_report_window(report, labels.save, dark, cx) {
+                        let _ =
+                            view.update(cx, |view, cx| view.report_error(error.to_string(), cx));
+                    }
+                    return;
+                }
+                let exported = export_document(document, cx).await;
+                if !view
+                    .update(cx, |view, cx| view.report_result_is_current(snapshot, cx))
+                    .unwrap_or(false)
+                {
+                    let _ = view.update(cx, |view, cx| view.report_error(labels.stale.into(), cx));
+                    return;
+                }
+                if let Err(error) = exported.and_then(|report| open_report_window(report, dark, cx))
+                {
                     let _ = view.update(cx, |view, cx| view.report_error(error.to_string(), cx));
                 }
             }
@@ -138,6 +178,11 @@ impl PlayerView {
         .detach();
     }
 
+    fn report_result_is_current(&self, snapshot: RoomEqResultIdentity, cx: &App) -> bool {
+        let room = &self.state.read(cx).app.measurement_state.room_eq_state;
+        room.current_result_identity() == Some(snapshot)
+    }
+
     fn report_error(&mut self, error: String, cx: &mut Context<Self>) {
         log::error!("Shared AutoEQ report failed: {error}");
         self.state.update(cx, |state, _| {
@@ -145,6 +190,140 @@ impl PlayerView {
             state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(error));
         });
         cx.notify();
+    }
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+async fn report_destination(label: &'static str) -> Option<std::path::PathBuf> {
+    rfd::AsyncFileDialog::new()
+        .add_filter("AutoEQ HTML", &["html"])
+        .set_title(label)
+        .set_file_name("roomeq-report.html")
+        .save_file()
+        .await
+        .map(|file| file.path().to_owned())
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+async fn save_document(
+    document: Arc<ReportDocument>,
+    path: std::path::PathBuf,
+    cx: &AsyncApp,
+) -> anyhow::Result<()> {
+    let report = export_document(document, cx).await?;
+    save_exported_report(report, path, cx).await
+}
+
+async fn export_document(
+    document: Arc<ReportDocument>,
+    cx: &AsyncApp,
+) -> anyhow::Result<GeneratedReport> {
+    cx.background_executor()
+        .spawn(async move { sotf_report_host::export_report(&document) })
+        .await
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+async fn save_exported_report(
+    report: GeneratedReport,
+    path: std::path::PathBuf,
+    cx: &AsyncApp,
+) -> anyhow::Result<()> {
+    cx.background_executor()
+        .spawn(async move { report.save(&path) })
+        .await
+}
+
+fn open_native_report_window(
+    report: NativeReport,
+    _save_label: &'static str,
+    dark: bool,
+    cx: &mut AsyncApp,
+) -> anyhow::Result<()> {
+    cx.open_window(
+        WindowOptions {
+            titlebar: Some(TitlebarOptions {
+                title: Some(report.document().title().to_owned().into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        move |_, cx| {
+            #[cfg(any(feature = "dev-api", not(any(target_os = "ios", target_os = "tvos"))))]
+            let document = report.document().clone();
+            let view = cx.new(|_| ReportView::from_prepared(report).with_dark_appearance(dark));
+            cx.new(|_| NativeReportWindow {
+                view,
+                #[cfg(any(feature = "dev-api", not(any(target_os = "ios", target_os = "tvos"))))]
+                document,
+                #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+                save_label: _save_label,
+                #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+                saving: false,
+                #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+                save_error: None,
+            })
+        },
+    )?;
+    Ok(())
+}
+
+struct NativeReportWindow {
+    view: Entity<ReportView>,
+    #[cfg(any(feature = "dev-api", not(any(target_os = "ios", target_os = "tvos"))))]
+    document: Arc<ReportDocument>,
+    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+    save_label: &'static str,
+    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+    saving: bool,
+    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+    save_error: Option<String>,
+}
+
+impl NativeReportWindow {
+    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+    fn save(&mut self, cx: &mut Context<Self>) {
+        if self.saving {
+            return;
+        }
+        self.saving = true;
+        self.save_error = None;
+        let document = self.document.clone();
+        let label = self.save_label;
+        cx.notify();
+        cx.spawn(async move |view, cx| {
+            let error = if let Some(path) = report_destination(label).await {
+                save_document(document, path, cx).await.err()
+            } else {
+                None
+            };
+            let _ = view.update(cx, |view, cx| {
+                view.saving = false;
+                view.save_error = error.map(|error| error.to_string());
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+}
+
+impl Render for NativeReportWindow {
+    fn render(&mut self, _: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        let root = div().size_full().flex().flex_col();
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+        let root = root.child(
+            div()
+                .flex_none()
+                .child(
+                    gpui_ui_kit::Button::new("save-native-report", self.save_label)
+                        .disabled(self.saving)
+                        .on_click_event(_cx.listener(|view, _, _, cx| view.save(cx))),
+                )
+                .when_some(self.save_error.as_ref(), |element, error| {
+                    element.child(error.clone())
+                }),
+        );
+        root.child(div().flex_1().min_h_0().child(self.view.clone()))
     }
 }
 

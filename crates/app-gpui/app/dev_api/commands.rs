@@ -79,6 +79,10 @@ pub enum DevCommand {
         path: String,
         reply: mpsc::SyncSender<DevQueryReply>,
     },
+    /// Paint and read the live window's tracked controls in an isolated QA run.
+    QaElements {
+        reply: mpsc::SyncSender<Result<String, String>>,
+    },
     /// Synthesise a keystroke (e.g. "cmd-shift-p", "enter", "a"). The
     /// string is parsed by `gpui::Keystroke::parse`.
     Key {

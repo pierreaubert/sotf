@@ -35,6 +35,14 @@ just qa
 ```
 If not, then do it step by step, see below.
 
+Desktop builds embed AutoEQ’s standalone RoomEQ renderer so HTML export works
+after installation. Run `just refresh-shared-report` to regenerate the
+renderer for the release revision. This requires the
+`wasm32-unknown-unknown` Rust target and a `wasm-bindgen` CLI matching
+AutoEQ’s `Cargo.lock`. The build scripts prepare missing assets automatically
+and include them in remote build snapshots. For a direct Cargo desktop build,
+use `--features report-export-bundled` after preparing the assets.
+
 ## Building ARM binaries
 
 On a ARM Mac M1-M5, in order to build binaries for Linux and Windows, you need docker:
@@ -81,7 +89,7 @@ tooling are Debian/glibc-oriented. Each recipe also copies its artifacts to
 
 In a powershell terminal:
 ```
-.\build\build-windows.bat
+.\scripts\build-windows.bat
 ```
 
 ## Building for iOS

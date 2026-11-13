@@ -21,6 +21,29 @@ fn test_room_eq_state_defaults() {
 }
 
 #[test]
+fn report_snapshot_requires_current_inputs_and_generation() {
+    let mut room = RoomEqState::default();
+    room.dsp_output = Some(
+        serde_json::from_value(serde_json::json!({"channels": {}})).expect("minimal RoomEQ graph"),
+    );
+    room.result_inputs = Some(room.input_digest());
+    let snapshot = room.current_result_identity().expect("current graph");
+
+    room.optimization_generation += 1;
+    assert!(
+        room.current_result_identity()
+            .is_some_and(|current| current != snapshot)
+    );
+
+    room.optimizer_config.max_iter += 1;
+    assert!(room.current_result_identity().is_none());
+
+    room.result_inputs = Some(room.input_digest());
+    room.dsp_output = None;
+    assert!(room.current_result_identity().is_none());
+}
+
+#[test]
 fn rejected_imported_recording_keeps_existing_room_configuration() {
     let imported = sotf_audio_player::recording_types::RecordingImport::from_json(
         r#"{"version":"1.1.0","speakers":{"L":{"measurements":[{"name":"Seat 1","frequencies":[100,1000],"magnitude_db":[0,0]},{"name":"Seat 2","frequencies":[100,1000],"magnitude_db":[1,1]}]}}}"#,

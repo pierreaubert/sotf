@@ -89,15 +89,26 @@ impl PlayerView {
         }
 
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
-        cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
-            if let Some(handle) = rfd::AsyncFileDialog::new().pick_folder().await {
-                let path = handle.path().to_path_buf();
-                let _ = view.update(cx, |view, cx| {
-                    view.commit_library_settings_directory(path, cx);
-                });
+        {
+            if self.state.read(cx).app.settings.library.picker_open {
+                return;
             }
-        })
-        .detach();
+            self.state.update(cx, |state, _| {
+                state.app.settings.library.picker_open = true;
+            });
+            cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
+                let selected = rfd::AsyncFileDialog::new().pick_folder().await;
+                let _ = view.update(cx, |view, cx| {
+                    view.state.update(cx, |state, _| {
+                        state.app.settings.library.picker_open = false;
+                    });
+                    if let Some(handle) = selected {
+                        view.commit_library_settings_directory(handle.path().to_path_buf(), cx);
+                    }
+                });
+            })
+            .detach();
+        }
     }
 
     fn confirm_remove_library_settings_directory(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -954,6 +965,57 @@ impl PlayerView {
                                 let button = button.dev_track("settings.library.rescan");
                                 button
                             }),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(d.gap_md)
+                    .child(
+                        Button::new(
+                            "library-action-replaygain",
+                            translations.settings_compute_replaygain,
+                        )
+                        .variant(ButtonVariant::Secondary)
+                        .size(ButtonSize::Sm)
+                        .disabled(scan_in_progress)
+                        .theme(theme.to_button_theme())
+                        .on_click_event(cx.listener(
+                            |view, _: &ClickEvent, _window, cx| {
+                                view.state
+                                    .update(cx, |state, _cx| state.app.scan_replay_gain());
+                                cx.notify();
+                            },
+                        )),
+                    )
+                    .child(
+                        Button::new("library-action-bliss", translations.settings_compute_bliss)
+                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Sm)
+                            .disabled(scan_in_progress)
+                            .theme(theme.to_button_theme())
+                            .on_click_event(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| state.app.scan_bliss());
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Button::new(
+                            "library-action-waveform",
+                            translations.settings_compute_waveform,
+                        )
+                        .variant(ButtonVariant::Secondary)
+                        .size(ButtonSize::Sm)
+                        .disabled(scan_in_progress)
+                        .theme(theme.to_button_theme())
+                        .on_click_event(cx.listener(
+                            |view, _: &ClickEvent, _window, cx| {
+                                view.state
+                                    .update(cx, |state, _cx| state.app.compute_waveform());
+                                cx.notify();
+                            },
+                        )),
                     ),
             )
             .when_some(scan_error, |content, error| {

@@ -698,8 +698,8 @@ pub use room_eq::{
     ChannelDspChain, ChannelMeasurement, ChannelOptResult, CrossoverType, CustomTargetCurve,
     DriverDspChain, DspChainMetadata, DspChainOutput, DspPluginConfig, EqFilterConfig,
     MultiSpeakerMode, OptimizationStatus, RoomEqAlgorithm, RoomEqDataSource,
-    RoomEqMeasurementsFile, RoomEqOptimizationMode, RoomEqOptimizerConfig, RoomEqSpeakerConfig,
-    RoomEqState, RoomEqStep, SpeakerConfigType, TargetCurveControlPoint,
+    RoomEqMeasurementsFile, RoomEqOptimizationMode, RoomEqOptimizerConfig, RoomEqResultIdentity,
+    RoomEqSpeakerConfig, RoomEqState, RoomEqStep, SpeakerConfigType, TargetCurveControlPoint,
 };
 pub use settings::SettingsTab;
 pub use spinorama_eq::{

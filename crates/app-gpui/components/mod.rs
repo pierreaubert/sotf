@@ -155,7 +155,6 @@ impl PlayerView {
                 .flex()
                 .flex_col()
                 .child(self.render_audio_device_settings_content(cx))
-                .child(self.render_audio_output_draft(cx))
                 .child(self.render_replay_gain_settings(true, cx))
                 .into_any_element(),
             crate::app::SettingsTab::Misc => {

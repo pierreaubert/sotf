@@ -247,6 +247,7 @@ build_binary() {
     fi
 
     log_info "Building release binary..."
+    sotf_prepare_report_assets "$PROJECT_ROOT"
     export MACOSX_DEPLOYMENT_TARGET=15.0
 
     cd "$PROJECT_ROOT"

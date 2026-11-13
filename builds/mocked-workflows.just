@@ -19,8 +19,14 @@ test-workflow-contracts:
 refresh-shared-report:
     just --justfile ../autoeq/Justfile report-dist
 
-# Report production requires Python + NumPy; set SOTF_REPORT_PYTHON to an
-# existing interpreter. The loopback lifecycle test needs local socket access.
+[group('build')]
+prepare-shared-report:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source scripts/lib/common.sh
+    sotf_prepare_report_assets "$PWD"
+
+# The loopback lifecycle test needs local socket access.
 [group('test')]
 test-shared-report:
     {{cargo}} test -p sotf-report-host

@@ -4,6 +4,16 @@ use super::misc::percent_decode;
 use anyhow::{Result, anyhow};
 use std::sync::mpsc::{self};
 
+pub(super) fn get_qa_elements(tx: &mpsc::SyncSender<DevCommand>) -> Result<String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    tx.send(DevCommand::QaElements { reply: reply_tx })
+        .map_err(|_| anyhow!("dev-api queue closed"))?;
+    reply_rx
+        .recv_timeout(REPLY_TIMEOUT)
+        .map_err(|_| anyhow!("dev-api reply timeout"))?
+        .map_err(anyhow::Error::msg)
+}
+
 pub(super) fn get_query(
     raw_query: &str,
     tx: &mpsc::SyncSender<DevCommand>,

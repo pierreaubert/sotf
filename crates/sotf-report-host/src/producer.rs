@@ -2,16 +2,16 @@
 //!
 //! Payload composition is delegated to AutoEQ's native dataset composer
 //! (`autoeq_report_wasm::report_dataset_payload`); file-backed report
-//! inputs are prepared by [`crate::prepare`]. No Python runtime, staged
+//! inputs are prepared by [`autoeq_report_native::prepare_live_report`]. No Python runtime, staged
 //! scripts, or subprocesses are involved, so generation works identically
 //! in desktop, mobile, and sandboxed hosts.
 
 // Rust guideline compliant 2026-02-21
 
 use anyhow::Context;
+use autoeq_report_wasm::capture_quality::CaptureQualityReport;
+use autoeq_report_wasm::report_document::ReportDocument;
 use std::path::{Path, PathBuf};
-
-use crate::prepare::prepare_report;
 
 /// Generated document and its private working directory.
 #[derive(Debug)]
@@ -74,26 +74,23 @@ pub fn generate_report(
 pub fn generate_report_with_quality(
     result: &serde_json::Value,
     artifact_root: Option<&Path>,
-    quality: Option<&autoeq_report_wasm::capture_quality::CaptureQualityReport>,
+    quality: Option<&CaptureQualityReport>,
 ) -> anyhow::Result<GeneratedReport> {
-    let (prepared, options) = prepare_report(result, artifact_root)?;
-    let dataset =
-        autoeq_report_wasm::report_dataset_payload::build_dataset_report(&prepared, &options)
-            .map_err(anyhow::Error::msg)?;
-    let mut payload = dataset.payload;
-    // Validation and dashboard grouping belong to the same upstream library
-    // used by standalone Rust producers and WASM consumers.
-    let empty_quality = autoeq_report_wasm::capture_quality::CaptureQualityReport::default();
-    autoeq_report_wasm::capture_quality::append_capture_quality_section_to_value(
-        &mut payload,
-        quality.unwrap_or(&empty_quality),
-    )?;
-    let title = payload["title"]
-        .as_str()
-        .context("Report title is missing")?;
+    let document = compose_report(result, artifact_root, quality)?;
+    export_report(&document)
+}
+
+/// Packages a composed report as self-contained HTML.
+///
+/// Run this function on a background worker because export writes a file.
+///
+/// # Errors
+/// Returns an error if the shell assets, serialization, or file write fails.
+pub fn export_report(document: &ReportDocument) -> anyhow::Result<GeneratedReport> {
+    let payload = document.browser_payload();
     let assets = autoeq_report_wasm::assemble::checked_in_assets().map_err(anyhow::Error::msg)?;
     let html = autoeq_report_wasm::assemble::assemble_html(
-        title,
+        document.title(),
         &serde_json::to_string(&payload)?,
         &assets,
     );
@@ -104,6 +101,30 @@ pub fn generate_report_with_quality(
         directory,
         html_path,
     })
+}
+
+/// Prepares and composes the shared AutoEQ report document.
+///
+/// Run this function on a background worker because preparation reads artifacts.
+///
+/// # Errors
+/// Returns an error if preparation, composition, or evidence validation fails.
+pub fn compose_report(
+    result: &serde_json::Value,
+    artifact_root: Option<&Path>,
+    quality: Option<&CaptureQualityReport>,
+) -> anyhow::Result<ReportDocument> {
+    let prepared = autoeq_report_native::prepare_live_report(result, artifact_root)
+        .context("Resolving AutoEQ report artifacts")?;
+    let mut document = autoeq_report_wasm::report_dataset_payload::build_report_document(
+        &prepared,
+        &Default::default(),
+    )
+    .map_err(anyhow::Error::msg)?;
+    if let Some(quality) = quality {
+        document.add_capture_quality(quality)?;
+    }
+    Ok(document)
 }
 
 #[cfg(test)]
@@ -168,6 +189,14 @@ mod tests {
             ]
         }]})).unwrap();
         let result = serde_json::json!({"version":"1.0","channels":{},"metadata":{}});
+        let document = compose_report(&result, None, Some(&quality)).unwrap();
+        let Some(autoeq_report_wasm::report_document::ReportSection::CaptureQuality(section)) =
+            document.sections.last()
+        else {
+            panic!("capture evidence must be available as a structured section");
+        };
+        assert_eq!(section.table.rows[0][9], "25.76 %");
+        assert_eq!(section.table.rows[1][8], "Unknown");
         let report = generate_report(&result, None).unwrap();
         let read_payload = |html: &str| -> serde_json::Value {
             serde_json::from_str(
@@ -250,7 +279,7 @@ mod tests {
             r#"{"channels":{"L":{"initial_curve":"initial.csv","eq_response":"eq.csv"}}}"#,
         )
         .unwrap();
-        let result = serde_json::json!({"version":"1.0","channels":{"L":{"plugins":[],"initial_curve":null,"eq_response":null}},"metadata":{}});
+        let result = serde_json::json!({"version":"1.0","channels":{"L":{"channel":"L","plugins":[],"initial_curve":null,"eq_response":null}}});
         let report = generate_report(&result, Some(artifacts.path())).unwrap();
         let html = report.read_html().unwrap();
         let payload = html

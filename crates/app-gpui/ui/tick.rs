@@ -793,7 +793,7 @@ impl PlayerView {
 
     /// Queue the next file for gapless playback when near the end of the current track.
     ///
-    /// Only queues when channel counts match (engine constraint for gapless transitions).
+    /// Queue only matching source formats so rate changes renegotiate output.
     fn handle_gapless_prequeue(
         state: &mut AppState,
         playback_state: &sotf_audio_player::PlaybackState,
@@ -817,7 +817,18 @@ impl PlayerView {
                 .and_then(|t| t.channels)
                 .unwrap_or(2) as usize;
 
-            if next_ch == current_ch {
+            let current_rate = state
+                .app
+                .playback
+                .current_queue_index
+                .and_then(|idx| state.app.queue_state.get(idx))
+                .and_then(|item| item.current_track())
+                .and_then(|track| track.sample_rate);
+
+            if next_ch == current_ch
+                && current_rate.is_some()
+                && current_rate == next_track.sample_rate
+            {
                 let _ = state.player.queue_next(next_track.path.clone());
             }
         }

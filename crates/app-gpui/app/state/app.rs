@@ -166,6 +166,7 @@ pub struct SettingsState {
 #[derive(Debug, Clone, Default)]
 pub struct LibraryFolderSettingsState {
     pub maintenance: LibraryMaintenanceState,
+    pub picker_open: bool,
     /// Access or path diagnosis from the most recent folder selection.
     pub directory_error: Option<sotf_audio_player::LibraryDirectoryAccessError>,
     /// Background scan failure retained until retry or a new successful scan.

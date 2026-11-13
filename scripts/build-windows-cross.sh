@@ -166,7 +166,8 @@ build_binaries() {
 
     # Build GPUI
     log_info "Building $GPUI_PACKAGE..."
-    cargo build --release --target "$TARGET" -p "$GPUI_PACKAGE" --bin sotf-desktop
+    sotf_prepare_report_assets "$PROJECT_ROOT"
+    cargo build --release --target "$TARGET" -p "$GPUI_PACKAGE" --bin sotf-desktop --features report-export-bundled
     if [ ! -f "$BUILD_DIR/$GPUI_BINARY" ]; then
         log_error "GPUI binary not found at $BUILD_DIR/$GPUI_BINARY"
         exit 1

@@ -7,6 +7,13 @@ use sotf_audio_player::room_eq_types::{
 use sotf_audio_player::ui_models::room_eq::RoomEqScreenModel;
 use std::ops::{Deref, DerefMut};
 
+/// Identifies one completed optimization and the inputs that produced it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RoomEqResultIdentity {
+    generation: u64,
+    inputs: u64,
+}
+
 /// Complete Room EQ screen state.
 ///
 /// Domain state lives in the shared [`RoomEqScreenModel`] so both GPUI and TUI
@@ -191,6 +198,18 @@ impl RoomEqState {
 
     pub fn result_is_current(&self) -> bool {
         self.result_inputs == Some(self.input_digest())
+    }
+
+    /// Returns the current DSP result's identity for asynchronous consumers.
+    pub fn current_result_identity(&self) -> Option<RoomEqResultIdentity> {
+        let inputs = self.result_inputs?;
+        if self.dsp_output.is_none() || !self.result_is_current() {
+            return None;
+        }
+        Some(RoomEqResultIdentity {
+            generation: self.optimization_generation,
+            inputs,
+        })
     }
 
     /// Load Room EQ domain state from the app-specific RecordingState.

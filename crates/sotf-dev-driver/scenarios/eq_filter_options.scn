@@ -1,0 +1,60 @@
+# 2026-11-09: Deferred filter menu clicks were closed by the band editor mouse-down handler, and All Pass was missing from the player mapping.
+# Fix: app-gpui/components/plugins/ui_eq/render.rs and sotf-player/src/controllers/plugin/misc.rs.
+# Run: QA_DIR=$(mktemp -d); cargo run -p sotf-gpui --features dev-api --bin sotf-desktop -- --qa "$QA_DIR"
+# In another terminal: cargo run -p sotf-dev-driver -- crates/sotf-dev-driver/scenarios/eq_filter_options.scn -v
+resize 1000 700
+focus Studio
+plugin_clear
+plugin_add EQ
+action PluginSelectFirstUser
+wait_idle 500ms
+click eq.band.0.select
+wait_visible eq.band.0.type.select timeout=3s
+click eq.band.0.type.select
+wait_visible eq.filter_type.0.0 timeout=3s
+scroll_into_view eq.filter_type.menu eq.filter_type.0.0
+click eq.filter_type.0.0
+assert plugins.plugin.2.param.3.value == 0
+wait_idle 250ms
+click eq.band.0.type.select
+wait_visible eq.filter_type.0.1 timeout=3s
+scroll_into_view eq.filter_type.menu eq.filter_type.0.1
+click eq.filter_type.0.1
+assert plugins.plugin.2.param.3.value == 1
+wait_idle 250ms
+click eq.band.0.type.select
+wait_visible eq.filter_type.0.2 timeout=3s
+scroll_into_view eq.filter_type.menu eq.filter_type.0.2
+click eq.filter_type.0.2
+assert plugins.plugin.2.param.3.value == 2
+wait_idle 250ms
+click eq.band.0.type.select
+wait_visible eq.filter_type.0.3 timeout=3s
+scroll_into_view eq.filter_type.menu eq.filter_type.0.3
+click eq.filter_type.0.3
+assert plugins.plugin.2.param.3.value == 3
+wait_idle 250ms
+click eq.band.0.type.select
+wait_visible eq.filter_type.0.4 timeout=3s
+scroll_into_view eq.filter_type.menu eq.filter_type.0.4
+click eq.filter_type.0.4
+assert plugins.plugin.2.param.3.value == 4
+wait_idle 250ms
+click eq.band.0.type.select
+wait_visible eq.filter_type.0.5 timeout=3s
+scroll_into_view eq.filter_type.menu eq.filter_type.0.5
+click eq.filter_type.0.5
+assert plugins.plugin.2.param.3.value == 5
+wait_idle 250ms
+click eq.band.0.type.select
+wait_visible eq.filter_type.0.6 timeout=3s
+scroll_into_view eq.filter_type.menu eq.filter_type.0.6
+click eq.filter_type.0.6
+assert plugins.plugin.2.param.3.value == 6
+wait_idle 250ms
+click eq.band.0.type.select
+wait_visible eq.filter_type.0.7 timeout=3s
+scroll_into_view eq.filter_type.menu eq.filter_type.0.7
+click eq.filter_type.0.7
+assert plugins.plugin.2.param.3.value == 7
+wait_idle 250ms

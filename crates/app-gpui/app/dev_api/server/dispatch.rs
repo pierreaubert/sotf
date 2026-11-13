@@ -104,6 +104,20 @@ pub(super) fn process_command(cmd: DevCommand, window: AnyWindowHandle, cx: &mut
             };
             let _ = reply.send(dev_reply);
         }
+        DevCommand::QaElements { reply } => {
+            let result = cx.update(|cx| {
+                window.update(cx, |_, window, cx| {
+                    // The compositor can defer frames when this QA window is
+                    // occluded. Resolve selectors against a fresh live frame.
+                    window.refresh();
+                    window.draw(cx).clear(cx);
+                    list_elements_json(registry::snapshot_for(
+                        window.window_handle().window_id().as_u64(),
+                    ))
+                })
+            });
+            let _ = reply.send(result.map_err(|error| error.to_string()));
+        }
         DevCommand::Key { keystroke, reply } => {
             let result = cx.update(|cx| dispatch_key(&keystroke, window, cx));
             let dev_reply = match result {
@@ -2448,7 +2462,13 @@ pub(super) fn dispatch_request(req: &HttpRequest, tx: &mpsc::SyncSender<DevComma
                 (status, r.to_json())
             })
         }
-        ("GET", "/elements") => Ok((200, list_elements_json())),
+        ("GET", "/elements") => {
+            if cfg!(feature = "qa") && std::env::var_os("SOTF_QA_DIR").is_some() {
+                super::get::get_qa_elements(tx).map(|body| (200, body))
+            } else {
+                Ok((200, list_elements_json(registry::snapshot())))
+            }
+        }
         _ => Err(anyhow!("unknown route: {} {}", req.method, req.path)),
     };
     match result {

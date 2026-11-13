@@ -9,6 +9,9 @@ keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
 
+[features]
+bundled-shell = ["autoeq-report-wasm/bundled-shell"]
+
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
@@ -18,6 +21,7 @@ tempfile.workspace = true
 uuid.workspace = true
 url.workspace = true
 autoeq-report-wasm = { path = "../../../autoeq/crates/autoeq-report-wasm" }
+autoeq-report-native = { path = "../../../autoeq/crates/autoeq-report-native" }
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["blocking"] }

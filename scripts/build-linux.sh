@@ -397,12 +397,13 @@ build_binary() {
     # onnx disabled: ort prebuilt binaries require glibc 2.38+ (__isoc23_strtol)
     # which is newer than the Docker build containers provide
     if ! $TUI_ONLY; then
+        sotf_prepare_report_assets "$PROJECT_ROOT" || exit 1
         if $CROSS_COMPILE; then
             log_info "Cross-compiling for $TARGET..."
-            CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --profile dist --package "$PACKAGE_NAME" --target "$TARGET"
+            CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --profile dist --package "$PACKAGE_NAME" --features report-export-bundled --target "$TARGET"
         else
             log_info "Building native Linux binary..."
-            cargo build --profile dist --package "$PACKAGE_NAME"
+            cargo build --profile dist --package "$PACKAGE_NAME" --features report-export-bundled
         fi
 
         if [ ! -f "$BUILD_DIR/$BINARY_NAME" ]; then

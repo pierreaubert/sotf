@@ -106,8 +106,9 @@ impl App {
                 self.settings.library.directory_error = None;
                 if needs_scan {
                     self.scan.needs_rescan = true;
-                    self.ui_state.toast_message =
-                        Some(ToastMessage::success("Directory added. Press 's' to scan."));
+                    self.ui_state.toast_message = Some(ToastMessage::success(
+                        "Directory added. Use Scan to update the library.",
+                    ));
                 } else {
                     self.ui_state.toast_message =
                         Some(ToastMessage::warning("Directory already exists."));

@@ -133,7 +133,17 @@ impl PlayerView {
         }
         let mut content = div().flex().flex_col().gap(d.section).min_w_0().w_full();
         if query.trim().is_empty() {
-            content = content.child(Text::section_header(text.categories[category as usize]));
+            content = content.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap(d.gap)
+                    .child(Text::section_header(text.categories[category as usize]))
+                    .when(category == PreferencesCategory::Audio, |row| {
+                        row.child(self.render_audio_output_draft(cx))
+                    }),
+            );
             let group_tabs = category.visible_tabs(cfg!(target_os = "ios"));
             if category == PreferencesCategory::Connections {
                 let entity = self.state.downgrade();
@@ -328,6 +338,7 @@ impl PlayerView {
 
         let mut root = div()
             .id("settings-screen")
+            .relative()
             .size_full()
             .min_h_0()
             .flex()
@@ -393,6 +404,7 @@ impl PlayerView {
                         "preferences.done",
                     )),
             );
+        let mut close_dialog = None;
         if close_pending {
             let labels = close_labels;
             let mut actions = div().flex().flex_wrap().gap(d.gap);
@@ -438,20 +450,38 @@ impl PlayerView {
                 };
                 actions = actions.child(button);
             }
-            root = root.child(
+            close_dialog = Some(
                 div()
+                    .id("preferences-close-dialog")
+                    .absolute()
+                    .inset_0()
+                    .occlude()
                     .flex()
-                    .flex_col()
-                    .gap(d.gap)
-                    .child(Text::section_header(if audio_apply_pending {
-                        applying_label
-                    } else {
-                        labels[0]
-                    }))
-                    .when_some(close_error, |el, error| {
-                        el.child(Text::body(error).color(theme.error))
-                    })
-                    .child(actions),
+                    .items_center()
+                    .justify_center()
+                    .bg(theme.background.opacity(0.8))
+                    .child(
+                        div()
+                            .w(rems(32.0))
+                            .max_w_full()
+                            .p(d.section)
+                            .rounded(d.r_md)
+                            .bg(theme.background_secondary)
+                            .border_1()
+                            .border_color(theme.border)
+                            .flex()
+                            .flex_col()
+                            .gap(d.section)
+                            .child(Text::section_header(if audio_apply_pending {
+                                applying_label
+                            } else {
+                                labels[0]
+                            }))
+                            .when_some(close_error, |el, error| {
+                                el.child(Text::body(error).color(theme.error))
+                            })
+                            .child(actions),
+                    ),
             );
         }
         if compact {
@@ -519,7 +549,7 @@ impl PlayerView {
                 "preferences.category",
             ));
         }
-        root.child(body).into_any_element()
+        root.child(body).children(close_dialog).into_any_element()
     }
 }
 

@@ -1981,6 +1981,11 @@ impl PlayerView {
 
     pub(super) fn scan_library(&mut self, _: &ScanLibrary, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
+            if Self::is_text_input_mode(state.app.ui_state.input_mode)
+                || state.app.settings.library.picker_open
+            {
+                return;
+            }
             // Start scan (this will be async in reality, but for now we do it synchronously)
             if let Err(e) = state.app.scan_library() {
                 log::error!("Library scan failed: {}", e);

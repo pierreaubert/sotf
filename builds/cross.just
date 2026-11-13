@@ -126,6 +126,7 @@ _docker-linux-x86-debian-distro distro base_image:
 	volume="sotf-target-linux-x86-{{distro}}"
 	version=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
 	out_dir="dist/linux-distros/{{distro}}"
+	just prepare-shared-report
 	echo "Building Docker image for {{base_image}}..."
 	docker build --platform linux/amd64 \
 		--build-arg BASE_IMAGE="{{base_image}}" \
@@ -157,7 +158,7 @@ _docker-linux-x86-debian-distro distro base_image:
 # (container root has no DAC override there). Native container FS is also
 # much faster for the AppDir's many small files.
 [group('docker')]
-docker-linux-arm64: docker-base-linux-arm64
+docker-linux-arm64: prepare-shared-report docker-base-linux-arm64
 	@echo "Building Docker image..."
 	docker build -t sotf-linux-arm64 -f builds/from_macos_arm/Dockerfile.aarch64-unknown-linux-gnu ..
 	@echo "Building in Docker container..."
@@ -177,6 +178,7 @@ docker-linux-x86: docker-base-linux-x86-gnu
 	host_arch=$(uname -m)
 	echo "Building Docker image..."
 	if [ "$host_arch" = "x86_64" ]; then
+		just prepare-shared-report
 		docker build -t sotf-linux-x86-gnu -f builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-gnu ..
 		echo "Building in Docker container..."
 		# Stage dist/ in the container FS (see docker-linux-arm64).
@@ -208,7 +210,7 @@ docker-debug-linux-x86: docker-base-linux-x86-gnu
 # Set WINDOWS_CERT_FILE and WINDOWS_CERT_PASSWORD to use a CA cert; otherwise self-signed is auto-generated.
 # Set SOTF_MSIX_SIGN=0 to build an unsigned MSIX (used by build-release-local.sh --skip-sign).
 [group('docker')]
-docker-windows-arm64: docker-base-win-arm64
+docker-windows-arm64: prepare-shared-report docker-base-win-arm64
 	#!/usr/bin/env bash
 	set -euo pipefail
 	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
@@ -229,7 +231,7 @@ docker-windows-arm64: docker-base-win-arm64
 	# build-msix.sh stages both sotf-desktop.exe and sotf-tui.exe; the MSIX
 	# manifest declares the desktop app, so both binaries must be built.
 	docker run --rm -v "$(pwd)/..":/workspace -v sotf-target-win-arm64:/build-target -w /workspace/sotf "${docker_env[@]}" sotf-win-arm64 \
-		bash -c 'cargo build --profile dist --target aarch64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && cargo build --profile dist --target aarch64-pc-windows-gnullvm -p sotf-gpui --bin sotf-desktop && ./scripts/build-msix.sh $MSIX_SIGN_FLAG --build-dir /build-target/aarch64-pc-windows-gnullvm/dist --arch arm64 && cp /build-target/aarch64-pc-windows-gnullvm/dist/sotf-tui.exe dist/'
+		bash -c 'cargo build --profile dist --target aarch64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && cargo build --profile dist --target aarch64-pc-windows-gnullvm -p sotf-gpui --bin sotf-desktop --features report-export-bundled && ./scripts/build-msix.sh $MSIX_SIGN_FLAG --build-dir /build-target/aarch64-pc-windows-gnullvm/dist --arch arm64 && cp /build-target/aarch64-pc-windows-gnullvm/dist/sotf-tui.exe dist/'
 	mv "dist/sotf-tui.exe" "dist/sotf-tui-${VERSION}-windows-arm64.exe"
 	echo "Done! dist/sotf-tui-${VERSION}-windows-arm64.exe + MSIX in dist/"
 
@@ -237,7 +239,7 @@ docker-windows-arm64: docker-base-win-arm64
 # Set WINDOWS_CERT_FILE and WINDOWS_CERT_PASSWORD to use a CA cert; otherwise self-signed is auto-generated.
 # Set SOTF_MSIX_SIGN=0 to build an unsigned MSIX (used by build-release-local.sh --skip-sign).
 [group('docker')]
-docker-windows-x86: docker-base-win-x86
+docker-windows-x86: prepare-shared-report docker-base-win-x86
 	#!/usr/bin/env bash
 	set -euo pipefail
 	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
@@ -257,7 +259,7 @@ docker-windows-x86: docker-base-win-x86
 	# build-msix.sh stages both sotf-desktop.exe and sotf-tui.exe; the MSIX
 	# manifest declares the desktop app, so both binaries must be built.
 	docker run --rm --platform linux/amd64 -v "$(pwd)/..":/workspace -v sotf-target-win-x86:/build-target -w /workspace/sotf "${docker_env[@]}" sotf-win-x86 \
-		bash -c 'cargo build --profile dist --target x86_64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && cargo build --profile dist --target x86_64-pc-windows-gnullvm -p sotf-gpui --bin sotf-desktop && ./scripts/build-msix.sh $MSIX_SIGN_FLAG --build-dir /build-target/x86_64-pc-windows-gnullvm/dist --arch x86_64 && cp /build-target/x86_64-pc-windows-gnullvm/dist/sotf-tui.exe dist/'
+		bash -c 'cargo build --profile dist --target x86_64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && cargo build --profile dist --target x86_64-pc-windows-gnullvm -p sotf-gpui --bin sotf-desktop --features report-export-bundled && ./scripts/build-msix.sh $MSIX_SIGN_FLAG --build-dir /build-target/x86_64-pc-windows-gnullvm/dist --arch x86_64 && cp /build-target/x86_64-pc-windows-gnullvm/dist/sotf-tui.exe dist/'
 	mv "dist/sotf-tui.exe" "dist/sotf-tui-${VERSION}-windows-x86_64.exe"
 	echo "Done! dist/sotf-tui-${VERSION}-windows-x86_64.exe + MSIX in dist/"
 
@@ -267,7 +269,7 @@ docker-windows-x86: docker-base-win-x86
 
 # macOS ARM64: SotF DMG + sotf-tui → dist/
 [group('cross')]
-cross-macos-arm64:
+cross-macos-arm64: prepare-shared-report
 	#!/usr/bin/env bash
 	set -euo pipefail
 	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
@@ -275,7 +277,7 @@ cross-macos-arm64:
 	rustup target add aarch64-apple-darwin 2>/dev/null || true
 	# Release cuts use the `dist` profile (fat LTO + codegen-units=1).
 	cargo build --profile dist --target aarch64-apple-darwin -p sotf-tui --features hal,onnx
-	cargo build --profile dist --target aarch64-apple-darwin -p sotf-gpui --features hal,onnx
+	cargo build --profile dist --target aarch64-apple-darwin -p sotf-gpui --features hal,onnx,report-export-bundled
 	mkdir -p dist
 	cp target/aarch64-apple-darwin/dist/sotf-tui "dist/sotf-tui-${VERSION}-macos-arm64"
 	cp target/aarch64-apple-darwin/dist/sotf-desktop "dist/sotf-desktop-${VERSION}-macos-arm64"
@@ -285,7 +287,7 @@ cross-macos-arm64:
 
 # macOS x86_64: SotF DMG + sotf-tui → dist/
 [group('cross')]
-cross-macos-x86:
+cross-macos-x86: prepare-shared-report
 	#!/usr/bin/env bash
 	set -euo pipefail
 	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
@@ -293,7 +295,7 @@ cross-macos-x86:
 	rustup target add x86_64-apple-darwin 2>/dev/null || true
 	# Release cuts use the `dist` profile (fat LTO + codegen-units=1).
 	cargo build --profile dist --target x86_64-apple-darwin -p sotf-tui --features hal
-	cargo build --profile dist --target x86_64-apple-darwin -p sotf-gpui --features hal
+	cargo build --profile dist --target x86_64-apple-darwin -p sotf-gpui --features hal,report-export-bundled
 	mkdir -p dist
 	cp target/x86_64-apple-darwin/dist/sotf-tui "dist/sotf-tui-${VERSION}-macos-x86_64"
 	cp target/x86_64-apple-darwin/dist/sotf-desktop "dist/sotf-desktop-${VERSION}-macos-x86_64"

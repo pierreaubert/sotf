@@ -35,5 +35,6 @@ assert      roomeq.report_window_count == 0
 assert_visible roomeq.report.open
 click       roomeq.report.open
 wait_until  roomeq.report_window_count == 1 timeout=60s
+assert      roomeq.native_report_section_count > 0
 assert      roomeq.error == null
 screenshot  roomeq-report-window

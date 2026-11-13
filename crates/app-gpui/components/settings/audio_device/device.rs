@@ -419,35 +419,14 @@ impl PlayerView {
         let devices = &state.app.audio_device_state;
         let theme = state.app.ui_state.theme.clone();
         let text = crate::app::i18n::DesktopTranslations::for_language(state.app.ui_state.language);
-        if state.app.settings.navigation.close_pending
-            || (!devices.output_draft.is_dirty() && devices.audio_apply.pending.is_none())
-        {
-            return div().into_any_element();
-        }
-        let name = if devices.output_draft.system_default {
-            crate::app::i18n::AudioPreferencesPersistenceTranslations::system_default(
-                state.app.ui_state.language,
-            )
-            .into()
-        } else {
-            devices.output_draft.device_name.clone().unwrap_or_else(|| {
-                if devices.output_draft.replay_gain_enabled.is_some()
-                    || devices.output_draft.replay_gain_mode.is_some()
-                {
-                    state.app.ui_state.translations.settings_replaygain.into()
-                } else {
-                    AudioDeviceTranslations::for_language(state.app.ui_state.language)
-                        .audio_source
-                        .into()
-                }
-            })
-        };
+        let disabled = !devices.output_draft.is_dirty()
+            || devices.audio_apply.pending.is_some()
+            || state.app.settings.navigation.close_pending;
         div()
             .flex()
             .flex_col()
+            .items_end()
             .gap(d.gap)
-            .py(d.card)
-            .child(Text::label(name))
             .when(devices.audio_apply.pending.is_some(), |element| {
                 element.child(Text::body(
                     crate::app::i18n::AudioPreferencesPersistenceTranslations::applying(
@@ -465,7 +444,7 @@ impl PlayerView {
                     .gap(d.gap)
                     .child(
                         Button::new("audio-output-discard", text.discard_routing)
-                            .disabled(devices.audio_apply.pending.is_some())
+                            .disabled(disabled)
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Secondary)
                             .theme(theme.to_button_theme())
@@ -492,7 +471,7 @@ impl PlayerView {
                     )
                     .child(
                         Button::new("audio-output-apply", text.apply_audio)
-                            .disabled(devices.audio_apply.pending.is_some())
+                            .disabled(disabled)
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Primary)
                             .theme(theme.to_button_theme())

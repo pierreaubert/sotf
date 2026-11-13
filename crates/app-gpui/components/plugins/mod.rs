@@ -215,6 +215,20 @@ pub fn render_plugin_content(
     } else {
         320.0
     };
+    let analog_spectrum = matches!(settings, PluginSettings::AnalogEq { .. }).then(|| {
+        let playback = &state.app.playback;
+        (
+            playback.spectrum_info.as_ref().map(|data| {
+                crate::app::state::ui::SpectrumViewState::display_magnitudes(&data.magnitudes)
+            }),
+            f64::from(
+                playback
+                    .spectrum_output_sample_rate()
+                    .filter(|rate| *rate > 0)
+                    .unwrap_or(48_000),
+            ),
+        )
+    });
     let content = if available_width < minimum_width * combined_scale {
         use gpui::prelude::*;
         gpui::div()
@@ -287,6 +301,27 @@ pub fn render_plugin_content(
         )
     } else {
         gpui::div().into_any_element()
+    };
+
+    let content = if let Some((spectrum, sample_rate)) = analog_spectrum {
+        use gpui::prelude::*;
+        div()
+            .flex()
+            .flex_col()
+            .gap(d.gap)
+            .min_w_0()
+            .child(ui_eq::render_analog_eq_graph(
+                settings,
+                spectrum,
+                sample_rate,
+                available_width.max(1.0),
+                (160.0 * combined_scale).min((available_height * 0.4).max(1.0)),
+                &chassis_theme,
+            ))
+            .child(content)
+            .into_any_element()
+    } else {
+        content
     };
 
     let content = if matches!(

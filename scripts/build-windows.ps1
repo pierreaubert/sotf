@@ -203,6 +203,20 @@ function Build-Binary {
     Push-Location $ProjectRoot
     try {
         $cargoArgs = @('build','--release','--package',$BinConfig.Package)
+        if ($BinConfig.Package -eq 'sotf-gpui') {
+            $autoEqRoot = Join-Path (Split-Path -Parent $ProjectRoot) 'autoeq'
+            $reportDist = Join-Path $autoEqRoot 'crates/autoeq-report-wasm/dist'
+            $reportAssets = @('report2d.wasm', 'report2d.js') | ForEach-Object { Join-Path $reportDist $_ }
+            $missingReportAssets = $reportAssets | Where-Object {
+                $asset = Get-Item -LiteralPath $_ -ErrorAction SilentlyContinue
+                -not $asset -or $asset.PSIsContainer -or $asset.Length -le 0
+            }
+            if ($missingReportAssets) {
+                & just --working-directory $autoEqRoot --justfile (Join-Path $autoEqRoot 'Justfile') report-dist
+                if ($LASTEXITCODE -ne 0) { throw "Could not generate the AutoEQ report renderer" }
+            }
+            $cargoArgs += @('--features', 'report-export-bundled')
+        }
 
         if ($BinConfig.StaticCrt) {
             $env:RUSTFLAGS = "-C target-feature=+crt-static,$cpuFeatures"

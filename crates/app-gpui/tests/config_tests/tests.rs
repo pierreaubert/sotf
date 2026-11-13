@@ -19,6 +19,24 @@ fn audio_preferences_default_for_legacy_configuration() {
 }
 
 #[test]
+fn feature_channel_defaults_to_beta_and_preserves_saved_choice() {
+    use sotf_audio_player::ReleaseChannel;
+    let config: Config = serde_json::from_str(r#"{"directories":[]}"#).unwrap();
+    assert_eq!(config.release_channel, ReleaseChannel::Beta);
+    for (saved, expected) in [
+        ("Prod", ReleaseChannel::Prod),
+        ("Beta", ReleaseChannel::Beta),
+        ("Alpha", ReleaseChannel::Alpha),
+    ] {
+        let config: Config = serde_json::from_value(serde_json::json!({
+            "directories": [], "release_channel": saved
+        }))
+        .unwrap();
+        assert_eq!(config.release_channel, expected);
+    }
+}
+
+#[test]
 fn audio_preferences_save_replaces_complete_config_and_rejects_invalid_values() {
     use sotf_audio_player::ReplayGainMode;
     let directory = tempfile::tempdir().unwrap();

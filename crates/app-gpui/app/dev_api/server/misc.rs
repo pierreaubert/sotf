@@ -174,8 +174,7 @@ pub(super) fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-pub(super) fn list_elements_json() -> String {
-    let entries = registry::snapshot();
+pub(super) fn list_elements_json(entries: Vec<(String, registry::TrackedElement)>) -> String {
     let mut items = Vec::with_capacity(entries.len());
     for (selector, element) in entries {
         let bounds = element.bounds;

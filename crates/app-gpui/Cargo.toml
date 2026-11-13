@@ -12,7 +12,7 @@ repository.workspace = true
 
 [features]
 default = ["gpu-2d", "report-webview"]
-shipping = ["report-webview", "gpu-2d", "gpu-3d", "iamf", "streaming", "hls", "tidal", "spotify", "mimalloc-allocator"]
+shipping = ["report-webview", "report-export-bundled", "gpu-2d", "gpu-3d", "iamf", "streaming", "hls", "tidal", "spotify", "mimalloc-allocator"]
 full = ["shipping", "tidal", "spotify", "onnx"]
 hal = ["sotf-engine/hal", "sotf-player/hal", "driver-hal"]
 onnx = ["sotf-plugins/onnx"]
@@ -29,6 +29,7 @@ spotify = ["dep:sotf-service-spotify", "sotf-player/spotify"]
 qa = []
 # Native host for the shared AutoEQ WASM report on macOS and Windows.
 report-webview = ["dep:wry"]
+report-export-bundled = ["sotf-report-host/bundled-shell"]
 dev-api = [
     "gpui/profiler",
     "dep:hound",
@@ -49,6 +50,7 @@ visual-qa = [
 
 [dependencies]
 autoeq-measurements = { workspace = true }
+autoeq-report-gpui = { path = "../../../autoeq/crates/autoeq-report-gpui", features = ["native"] }
 sotf-report-host = { path = "../sotf-report-host" }
 sha2.workspace = true
 hound = { workspace = true, optional = true }

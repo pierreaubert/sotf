@@ -54,6 +54,7 @@ pub(super) fn eq_band_types(allow_extended: bool) -> &'static [BiquadFilterType]
             BiquadFilterType::Highpass,
             BiquadFilterType::Bandpass,
             BiquadFilterType::Notch,
+            BiquadFilterType::AllPass,
         ]
     } else {
         &[

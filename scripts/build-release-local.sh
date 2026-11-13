@@ -671,6 +671,15 @@ write_source_manifest() {
     done
     rm -f -- "$entries_file"
 
+    # AutoEQ generates the standalone renderer outside Git. It must travel
+    # with the source snapshot because desktop release builds embed it.
+    local report_asset
+    for report_asset in autoeq/crates/autoeq-report-wasm/dist/report2d.{wasm,js}; do
+        if [ -s "$aggregate_root/$report_asset" ]; then
+            printf '%s\0' "$report_asset" >> "$source_file_list" || return 1
+        fi
+    done
+
     while IFS= read -r -d '' path; do
         if [ ! -f "$aggregate_root/$path" ] && [ ! -L "$aggregate_root/$path" ]; then
             log_error "Source file listed for the remote snapshot is missing: $path"
@@ -1123,6 +1132,10 @@ build_macos_target() {
     local label="macOS ${arch}"
 
     log_step "Building ${label} (dynamic, profile=dist)..."
+    if ! sotf_prepare_report_assets "$PROJECT_ROOT"; then
+        record_result "${label}: FAILED (report assets)"
+        return 1
+    fi
     if ! rustup target add "$target" 2>/dev/null; then
         log_warning "Rust target $target is already installed or could not be added; Cargo will report whether it is usable"
     fi
@@ -1483,7 +1496,7 @@ build_windows_arm64_utm() {
     local win_build_cmd="cd ${remote_dir} && mkdir -p dist"
     win_build_cmd+=" && export PATH=\"/c/Program Files/LLVM/bin:\$PATH\""
     win_build_cmd+=" && cargo build --profile dist -p sotf-tui --bin sotf-tui"
-    win_build_cmd+=" && cargo build --profile dist -p sotf-gpui --bin sotf-desktop"
+    win_build_cmd+=" && cargo build --profile dist -p sotf-gpui --bin sotf-desktop --features report-export-bundled"
     # Canonical artifact naming: <product>-<version>-<os>-<arch>.<ext>
     win_build_cmd+=" && cp target/dist/sotf-tui.exe dist/sotf-tui-${VERSION}-windows-arm64.exe"
     if ! win_ssh_cmd "$host" "$port" "$key" "$win_build_cmd"; then
@@ -2040,6 +2053,12 @@ main() {
 
     if ! $POST_ONLY; then
         if ! $DRY_RUN; then
+            if { ! $SKIP_MACOS || ! $SKIP_LINUX || ! $SKIP_WINDOWS; } &&
+                ! sotf_prepare_report_assets "$PROJECT_ROOT"; then
+                record_result "Report assets: FAILED"
+                print_summary
+                return 1
+            fi
             if ! clear_versioned_artifacts "$DIST_DIR"; then
                 record_result "Artifact cleanup: FAILED"
                 print_summary

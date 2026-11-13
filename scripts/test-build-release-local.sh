@@ -36,6 +36,26 @@ for repo in "$AGGREGATE_ROOT" "$AGGREGATE_ROOT"/*; do
     git -c user.name=Test -c user.email=test@example.invalid -C "$repo" commit -qm fixture
 done
 mkdir -p "$AGGREGATE_ROOT/sotf/tests/data" "$AGGREGATE_ROOT/autoeq/data"
+(
+    set -e
+    clean_checkout="$TEST_ROOT/clean-release"
+    mkdir -p "$clean_checkout/sotf" "$clean_checkout/autoeq"
+    just() {
+        [ "$*" = "--working-directory $clean_checkout/sotf/../autoeq --justfile $clean_checkout/sotf/../autoeq/Justfile report-dist" ]
+        local report_dist="$clean_checkout/autoeq/crates/autoeq-report-wasm/dist"
+        mkdir -p "$report_dist"
+        printf 'fixture wasm\n' > "$report_dist/report2d.wasm"
+        printf 'fixture glue\n' > "$report_dist/report2d.js"
+    }
+    sotf_prepare_report_assets "$clean_checkout/sotf"
+) || exit 1
+for root in "$TEST_ROOT" "$AGGREGATE_ROOT"; do
+    report_dist="$root/autoeq/crates/autoeq-report-wasm/dist"
+    mkdir -p "$report_dist"
+    printf 'fixture wasm\n' > "$report_dist/report2d.wasm"
+    printf 'fixture glue\n' > "$report_dist/report2d.js"
+    printf 'unrelated output\n' > "$report_dist/other.wasm"
+done
 printf 'tracked fixture data\n' > "$AGGREGATE_ROOT/sotf/tests/data/fixture.bin"
 printf 'untracked dataset\n' > "$AGGREGATE_ROOT/autoeq/data/local-dataset.bin"
 git -C "$AGGREGATE_ROOT/sotf" add tests/data/fixture.bin
@@ -235,6 +255,12 @@ write_source_manifest "$AGGREGATE_ROOT" "$manifest" "$source_files" .test-manife
 grep -q '^# source sotf-daw head ' "$manifest"
 grep -q 'sotf-daw/Cargo.toml' "$manifest"
 grep -q 'sotf/tests/data/fixture.bin' "$manifest"
+grep -q 'autoeq/crates/autoeq-report-wasm/dist/report2d.wasm' "$manifest" || exit 1
+grep -q 'autoeq/crates/autoeq-report-wasm/dist/report2d.js' "$manifest" || exit 1
+if grep -q 'autoeq/crates/autoeq-report-wasm/dist/other.wasm' "$manifest"; then
+    echo "unrelated report output entered the source manifest" >&2
+    exit 1
+fi
 if grep -q 'autoeq/data/local-dataset.bin' "$manifest"; then
     echo "untracked local dataset entered Linux source manifest" >&2
     exit 1

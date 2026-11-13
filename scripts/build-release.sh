@@ -159,6 +159,7 @@ should_build_arch() {
 
 build_all() {
     mkdir -p "$DIST_DIR"
+    sotf_prepare_report_assets "$PROJECT_ROOT"
 
     if should_build "macos"; then
         export MACOSX_DEPLOYMENT_TARGET=15.0

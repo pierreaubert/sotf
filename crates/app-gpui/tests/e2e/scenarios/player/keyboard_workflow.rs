@@ -101,6 +101,38 @@ impl TestScenario for KeyboardWorkflowScenario {
             (Screen::Settings, SettingsTab::Library)
         );
 
+        driver.update_app(|app, _| {
+            app.ui_state.input_mode = InputMode::AddDirectory;
+            app.input_state.directory_input = "music".to_string();
+        });
+        driver
+            .view
+            .update(driver.cx, |_, _, cx| {
+                cx.dispatch_action(&sotf_audio_player_gpui::app::actions::ScanLibrary);
+            })
+            .unwrap();
+        driver.run_until_parked();
+        assert_eq!(
+            driver.read_app(|app| app.input_state.directory_input.clone()),
+            "music"
+        );
+        assert!(!driver.read_app(|app| app.library_state.scan_in_progress));
+        assert!(driver.read_app(|app| app.scan.library_scanner.is_none()));
+        driver.update_app(|app, _| {
+            app.ui_state.input_mode = InputMode::Normal;
+            app.settings.library.picker_open = true;
+        });
+        driver
+            .view
+            .update(driver.cx, |_, _, cx| {
+                cx.dispatch_action(&sotf_audio_player_gpui::app::actions::ScanLibrary);
+            })
+            .unwrap();
+        driver.run_until_parked();
+        assert!(!driver.read_app(|app| app.library_state.scan_in_progress));
+        assert!(driver.read_app(|app| app.scan.library_scanner.is_none()));
+        driver.update_app(|app, _| app.settings.library.picker_open = false);
+
         driver.navigate_to(Screen::Library);
         driver.simulate_keystrokes("/");
         driver.run_until_parked();
